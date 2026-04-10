@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.4.6'
+const APP_VERSION = 'v1.4.7'
 
 const ADMIN_TZ = 'Europe/Berlin'
 
@@ -350,18 +350,6 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
           <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
             {theme === 'dark' ? '☀' : '☾'}
-          </button>
-          <button onClick={() => setIsOnline(!isOnline)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
-              background: isOnline ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-              border: `1px solid ${isOnline ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
-              color: isOnline ? '#10b981' : '#ef4444',
-              fontSize: 11, fontWeight: 700, fontFamily: 'inherit',
-            }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: isOnline ? '#10b981' : '#ef4444', display: 'inline-block' }} />
-            {isOnline ? 'Online' : 'Offline'}
           </button>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
           {onSwitchToAdmin && (
