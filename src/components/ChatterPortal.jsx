@@ -88,6 +88,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
     if (data) setScheduleData(data.assignments || {})
   }
 
+  const [lastStatDate, setLastStatDate] = useState(null)
+
   const loadStats = async () => {
     const { data } = await supabase
       .from('chatter_snapshots')
@@ -99,12 +101,17 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
     }))
     setChatterSnapshots(snapshots)
 
-    // Find this chatter's rows
-    const todaySnap = snapshots.find(s => s.businessDate === todayIso)
-    const myRow = todaySnap?.rows?.find(r =>
-      r.name?.toLowerCase() === displayName?.toLowerCase()
+    // Find last day this chatter has data
+    const mySnaps = snapshots.filter(s =>
+      s.rows?.some(r => r.name?.toLowerCase() === displayName?.toLowerCase())
     )
-    if (myRow) setChatterStats(myRow)
+    if (mySnaps.length === 0) return
+    const lastSnap = mySnaps[mySnaps.length - 1]
+    const myRow = lastSnap.rows.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    if (myRow) {
+      setChatterStats(myRow)
+      setLastStatDate(lastSnap.businessDate)
+    }
   }
 
   const sendNote = async () => {
@@ -262,12 +269,18 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         )}
 
         {/* KPIs */}
+        {/* Last day label */}
+        {lastStatDate && (
+          <div style={{ fontSize: 11, color: '#4a4a6a', marginBottom: 8, fontFamily: 'monospace' }}>
+            Letzter Tag mit Daten: <span style={{ color: '#8888aa', fontWeight: 600 }}>{new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
           {[
-            { label: 'Revenue heute', val: formatMoney(chatterStats?.revenue || 0), sub: revDelta !== 0 ? `${revDelta > 0 ? '▲' : '▼'} ${Math.abs(revDelta).toFixed(1)}% vs gestern` : 'Kein Vortag', good: revDelta >= 0 },
-            { label: 'PPV Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(1)}%` : '—', sub: 'Heute', good: (chatterStats?.buyRate || 0) >= 25 },
+            { label: 'Revenue', val: formatMoney(chatterStats?.revenue || 0), sub: revDelta !== 0 ? `${revDelta > 0 ? '▲' : '▼'} ${Math.abs(revDelta).toFixed(1)}% vs Vortag` : lastStatDate ? new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : 'Noch keine Daten', good: revDelta >= 0 },
+            { label: 'PPV Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(1)}%` : '—', sub: lastStatDate ? new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : 'Keine Daten', good: (chatterStats?.buyRate || 0) >= 25 },
             { label: 'Ø Antwortzeit', val: formatResponseTime(chatterStats?.avgResponseSeconds), sub: (chatterStats?.avgResponseSeconds || 0) <= 120 ? 'Gut ✓' : (chatterStats?.avgResponseSeconds || 0) <= 210 ? 'Ok' : 'Zu langsam', good: (chatterStats?.avgResponseSeconds || 0) <= 120 },
-            { label: 'Nachrichten', val: (chatterStats?.sentMessages || 0).toString(), sub: 'Heute', good: (chatterStats?.sentMessages || 0) > 50 },
+            { label: 'Nachrichten', val: (chatterStats?.sentMessages || 0).toString(), sub: lastStatDate ? new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : 'Keine Daten', good: (chatterStats?.sentMessages || 0) > 50 },
           ].map(kpi => (
             <div key={kpi.label} style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', borderRadius: 10, padding: '12px 14px' }}>
               <div style={{ fontSize: 10, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 4 }}>{kpi.label}</div>
