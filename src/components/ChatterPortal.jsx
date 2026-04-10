@@ -44,7 +44,10 @@ function getKW(date) {
 export default function ChatterPortal({ session, displayName, onSwitchToAdmin }) {
   const [isOnline, setIsOnline] = useState(false)
   const [messages, setMessages] = useState([])
+  const [models, setModels] = useState([])
   const [noteText, setNoteText] = useState('')
+  const [noteModel, setNoteModel] = useState('')
+  const [noteShift, setNoteShift] = useState('')
   const [sendingNote, setSendingNote] = useState(false)
   const [scheduleData, setScheduleData] = useState({})
   const [chatterStats, setChatterStats] = useState(null)
@@ -60,6 +63,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
     loadMessages()
     loadSchedule()
     loadStats()
+    loadModels()
     const interval = setInterval(loadMessages, 30000)
     return () => clearInterval(interval)
   }, [])
@@ -72,6 +76,11 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
       .order('created_at', { ascending: false })
       .limit(10)
     setMessages(data || [])
+  }
+
+  const loadModels = async () => {
+    const { data } = await supabase.from('models_contact').select('*').order('name')
+    setModels(data || [])
   }
 
   const loadSchedule = async () => {
@@ -101,11 +110,16 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   const sendNote = async () => {
     if (!noteText.trim()) return
     setSendingNote(true)
+    const modelPart = noteModel ? `[${noteModel}]` : ''
+    const shiftPart = noteShift ? `[${noteShift}]` : ''
+    const prefix = [modelPart, shiftPart].filter(Boolean).join(' ')
     await supabase.from('notes').insert({
-      text: `[Schichtnotiz von ${displayName}] ${noteText.trim()}`,
+      text: `Schichtnotiz von ${displayName}${prefix ? ' · ' + prefix : ''}: ${noteText.trim()}`,
       author: displayName,
     })
     setNoteText('')
+    setNoteModel('')
+    setNoteShift('')
     setSendingNote(false)
     alert('✓ Notiz gesendet!')
   }
@@ -326,12 +340,43 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
               ))}
             </div>
             <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12 }}>
-              <div style={{ fontSize: 10, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 8 }}>Schichtnotiz hinterlassen</div>
+              <div style={{ fontSize: 10, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Schichtnotiz hinterlassen</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 120 }}>
+                  <label style={{ fontSize: 10, color: '#4a4a6a' }}>Model</label>
+                  <select
+                    value={noteModel}
+                    onChange={e => setNoteModel(e.target.value)}
+                    style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: noteModel ? '#f0f0ff' : '#4a4a6a', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  >
+                    <option value="">— Model wählen —</option>
+                    {myShifts.filter(s => s.dayIso === todayIso).flatMap(s => Object.values(s.models)).map((_, i) => null)}
+                    {[...new Set(myShifts.map(s => s.dayIso === todayIso ? s.shift : null).filter(Boolean))].length > 0
+                      ? myShifts.filter(s => s.dayIso === todayIso).map((s, i) => (
+                          <option key={i} value={s.shift}>{s.shift}</option>
+                        ))
+                      : null
+                    }
+                    {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <label style={{ fontSize: 10, color: '#4a4a6a' }}>Schicht</label>
+                  <select
+                    value={noteShift}
+                    onChange={e => setNoteShift(e.target.value)}
+                    style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: noteShift ? '#f0f0ff' : '#4a4a6a', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  >
+                    <option value="">— Schicht —</option>
+                    {['Früh', 'Spät', 'Nacht'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
               <textarea
                 value={noteText}
                 onChange={e => setNoteText(e.target.value)}
                 rows={2}
-                placeholder="z.B. Leoni war heute sehr aktiv, viele PPVs verkauft..."
+                placeholder="z.B. Sehr aktiv heute, viele PPVs verkauft..."
                 style={{ width: '100%', background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
               />
               <button onClick={sendNote} disabled={sendingNote || !noteText.trim()} style={{
