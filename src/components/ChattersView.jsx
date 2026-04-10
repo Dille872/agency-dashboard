@@ -57,7 +57,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
     return { name: r.name, current: r.revenue, delta: r.revenue - (prev?.revenue || 0), deltaPct: prev ? pctChange(r.revenue, prev.revenue) : 0 }
   })
 
-  const heatmapNames = top6Names.length > 0 ? top6Names : rows.slice(0, 6).map(r => r.name)
+  const heatmapNames = allChatterNames
 
   // Big table
   const tableRows = rows.map(r => {

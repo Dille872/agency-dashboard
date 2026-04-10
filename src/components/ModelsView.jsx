@@ -89,7 +89,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
   const todayBoughtPPVs = chatterRows.reduce((s, r) => s + r.boughtPPVs, 0)
   const ppvBuyRate = safeDivide(todayBoughtPPVs * 100, todaySentPPVs)
 
-  const heatmapNames = top6Names.length > 0 ? top6Names : rows.slice(0, 6).map(r => r.creator)
+  const heatmapNames = allModelNames
 
   // ── Big table ─────────────────────────────────────────────────────────────
   const tableRows = rows.map(r => {
