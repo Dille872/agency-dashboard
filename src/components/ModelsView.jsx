@@ -71,7 +71,8 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
   // ── Delta vs prev day ─────────────────────────────────────────────────────
   const deltaItems = rows.map(r => {
     const prev = prevRows.find(p => p.creator === r.creator)
-    return { creator: r.creator, current: r.revenue, delta: r.revenue - (prev?.revenue || 0), deltaPct: prev ? pctChange(r.revenue, prev.revenue) : 0 }
+    const deltaPct = (prev && prev.revenue > 0) ? pctChange(r.revenue, prev.revenue) : null
+    return { creator: r.creator, current: r.revenue, delta: r.revenue - (prev?.revenue || 0), deltaPct }
   })
 
   // ── Quick Summary ─────────────────────────────────────────────────────────

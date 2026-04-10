@@ -63,18 +63,21 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
   const top6Names = allChatterNames.slice(0, 6)
 
-  // Delta list
-  const deltaItems = rows.map(r => {
-    const prev = prevRows.find(p => p.name === r.name)
-    return { name: r.name, current: r.revenue, delta: r.revenue - (prev?.revenue || 0), deltaPct: prev ? pctChange(r.revenue, prev.revenue) : 0 }
-  })
+  // Delta list – nur Chatters mit 50+ Nachrichten heute, kein % wenn Vortag $0
+  const deltaItems = rows
+    .filter(r => r.sentMessages >= 50)
+    .map(r => {
+      const prev = prevRows.find(p => p.name === r.name)
+      const deltaPct = (prev && prev.revenue > 0) ? pctChange(r.revenue, prev.revenue) : null
+      return { name: r.name, current: r.revenue, delta: r.revenue - (prev?.revenue || 0), deltaPct }
+    })
 
   const heatmapNames = allChatterNames
 
   // Big table
   const tableRows = rows.map(r => {
     const prev = prevRows.find(p => p.name === r.name)
-    const revDelta = prev ? pctChange(r.revenue, prev.revenue) : 0
+    const revDelta = (prev && prev.revenue > 0) ? pctChange(r.revenue, prev.revenue) : null
     const sentPPVsDelta = prev ? r.sentPPVs - prev.sentPPVs : 0
     const boughtPPVsDelta = prev ? r.boughtPPVs - prev.boughtPPVs : 0
     const buyRateDelta = prev ? r.buyRate - prev.buyRate : 0

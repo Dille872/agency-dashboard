@@ -26,7 +26,7 @@ export default function DeltaList({ items, nameKey }) {
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-primary)' }}>{formatMoney(item.current)}</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600, color: isPos ? 'var(--green)' : isNeg ? 'var(--red)' : 'var(--text-muted)', minWidth: 60, textAlign: 'right' }}>
-                {isPos ? '▲' : isNeg ? '▼' : '—'} {formatDeltaPct(item.deltaPct)}
+                {item.deltaPct === null ? (isPos ? '▲ neu' : isNeg ? '▼ neu' : '—') : `${isPos ? '▲' : isNeg ? '▼' : '—'} ${formatDeltaPct(item.deltaPct)}`}
               </span>
             </div>
           </div>
