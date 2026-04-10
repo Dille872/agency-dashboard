@@ -75,6 +75,7 @@ export default function ScheduleTab({ session }) {
   const [editingShiftTime, setEditingShiftTime] = useState(null)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
