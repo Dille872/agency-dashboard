@@ -179,10 +179,20 @@ export default function CommTab({ session }) {
     const targets = selectedChatters.size > 0
       ? chatters.filter(c => selectedChatters.has(c.id))
       : chatters.filter(c => c.telegram_id)
+
+    // Build calendar link for zoom
+    let calLink = ''
+    if (chatterMsgType === 'zoom' && zoomDate && zoomTime) {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const d = zoomDate.replace(/-/g, '')
+      const t = zoomTime.replace(':', '') + '00'
+      calLink = `\n\n📅 Zum Kalender hinzufügen:\nhttps://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${d}T${t}/${d}T${t}&ctz=${encodeURIComponent(tz)}&details=Team+Zoom+Call+Thirteen+87`
+    }
+
     let sent = 0
     for (const chatter of targets) {
       if (!chatter.telegram_id) continue
-      const personalText = chatterMsgText.replace('{name}', chatter.name)
+      const personalText = chatterMsgText.replace('{name}', chatter.name) + calLink
       await sendTelegramMessage(chatter.telegram_id, personalText)
       await supabase.from('messages').insert({
         model_name: chatter.name, model_telegram_id: chatter.telegram_id,
@@ -193,6 +203,7 @@ export default function CommTab({ session }) {
       sent++
     }
     setChatterMsgText(''); setSelectedChatters(new Set())
+    setZoomDate(''); setZoomTime('')
     loadMessages(); loadChatters()
     setSendingChatter(false)
     alert(`✓ Nachricht an ${sent} Chatter gesendet`)
@@ -395,27 +406,41 @@ export default function CommTab({ session }) {
               </div>
               {/* Zoom date/time picker */}
               {chatterMsgType === 'zoom' && (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <label style={{ fontSize: 10, color: '#4a4a6a' }}>Datum</label>
-                    <input type="date" value={zoomDate} onChange={e => setZoomDate(e.target.value)}
-                      style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <label style={{ fontSize: 10, color: '#4a4a6a' }}>Datum</label>
+                      <input type="date" value={zoomDate} onChange={e => setZoomDate(e.target.value)}
+                        style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <label style={{ fontSize: 10, color: '#4a4a6a' }}>
+                        Uhrzeit
+                        <span style={{ color: '#7c3aed', marginLeft: 4 }}>
+                          ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+                        </span>
+                      </label>
+                      <input type="time" value={zoomTime} onChange={e => setZoomTime(e.target.value)}
+                        style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <label style={{ fontSize: 10, color: '#4a4a6a' }}>Uhrzeit</label>
-                    <input type="time" value={zoomTime} onChange={e => setZoomTime(e.target.value)}
-                      style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
-                  </div>
-                  {zoomDate && zoomTime && (
-                    <a
-                      href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${zoomDate.replace(/-/g,'')}T${zoomTime.replace(':','')}00/${zoomDate.replace(/-/g,'')}T${zoomTime.replace(':','')}00&details=Team+Zoom+Call`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 18, padding: '5px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
-                      onClick={e => e.stopPropagation()}
-                    >
-                      + Kalender
-                    </a>
-                  )}
+                  {zoomDate && zoomTime && (() => {
+                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+                    const tzEncoded = encodeURIComponent(tz)
+                    const d = zoomDate.replace(/-/g, '')
+                    const t = zoomTime.replace(':', '') + '00'
+                    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${d}T${t}/${d}T${t}&ctz=${tzEncoded}&details=Team+Zoom+Call+Thirteen+87`
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 7 }}>
+                        <span style={{ fontSize: 11, color: '#8888aa' }}>📅 Kalender-Link wird automatisch an die Nachricht angehängt</span>
+                        <a href={calUrl} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 11, color: '#10b981', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}
+                          onClick={e => e.stopPropagation()}>
+                          Vorschau ↗
+                        </a>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
               <textarea value={chatterMsgText} onChange={e => setChatterMsgText(e.target.value)} rows={4}
