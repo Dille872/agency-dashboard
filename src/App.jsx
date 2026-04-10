@@ -17,6 +17,9 @@ export default function App() {
   const [modelSnapshots, setModelSnapshots] = useState([])
   const [chatterSnapshots, setChatterSnapshots] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
+  const [unreadMessages, setUnreadMessages] = useState(0)
+  const [unreadNotes, setUnreadNotes] = useState(0)
+  const lastNoteCheck = React.useRef(null)
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -34,7 +37,29 @@ export default function App() {
   useEffect(() => {
     if (!session) return
     loadAllData()
+    loadBadgeCounts()
+    // Poll badge counts every 15 seconds
+    const interval = setInterval(loadBadgeCounts, 15000)
+    return () => clearInterval(interval)
   }, [session])
+
+  const loadBadgeCounts = async () => {
+    // Unread messages
+    const { count: msgCount } = await supabase
+      .from('messages').select('*', { count: 'exact', head: true })
+      .eq('direction', 'in').eq('read', false)
+    setUnreadMessages(msgCount || 0)
+
+    // Unread notes – notes newer than last time we visited notes tab
+    const lastVisit = lastNoteCheck.current
+    if (lastVisit) {
+      const { count: noteCount } = await supabase
+        .from('notes').select('*', { count: 'exact', head: true })
+        .gt('created_at', lastVisit)
+        .neq('author', session?.user?.email?.split('@')[0])
+      setUnreadNotes(noteCount || 0)
+    }
+  }
 
   const loadAllData = async () => {
     setDataLoading(true)
@@ -190,22 +215,32 @@ export default function App() {
         </div>
         {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {[
               { key: 'models', label: 'Models' },
               { key: 'chatters', label: 'Chatters' },
-              { key: 'notes', label: 'Notizen' },
-              { key: 'comm', label: 'Kommunikation' },
+              { key: 'notes', label: 'Notizen', badge: unreadNotes },
+              { key: 'comm', label: 'Kommunikation', badge: unreadMessages },
             ].map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+              <button key={tab.key} onClick={() => {
+                setActiveTab(tab.key)
+                if (tab.key === 'comm') setUnreadMessages(0)
+                if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
+              }} style={{
                 padding: '6px 14px', borderRadius: 8,
                 background: activeTab === tab.key ? '#7c3aed' : 'transparent',
-                color: activeTab === tab.key ? '#fff' : 'var(--text-secondary)',
+                color: activeTab === tab.key ? '#fff' : tab.badge > 0 ? '#f59e0b' : 'var(--text-secondary)',
                 fontWeight: 600, fontSize: 13, transition: 'all 0.15s',
-                border: `1px solid ${activeTab === tab.key ? '#7c3aed' : 'var(--border)'}`,
-                cursor: 'pointer',
+                border: `1px solid ${activeTab === tab.key ? '#7c3aed' : tab.badge > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
               }}>
                 {tab.label}
+                {tab.badge > 0 && activeTab !== tab.key && (
+                  <span style={{
+                    background: '#f59e0b', color: '#000', fontSize: 10,
+                    fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4,
+                  }}>{tab.badge}</span>
+                )}
               </button>
             ))}
           </div>
@@ -258,7 +293,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.1.0</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.1.1</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
