@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
 
+const CHRIS_TG = '1538601588'
+const REY_TG = '528328429'
+
 const SHIFTS = ['Früh', 'Spät', 'Nacht']
 const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -45,8 +48,66 @@ export default function ScheduleTab({ session }) {
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
-  useEffect(() => { loadModels(); loadChatters(); loadRecurring() }, [])
+  useEffect(() => { loadModels(); loadChatters(); loadRecurring(); checkShiftAlerts() }, [])
   useEffect(() => { if (weekKey) loadSchedule() }, [weekKey])
+
+  const checkShiftAlerts = async () => {
+    // Check every 5 minutes if a shift started 15 min ago and chatter is not online
+    const now = new Date()
+    const todayIso = now.toISOString().slice(0, 10)
+    const currentHour = now.getHours()
+    const currentMin = now.getMinutes()
+
+    // Load today's schedule
+    const weekS = getWeekStart(now)
+    const { data: schedData } = await supabase.from('schedule').select('*').eq('week_start', isoDate(weekS)).single()
+    if (!schedData) return
+
+    // Load online statuses
+    const { data: onlineData } = await supabase.from('online_status').select('*')
+    const onlineMap = {}
+    const cutoff = new Date(Date.now() - 60000)
+    for (const s of onlineData || []) {
+      if (new Date(s.last_seen) > cutoff) onlineMap[s.display_name] = s.shift_online
+    }
+
+    // Load shift times
+    const shiftTimesData = schedData.shift_times || {}
+    const assignments = schedData.assignments || {}
+
+    // Get all chatters scheduled today
+    const alerted = new Set()
+    for (const [key, val] of Object.entries(assignments)) {
+      const parts = key.split('__')
+      if (parts[1] !== todayIso || !val.chatter) continue
+      const chatterName = val.chatter
+      if (alerted.has(chatterName)) continue
+
+      // Find shift start time
+      const modelId = parts[0]
+      const shift = parts[2]
+      const timeStr = shiftTimesData[`${modelId}__${shift}`] || ''
+      if (!timeStr) continue
+
+      // Parse time like "08:00-14:00" or "08:00"
+      const startTime = timeStr.split('-')[0].trim()
+      const [shiftHour, shiftMin] = startTime.split(':').map(Number)
+      if (isNaN(shiftHour)) continue
+
+      // Check if 15 minutes after shift start
+      const shiftStartMins = shiftHour * 60 + shiftMin
+      const nowMins = currentHour * 60 + currentMin
+      if (nowMins >= shiftStartMins + 15 && nowMins < shiftStartMins + 20) {
+        // Shift started 15-20 min ago
+        if (!onlineMap[chatterName]) {
+          alerted.add(chatterName)
+          const msg = `⚠️ ${chatterName} hat ${shift}schicht aber ist noch nicht online! (${startTime} Uhr)`
+          await sendTelegramMessage(CHRIS_TG, msg)
+          await sendTelegramMessage(REY_TG, msg)
+        }
+      }
+    }
+  }
 
   const loadModels = async () => {
     const { data } = await supabase.from('models_contact').select('*').order('name')

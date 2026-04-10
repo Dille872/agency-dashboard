@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, notifyOwner, getUpdates } from '../telegram'
 import Card from './Card'
+import OnlineStatus from './OnlineStatus'
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 const DISPLAY_NAMES = {
@@ -89,11 +90,15 @@ export default function CommTab({ session }) {
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [activeSection, setActiveSection] = useState('models')
+  const [onlineStatuses, setOnlineStatuses] = useState({})
   const lastUpdateIdRef = React.useRef(0)
 
   useEffect(() => {
-    loadModels(); loadChatters(); loadMessages()
-    const interval = setInterval(pollTelegram, 10000)
+    loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
+    const interval = setInterval(() => {
+      pollTelegram()
+      loadOnlineStatuses()
+    }, 15000)
     return () => clearInterval(interval)
   }, [])
 
@@ -105,6 +110,19 @@ export default function CommTab({ session }) {
     const names = selectedChatters.size === 0 ? 'alle' : [...selectedChatters].join(', ')
     setChatterMsgText(CHATTER_TEMPLATES[chatterMsgType]?.replace('{name}', names) || '')
   }, [chatterMsgType])
+
+  const loadOnlineStatuses = async () => {
+    const { data } = await supabase.from('online_status').select('*')
+    const map = {}
+    const cutoff = new Date(Date.now() - 60000) // 60 seconds
+    for (const s of data || []) {
+      map[s.display_name] = {
+        dashboardOnline: new Date(s.last_seen) > cutoff,
+        shiftOnline: s.shift_online && new Date(s.last_seen) > cutoff,
+      }
+    }
+    setOnlineStatuses(map)
+  }
 
   const loadModels = async () => {
     const { data } = await supabase.from('models_contact').select('*').order('name')
@@ -372,7 +390,13 @@ export default function CommTab({ session }) {
                         </div>
                       </div>
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{chatter.last_contacted ? formatTime(chatter.last_contacted) : '—'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <OnlineStatus
+                        dashboardOnline={onlineStatuses[chatter.name]?.dashboardOnline || false}
+                        shiftOnline={onlineStatuses[chatter.name]?.shiftOnline || false}
+                      />
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{chatter.last_contacted ? formatTime(chatter.last_contacted) : '—'}</div>
+                    </div>
                   </div>
                 )
               })}

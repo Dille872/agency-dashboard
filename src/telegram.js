@@ -21,3 +21,11 @@ export async function getUpdates(offset = 0) {
 }
 
 export { OWNER_ID, BOT_TOKEN }
+
+const REY_TELEGRAM_ID = '528328429'
+const CHRIS_TELEGRAM_ID = '1538601588'
+
+export async function notifyAdmins(text) {
+  await notifyOwner(text)
+  await sendTelegramMessage(REY_TELEGRAM_ID, text)
+}

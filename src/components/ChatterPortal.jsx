@@ -59,14 +59,34 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   const kw = getKW(weekStart)
   const todayIso = isoDate(new Date())
 
+  // Send heartbeat every 30 seconds
+  const sendHeartbeat = async (shiftOnline) => {
+    await supabase.from('online_status').upsert({
+      display_name: displayName,
+      last_seen: new Date().toISOString(),
+      shift_online: shiftOnline,
+    }, { onConflict: 'display_name' })
+  }
+
   useEffect(() => {
     loadMessages()
     loadSchedule()
     loadStats()
     loadModels()
-    const interval = setInterval(loadMessages, 30000)
-    return () => clearInterval(interval)
+    sendHeartbeat(false)
+    const interval = setInterval(() => {
+      loadMessages()
+      sendHeartbeat(isOnline)
+    }, 30000)
+    return () => {
+      clearInterval(interval)
+    }
   }, [])
+
+  // Update heartbeat when online status changes
+  useEffect(() => {
+    sendHeartbeat(isOnline)
+  }, [isOnline])
 
   const loadMessages = async () => {
     const { data } = await supabase
