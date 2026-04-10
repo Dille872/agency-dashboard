@@ -63,20 +63,27 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
   const top6Names = allChatterNames.slice(0, 6)
 
-  // Delta list – nur Chatters mit 50+ Nachrichten heute, kein % wenn Vortag $0
+  // Delta list – nur Chatters mit 50+ Nachrichten heute
+  // Vergleich mit letztem Tag wo sie 50+ Nachrichten hatten (nicht zwingend direkter Vortag)
   const deltaItems = rows
     .filter(r => r.sentMessages >= 50)
     .map(r => {
-      const prev = prevRows.find(p => p.name === r.name)
+      const lastActiveSnap = [...chatterSnapshots]
+        .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
+        .find(s => s.businessDate < selectedDate && s.rows.find(rr => rr.name === r.name && rr.sentMessages >= 50))
+      const prev = lastActiveSnap?.rows.find(p => p.name === r.name)
       const deltaPct = (prev && prev.revenue > 0) ? pctChange(r.revenue, prev.revenue) : null
-      return { name: r.name, current: r.revenue, delta: r.revenue - (prev?.revenue || 0), deltaPct }
+      return { name: r.name, current: r.revenue, delta: prev ? r.revenue - prev.revenue : 0, deltaPct }
     })
 
   const heatmapNames = allChatterNames
 
   // Big table
   const tableRows = rows.map(r => {
-    const prev = prevRows.find(p => p.name === r.name)
+    const lastActivePrev = [...chatterSnapshots]
+      .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
+      .find(s => s.businessDate < selectedDate && s.rows.find(rr => rr.name === r.name && rr.sentMessages >= 50))
+    const prev = lastActivePrev?.rows.find(p => p.name === r.name)
     const revDelta = (prev && prev.revenue > 0) ? pctChange(r.revenue, prev.revenue) : null
     const sentPPVsDelta = prev ? r.sentPPVs - prev.sentPPVs : 0
     const boughtPPVsDelta = prev ? r.boughtPPVs - prev.boughtPPVs : 0
