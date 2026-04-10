@@ -123,6 +123,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
     setSendingRequest(false)
     alert('✓ Anfrage gesendet!')
   }
+
+  const sendHeartbeat = async (shiftOnline) => {
     await supabase.from('online_status').upsert({
       display_name: displayName,
       last_seen: new Date().toISOString(),
