@@ -45,11 +45,14 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
   const revDelta = pctChange(totalRev, prevTotalRev)
   const topModel = rows.length > 0 ? rows.reduce((a, b) => a.revenue > b.revenue ? a : b) : null
   const worstModel = rows.length > 0 ? rows.reduce((a, b) => a.revenue < b.revenue ? a : b) : null
-  const totalChatterRev = chatterRows.reduce((s, r) => s + r.revenue, 0)
-  const prevTotalChatterRev = prevChatterRows.reduce((s, r) => s + r.revenue, 0)
+  const activeChatterRows = chatterRows.filter(r => r.sentMessages > 0)
+  const totalChatterRev = activeChatterRows.reduce((s, r) => s + r.revenue, 0)
+  const prevActiveChatterRows = prevChatterRows.filter(r => r.sentMessages > 0)
+  const prevTotalChatterRev = prevActiveChatterRows.reduce((s, r) => s + r.revenue, 0)
   const chatterRevDelta = pctChange(totalChatterRev, prevTotalChatterRev)
-  const topChatter = chatterRows.length > 0 ? chatterRows.reduce((a, b) => a.revenue > b.revenue ? a : b) : null
-  const worstChatter = chatterRows.length > 0 ? chatterRows.reduce((a, b) => a.revenue < b.revenue ? a : b) : null
+  const topChatter = activeChatterRows.length > 0 ? activeChatterRows.reduce((a, b) => a.revenue > b.revenue ? a : b) : null
+  const qualifiedChatters = activeChatterRows.filter(r => r.sentMessages >= 50)
+  const worstChatter = qualifiedChatters.length > 0 ? qualifiedChatters.reduce((a, b) => a.revenue < b.revenue ? a : b) : null
 
   // ── All model names (sorted by today's revenue) ───────────────────────────
   const allModelNames = [...new Set(modelSnapshots.flatMap(s => s.rows.map(r => r.creator)))]
