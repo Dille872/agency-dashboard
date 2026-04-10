@@ -242,27 +242,21 @@ export default function ScheduleTab({ session }) {
     const berlinTime = (shiftTimes[`${modelId}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
     const startTime = berlinTime ? berlinTime.split('-')[0].trim() : ''
 
-    // Calculate send_at: shift start time minus hoursBefore in Berlin timezone
+    // Calculate send_at: shift start time minus hoursBefore
+    // Berlin is UTC+2 in summer (CEST), UTC+1 in winter (CET)
     let sendAt
     if (startTime) {
       const [h, m] = startTime.split(':').map(Number)
-      // Create a date string that represents the shift time in Berlin timezone
-      // by using the Intl API to find the correct UTC time
-      const candidate = new Date(`${dayIso}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
-      // Get what Berlin clock says for this UTC time
-      const berlinClock = new Intl.DateTimeFormat('sv-SE', {
-        timeZone: 'Europe/Berlin',
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: false
-      }).format(candidate)
-      // Parse back the Berlin clock time
-      const berlinDate = new Date(berlinClock.replace(' ', 'T') + '+00:00')
-      // Diff between what we want and what Berlin shows
-      const wantMs = candidate.getTime()
-      const berlinMs = berlinDate.getTime()
-      const offsetMs = wantMs - berlinMs // adjustment needed
-      const shiftUtc = new Date(candidate.getTime() + offsetMs)
+      // Get Berlin offset for this specific date
+      const testDate = new Date(`${dayIso}T12:00:00Z`)
+      const berlinFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Berlin', hour: 'numeric', hour12: false })
+      const utcFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', hour: 'numeric', hour12: false })
+      const berlinHour = parseInt(berlinFormatter.format(testDate))
+      const utcHour = parseInt(utcFormatter.format(testDate))
+      const berlinOffsetHours = berlinHour - utcHour // e.g. +2 for CEST
+      // Shift time in UTC = shift time in Berlin minus offset
+      const shiftUtcHour = h - berlinOffsetHours
+      const shiftUtc = new Date(`${dayIso}T${String(((shiftUtcHour % 24) + 24) % 24).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00Z`)
       sendAt = new Date(shiftUtc.getTime() - hoursBefore * 3600000).toISOString()
     } else {
       sendAt = new Date(Date.now() + hoursBefore * 3600000).toISOString()
