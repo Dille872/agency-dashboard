@@ -122,7 +122,7 @@ export default function ScheduleTab({ session }) {
       // Find shift start time
       const modelId = parts[0]
       const shift = parts[2]
-      const timeStr = shiftTimesData[`${modelId}__${shift}`] || ''
+      const timeStr = (shiftTimesData[`${modelId}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
       if (!timeStr) continue
 
       // Parse time like "08:00-14:00" or "08:00"
@@ -163,9 +163,14 @@ export default function ScheduleTab({ session }) {
   const loadSchedule = async () => {
     const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey)
     if (data && data.length > 0) {
+      const rawTimes = data[0].shift_times || {}
+      const cleanTimes = {}
+      for (const [k, v] of Object.entries(rawTimes)) {
+        cleanTimes[k] = String(v).replace(' (DE)', '').replace('(DE)', '')
+      }
       setSchedule(data[0].assignments || {})
       setDayNotes(data[0].day_notes || {})
-      setShiftTimes(data[0].shift_times || {})
+      setShiftTimes(cleanTimes)
       setHasSavedData(true)
     } else {
       // Auto-fill from recurring shifts
@@ -234,7 +239,7 @@ export default function ScheduleTab({ session }) {
     }
     const model = models.find(m => String(m.id) === String(modelId))
     const modelName = model?.name || 'Unbekannt'
-    const berlinTime = shiftTimes[`${modelId}__${shift}`] || ''
+    const berlinTime = (shiftTimes[`${modelId}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
     const startTime = berlinTime ? berlinTime.split('-')[0].trim() : ''
 
     // Calculate send_at: shift start time minus hoursBefore in Berlin timezone
@@ -308,7 +313,7 @@ export default function ScheduleTab({ session }) {
           for (const model of models) {
             const cell = getCell(model.id, dayIso, shift)
             if (cell.chatter === chatter.name) {
-              const berlinTime = shiftTimes[`${model.id}__${shift}`] || ''
+              const berlinTime = (shiftTimes[`${model.id}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
               const localTime = berlinTime ? convertTimeToLocal(berlinTime) : ''
               const timeDisplay = localTime ? ` (${localTime} Ortszeit)` : ''
               dayShifts.push(`  ${shift}${timeDisplay}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
@@ -407,17 +412,30 @@ export default function ScheduleTab({ session }) {
                           <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                             <span style={{ width: 6, height: 6, borderRadius: 2, background: SHIFT_COLORS[s], flexShrink: 0, display: 'inline-block' }} />
                             {editingShiftTime === `${model.id}__${s}` ? (
-                              <input autoFocus value={shiftTimes[`${model.id}__${s}`] || ''}
-                                onChange={e => setShiftTimes(prev => ({ ...prev, [`${model.id}__${s}`]: e.target.value }))}
-                                onBlur={() => setEditingShiftTime(null)}
-                                onKeyDown={e => e.key === 'Enter' && setEditingShiftTime(null)}
-                                placeholder={`${s} Zeiten`}
-                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 4px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
-                              />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }} onClick={e => e.stopPropagation()}>
+                                <input type="time"
+                                  value={shiftTimes[`${model.id}__${s}`]?.split('-')[0]?.trim().replace(' (DE)','') || ''}
+                                  onChange={e => {
+                                    const end = shiftTimes[`${model.id}__${s}`]?.split('-')[1]?.trim().replace(' (DE)','') || ''
+                                    setShiftTimes(prev => ({ ...prev, [`${model.id}__${s}`]: `${e.target.value}-${end}` }))
+                                  }}
+                                  style={{ width: 70, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
+                                />
+                                <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>–</span>
+                                <input type="time"
+                                  value={shiftTimes[`${model.id}__${s}`]?.split('-')[1]?.trim().replace(' (DE)','') || ''}
+                                  onChange={e => {
+                                    const start = shiftTimes[`${model.id}__${s}`]?.split('-')[0]?.trim().replace(' (DE)','') || ''
+                                    setShiftTimes(prev => ({ ...prev, [`${model.id}__${s}`]: `${start}-${e.target.value}` }))
+                                  }}
+                                  onBlur={() => setEditingShiftTime(null)}
+                                  style={{ width: 70, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
+                                />
+                              </div>
                             ) : (
                               <span onClick={() => setEditingShiftTime(`${model.id}__${s}`)}
                                 style={{ fontSize: 9, color: shiftTimes[`${model.id}__${s}`] ? 'var(--text-secondary)' : 'var(--border-bright)', cursor: 'text', fontFamily: 'monospace' }}>
-                                {shiftTimes[`${model.id}__${s}`] ? `${shiftTimes[`${model.id}__${s}`]} (DE)` : `${s} +Zeit`}
+                                {shiftTimes[`${model.id}__${s}`] ? `${shiftTimes[`${model.id}__${s}`].replace(' (DE)','')} (DE)` : `${s} +Zeit`}
                               </span>
                             )}
                           </div>
