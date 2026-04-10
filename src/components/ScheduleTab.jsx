@@ -4,6 +4,39 @@ import { sendTelegramMessage } from '../telegram'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
+const ADMIN_TZ = 'Europe/Berlin'
+
+// Convert time string "HH:MM" from Berlin to local browser timezone
+function convertTimeToLocal(timeStr) {
+  if (!timeStr) return timeStr
+  // Parse "HH:MM-HH:MM" or "HH:MM"
+  const parts = timeStr.split('-').map(t => t.trim())
+  const converted = parts.map(t => {
+    const [h, m] = t.split(':').map(Number)
+    if (isNaN(h)) return t
+    // Create a date in Berlin timezone
+    const now = new Date()
+    const berlinStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`
+    // Get offset difference
+    const berlinOffset = getTimezoneOffset(berlinStr, ADMIN_TZ)
+    const localOffset = getTimezoneOffset(berlinStr, Intl.DateTimeFormat().resolvedOptions().timeZone)
+    const diffMins = localOffset - berlinOffset
+    const totalMins = h * 60 + (m || 0) + diffMins
+    const localH = ((Math.floor(totalMins / 60) % 24) + 24) % 24
+    const localM = ((totalMins % 60) + 60) % 60
+    return `${String(localH).padStart(2,'0')}:${String(localM).padStart(2,'0')}`
+  })
+  return converted.join('-')
+}
+
+function getTimezoneOffset(dateStr, tz) {
+  try {
+    const d = new Date(dateStr)
+    const utcMs = d.getTime()
+    const tzMs = new Date(d.toLocaleString('en-US', { timeZone: tz })).getTime()
+    return Math.round((tzMs - utcMs) / 60000)
+  } catch { return 0 }
+}
 
 const SHIFTS = ['Früh', 'Spät', 'Nacht']
 const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
@@ -224,8 +257,10 @@ export default function ScheduleTab({ session }) {
           for (const model of models) {
             const cell = getCell(model.id, dayIso, shift)
             if (cell.chatter === chatter.name) {
-              const time = shiftTimes[`${model.id}__${shift}`] || ''
-              dayShifts.push(`  ${shift}${time ? ` (${time})` : ''}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
+              const berlinTime = shiftTimes[`${model.id}__${shift}`] || ''
+              const localTime = berlinTime ? convertTimeToLocal(berlinTime) : ''
+              const timeDisplay = localTime ? ` (${localTime} Ortszeit)` : ''
+              dayShifts.push(`  ${shift}${timeDisplay}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
             }
           }
         }
@@ -331,7 +366,7 @@ export default function ScheduleTab({ session }) {
                             ) : (
                               <span onClick={() => setEditingShiftTime(`${model.id}__${s}`)}
                                 style={{ fontSize: 9, color: shiftTimes[`${model.id}__${s}`] ? 'var(--text-secondary)' : 'var(--border-bright)', cursor: 'text', fontFamily: 'monospace' }}>
-                                {shiftTimes[`${model.id}__${s}`] || `${s} +Zeit`}
+                                {shiftTimes[`${model.id}__${s}`] ? `${shiftTimes[`${model.id}__${s}`]} (DE)` : `${s} +Zeit`}
                               </span>
                             )}
                           </div>

@@ -2,6 +2,36 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 
+const ADMIN_TZ = 'Europe/Berlin'
+
+function getTimezoneOffset(dateStr, tz) {
+  try {
+    const d = new Date(dateStr)
+    const utcMs = d.getTime()
+    const tzMs = new Date(d.toLocaleString('en-US', { timeZone: tz })).getTime()
+    return Math.round((tzMs - utcMs) / 60000)
+  } catch { return 0 }
+}
+
+function convertTimeToLocal(timeStr) {
+  if (!timeStr) return timeStr
+  const parts = timeStr.split('-').map(t => t.trim())
+  const now = new Date()
+  const converted = parts.map(t => {
+    const [h, m] = t.split(':').map(Number)
+    if (isNaN(h)) return t
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`
+    const berlinOffset = getTimezoneOffset(dateStr, ADMIN_TZ)
+    const localOffset = getTimezoneOffset(dateStr, Intl.DateTimeFormat().resolvedOptions().timeZone)
+    const diffMins = localOffset - berlinOffset
+    const totalMins = h * 60 + (m || 0) + diffMins
+    const localH = ((Math.floor(totalMins / 60) % 24) + 24) % 24
+    const localM = ((totalMins % 60) + 60) % 60
+    return `${String(localH).padStart(2,'0')}:${String(localM).padStart(2,'0')}`
+  })
+  return converted.join('-')
+}
+
 const SHIFTS = ['Früh', 'Spät', 'Nacht']
 const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -50,6 +80,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   const [noteShift, setNoteShift] = useState('')
   const [sendingNote, setSendingNote] = useState(false)
   const [scheduleData, setScheduleData] = useState({})
+  const [shiftTimes, setShiftTimes] = useState({})
   const [chatterStats, setChatterStats] = useState(null)
   const [chatterSnapshots, setChatterSnapshots] = useState([])
   const [weekStart] = useState(() => getWeekStart(new Date()))
@@ -105,7 +136,10 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
 
   const loadSchedule = async () => {
     const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey).single()
-    if (data) setScheduleData(data.assignments || {})
+    if (data) {
+      setScheduleData(data.assignments || {})
+      setShiftTimes(data.shift_times || {})
+    }
   }
 
   const [lastStatDate, setLastStatDate] = useState(null)
@@ -336,7 +370,23 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                           <div style={{ fontSize: 12, fontWeight: 700, color: today ? '#10b981' : 'var(--text-primary)' }}>
                             {DAYS[weekDays.indexOf(weekDays.find(d => isoDate(d) === s.dayIso))]} {formatDate(s.day)}{today ? ' · Heute' : ''}
                           </div>
-                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>{s.shift}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>
+                            {s.shift}
+                            {(() => {
+                              const modelIds = Object.keys(s.models || {})
+                              for (const key of Object.keys(scheduleData)) {
+                                const parts = key.split('__')
+                                if (parts[1] === s.dayIso && parts[2] === s.shift) {
+                                  const berlinTime = shiftTimes[`${parts[0]}__${s.shift}`]
+                                  if (berlinTime) {
+                                    const local = convertTimeToLocal(berlinTime)
+                                    return ` · ${local}`
+                                  }
+                                }
+                              }
+                              return ''
+                            })()}
+                          </div>
                         </div>
                       </div>
                       <span style={{
