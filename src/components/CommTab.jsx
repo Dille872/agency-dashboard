@@ -237,8 +237,8 @@ export default function CommTab({ session }) {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[
-          { key: 'models', label: 'Models & Anfragen' },
-          { key: 'chatters', label: 'Chatters & Ankündigungen' },
+          { key: 'models', label: 'Models' },
+          { key: 'chatters', label: 'Chatters' },
           { key: 'inbox', label: `Posteingang${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
           { key: 'history', label: 'Verlauf' },
         ].map(s => (

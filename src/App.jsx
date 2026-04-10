@@ -5,6 +5,7 @@ import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
 import NotesTab from './components/NotesTab'
 import CommTab from './components/CommTab'
+import ScheduleTab from './components/ScheduleTab'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -221,6 +222,7 @@ export default function App() {
               { key: 'chatters', label: 'Chatters' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
               { key: 'comm', label: 'Kommunikation', badge: unreadMessages },
+              { key: 'schedule', label: 'Dienstplan' },
             ].map(tab => (
               <button key={tab.key} onClick={() => {
                 setActiveTab(tab.key)
@@ -293,7 +295,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.1.3</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.2.1</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
@@ -318,8 +320,10 @@ export default function App() {
           <ChattersView selectedDate={businessDate} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'notes' ? (
           <NotesTab session={session} />
-        ) : (
+        ) : activeTab === 'comm' ? (
           <CommTab session={session} />
+        ) : (
+          <ScheduleTab session={session} />
         )}
       </main>
     </div>
