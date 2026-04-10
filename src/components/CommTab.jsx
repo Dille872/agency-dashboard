@@ -497,7 +497,7 @@ export default function CommTab({ session }) {
                           {msg.direction === 'out' ? '→ Gesendet' : '← Empfangen'}
                         </span>
                       </td>
-                      <td style={{ ...tdS, fontWeight: 600, color: msg.direction === 'out' ? (msg.sent_by === 'Christoph' ? '#a78bfa' : '#06b6d4') : '#10b981' }}>
+                      <td style={{ ...tdS, fontWeight: 600, color: msg.direction === 'out' ? (msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4') : '#10b981' }}>
                         {msg.direction === 'out' ? (msg.sent_by || '—') : msg.model_name}
                       </td>
                       <td style={{ ...tdS, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.text}</td>

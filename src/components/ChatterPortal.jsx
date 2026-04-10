@@ -332,7 +332,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
               ) : messages.slice(0, 4).map(msg => (
                 <div key={msg.id} style={{ padding: '9px 12px', background: '#13132a', borderRadius: 8, border: '1px solid rgba(124,58,237,0.2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: msg.sent_by === 'Christoph' ? '#a78bfa' : '#06b6d4' }}>{msg.sent_by || 'Team'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4' }}>{msg.sent_by || 'Team'}</span>
                     <span style={{ fontSize: 10, color: '#4a4a6a', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 12, color: '#c0c0e0', lineHeight: 1.5 }}>{msg.text}</div>
