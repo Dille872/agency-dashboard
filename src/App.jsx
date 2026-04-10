@@ -159,109 +159,116 @@ export default function App() {
       {/* ── HEADER ── */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 100,
-        background: 'rgba(7,7,16,0.95)',
+        background: 'rgba(7,7,16,0.97)',
         backdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--border)',
-        padding: '0 28px',
+        padding: '0 20px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        height: 56,
+        flexWrap: 'wrap', gap: 8,
+        minHeight: 56,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Left */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
           <div style={{
-            width: 28, height: 28, borderRadius: 8,
+            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
             background: 'linear-gradient(135deg, #7c3aed, #06b6d4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 14, fontWeight: 800, color: '#fff', fontFamily: 'monospace',
             boxShadow: '0 0 16px rgba(124,58,237,0.4)',
           }}>A</div>
-          <div>
-            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Agency Dashboard</span>
-            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 8, letterSpacing: '0.05em' }}>Thirteen 87 Collective</span>
+          <div style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Agency Dashboard</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6, letterSpacing: '0.05em', display: 'inline' }} className="hide-mobile">Thirteen 87 Collective</span>
           </div>
           {allDates.length > 0 && (
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', background: 'var(--bg-card)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)' }}>
-              {allDates.length} Tag{allDates.length !== 1 ? 'e' : ''} gespeichert
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', background: 'var(--bg-card)', padding: '2px 7px', borderRadius: 4, border: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+              {allDates.length}T
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Right */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
           <div style={{ display: 'flex', gap: 4 }}>
             {['models', 'chatters'].map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                padding: '6px 18px', borderRadius: 8,
+                padding: '6px 14px', borderRadius: 8,
                 background: activeTab === tab ? '#7c3aed' : 'transparent',
                 color: activeTab === tab ? '#fff' : 'var(--text-secondary)',
                 fontWeight: 600, fontSize: 13, transition: 'all 0.15s',
                 border: `1px solid ${activeTab === tab ? '#7c3aed' : 'var(--border)'}`,
-                textTransform: 'capitalize', cursor: 'pointer',
+                cursor: 'pointer',
               }}>
                 {tab === 'models' ? 'Models' : 'Chatters'}
               </button>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 12, borderLeft: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{session.user.email}</span>
-            <button onClick={handleLogout} style={{
-              fontSize: 12, padding: '5px 10px', borderRadius: 6,
-              background: 'transparent', border: '1px solid var(--border)',
-              color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
-            }}>Abmelden</button>
-          </div>
+          <button onClick={handleLogout} style={{
+            fontSize: 12, padding: '5px 10px', borderRadius: 6,
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }}>↩</button>
         </div>
       </header>
 
       {/* ── TOOLBAR ── */}
       <div style={{
         background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
-        padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+        padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap',
       }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Business Date</label>
-          <input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} />
-        </div>
-        {allDates.length > 0 && (
+        {/* Date controls */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Gespeicherte Tage</label>
-            <select value={businessDate} onChange={e => setBusinessDate(e.target.value)} style={{
-              background: 'var(--bg-input)', border: '1px solid var(--border)',
-              color: 'var(--text-primary)', padding: '8px 12px', borderRadius: 8,
-              fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', outline: 'none',
-            }}>
-              {allDates.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
+            <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Business Date</label>
+            <input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} />
           </div>
-        )}
-        <UploadBox
-          label="Daily Model CSV"
-          onFile={handleModelUpload}
-          lastFileName={currentModelSnap?.fileName}
-          lastDate={currentModelSnap?.uploadedAt ? new Date(currentModelSnap.uploadedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null}
-        />
-        <UploadBox
-          label="Daily Chatter CSV"
-          onFile={handleChatterUpload}
-          lastFileName={currentChatterSnap?.fileName}
-          lastDate={currentChatterSnap?.uploadedAt ? new Date(currentChatterSnap.uploadedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null}
-        />
-        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>v1.0.3</span>
+          {allDates.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Gespeicherte Tage</label>
+              <select value={businessDate} onChange={e => setBusinessDate(e.target.value)} style={{
+                background: 'var(--bg-input)', border: '1px solid var(--border)',
+                color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 8,
+                fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', outline: 'none', maxWidth: 140,
+              }}>
+                {allDates.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        {/* Uploads */}
+        <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
+          <UploadBox
+            label="Daily Model CSV"
+            onFile={handleModelUpload}
+            lastFileName={currentModelSnap?.fileName}
+            lastDate={currentModelSnap?.uploadedAt ? new Date(currentModelSnap.uploadedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null}
+          />
+          <UploadBox
+            label="Daily Chatter CSV"
+            onFile={handleChatterUpload}
+            lastFileName={currentChatterSnap?.fileName}
+            lastDate={currentChatterSnap?.uploadedAt ? new Date(currentChatterSnap.uploadedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null}
+          />
+        </div>
+        {/* Version + Delete */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.0.4</span>
           <button onClick={clearAllData} style={{
-            padding: '8px 14px', background: 'transparent',
+            padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
-            borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>Daten löschen</button>
         </div>
       </div>
 
       {/* ── MAIN ── */}
-      <main style={{ padding: '24px 28px', maxWidth: 1600, margin: '0 auto' }}>
+      <main style={{ padding: '16px', maxWidth: 1600, margin: '0 auto' }}>
         {dataLoading ? (
           <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '80px 0', fontSize: 14 }}>Daten werden geladen...</div>
         ) : modelSnapshots.length === 0 && chatterSnapshots.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 16, color: 'var(--text-muted)' }}>
             <div style={{ fontSize: 48, opacity: 0.3 }}>📊</div>
             <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-secondary)' }}>Noch keine Daten vorhanden</div>
-            <div style={{ fontSize: 14 }}>Wähle ein Business Date und lade CSV-Dateien hoch.</div>
+            <div style={{ fontSize: 14, textAlign: 'center' }}>Wähle ein Business Date und lade CSV-Dateien hoch.</div>
           </div>
         ) : activeTab === 'models' ? (
           <ModelsView selectedDate={businessDate} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />

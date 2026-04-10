@@ -50,3 +50,8 @@ body {
 button { cursor: pointer; font-family: var(--font-sans); }
 input { font-family: var(--font-sans); }
 table { border-collapse: collapse; width: 100%; }
+
+/* ── MOBILE ─────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  html, body { font-size: 13px; }
+}

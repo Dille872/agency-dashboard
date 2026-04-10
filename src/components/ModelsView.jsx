@@ -119,7 +119,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* ── KPI ROW ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         <KpiCard label="Revenue heute" value={formatMoney(totalRev)} delta={revDelta} accent />
         <KpiCard label="Top Model" value={topModel?.creator || '—'} sub={topModel ? formatMoney(topModel.revenue) : ''} />
         <KpiCard label="Worst Model" value={worstModel?.creator || '—'} sub={worstModel ? formatMoney(worstModel.revenue) : ''} />
@@ -134,7 +134,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       </Card>
 
       {/* ── ROW 2: Trend + Ranking ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
         <Card title="Revenue-Trend – Models">
           <RevenueTrendChart allSnapshots={modelSnapshots} allNames={allModelNames} />
         </Card>
@@ -150,7 +150,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       </div>
 
       {/* ── ROW 3: Delta + Quick Summary ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
         <Card title="Revenue heute vs. Vortag">
           <DeltaList items={deltaItems} nameKey="creator" />
         </Card>

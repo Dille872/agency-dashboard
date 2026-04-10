@@ -87,7 +87,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
       </Card>
 
       {/* ── ROW 1: Trend + Ranking ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
         <Card title="Revenue-Trend – Chatters">
           <RevenueTrendChart allSnapshots={chatterSnapshots} allNames={allChatterNames} />
         </Card>
@@ -97,7 +97,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
       </div>
 
       {/* ── ROW 2: Delta + Heatmap ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
         <Card title="Revenue heute vs. Vortag">
           <DeltaList items={deltaItems} nameKey="name" />
         </Card>
