@@ -3,6 +3,8 @@ import { supabase } from './supabase'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
+import NotesTab from './components/NotesTab'
+import CommTab from './components/CommTab'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -189,16 +191,21 @@ export default function App() {
         {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
           <div style={{ display: 'flex', gap: 4 }}>
-            {['models', 'chatters'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{
+            {[
+              { key: 'models', label: 'Models' },
+              { key: 'chatters', label: 'Chatters' },
+              { key: 'notes', label: 'Notizen' },
+              { key: 'comm', label: 'Kommunikation' },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
                 padding: '6px 14px', borderRadius: 8,
-                background: activeTab === tab ? '#7c3aed' : 'transparent',
-                color: activeTab === tab ? '#fff' : 'var(--text-secondary)',
+                background: activeTab === tab.key ? '#7c3aed' : 'transparent',
+                color: activeTab === tab.key ? '#fff' : 'var(--text-secondary)',
                 fontWeight: 600, fontSize: 13, transition: 'all 0.15s',
-                border: `1px solid ${activeTab === tab ? '#7c3aed' : 'var(--border)'}`,
+                border: `1px solid ${activeTab === tab.key ? '#7c3aed' : 'var(--border)'}`,
                 cursor: 'pointer',
               }}>
-                {tab === 'models' ? 'Models' : 'Chatters'}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -251,7 +258,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.0.6</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.0.8</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
@@ -272,8 +279,12 @@ export default function App() {
           </div>
         ) : activeTab === 'models' ? (
           <ModelsView selectedDate={businessDate} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
-        ) : (
+        ) : activeTab === 'chatters' ? (
           <ChattersView selectedDate={businessDate} chatterSnapshots={chatterSnapshots} />
+        ) : activeTab === 'notes' ? (
+          <NotesTab session={session} />
+        ) : (
+          <CommTab session={session} />
         )}
       </main>
     </div>
