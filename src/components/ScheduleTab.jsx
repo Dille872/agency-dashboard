@@ -75,7 +75,7 @@ export default function ScheduleTab({ session }) {
   const [editingShiftTime, setEditingShiftTime] = useState(null)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
-  const [hasSavedData, setHasSavedData] = useState(false)
+  const [conflictsOpen, setConflictsOpen] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -448,20 +448,28 @@ export default function ScheduleTab({ session }) {
         </table>
       </div>
 
-      {/* Conflicts below */}
+      {/* Conflicts below – einklappbar */}
       {hasSavedData && conflicts.length > 0 && (
-        <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '12px 16px' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>⚠ {conflicts.length} Konflikt{conflicts.length !== 1 ? 'e' : ''} gefunden</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {conflicts.map((c, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10, background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444' }}>
-                  {c.type === 'unbesetzt' ? 'Unbesetzt' : 'Überlastet'}
-                </span>
-                <span style={{ color: 'var(--text-secondary)' }}>{c.msg}</span>
-              </div>
-            ))}
+        <div style={{ border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, overflow: 'hidden' }}>
+          <div onClick={() => setConflictsOpen(!conflictsOpen)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'rgba(239,68,68,0.06)', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#ef4444' }}>⚠ Konflikte gefunden</span>
+              <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.2)', color: '#ef4444', padding: '1px 8px', borderRadius: 10, fontWeight: 700 }}>{conflicts.length}</span>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{conflictsOpen ? '▲ zuklappen' : '▼ aufklappen'}</span>
           </div>
+          {conflictsOpen && (
+            <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,0.03)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {conflicts.map((c, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                  <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10, background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444' }}>
+                    {c.type === 'unbesetzt' ? 'Unbesetzt' : 'Überlastet'}
+                  </span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{c.msg}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {hasSavedData && conflicts.length === 0 && Object.keys(schedule).length > 0 && (

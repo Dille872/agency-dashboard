@@ -269,6 +269,20 @@ export default function CommTab({ session }) {
     setShiftLogs(data || [])
   }
 
+  const [contentRequests, setContentRequests] = useState([])
+  const [unreadRequests, setUnreadRequests] = useState(0)
+
+  const loadContentRequests = async () => {
+    const { data } = await supabase.from('content_requests').select('*').order('created_at', { ascending: false })
+    setContentRequests(data || [])
+    setUnreadRequests((data || []).filter(r => r.status === 'neu').length)
+  }
+
+  const updateRequestStatus = async (id, status) => {
+    await supabase.from('content_requests').update({ status }).eq('id', id)
+    loadContentRequests()
+  }
+
   const inboxMessages = messages.filter(m => m.direction === 'in')
   const tdS = { padding: '10px 10px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-secondary)', fontSize: 12 }
   const thS = { padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #2e2e5a', whiteSpace: 'nowrap' }
@@ -282,9 +296,10 @@ export default function CommTab({ session }) {
           { key: 'chatters', label: 'Chatters' },
           { key: 'inbox', label: `Posteingang${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
           { key: 'history', label: 'Verlauf' },
+          { key: 'requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           { key: 'shiftlog', label: 'Schicht-Log' },
         ].map(s => (
-          <button key={s.key} onClick={() => { setActiveSection(s.key); if (s.key === 'shiftlog') loadShiftLogs() }} style={{
+          <button key={s.key} onClick={() => { setActiveSection(s.key); if (s.key === 'shiftlog') loadShiftLogs(); if (s.key === 'requests') loadContentRequests() }} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
             background: activeSection === s.key ? '#7c3aed' : 'transparent',
             color: activeSection === s.key ? '#fff' : s.key === 'inbox' && unreadCount > 0 ? '#f59e0b' : 'var(--text-secondary)',
@@ -565,6 +580,52 @@ export default function CommTab({ session }) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* CONTENT-ANFRAGEN */}
+      {activeSection === 'requests' && (
+        <Card title={`Content-Anfragen (${contentRequests.length})`}>
+          {contentRequests.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Anfragen</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {contentRequests.map(req => {
+                const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
+                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                return (
+                  <div key={req.id} style={{ padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#06b6d4' }}>{req.chatter_name}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>→</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
+                        {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>NEU</span>}
+                      </div>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                        {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>{req.request_text}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {req.status !== 'angefragt' && (
+                          <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt</button>
+                        )}
+                        {req.status !== 'erledigt' && (
+                          <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
+                        )}
+                        {req.status !== 'abgelehnt' && (
+                          <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </Card>
