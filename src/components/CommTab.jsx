@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, notifyOwner, getUpdates } from '../telegram'
 import Card from './Card'
@@ -38,10 +38,11 @@ export default function CommTab({ session }) {
   const [sending, setSending] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [activeSection, setActiveSection] = useState('models') // 'models' | 'inbox'
-  const [lastUpdateId, setLastUpdateId] = useState(0)
   const [newModelName, setNewModelName] = useState('')
   const [newModelTgId, setNewModelTgId] = useState('')
   const [showAddModel, setShowAddModel] = useState(false)
+
+  const lastUpdateIdRef = React.useRef(0)
 
   useEffect(() => {
     loadModels()
@@ -67,27 +68,31 @@ export default function CommTab({ session }) {
     setUnreadCount((data || []).filter(m => m.direction === 'in' && !m.read).length)
   }
 
-  const pollTelegram = useCallback(async () => {
+  const pollTelegram = async () => {
     try {
-      const data = await getUpdates(lastUpdateId + 1)
+      const data = await getUpdates(lastUpdateIdRef.current + 1)
       if (!data.result?.length) return
       for (const update of data.result) {
-        setLastUpdateId(update.update_id)
+        lastUpdateIdRef.current = update.update_id
         const msg = update.message
         if (!msg) continue
         const fromId = String(msg.from.id)
         const text = msg.text || ''
-        // Find model by telegram_id
+
+        // Ignore /start and empty messages
+        if (!text || text === '/start') continue
+        // Ignore own messages
+        if (fromId === '1538601588') continue
+
         const { data: modelData } = await supabase
           .from('models_contact').select('*').eq('telegram_id', fromId).single()
 
         if (modelData) {
-          // Check availability keywords
           let availability = modelData.availability
           const lower = text.toLowerCase()
           if (lower.includes('nicht verfügbar') || lower.includes('not available') || lower.includes('busy') || lower.includes('nicht da')) {
             availability = 'unavailable'
-          } else if (lower.includes('verfügbar') || lower.includes('available') || lower.includes('da') || lower.includes('ok')) {
+          } else if (lower.includes('verfügbar') || lower.includes('available') || lower.includes('ok')) {
             availability = 'available'
           }
           await supabase.from('models_contact').update({ availability, availability_note: text }).eq('id', modelData.id)
@@ -99,13 +104,9 @@ export default function CommTab({ session }) {
             status: 'received',
             read: false,
           })
-          // Notify owner
           await notifyOwner(`📨 Antwort von <b>${modelData.name}</b>:\n${text}`)
-        } else if (fromId === '1538601588') {
-          // ignore own messages
         } else {
-          // Unknown sender
-          await notifyOwner(`❓ Unbekannte Nachricht von ID ${fromId}:\n${text}`)
+          await notifyOwner(`❓ Unbekannte Nachricht von ID ${fromId} (@${msg.from.username || '?'}):\n${text}`)
         }
       }
       loadMessages()
@@ -113,7 +114,7 @@ export default function CommTab({ session }) {
     } catch (e) {
       console.error('Telegram poll error:', e)
     }
-  }, [lastUpdateId])
+  }
 
   const sendMessage = async () => {
     if (!selectedModel || !msgText.trim()) return
