@@ -53,7 +53,7 @@ export default function ScheduleTab({ session }) {
   const [editingNote, setEditingNote] = useState(null)
   const [editingShiftTime, setEditingShiftTime] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [sending, setSending] = useState(false)
+  const [hasSavedData, setHasSavedData] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -84,10 +84,12 @@ export default function ScheduleTab({ session }) {
       setSchedule(data[0].assignments || {})
       setDayNotes(data[0].day_notes || {})
       setShiftTimes(data[0].shift_times || {})
+      setHasSavedData(true)
     } else {
       setSchedule({})
       setDayNotes({})
       setShiftTimes({})
+      setHasSavedData(false)
     }
   }
 
@@ -99,6 +101,7 @@ export default function ScheduleTab({ session }) {
     } else {
       await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes })
     }
+    setHasSavedData(true)
     setSaving(false)
   }
 
@@ -222,8 +225,8 @@ export default function ScheduleTab({ session }) {
         </div>
       </div>
 
-      {/* Conflicts */}
-      {conflicts.length > 0 && (
+      {/* Conflicts – nur nach erstem Speichern */}
+      {hasSavedData && conflicts.length > 0 && (
         <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '12px 16px' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>
             ⚠ {conflicts.length} Konflikt{conflicts.length !== 1 ? 'e' : ''} gefunden
@@ -243,7 +246,7 @@ export default function ScheduleTab({ session }) {
           </div>
         </div>
       )}
-      {conflicts.length === 0 && Object.keys(schedule).length > 0 && (
+      {hasSavedData && conflicts.length === 0 && Object.keys(schedule).length > 0 && (
         <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '10px 16px', fontSize: 12, color: '#10b981', fontWeight: 600 }}>
           ✓ Keine Konflikte – Plan ist vollständig
         </div>
