@@ -49,12 +49,17 @@ export default function App() {
   }, [session])
 
   const loadUserRole = async () => {
-    const { data } = await supabase
-      .from('user_roles').select('*').eq('user_id', session.user.id).single()
-    if (data) {
-      setUserRole(data.role)
-      setUserDisplayName(data.display_name || session.user.email?.split('@')[0])
-    } else {
+    try {
+      const { data } = await supabase
+        .from('user_roles').select('*').eq('user_id', session.user.id).single()
+      if (data) {
+        setUserRole(data.role)
+        setUserDisplayName(data.display_name || session.user.email?.split('@')[0])
+      } else {
+        setUserRole('chatter')
+        setUserDisplayName(session.user.email?.split('@')[0] || 'Chatter')
+      }
+    } catch {
       setUserRole('chatter')
       setUserDisplayName(session.user.email?.split('@')[0] || 'Chatter')
     }
@@ -183,7 +188,7 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (authLoading || userRole === null) return (
+  if (authLoading) return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-sans)' }}>
       Laden...
     </div>
@@ -192,7 +197,7 @@ export default function App() {
   if (!session) return <LoginPage />
 
   // Show chatter portal for chatter role, unless admin switched to chatter view
-  const showChatterPortal = (userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter'
+  const showChatterPortal = userRole !== null && ((userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter')
   const isAdmin = userRole === 'admin'
 
   if (showChatterPortal) return (
@@ -328,7 +333,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.2.6</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.2.7</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
