@@ -208,6 +208,17 @@ export default function App() {
     setBusinessDate(todayISO())
   }
 
+  const deleteDay = async (date) => {
+    if (!window.confirm(`Tag ${date} löschen? Beide CSVs (Model + Chatter) für diesen Tag werden gelöscht.`)) return
+    await supabase.from('model_snapshots').delete().eq('business_date', date)
+    await supabase.from('chatter_snapshots').delete().eq('business_date', date)
+    setModelSnapshots(prev => prev.filter(s => s.businessDate !== date))
+    setChatterSnapshots(prev => prev.filter(s => s.businessDate !== date))
+    const remaining = allDates.filter(d => d !== date)
+    if (remaining.length > 0) setBusinessDate(remaining[0])
+    else setBusinessDate(todayISO())
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
@@ -347,6 +358,13 @@ export default function App() {
               </select>
             </div>
           )}
+          {(currentModelSnap || currentChatterSnap) && (
+            <button onClick={() => deleteDay(businessDate)} style={{
+              padding: '7px 10px', background: 'transparent', marginTop: 18,
+              border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
+              borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            }} title={`Tag ${businessDate} löschen`}>🗑 Tag löschen</button>
+          )}
         </div>
         {/* Uploads */}
         <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
@@ -365,7 +383,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.4.2</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.4.3</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
