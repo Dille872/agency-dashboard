@@ -6,6 +6,7 @@ import ChattersView from './components/ChattersView'
 import NotesTab from './components/NotesTab'
 import CommTab from './components/CommTab'
 import ScheduleTab from './components/ScheduleTab'
+import ChatterPortal from './components/ChatterPortal'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -20,6 +21,9 @@ export default function App() {
   const [dataLoading, setDataLoading] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotes, setUnreadNotes] = useState(0)
+  const [userRole, setUserRole] = useState(null)
+  const [userDisplayName, setUserDisplayName] = useState('')
+  const [viewMode, setViewMode] = useState('auto') // 'auto' | 'admin' | 'chatter'
   const lastNoteCheck = React.useRef(null)
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -37,12 +41,24 @@ export default function App() {
   // ── Load data from Supabase ───────────────────────────────────────────────
   useEffect(() => {
     if (!session) return
+    loadUserRole()
     loadAllData()
     loadBadgeCounts()
-    // Poll badge counts every 15 seconds
     const interval = setInterval(loadBadgeCounts, 15000)
     return () => clearInterval(interval)
   }, [session])
+
+  const loadUserRole = async () => {
+    const { data } = await supabase
+      .from('user_roles').select('*').eq('user_id', session.user.id).single()
+    if (data) {
+      setUserRole(data.role)
+      setUserDisplayName(data.display_name || session.user.email?.split('@')[0])
+    } else {
+      setUserRole('chatter')
+      setUserDisplayName(session.user.email?.split('@')[0] || 'Chatter')
+    }
+  }
 
   const loadBadgeCounts = async () => {
     // Unread messages
@@ -167,13 +183,25 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (authLoading) return (
+  if (authLoading || userRole === null) return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-sans)' }}>
       Laden...
     </div>
   )
 
   if (!session) return <LoginPage />
+
+  // Show chatter portal for chatter role, unless admin switched to chatter view
+  const showChatterPortal = (userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter'
+  const isAdmin = userRole === 'admin'
+
+  if (showChatterPortal) return (
+    <ChatterPortal
+      session={session}
+      displayName={userDisplayName}
+      onSwitchToAdmin={isAdmin ? () => setViewMode('admin') : null}
+    />
+  )
 
   const currentModelSnap = modelSnapshots.find(s => s.businessDate === businessDate)
   const currentChatterSnap = chatterSnapshots.find(s => s.businessDate === businessDate)
@@ -246,6 +274,11 @@ export default function App() {
               </button>
             ))}
           </div>
+          <button onClick={() => setViewMode('chatter')} style={{
+            fontSize: 11, padding: '5px 10px', borderRadius: 6,
+            background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
+            color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
+          }}>Chatter-Ansicht</button>
           <button onClick={handleLogout} style={{
             fontSize: 12, padding: '5px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',
@@ -295,7 +328,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.2.4</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.2.5</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
