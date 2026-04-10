@@ -25,59 +25,80 @@ const CHATTER_TEMPLATES = {
   zoom: 'Hi {name}, heute Zoom Call um  Uhr. Bitte pünktlich sein! – Thirteen 87',
   free: '',
 }
-
 const AVAIL_COLORS = { available: '#10b981', unavailable: '#ef4444', unknown: '#f59e0b' }
 const AVAIL_LABELS = { available: 'Verfügbar', unavailable: 'Nicht verfügbar', unknown: 'Unbekannt' }
 
+// ── Extracted outside to prevent re-mount on parent re-render ───────────────
+function AddContactForm({ type, onSave, onCancel, isOwner }) {
+  const [name, setName] = useState('')
+  const [tgId, setTgId] = useState('')
+  return (
+    <div style={{ padding: '12px', background: '#13132a', borderRadius: 8, border: '1px solid #2e2e5a' }}>
+      <div style={{ fontSize: 11, color: '#4a4a6a', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+        {type === 'model' ? 'Model' : 'Chatter'} hinzufügen
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <input
+          value={name} onChange={e => setName(e.target.value)}
+          placeholder="Name" autoFocus
+          style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+        />
+        <input
+          value={tgId} onChange={e => setTgId(e.target.value)}
+          placeholder="Telegram ID"
+          style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }}
+        />
+        <div style={{ fontSize: 10, color: '#4a4a6a' }}>Die ID wird nach dem Speichern nicht mehr angezeigt</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => onSave(name, tgId)} style={{ flex: 1, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Speichern
+          </button>
+          <button onClick={onCancel} style={{ background: 'transparent', border: '1px solid #2e2e5a', color: '#8888aa', borderRadius: 7, padding: '8px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function CommTab({ session }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
-  const userEmail = session?.user?.email || ''
-  const userName = userEmail.split('@')[0]
+  const userName = session?.user?.email?.split('@')[0] || 'Unbekannt'
 
-  // Models state
   const [models, setModels] = useState([])
   const [selectedModel, setSelectedModel] = useState(null)
   const [modelMsgType, setModelMsgType] = useState('content_request')
   const [modelMsgText, setModelMsgText] = useState('')
   const [sendingModel, setSendingModel] = useState(false)
-  const [newModelName, setNewModelName] = useState('')
-  const [newModelTgId, setNewModelTgId] = useState('')
   const [showAddModel, setShowAddModel] = useState(false)
 
-  // Chatters state
   const [chatters, setChatters] = useState([])
   const [selectedChatters, setSelectedChatters] = useState(new Set())
   const [chatterMsgType, setChatterMsgType] = useState('announcement')
   const [chatterMsgText, setChatterMsgText] = useState('')
   const [sendingChatter, setSendingChatter] = useState(false)
-  const [newChatterName, setNewChatterName] = useState('')
-  const [newChatterTgId, setNewChatterTgId] = useState('')
   const [showAddChatter, setShowAddChatter] = useState(false)
 
-  // Shared
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [activeSection, setActiveSection] = useState('models')
   const lastUpdateIdRef = React.useRef(0)
 
   useEffect(() => {
-    loadModels()
-    loadChatters()
-    loadMessages()
+    loadModels(); loadChatters(); loadMessages()
     const interval = setInterval(pollTelegram, 10000)
     return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
-    if (selectedModel) {
-      setModelMsgText(MODEL_TEMPLATES[modelMsgType]?.replace('{name}', selectedModel.name) || '')
-    }
+    if (selectedModel) setModelMsgText(MODEL_TEMPLATES[modelMsgType]?.replace('{name}', selectedModel.name) || '')
   }, [modelMsgType, selectedModel])
 
   useEffect(() => {
     const names = selectedChatters.size === 0 ? 'alle' : [...selectedChatters].join(', ')
     setChatterMsgText(CHATTER_TEMPLATES[chatterMsgType]?.replace('{name}', names) || '')
-  }, [chatterMsgType, selectedChatters])
+  }, [chatterMsgType])
 
   const loadModels = async () => {
     const { data } = await supabase.from('models_contact').select('*').order('name')
@@ -88,7 +109,7 @@ export default function CommTab({ session }) {
     setChatters(data || [])
   }
   const loadMessages = async () => {
-    const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(100)
+    const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(200)
     setMessages(data || [])
     setUnreadCount((data || []).filter(m => m.direction === 'in' && !m.read).length)
   }
@@ -104,7 +125,6 @@ export default function CommTab({ session }) {
         const fromId = String(msg.from.id)
         const text = msg.text || ''
         if (!text || text === '/start') continue
-        if (fromId === '1538601588') continue
 
         const { data: modelData } = await supabase.from('models_contact').select('*').eq('telegram_id', fromId).single()
         if (modelData) {
@@ -115,11 +135,9 @@ export default function CommTab({ session }) {
           await supabase.from('models_contact').update({ availability, availability_note: text }).eq('id', modelData.id)
           await supabase.from('messages').insert({ model_name: modelData.name, model_telegram_id: fromId, direction: 'in', contact_type: 'model', text, status: 'received', read: false })
           await notifyOwner(`📨 Antwort von Model <b>${modelData.name}</b>:\n${text}`)
-          loadMessages()
-          loadModels()
+          loadMessages(); loadModels()
           continue
         }
-
         const { data: chatterData } = await supabase.from('chatters_contact').select('*').eq('telegram_id', fromId).single()
         if (chatterData) {
           await supabase.from('messages').insert({ model_name: chatterData.name, model_telegram_id: fromId, direction: 'in', contact_type: 'chatter', text, status: 'received', read: false })
@@ -127,7 +145,6 @@ export default function CommTab({ session }) {
           loadMessages()
           continue
         }
-
         await notifyOwner(`❓ Unbekannte Nachricht von ID ${fromId} (@${msg.from.username || '?'}):\n${text}`)
       }
     } catch (e) { console.error('Telegram poll error:', e) }
@@ -138,7 +155,11 @@ export default function CommTab({ session }) {
     setSendingModel(true)
     try {
       await sendTelegramMessage(selectedModel.telegram_id, modelMsgText)
-      await supabase.from('messages').insert({ model_name: selectedModel.name, model_telegram_id: selectedModel.telegram_id, direction: 'out', contact_type: 'model', message_type: modelMsgType, text: modelMsgText, status: 'sent', sent_by: userName })
+      await supabase.from('messages').insert({
+        model_name: selectedModel.name, model_telegram_id: selectedModel.telegram_id,
+        direction: 'out', contact_type: 'model', message_type: modelMsgType,
+        text: modelMsgText, status: 'sent', sent_by: userName,
+      })
       await supabase.from('models_contact').update({ last_contacted: new Date().toISOString() }).eq('id', selectedModel.id)
       setModelMsgText(''); setSelectedModel(null)
       loadMessages(); loadModels()
@@ -151,13 +172,17 @@ export default function CommTab({ session }) {
     setSendingChatter(true)
     const targets = selectedChatters.size > 0
       ? chatters.filter(c => selectedChatters.has(c.id))
-      : chatters
+      : chatters.filter(c => c.telegram_id)
     let sent = 0
     for (const chatter of targets) {
       if (!chatter.telegram_id) continue
       const personalText = chatterMsgText.replace('{name}', chatter.name)
       await sendTelegramMessage(chatter.telegram_id, personalText)
-      await supabase.from('messages').insert({ model_name: chatter.name, model_telegram_id: chatter.telegram_id, direction: 'out', contact_type: 'chatter', message_type: chatterMsgType, text: personalText, status: 'sent', sent_by: userName })
+      await supabase.from('messages').insert({
+        model_name: chatter.name, model_telegram_id: chatter.telegram_id,
+        direction: 'out', contact_type: 'chatter', message_type: chatterMsgType,
+        text: personalText, status: 'sent', sent_by: userName,
+      })
       await supabase.from('chatters_contact').update({ last_contacted: new Date().toISOString() }).eq('id', chatter.id)
       sent++
     }
@@ -167,17 +192,15 @@ export default function CommTab({ session }) {
     alert(`✓ Nachricht an ${sent} Chatter gesendet`)
   }
 
-  const addModel = async () => {
-    if (!newModelName.trim()) return
-    await supabase.from('models_contact').insert({ name: newModelName.trim(), telegram_id: newModelTgId.trim() || null })
-    setNewModelName(''); setNewModelTgId(''); setShowAddModel(false)
-    loadModels()
+  const addModel = async (name, tgId) => {
+    if (!name.trim()) return
+    await supabase.from('models_contact').insert({ name: name.trim(), telegram_id: tgId.trim() || null })
+    setShowAddModel(false); loadModels()
   }
-  const addChatter = async () => {
-    if (!newChatterName.trim()) return
-    await supabase.from('chatters_contact').insert({ name: newChatterName.trim(), telegram_id: newChatterTgId.trim() || null })
-    setNewChatterName(''); setNewChatterTgId(''); setShowAddChatter(false)
-    loadChatters()
+  const addChatter = async (name, tgId) => {
+    if (!name.trim()) return
+    await supabase.from('chatters_contact').insert({ name: name.trim(), telegram_id: tgId.trim() || null })
+    setShowAddChatter(false); loadChatters()
   }
 
   const markAllRead = async () => {
@@ -201,74 +224,9 @@ export default function CommTab({ session }) {
     return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
   }
 
+  const inboxMessages = messages.filter(m => m.direction === 'in')
   const tdS = { padding: '10px 10px', borderBottom: '1px solid #1e1e3a', color: '#c0c0e0', fontSize: 12 }
   const thS = { padding: '8px 10px', color: '#4a4a6a', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #2e2e5a', whiteSpace: 'nowrap' }
-
-  const ContactList = ({ contacts, selected, onSelect, onAdd, showAdd, setShowAdd, newName, setNewName, newTgId, setNewTgId, onSave, type }) => (
-    <Card title={type === 'model' ? 'Models' : 'Chatters'}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-        {contacts.length === 0 && <div style={{ color: '#4a4a6a', fontSize: 13, padding: '8px 0' }}>Noch keine {type === 'model' ? 'Models' : 'Chatters'} angelegt</div>}
-        {contacts.map(contact => {
-          const isSelected = type === 'chatter' ? selected?.has(contact.id) : selected?.id === contact.id
-          return (
-            <div key={contact.id} onClick={() => onSelect(contact)} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '10px 12px', background: '#13132a', borderRadius: 8,
-              border: `1px solid ${isSelected ? '#7c3aed' : '#1e1e3a'}`,
-              cursor: 'pointer', transition: 'border-color 0.15s',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {type === 'chatter' && (
-                  <div style={{
-                    width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSelected ? '#7c3aed' : '#2e2e5a'}`,
-                    background: isSelected ? '#7c3aed' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    {isSelected && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
-                  </div>
-                )}
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #7c3aed33, #06b6d433)', border: '1px solid #2e2e5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>
-                  {contact.name[0]}
-                </div>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#f0f0ff' }}>{contact.name}</div>
-                  <div style={{ fontSize: 10, color: '#4a4a6a', marginTop: 1 }}>
-                    <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: AVAIL_COLORS[contact.availability || 'unknown'], marginRight: 4, verticalAlign: 'middle' }} />
-                    {AVAIL_LABELS[contact.availability || 'unknown']}
-                    {isOwner && contact.telegram_id ? ` · TG: ${contact.telegram_id}` : contact.telegram_id ? ' · Telegram ✓' : ' · Kein Telegram'}
-                  </div>
-                </div>
-              </div>
-              <div style={{ fontSize: 10, color: '#4a4a6a' }}>{contact.last_contacted ? formatTime(contact.last_contacted) : '—'}</div>
-            </div>
-          )
-        })}
-      </div>
-      {showAdd ? (
-        <div style={{ padding: '12px', background: '#13132a', borderRadius: 8, border: '1px solid #2e2e5a' }}>
-          <div style={{ fontSize: 11, color: '#4a4a6a', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{type === 'model' ? 'Model' : 'Chatter'} hinzufügen</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name"
-              style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
-            <input value={newTgId} onChange={e => setNewTgId(e.target.value)} placeholder="Telegram ID"
-              style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
-            <div style={{ fontSize: 10, color: '#4a4a6a' }}>Die ID wird nach dem Speichern nicht mehr angezeigt</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={onSave} style={{ flex: 1, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Speichern</button>
-              <button onClick={() => setShowAdd(false)} style={{ background: 'transparent', border: '1px solid #2e2e5a', color: '#8888aa', borderRadius: 7, padding: '8px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <button onClick={() => setShowAdd(true)} style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: '#4a4a6a', borderRadius: 8, padding: '9px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
-          onMouseEnter={e => { e.target.style.borderColor = '#7c3aed'; e.target.style.color = '#a78bfa' }}
-          onMouseLeave={e => { e.target.style.borderColor = '#2e2e5a'; e.target.style.color = '#4a4a6a' }}>
-          + {type === 'model' ? 'Model' : 'Chatter'} hinzufügen
-        </button>
-      )}
-    </Card>
-  )
-
-  const inboxMessages = messages.filter(m => m.direction === 'in')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -293,13 +251,39 @@ export default function CommTab({ session }) {
       {/* MODELS */}
       {activeSection === 'models' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
-          <ContactList
-            contacts={models} selected={selectedModel} onSelect={setSelectedModel} type="model"
-            showAdd={showAddModel} setShowAdd={setShowAddModel}
-            newName={newModelName} setNewName={setNewModelName}
-            newTgId={newModelTgId} setNewTgId={setNewModelTgId}
-            onSave={addModel}
-          />
+          <Card title="Models">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {models.length === 0 && <div style={{ color: '#4a4a6a', fontSize: 13, padding: '8px 0' }}>Noch keine Models angelegt</div>}
+              {models.map(model => (
+                <div key={model.id} onClick={() => setSelectedModel(model)} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', background: '#13132a', borderRadius: 8,
+                  border: `1px solid ${selectedModel?.id === model.id ? '#7c3aed' : '#1e1e3a'}`,
+                  cursor: 'pointer', transition: 'border-color 0.15s',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #7c3aed33, #06b6d433)', border: '1px solid #2e2e5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>
+                      {model.name[0]}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#f0f0ff' }}>{model.name}</div>
+                      <div style={{ fontSize: 10, color: '#4a4a6a', marginTop: 1 }}>
+                        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: AVAIL_COLORS[model.availability || 'unknown'], marginRight: 4, verticalAlign: 'middle' }} />
+                        {AVAIL_LABELS[model.availability || 'unknown']}
+                        {isOwner && model.telegram_id ? ` · TG: ${model.telegram_id}` : model.telegram_id ? ' · Telegram ✓' : ' · Kein Telegram'}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#4a4a6a' }}>{model.last_contacted ? formatTime(model.last_contacted) : '—'}</div>
+                </div>
+              ))}
+            </div>
+            {showAddModel
+              ? <AddContactForm type="model" onSave={addModel} onCancel={() => setShowAddModel(false)} isOwner={isOwner} />
+              : <button onClick={() => setShowAddModel(true)} style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: '#4a4a6a', borderRadius: 8, padding: '9px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>+ Model hinzufügen</button>
+            }
+          </Card>
+
           <Card title="Nachricht senden">
             {!selectedModel ? (
               <div style={{ color: '#4a4a6a', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>← Model auswählen</div>
@@ -341,13 +325,45 @@ export default function CommTab({ session }) {
       {/* CHATTERS */}
       {activeSection === 'chatters' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
-          <ContactList
-            contacts={chatters} selected={selectedChatters} onSelect={c => toggleChatter(c.id)} type="chatter"
-            showAdd={showAddChatter} setShowAdd={setShowAddChatter}
-            newName={newChatterName} setNewName={setNewChatterName}
-            newTgId={newChatterTgId} setNewTgId={setNewChatterTgId}
-            onSave={addChatter}
-          />
+          <Card title="Chatters">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {chatters.length === 0 && <div style={{ color: '#4a4a6a', fontSize: 13, padding: '8px 0' }}>Noch keine Chatters angelegt</div>}
+              {chatters.map(chatter => {
+                const isSelected = selectedChatters.has(chatter.id)
+                return (
+                  <div key={chatter.id} onClick={() => toggleChatter(chatter.id)} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 12px', background: '#13132a', borderRadius: 8,
+                    border: `1px solid ${isSelected ? '#06b6d4' : '#1e1e3a'}`,
+                    cursor: 'pointer', transition: 'border-color 0.15s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSelected ? '#06b6d4' : '#2e2e5a'}`, background: isSelected ? '#06b6d4' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {isSelected && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                      </div>
+                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #06b6d433, #7c3aed33)', border: '1px solid #2e2e5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#06b6d4', flexShrink: 0 }}>
+                        {chatter.name[0]}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#f0f0ff' }}>{chatter.name}</div>
+                        <div style={{ fontSize: 10, color: '#4a4a6a', marginTop: 1 }}>
+                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: AVAIL_COLORS[chatter.availability || 'unknown'], marginRight: 4, verticalAlign: 'middle' }} />
+                          {AVAIL_LABELS[chatter.availability || 'unknown']}
+                          {isOwner && chatter.telegram_id ? ` · TG: ${chatter.telegram_id}` : chatter.telegram_id ? ' · Telegram ✓' : ' · Kein Telegram'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 10, color: '#4a4a6a' }}>{chatter.last_contacted ? formatTime(chatter.last_contacted) : '—'}</div>
+                  </div>
+                )
+              })}
+            </div>
+            {showAddChatter
+              ? <AddContactForm type="chatter" onSave={addChatter} onCancel={() => setShowAddChatter(false)} isOwner={isOwner} />
+              : <button onClick={() => setShowAddChatter(true)} style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: '#4a4a6a', borderRadius: 8, padding: '9px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>+ Chatter hinzufügen</button>
+            }
+          </Card>
+
           <Card title="Nachricht senden">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ fontSize: 12, color: selectedChatters.size === 0 ? '#f59e0b' : '#10b981', fontWeight: 600 }}>
@@ -450,7 +466,9 @@ export default function CommTab({ session }) {
                           {msg.direction === 'out' ? '→ Gesendet' : '← Empfangen'}
                         </span>
                       </td>
-                      <td style={{ ...tdS, color: '#8888aa', fontWeight: 600 }}>{msg.sent_by || (msg.direction === 'in' ? msg.model_name : '—')}</td>
+                      <td style={{ ...tdS, fontWeight: 600, color: msg.direction === 'out' ? (msg.sent_by === 'dillemc' ? '#a78bfa' : '#06b6d4') : '#10b981' }}>
+                        {msg.direction === 'out' ? (msg.sent_by || '—') : msg.model_name}
+                      </td>
                       <td style={{ ...tdS, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.text}</td>
                     </tr>
                   ))}
