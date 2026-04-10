@@ -182,11 +182,13 @@ export default function CommTab({ session }) {
 
     // Build calendar link for zoom
     let calLink = ''
+    console.log('zoom check:', chatterMsgType, zoomDate, zoomTime)
     if (chatterMsgType === 'zoom' && zoomDate && zoomTime) {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
       const d = zoomDate.replace(/-/g, '')
       const t = zoomTime.replace(':', '') + '00'
-      calLink = `\n\n📅 Zum Kalender hinzufügen:\nhttps://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${d}T${t}/${d}T${t}&ctz=${encodeURIComponent(tz)}&details=Team+Zoom+Call+Thirteen+87`
+      calLink = `\n\n📅 Zum Kalender hinzufügen:\nhttps://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${d}T${t}/${d}T${t}&ctz=${encodeURIComponent(tz)}&details=Team+Zoom+Call`
+      console.log('calLink generated:', calLink)
     }
 
     let sent = 0
