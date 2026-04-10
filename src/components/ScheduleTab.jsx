@@ -246,15 +246,26 @@ export default function ScheduleTab({ session }) {
     let sendAt
     if (startTime) {
       const [h, m] = startTime.split(':').map(Number)
-      // Create datetime in Berlin timezone
-      const shiftDateTime = new Date(`${dayIso}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
-      // Adjust for Berlin offset (CET=+1, CEST=+2)
-      const berlinOffset = -new Date(shiftDateTime.toLocaleString('en-US', { timeZone: 'Europe/Berlin' })).getTimezoneOffset()
-      const utcShift = new Date(shiftDateTime.getTime() - berlinOffset * 60000)
-      sendAt = new Date(utcShift.getTime() - hoursBefore * 3600000).toISOString()
+      // Create a date string that represents the shift time in Berlin timezone
+      // by using the Intl API to find the correct UTC time
+      const candidate = new Date(`${dayIso}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
+      // Get what Berlin clock says for this UTC time
+      const berlinClock = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Europe/Berlin',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+      }).format(candidate)
+      // Parse back the Berlin clock time
+      const berlinDate = new Date(berlinClock.replace(' ', 'T') + '+00:00')
+      // Diff between what we want and what Berlin shows
+      const wantMs = candidate.getTime()
+      const berlinMs = berlinDate.getTime()
+      const offsetMs = wantMs - berlinMs // adjustment needed
+      const shiftUtc = new Date(candidate.getTime() + offsetMs)
+      sendAt = new Date(shiftUtc.getTime() - hoursBefore * 3600000).toISOString()
     } else {
-      // No time set – send in hoursBefore hours from now
-      sendAt = new Date(Date.now() - hoursBefore * 3600000).toISOString()
+      sendAt = new Date(Date.now() + hoursBefore * 3600000).toISOString()
     }
 
     await supabase.from('reminders').insert({
