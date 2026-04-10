@@ -73,6 +73,8 @@ function getKW(date) {
 
 export default function ChatterPortal({ session, displayName, onSwitchToAdmin }) {
   const [isOnline, setIsOnline] = useState(false)
+  const [currentLogId, setCurrentLogId] = useState(null)
+  const [checkInTime, setCheckInTime] = useState(null)
   const [messages, setMessages] = useState([])
   const [models, setModels] = useState([])
   const [noteText, setNoteText] = useState('')
@@ -90,13 +92,39 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   const kw = getKW(weekStart)
   const todayIso = isoDate(new Date())
 
-  // Send heartbeat every 30 seconds
   const sendHeartbeat = async (shiftOnline) => {
     await supabase.from('online_status').upsert({
       display_name: displayName,
       last_seen: new Date().toISOString(),
       shift_online: shiftOnline,
     }, { onConflict: 'display_name' })
+  }
+
+  const checkIn = async () => {
+    const todayShiftNames = todayShifts.map(s => s.shift).join(', ')
+    const { data } = await supabase.from('shift_logs').insert({
+      display_name: displayName,
+      checked_in_at: new Date().toISOString(),
+      shift: todayShiftNames || 'Manuell',
+    }).select().single()
+    if (data) {
+      setCurrentLogId(data.id)
+      setCheckInTime(new Date())
+    }
+    setIsOnline(true)
+    await sendHeartbeat(true)
+  }
+
+  const checkOut = async () => {
+    if (currentLogId) {
+      await supabase.from('shift_logs').update({
+        checked_out_at: new Date().toISOString(),
+      }).eq('id', currentLogId)
+    }
+    setIsOnline(false)
+    setCurrentLogId(null)
+    setCheckInTime(null)
+    await sendHeartbeat(false)
   }
 
   useEffect(() => {
@@ -303,21 +331,26 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
 
         {/* Today Banner */}
         {todayShifts.length > 0 && (
-          <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#10b981', marginBottom: 3 }}>
-                Heute: {todayShifts.map(s => s.shift).join(' + ')} · {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+              <div style={{ fontSize: 14, fontWeight: 700, color: isOnline ? '#10b981' : 'var(--text-primary)', marginBottom: 3 }}>
+                {isOnline ? '🟢 Schicht aktiv' : '⚪ Schicht noch nicht gestartet'} · {todayShifts.map(s => s.shift).join(' + ')}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                {todayShifts.flatMap(s => Object.keys(s.models)).join(', ')}
+                {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                {checkInTime && ` · Eingecheckt: ${checkInTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setIsOnline(true)}
-                style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                ✓ Einchecken
-              </button>
+              {!isOnline ? (
+                <button onClick={checkIn} style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ✓ Schicht starten
+                </button>
+              ) : (
+                <button onClick={checkOut} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ✕ Schicht beenden
+                </button>
+              )}
             </div>
           </div>
         )}

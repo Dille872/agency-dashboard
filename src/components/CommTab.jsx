@@ -262,6 +262,13 @@ export default function CommTab({ session }) {
     return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
   }
 
+  const [shiftLogs, setShiftLogs] = useState([])
+
+  const loadShiftLogs = async () => {
+    const { data } = await supabase.from('shift_logs').select('*').order('checked_in_at', { ascending: false }).limit(100)
+    setShiftLogs(data || [])
+  }
+
   const inboxMessages = messages.filter(m => m.direction === 'in')
   const tdS = { padding: '10px 10px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-secondary)', fontSize: 12 }
   const thS = { padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #2e2e5a', whiteSpace: 'nowrap' }
@@ -275,8 +282,9 @@ export default function CommTab({ session }) {
           { key: 'chatters', label: 'Chatters' },
           { key: 'inbox', label: `Posteingang${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
           { key: 'history', label: 'Verlauf' },
+          { key: 'shiftlog', label: 'Schicht-Log' },
         ].map(s => (
-          <button key={s.key} onClick={() => setActiveSection(s.key)} style={{
+          <button key={s.key} onClick={() => { setActiveSection(s.key); if (s.key === 'shiftlog') loadShiftLogs() }} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
             background: activeSection === s.key ? '#7c3aed' : 'transparent',
             color: activeSection === s.key ? '#fff' : s.key === 'inbox' && unreadCount > 0 ? '#f59e0b' : 'var(--text-secondary)',
@@ -555,6 +563,49 @@ export default function CommTab({ session }) {
                       <td style={{ ...tdS, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.text}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* SCHICHT-LOG */}
+      {activeSection === 'shiftlog' && (
+        <Card title="Schicht-Log">
+          {shiftLogs.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Schicht-Logs</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>{['Chatter', 'Schicht', 'Eingecheckt', 'Ausgecheckt', 'Dauer'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {shiftLogs.map(log => {
+                    const inTime = new Date(log.checked_in_at)
+                    const outTime = log.checked_out_at ? new Date(log.checked_out_at) : null
+                    const diffMs = outTime ? outTime - inTime : null
+                    const diffH = diffMs ? Math.floor(diffMs / 3600000) : null
+                    const diffM = diffMs ? Math.floor((diffMs % 3600000) / 60000) : null
+                    const dauer = diffH !== null ? `${diffH}h ${diffM}m` : '—'
+                    const fmt = (d) => d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    return (
+                      <tr key={log.id}>
+                        <td style={{ ...tdS, fontWeight: 700, color: 'var(--text-primary)' }}>{log.display_name}</td>
+                        <td style={tdS}>
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa', fontWeight: 600 }}>
+                            {log.shift || '—'}
+                          </span>
+                        </td>
+                        <td style={{ ...tdS, fontFamily: 'monospace', color: '#10b981' }}>{fmt(inTime)}</td>
+                        <td style={{ ...tdS, fontFamily: 'monospace', color: outTime ? '#ef4444' : 'var(--text-muted)' }}>
+                          {outTime ? fmt(outTime) : <span style={{ color: '#10b981' }}>● Aktiv</span>}
+                        </td>
+                        <td style={{ ...tdS, fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>{dauer}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
