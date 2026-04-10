@@ -21,9 +21,19 @@ const trendColors = {
   'Instabil': 'var(--orange)',
 }
 
+function isDeletedUser(name) {
+  if (!name) return true
+  // Match patterns like "D****", "K****", "e**" – letter(s) followed by stars
+  return /^.{1,3}\*+$/.test(name.trim())
+}
+
 function computeChatterTrend(snapshots, name) {
   const sorted = [...snapshots].sort((a, b) => a.businessDate.localeCompare(b.businessDate))
-  const vals = sorted.map(s => s.rows.find(r => r.name === name)?.revenue).filter(v => v !== undefined)
+  // Only use days where chatter had 50+ messages
+  const vals = sorted
+    .map(s => s.rows.find(r => r.name === name))
+    .filter(r => r && r.sentMessages >= 50)
+    .map(r => r.revenue)
   if (vals.length < 2) return 'Seitwärts'
   const pct = pctChange(vals[vals.length - 1], vals[vals.length - 2])
   if (pct > 10) return 'Steigend'
@@ -34,15 +44,17 @@ function computeChatterTrend(snapshots, name) {
 export default function ChattersView({ selectedDate, chatterSnapshots }) {
   const currentSnap = chatterSnapshots.find(s => s.businessDate === selectedDate)
   const allRows = currentSnap?.rows || []
-  // Only chatters who sent messages
-  const rows = allRows.filter(r => r.sentMessages > 0)
+  // Only chatters who sent messages and are not deleted users
+  const rows = allRows.filter(r => r.sentMessages > 0 && !isDeletedUser(r.name))
   const prevSnap = getPreviousSnapshot(chatterSnapshots, selectedDate)
-  const prevRows = prevSnap?.rows || []
+  const prevRows = prevSnap?.rows.filter(r => !isDeletedUser(r.name)) || []
   const last7 = getLast7Snapshots(chatterSnapshots, selectedDate)
 
-  // All chatter names with messages across history (sorted by today's revenue)
+  // All chatter names: active (50+ messages), not deleted, across history
   const allChatterNames = [...new Set(
-    chatterSnapshots.flatMap(s => s.rows.filter(r => r.sentMessages > 0).map(r => r.name))
+    chatterSnapshots.flatMap(s =>
+      s.rows.filter(r => r.sentMessages >= 50 && !isDeletedUser(r.name)).map(r => r.name)
+    )
   )].sort((a, b) => {
     const aRev = rows.find(r => r.name === a)?.revenue || 0
     const bRev = rows.find(r => r.name === b)?.revenue || 0
@@ -83,7 +95,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
 
       {/* ── Falling Alert ── */}
       <Card title="⚠ Trend-Alerts – Chatters">
-        <FallingAlert snapshots={chatterSnapshots} nameKey="name" label="Chatters" />
+        <FallingAlert snapshots={chatterSnapshots} nameKey="name" label="Chatters" minMessages={50} />
       </Card>
 
       {/* ── ROW 1: Trend + Ranking ── */}

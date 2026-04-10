@@ -1,21 +1,33 @@
 import React from 'react'
 import { pctChange } from '../utils'
 
+function isDeletedUser(name) {
+  if (!name) return true
+  return /^.{1,3}\*+$/.test(name.trim())
+}
+
 // Returns names that have been falling for 3+ consecutive days
-function getFallingNames(snapshots, nameKey, minDays = 3) {
+function getFallingNames(snapshots, nameKey, minDays = 3, minMessages = 0) {
   const sorted = [...snapshots].sort((a, b) => a.businessDate.localeCompare(b.businessDate))
-  const allNames = [...new Set(snapshots.flatMap(s => s.rows.map(r => r[nameKey])))]
+  const allNames = [...new Set(
+    snapshots.flatMap(s => s.rows
+      .filter(r => !isDeletedUser(r[nameKey]))
+      .map(r => r[nameKey])
+    )
+  )]
   const results = []
 
   for (const name of allNames) {
     const vals = []
     for (const snap of sorted) {
       const row = snap.rows.find(r => r[nameKey] === name)
-      if (row) vals.push({ date: snap.businessDate, revenue: row.revenue })
+      // For chatters: only count days with enough messages
+      if (row && (minMessages === 0 || (row.sentMessages || 0) >= minMessages)) {
+        vals.push({ date: snap.businessDate, revenue: row.revenue })
+      }
     }
     if (vals.length < minDays) continue
 
-    // Check last N consecutive values for falling trend
     const recent = vals.slice(-minDays)
     let falling = true
     for (let i = 1; i < recent.length; i++) {
@@ -27,11 +39,11 @@ function getFallingNames(snapshots, nameKey, minDays = 3) {
     }
   }
 
-  return results.sort((a, b) => a.totalDrop - b.totalDrop) // worst first
+  return results.sort((a, b) => a.totalDrop - b.totalDrop)
 }
 
-export default function FallingAlert({ snapshots, nameKey, label }) {
-  const falling = getFallingNames(snapshots, nameKey)
+export default function FallingAlert({ snapshots, nameKey, label, minMessages = 0 }) {
+  const falling = getFallingNames(snapshots, nameKey, 3, minMessages)
 
   if (falling.length === 0) return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 8 }}>
