@@ -41,7 +41,7 @@ function computeChatterTrend(snapshots, name) {
   return 'Seitwärts'
 }
 
-export default function ChattersView({ selectedDate, chatterSnapshots }) {
+export default function ChattersView({ selectedDate, chatterSnapshots, onDateChange }) {
   const currentSnap = chatterSnapshots.find(s => s.businessDate === selectedDate)
   const allRows = currentSnap?.rows || []
   // Only chatters who sent messages and are not deleted users
@@ -120,6 +120,19 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
 
       {/* ── Big Table ── */}
       <Card title="Chatter-Übersicht heute">
+        {/* Date switcher */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tag:</span>
+          {[...chatterSnapshots].sort((a,b) => b.businessDate.localeCompare(a.businessDate)).slice(0,10).map(s => (
+            <button key={s.businessDate} onClick={() => onDateChange(s.businessDate)} style={{
+              fontSize: 11, padding: '3px 9px', borderRadius: 5, cursor: 'pointer',
+              background: s.businessDate === selectedDate ? 'var(--accent)' : 'transparent',
+              border: `1px solid ${s.businessDate === selectedDate ? 'var(--accent)' : 'var(--border)'}`,
+              color: s.businessDate === selectedDate ? '#fff' : 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)', fontWeight: 600,
+            }}>{s.businessDate.slice(5)}</button>
+          ))}
+        </div>
         {tableRows.length === 0
           ? <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0' }}>Keine Chatter-Daten mit Nachrichten für diesen Tag</div>
           : (

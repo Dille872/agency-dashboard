@@ -83,6 +83,8 @@ export default function CommTab({ session }) {
   const [chatterMsgText, setChatterMsgText] = useState('')
   const [sendingChatter, setSendingChatter] = useState(false)
   const [showAddChatter, setShowAddChatter] = useState(false)
+  const [zoomDate, setZoomDate] = useState('')
+  const [zoomTime, setZoomTime] = useState('')
 
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -391,6 +393,31 @@ export default function CommTab({ session }) {
                   }}>{t.label}</button>
                 ))}
               </div>
+              {/* Zoom date/time picker */}
+              {chatterMsgType === 'zoom' && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <label style={{ fontSize: 10, color: '#4a4a6a' }}>Datum</label>
+                    <input type="date" value={zoomDate} onChange={e => setZoomDate(e.target.value)}
+                      style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <label style={{ fontSize: 10, color: '#4a4a6a' }}>Uhrzeit</label>
+                    <input type="time" value={zoomTime} onChange={e => setZoomTime(e.target.value)}
+                      style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                  </div>
+                  {zoomDate && zoomTime && (
+                    <a
+                      href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${zoomDate.replace(/-/g,'')}T${zoomTime.replace(':','')}00/${zoomDate.replace(/-/g,'')}T${zoomTime.replace(':','')}00&details=Team+Zoom+Call`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 18, padding: '5px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      + Kalender
+                    </a>
+                  )}
+                </div>
+              )}
               <textarea value={chatterMsgText} onChange={e => setChatterMsgText(e.target.value)} rows={4}
                 style={{ width: '100%', background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '10px 12px', borderRadius: 8, fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none' }} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

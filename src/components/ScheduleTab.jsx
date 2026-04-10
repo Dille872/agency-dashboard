@@ -228,33 +228,6 @@ export default function ScheduleTab({ session }) {
         </div>
       </div>
 
-      {/* Conflicts – nur nach erstem Speichern */}
-      {hasSavedData && conflicts.length > 0 && (
-        <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '12px 16px' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>
-            ⚠ {conflicts.length} Konflikt{conflicts.length !== 1 ? 'e' : ''} gefunden
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {conflicts.map((c, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10,
-                  background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
-                  color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444',
-                }}>
-                  {c.type === 'unbesetzt' ? 'Unbesetzt' : 'Überlastet'}
-                </span>
-                <span style={{ color: '#c0c0e0' }}>{c.msg}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {hasSavedData && conflicts.length === 0 && Object.keys(schedule).length > 0 && (
-        <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '10px 16px', fontSize: 12, color: '#10b981', fontWeight: 600 }}>
-          ✓ Keine Konflikte – Plan ist vollständig
-        </div>
-      )}
-
       {/* Schedule Table */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', minWidth: 700, width: '100%' }}>
@@ -391,19 +364,79 @@ export default function ScheduleTab({ session }) {
         </table>
       </div>
 
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#8888aa', flexWrap: 'wrap' }}>
-        {SHIFTS.map(s => (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: SHIFT_COLORS[s] }} />
-            {s}
+      {/* Conflicts below table */}
+      {hasSavedData && conflicts.length > 0 && (
+        <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '12px 16px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>
+            ⚠ {conflicts.length} Konflikt{conflicts.length !== 1 ? 'e' : ''} gefunden
           </div>
-        ))}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, background: 'rgba(239,68,68,0.3)' }} />
-          Konflikt
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {conflicts.map((c, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10,
+                  background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
+                  color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444',
+                }}>
+                  {c.type === 'unbesetzt' ? 'Unbesetzt' : 'Überlastet'}
+                </span>
+                <span style={{ color: '#c0c0e0' }}>{c.msg}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <span style={{ color: '#4a4a6a' }}>· Klick auf Zelle zum Bearbeiten · Zeiten links beim Model eintragen</span>
+      )}
+      {hasSavedData && conflicts.length === 0 && Object.keys(schedule).length > 0 && (
+        <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '10px 16px', fontSize: 12, color: '#10b981', fontWeight: 600 }}>
+          ✓ Keine Konflikte – Plan ist vollständig
+        </div>
+      )}
+
+      {/* Recurring + Legend */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#8888aa', flexWrap: 'wrap', alignItems: 'center' }}>
+          {SHIFTS.map(s => (
+            <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: SHIFT_COLORS[s] }} />
+              {s}
+            </div>
+          ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: 'rgba(239,68,68,0.3)' }} />
+            Konflikt
+          </div>
+          <span style={{ color: '#4a4a6a' }}>· Klick auf Zelle zum Bearbeiten</span>
+        </div>
+        <button
+          onClick={async () => {
+            if (!window.confirm(`Aktuelle Woche als Vorlage für nächste Woche (KW ${kw + 1}) übernehmen?`)) return
+            const nextWeekStart = new Date(weekStart)
+            nextWeekStart.setDate(nextWeekStart.getDate() + 7)
+            const nextKey = isoDate(nextWeekStart)
+            // Remap all keys to next week dates
+            const newAssignments = {}
+            for (const [key, val] of Object.entries(schedule)) {
+              const parts = key.split('__')
+              const oldDate = new Date(parts[1] + 'T00:00:00')
+              const newDate = new Date(oldDate)
+              newDate.setDate(newDate.getDate() + 7)
+              newAssignments[`${parts[0]}__${isoDate(newDate)}__${parts[2]}`] = val
+            }
+            const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
+            if (existing) {
+              await supabase.from('schedule').update({ assignments: newAssignments, shift_times: shiftTimes }).eq('week_start', nextKey)
+            } else {
+              await supabase.from('schedule').insert({ week_start: nextKey, assignments: newAssignments, shift_times: shiftTimes })
+            }
+            // Navigate to next week
+            const next = new Date(weekStart)
+            next.setDate(next.getDate() + 7)
+            setWeekStart(next)
+            alert(`✓ Plan auf KW ${kw + 1} übertragen!`)
+          }}
+          style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          ↻ Als Vorlage für nächste Woche
+        </button>
       </div>
     </div>
   )
