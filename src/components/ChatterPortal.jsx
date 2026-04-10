@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
+import { getTheme, setTheme } from '../theme'
+
+const APP_VERSION = 'v1.4.6'
 
 const ADMIN_TZ = 'Europe/Berlin'
 
@@ -72,6 +75,13 @@ function getKW(date) {
 }
 
 export default function ChatterPortal({ session, displayName, onSwitchToAdmin }) {
+  const [theme, setThemeState] = useState(() => getTheme())
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    setThemeState(next)
+  }
   const [isOnline, setIsOnline] = useState(false)
   const [currentLogId, setCurrentLogId] = useState(null)
   const [checkInTime, setCheckInTime] = useState(null)
@@ -337,8 +347,11 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
-          <button
-            onClick={() => setIsOnline(!isOnline)}
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
+          <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
+          <button onClick={() => setIsOnline(!isOnline)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '5px 12px', borderRadius: 20, cursor: 'pointer',

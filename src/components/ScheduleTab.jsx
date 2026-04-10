@@ -77,6 +77,8 @@ export default function ScheduleTab({ session }) {
   const [sending, setSending] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
+  const [reminderCell, setReminderCell] = useState(null) // cellId being reminded
+  const [sendingReminder, setSendingReminder] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -218,6 +220,33 @@ export default function ScheduleTab({ session }) {
       await supabase.from('recurring_shifts').upsert({ shift_key: key, model_id: modelId, day_of_week: dayOfWeek, shift, chatter: value.chatter, note: value.note || '' }, { onConflict: 'shift_key' })
       setRecurring(prev => ({ ...prev, [key]: { chatter: value.chatter, note: value.note || '' } }))
     }
+  }
+
+  const sendReminder = async (modelId, dayIso, shift, chatterName, hoursBeforeStr) => {
+    const hoursBefore = parseInt(hoursBeforeStr)
+    setSendingReminder(true)
+    // Find chatter telegram id
+    const chatter = chatters.find(c => c.name === chatterName)
+    if (!chatter?.telegram_id) {
+      alert(`Kein Telegram für ${chatterName}`)
+      setSendingReminder(false)
+      setReminderCell(null)
+      return
+    }
+    // Find model name
+    const model = models.find(m => String(m.id) === String(modelId))
+    const modelName = model?.name || 'Unbekannt'
+    // Get shift time
+    const berlinTime = shiftTimes[`${modelId}__${shift}`] || ''
+    const startTime = berlinTime ? berlinTime.split('-')[0].trim() : ''
+    // Format date
+    const dayDate = new Date(dayIso + 'T00:00:00')
+    const dayFormatted = dayDate.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })
+    const msg = `🔔 Schicht-Erinnerung!\n\nDu hast in ${hoursBefore} Stunde${hoursBefore !== 1 ? 'n' : ''} ${shift}schicht bei ${modelName}.\n📅 ${dayFormatted}${startTime ? `\n⏰ ${startTime} Uhr (DE-Zeit)` : ''}\n\n– Thirteen 87`
+    await sendTelegramMessage(chatter.telegram_id, msg)
+    setSendingReminder(false)
+    setReminderCell(null)
+    alert(`✓ Erinnerung an ${chatterName} gesendet!`)
   }
 
   // Conflict detection
@@ -429,6 +458,28 @@ export default function ScheduleTab({ session }) {
                               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
                               {isRecurring && <div style={{ fontSize: 8, color: '#a78bfa', marginTop: 1 }}>↻</div>}
                               {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 1 }}>{cell.note}</div>}
+                              {/* Reminder button */}
+                              {reminderCell === cellId ? (
+                                <div onClick={e => e.stopPropagation()} style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 2 }}>Erinnerung senden:</div>
+                                  {['1', '3', '12', '24'].map(h => (
+                                    <button key={h} onClick={() => sendReminder(model.id, dayIso, shift, cell.chatter, h)}
+                                      disabled={sendingReminder}
+                                      style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                                      {h}h vorher
+                                    </button>
+                                  ))}
+                                  <button onClick={e => { e.stopPropagation(); setReminderCell(null) }}
+                                    style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                    Abbrechen
+                                  </button>
+                                </div>
+                              ) : (
+                                <button onClick={e => { e.stopPropagation(); setReminderCell(reminderCell === cellId ? null : cellId) }}
+                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  🔔
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <span style={{ fontSize: 10, color: hasConflict ? 'rgba(239,68,68,0.5)' : 'var(--border-bright)' }}>
