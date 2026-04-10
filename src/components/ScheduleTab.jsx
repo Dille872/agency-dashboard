@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
-import Card from './Card'
 
 const SHIFTS = ['Früh', 'Spät', 'Nacht']
 const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
@@ -15,31 +14,16 @@ function getWeekStart(date) {
   d.setHours(0, 0, 0, 0)
   return d
 }
-
-function getWeekDays(weekStart) {
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + i)
-    return d
-  })
+function getWeekDays(ws) {
+  return Array.from({ length: 7 }, (_, i) => { const d = new Date(ws); d.setDate(d.getDate() + i); return d })
 }
-
+function isoDate(date) { return date.toISOString().slice(0, 10) }
+function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) }
+function isToday(date) { return isoDate(date) === isoDate(new Date()) }
 function getKW(date) {
   const d = new Date(date)
   const onejan = new Date(d.getFullYear(), 0, 1)
   return Math.ceil(((d - onejan) / 86400000 + onejan.getDay() + 1) / 7)
-}
-
-function formatDate(date) {
-  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
-}
-
-function isoDate(date) {
-  return date.toISOString().slice(0, 10)
-}
-
-function isToday(date) {
-  return isoDate(date) === isoDate(new Date())
 }
 
 export default function ScheduleTab({ session }) {
@@ -47,6 +31,7 @@ export default function ScheduleTab({ session }) {
   const [models, setModels] = useState([])
   const [chatters, setChatters] = useState([])
   const [schedule, setSchedule] = useState({})
+  const [recurring, setRecurring] = useState({}) // modelId__dayOfWeek__shift → {chatter, note}
   const [dayNotes, setDayNotes] = useState({})
   const [shiftTimes, setShiftTimes] = useState({})
   const [editingCell, setEditingCell] = useState(null)
@@ -60,25 +45,22 @@ export default function ScheduleTab({ session }) {
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
-  useEffect(() => {
-    loadModels()
-    loadChatters()
-  }, [])
-
-  useEffect(() => {
-    if (weekKey) loadSchedule()
-  }, [weekKey])
+  useEffect(() => { loadModels(); loadChatters(); loadRecurring() }, [])
+  useEffect(() => { if (weekKey) loadSchedule() }, [weekKey])
 
   const loadModels = async () => {
-    const { data, error } = await supabase.from('models_contact').select('*').order('name')
-    if (error) console.error('loadModels error:', error)
+    const { data } = await supabase.from('models_contact').select('*').order('name')
     setModels(data || [])
   }
-
   const loadChatters = async () => {
-    const { data, error } = await supabase.from('chatters_contact').select('*').order('name')
-    if (error) console.error('loadChatters error:', error)
+    const { data } = await supabase.from('chatters_contact').select('*').order('name')
     setChatters(data || [])
+  }
+  const loadRecurring = async () => {
+    const { data } = await supabase.from('recurring_shifts').select('*')
+    const map = {}
+    for (const r of data || []) map[r.shift_key] = { chatter: r.chatter, note: r.note }
+    setRecurring(map)
   }
 
   const loadSchedule = async () => {
@@ -89,7 +71,18 @@ export default function ScheduleTab({ session }) {
       setShiftTimes(data[0].shift_times || {})
       setHasSavedData(true)
     } else {
-      setSchedule({})
+      // Auto-fill from recurring shifts
+      const autoSchedule = {}
+      for (const day of weekDays) {
+        const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1 // 0=Mo..6=So
+        for (const [key, val] of Object.entries(recurring)) {
+          const parts = key.split('__')
+          if (parseInt(parts[1]) === dayOfWeek) {
+            autoSchedule[`${parts[0]}__${isoDate(day)}__${parts[2]}`] = { ...val, isRecurring: true }
+          }
+        }
+      }
+      setSchedule(autoSchedule)
       setDayNotes({})
       setShiftTimes({})
       setHasSavedData(false)
@@ -109,6 +102,7 @@ export default function ScheduleTab({ session }) {
   }
 
   const getCellKey = (modelId, dayIso, shift) => `${modelId}__${dayIso}__${shift}`
+  const getRecurringKey = (modelId, dayOfWeek, shift) => `${modelId}__${dayOfWeek}__${shift}`
 
   const setCell = (modelId, dayIso, shift, value) => {
     const key = getCellKey(modelId, dayIso, shift)
@@ -119,52 +113,45 @@ export default function ScheduleTab({ session }) {
     return schedule[getCellKey(modelId, dayIso, shift)] || { chatter: '', note: '' }
   }
 
-  // ── Conflict detection ─────────────────────────────────────────────────────
-  const conflicts = []
+  const saveRecurring = async (modelId, dayOfWeek, shift, value) => {
+    const key = getRecurringKey(modelId, dayOfWeek, shift)
+    if (!value.chatter) {
+      // Delete recurring
+      await supabase.from('recurring_shifts').delete().eq('shift_key', key)
+      setRecurring(prev => { const n = { ...prev }; delete n[key]; return n })
+    } else {
+      await supabase.from('recurring_shifts').upsert({ shift_key: key, model_id: modelId, day_of_week: dayOfWeek, shift, chatter: value.chatter, note: value.note || '' }, { onConflict: 'shift_key' })
+      setRecurring(prev => ({ ...prev, [key]: { chatter: value.chatter, note: value.note || '' } }))
+    }
+  }
 
-  // 1. Unbesetzt
+  // Conflict detection
+  const conflicts = []
   for (const model of models) {
     for (const day of weekDays) {
       const dayIso = isoDate(day)
       for (const shift of SHIFTS) {
         const cell = getCell(model.id, dayIso, shift)
-        if (!cell.chatter) {
-          conflicts.push({
-            type: 'unbesetzt',
-            msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift} nicht besetzt`,
-            dayIso, shift, modelId: model.id,
-          })
-        }
+        if (!cell.chatter) conflicts.push({ type: 'unbesetzt', msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift, modelId: model.id })
       }
     }
   }
-
-  // 2. Chatter überlastet (4+ Models gleichzeitig)
   for (const day of weekDays) {
     const dayIso = isoDate(day)
     for (const shift of SHIFTS) {
       const chatterCount = {}
       for (const model of models) {
         const cell = getCell(model.id, dayIso, shift)
-        if (cell.chatter) {
-          chatterCount[cell.chatter] = (chatterCount[cell.chatter] || 0) + 1
-        }
+        if (cell.chatter) chatterCount[cell.chatter] = (chatterCount[cell.chatter] || 0) + 1
       }
-      for (const [chatterName, count] of Object.entries(chatterCount)) {
-        if (count >= 4) {
-          conflicts.push({
-            type: 'ueberlastet',
-            msg: `${chatterName} hat ${count} Models am ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`,
-            dayIso, shift,
-          })
-        }
+      for (const [name, count] of Object.entries(chatterCount)) {
+        if (count >= 4) conflicts.push({ type: 'ueberlastet', msg: `${name} hat ${count} Models am ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift })
       }
     }
   }
 
   const sendPlanToAll = async () => {
     setSending(true)
-    const chatterSchedules = {}
     for (const chatter of chatters) {
       if (!chatter.telegram_id) continue
       const lines = [`📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`]
@@ -187,9 +174,7 @@ export default function ScheduleTab({ session }) {
           lines.push('')
         }
       }
-      if (lines.length > 1) {
-        await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
-      }
+      if (lines.length > 1) await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
     }
     setSending(false)
     alert('✓ Dienstplan versendet!')
@@ -198,13 +183,9 @@ export default function ScheduleTab({ session }) {
   const prevWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d) }
   const nextWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d) }
 
-  const cellStyle = (dayIso, isHeader) => ({
-    border: `1px solid ${isHeader && weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.3)' : '#1e1e3a'}`,
-    background: weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.06)' : '#0e0e1c',
-    padding: '6px 8px',
-    textAlign: 'center',
-    minWidth: 90,
-    fontSize: 12,
+  const cellStyleBase = (dayIso) => ({
+    border: `1px solid ${weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.2)' : '#1e1e3a'}`,
+    background: weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.04)' : 'transparent',
   })
 
   return (
@@ -233,7 +214,7 @@ export default function ScheduleTab({ session }) {
         <table style={{ borderCollapse: 'collapse', minWidth: 700, width: '100%' }}>
           <thead>
             <tr>
-              <th style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', padding: '8px 12px', textAlign: 'left', fontSize: 11, color: '#4a4a6a', fontWeight: 700, minWidth: 120 }}>Model / Schicht</th>
+              <th style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', padding: '8px 12px', textAlign: 'left', fontSize: 11, color: '#4a4a6a', fontWeight: 700, minWidth: 130 }}>Model / Schicht</th>
               {weekDays.map((day, di) => (
                 <th key={di} style={{
                   background: isToday(day) ? 'rgba(124,58,237,0.15)' : '#0e0e1c',
@@ -245,27 +226,22 @@ export default function ScheduleTab({ session }) {
                 </th>
               ))}
             </tr>
-            {/* Day notes row */}
             <tr>
               <td style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', padding: '4px 12px', fontSize: 10, color: '#4a4a6a' }}>Tages-Notiz</td>
               {weekDays.map((day, di) => {
                 const dayIso = isoDate(day)
                 return (
-                  <td key={di} style={{ ...cellStyle(dayIso), padding: '4px 6px', cursor: 'text' }}
+                  <td key={di} style={{ ...cellStyleBase(dayIso), padding: '4px 6px', cursor: 'text', border: '1px solid #1e1e3a' }}
                     onClick={() => setEditingNote(editingNote === dayIso ? null : dayIso)}>
                     {editingNote === dayIso ? (
-                      <input
-                        autoFocus
-                        value={dayNotes[dayIso] || ''}
+                      <input autoFocus value={dayNotes[dayIso] || ''}
                         onChange={e => setDayNotes(prev => ({ ...prev, [dayIso]: e.target.value }))}
                         onBlur={() => setEditingNote(null)}
                         onKeyDown={e => e.key === 'Enter' && setEditingNote(null)}
                         style={{ width: '100%', background: '#0b0b1a', border: '1px solid #7c3aed', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none' }}
                       />
                     ) : (
-                      <span style={{ color: dayNotes[dayIso] ? '#f59e0b' : '#2e2e5a', fontSize: 10 }}>
-                        {dayNotes[dayIso] || '+ Notiz'}
-                      </span>
+                      <span style={{ color: dayNotes[dayIso] ? '#f59e0b' : '#2e2e5a', fontSize: 10 }}>{dayNotes[dayIso] || '+ Notiz'}</span>
                     )}
                   </td>
                 )
@@ -278,15 +254,13 @@ export default function ScheduleTab({ session }) {
                 {SHIFTS.map((shift, si) => (
                   <tr key={shift}>
                     {si === 0 && (
-                      <td rowSpan={3} style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', borderLeft: `3px solid #7c3aed`, padding: '8px 12px', verticalAlign: 'middle' }}>
-                        <div style={{ fontWeight: 700, color: '#f0f0ff', fontSize: 13, marginBottom: 4 }}>{model.name}</div>
+                      <td rowSpan={3} style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', borderLeft: '3px solid #7c3aed', padding: '8px 10px', verticalAlign: 'middle' }}>
+                        <div style={{ fontWeight: 700, color: '#f0f0ff', fontSize: 12, marginBottom: 5 }}>{model.name}</div>
                         {SHIFTS.map(s => (
                           <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                             <span style={{ width: 6, height: 6, borderRadius: 2, background: SHIFT_COLORS[s], flexShrink: 0, display: 'inline-block' }} />
                             {editingShiftTime === `${model.id}__${s}` ? (
-                              <input
-                                autoFocus
-                                value={shiftTimes[`${model.id}__${s}`] || ''}
+                              <input autoFocus value={shiftTimes[`${model.id}__${s}`] || ''}
                                 onChange={e => setShiftTimes(prev => ({ ...prev, [`${model.id}__${s}`]: e.target.value }))}
                                 onBlur={() => setEditingShiftTime(null)}
                                 onKeyDown={e => e.key === 'Enter' && setEditingShiftTime(null)}
@@ -294,10 +268,8 @@ export default function ScheduleTab({ session }) {
                                 style={{ width: 80, background: '#0b0b1a', border: '1px solid #7c3aed', color: '#f0f0ff', padding: '1px 4px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
                               />
                             ) : (
-                              <span
-                                onClick={() => setEditingShiftTime(`${model.id}__${s}`)}
-                                style={{ fontSize: 10, color: shiftTimes[`${model.id}__${s}`] ? '#8888aa' : '#2e2e5a', cursor: 'text', fontFamily: 'monospace' }}
-                              >
+                              <span onClick={() => setEditingShiftTime(`${model.id}__${s}`)}
+                                style={{ fontSize: 9, color: shiftTimes[`${model.id}__${s}`] ? '#8888aa' : '#2e2e5a', cursor: 'text', fontFamily: 'monospace' }}>
                                 {shiftTimes[`${model.id}__${s}`] || `${s} +Zeit`}
                               </span>
                             )}
@@ -311,6 +283,9 @@ export default function ScheduleTab({ session }) {
                       const cellId = getCellKey(model.id, dayIso, shift)
                       const isEditing = editingCell === cellId
                       const hasConflict = conflicts.some(c => c.type === 'unbesetzt' && c.modelId === model.id && c.dayIso === dayIso && c.shift === shift)
+                      const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1
+                      const recurringKey = getRecurringKey(model.id, dayOfWeek, shift)
+                      const isRecurring = !!recurring[recurringKey]
 
                       return (
                         <td key={di} onClick={() => setEditingCell(isEditing ? null : cellId)} style={{
@@ -321,28 +296,41 @@ export default function ScheduleTab({ session }) {
                           minWidth: 90, verticalAlign: 'middle',
                         }}>
                           {isEditing ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} onClick={e => e.stopPropagation()}>
-                              <select
-                                autoFocus
-                                value={cell.chatter || ''}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onClick={e => e.stopPropagation()}>
+                              <select autoFocus value={cell.chatter || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, chatter: e.target.value })}
-                                style={{ background: '#0b0b1a', border: '1px solid #7c3aed', color: '#f0f0ff', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}
-                              >
+                                style={{ background: '#0b0b1a', border: '1px solid #7c3aed', color: '#f0f0ff', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
                                 <option value="">— leer —</option>
                                 {chatters.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                               </select>
-                              <input
-                                value={cell.note || ''}
+                              <input value={cell.note || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
                                 placeholder="Notiz (optional)"
                                 onKeyDown={e => e.key === 'Enter' && setEditingCell(null)}
                                 style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}
                               />
-                              <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 3, padding: '2px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>✓</button>
+                              {/* Recurring toggle */}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10 }} onClick={e => e.stopPropagation()}>
+                                <input type="checkbox" checked={isRecurring}
+                                  onChange={async e => {
+                                    if (e.target.checked && cell.chatter) {
+                                      await saveRecurring(model.id, dayOfWeek, shift, cell)
+                                    } else {
+                                      await saveRecurring(model.id, dayOfWeek, shift, { chatter: '' })
+                                    }
+                                  }}
+                                  style={{ accentColor: '#7c3aed' }}
+                                />
+                                <span style={{ color: isRecurring ? '#a78bfa' : '#4a4a6a' }}>
+                                  {isRecurring ? '↻ Wöchentlich (aktiv)' : '↻ Wöchentlich wiederholen'}
+                                </span>
+                              </label>
+                              <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 3, padding: '3px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Fertig</button>
                             </div>
                           ) : cell.chatter ? (
                             <div>
                               <div style={{ fontSize: 11, fontWeight: 700, color: '#f0f0ff' }}>{cell.chatter}</div>
+                              {isRecurring && <div style={{ fontSize: 8, color: '#a78bfa', marginTop: 1 }}>↻</div>}
                               {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 1 }}>{cell.note}</div>}
                             </div>
                           ) : (
@@ -364,19 +352,14 @@ export default function ScheduleTab({ session }) {
         </table>
       </div>
 
-      {/* Conflicts below table */}
+      {/* Conflicts below */}
       {hasSavedData && conflicts.length > 0 && (
         <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '12px 16px' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>
-            ⚠ {conflicts.length} Konflikt{conflicts.length !== 1 ? 'e' : ''} gefunden
-          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>⚠ {conflicts.length} Konflikt{conflicts.length !== 1 ? 'e' : ''} gefunden</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {conflicts.map((c, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10,
-                  background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
-                  color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444',
-                }}>
+                <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10, background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444' }}>
                   {c.type === 'unbesetzt' ? 'Unbesetzt' : 'Überlastet'}
                 </span>
                 <span style={{ color: '#c0c0e0' }}>{c.msg}</span>
@@ -391,50 +374,35 @@ export default function ScheduleTab({ session }) {
         </div>
       )}
 
-      {/* Recurring + Legend */}
+      {/* Legend + Recurring + Next week */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#8888aa', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#8888aa', flexWrap: 'wrap', alignItems: 'center' }}>
           {SHIFTS.map(s => (
             <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: SHIFT_COLORS[s] }} />
-              {s}
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: SHIFT_COLORS[s] }} />{s}
             </div>
           ))}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: 'rgba(239,68,68,0.3)' }} />
-            Konflikt
+            <span style={{ color: '#a78bfa', fontSize: 12 }}>↻</span> Wiederkehrend
           </div>
           <span style={{ color: '#4a4a6a' }}>· Klick auf Zelle zum Bearbeiten</span>
         </div>
-        <button
-          onClick={async () => {
-            if (!window.confirm(`Aktuelle Woche als Vorlage für nächste Woche (KW ${kw + 1}) übernehmen?`)) return
-            const nextWeekStart = new Date(weekStart)
-            nextWeekStart.setDate(nextWeekStart.getDate() + 7)
-            const nextKey = isoDate(nextWeekStart)
-            // Remap all keys to next week dates
-            const newAssignments = {}
-            for (const [key, val] of Object.entries(schedule)) {
-              const parts = key.split('__')
-              const oldDate = new Date(parts[1] + 'T00:00:00')
-              const newDate = new Date(oldDate)
-              newDate.setDate(newDate.getDate() + 7)
-              newAssignments[`${parts[0]}__${isoDate(newDate)}__${parts[2]}`] = val
-            }
-            const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
-            if (existing) {
-              await supabase.from('schedule').update({ assignments: newAssignments, shift_times: shiftTimes }).eq('week_start', nextKey)
-            } else {
-              await supabase.from('schedule').insert({ week_start: nextKey, assignments: newAssignments, shift_times: shiftTimes })
-            }
-            // Navigate to next week
-            const next = new Date(weekStart)
-            next.setDate(next.getDate() + 7)
-            setWeekStart(next)
-            alert(`✓ Plan auf KW ${kw + 1} übertragen!`)
-          }}
-          style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-        >
+        <button onClick={async () => {
+          if (!window.confirm(`Plan auf KW ${kw + 1} übertragen?`)) return
+          const next = new Date(weekStart); next.setDate(next.getDate() + 7)
+          const nextKey = isoDate(next)
+          const newA = {}
+          for (const [key, val] of Object.entries(schedule)) {
+            const parts = key.split('__')
+            const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
+            newA[`${parts[0]}__${isoDate(d)}__${parts[2]}`] = val
+          }
+          const { data: ex } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
+          if (ex) await supabase.from('schedule').update({ assignments: newA, shift_times: shiftTimes }).eq('week_start', nextKey)
+          else await supabase.from('schedule').insert({ week_start: nextKey, assignments: newA, shift_times: shiftTimes })
+          setWeekStart(next)
+          alert(`✓ Plan auf KW ${kw + 1} übertragen!`)
+        }} style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
           ↻ Als Vorlage für nächste Woche
         </button>
       </div>
