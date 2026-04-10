@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from './supabase'
+import { getTheme, setTheme, initTheme } from './theme'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
@@ -23,8 +24,15 @@ export default function App() {
   const [unreadNotes, setUnreadNotes] = useState(0)
   const [userRole, setUserRole] = useState(null)
   const [userDisplayName, setUserDisplayName] = useState('')
-  const [viewMode, setViewMode] = useState('auto') // 'auto' | 'admin' | 'chatter'
+  const [viewMode, setViewMode] = useState('auto')
+  const [theme, setThemeState] = useState(() => initTheme())
   const lastNoteCheck = React.useRef(null)
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    setThemeState(next)
+  }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -279,6 +287,13 @@ export default function App() {
               </button>
             ))}
           </div>
+          <button onClick={toggleTheme} style={{
+            fontSize: 16, padding: '5px 10px', borderRadius: 6,
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
           <button onClick={() => setViewMode('chatter')} style={{
             fontSize: 11, padding: '5px 10px', borderRadius: 6,
             background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
@@ -333,7 +348,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.3.4</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.3.5</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',

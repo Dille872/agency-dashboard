@@ -54,15 +54,15 @@ export default function NotesTab({ session }) {
             placeholder="Notiz schreiben... (Cmd+Enter zum Speichern)"
             rows={3}
             style={{
-              width: '100%', background: '#0b0b1a', border: '1px solid #2e2e5a',
-              color: '#f0f0ff', padding: '10px 12px', borderRadius: 8,
+              width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a',
+              color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8,
               fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none',
             }}
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={addNote} disabled={loading || !text.trim()} style={{
-              background: text.trim() ? 'linear-gradient(135deg, #7c3aed, #4f46e5)' : '#1e1e3a',
-              color: text.trim() ? '#fff' : '#4a4a6a',
+              background: text.trim() ? 'linear-gradient(135deg, #7c3aed, #4f46e5)' : 'var(--border)',
+              color: text.trim() ? '#fff' : 'var(--text-muted)',
               border: 'none', borderRadius: 8, padding: '9px 20px',
               fontSize: 13, fontWeight: 700, cursor: text.trim() ? 'pointer' : 'not-allowed',
               fontFamily: 'inherit', transition: 'all 0.15s',
@@ -82,24 +82,24 @@ export default function NotesTab({ session }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {notes.map(note => (
               <div key={note.id} style={{
-                padding: '12px 14px', background: '#13132a',
+                padding: '12px 14px', background: 'var(--bg-card2)',
                 borderRadius: 8, borderLeft: '3px solid #7c3aed',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 10, marginBottom: 5, alignItems: 'center' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>{note.author}</span>
-                    <span style={{ fontSize: 10, color: '#4a4a6a', fontFamily: 'monospace' }}>{formatTime(note.created_at)}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(note.created_at)}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: '#c0c0e0', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{note.text}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{note.text}</div>
                 </div>
                 <button onClick={() => deleteNote(note.id)} style={{
-                  background: 'transparent', border: 'none', color: '#4a4a6a',
+                  background: 'transparent', border: 'none', color: 'var(--text-muted)',
                   cursor: 'pointer', fontSize: 14, padding: '0 4px', flexShrink: 0,
                   transition: 'color 0.15s',
                 }}
                   onMouseEnter={e => e.target.style.color = '#ef4444'}
-                  onMouseLeave={e => e.target.style.color = '#4a4a6a'}
+                  onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
                 >✕</button>
               </div>
             ))}

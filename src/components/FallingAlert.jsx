@@ -58,7 +58,7 @@ function AlertDetail({ item }) {
     }}>
       {/* Day-by-day revenue history */}
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 10, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 6 }}>Revenue-Verlauf</div>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 6 }}>Revenue-Verlauf</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {item.history.map((d, i) => {
             const delta = i > 0 ? pctChange(d.revenue, item.history[i - 1].revenue) : null
@@ -67,8 +67,8 @@ function AlertDetail({ item }) {
                 background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
                 borderRadius: 6, padding: '6px 10px', minWidth: 80,
               }}>
-                <div style={{ fontSize: 10, color: '#4a4a6a', fontFamily: 'monospace' }}>{formatShortDate(d.date)}</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f0f0ff', fontSize: 13 }}>{formatMoney(d.revenue)}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatShortDate(d.date)}</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)', fontSize: 13 }}>{formatMoney(d.revenue)}</div>
                 {delta !== null && (
                   <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 600 }}>{delta.toFixed(1)}%</div>
                 )}
@@ -92,9 +92,9 @@ function AlertDetail({ item }) {
               { label: 'Nachrichten', val: r.sentMessages || 0 },
               { label: 'Ø Antwort', val: r.avgResponseSeconds ? `${Math.floor(r.avgResponseSeconds/60)}:${String(Math.round(r.avgResponseSeconds%60)).padStart(2,'0')}` : '—' },
             ].map(({ label, val }) => (
-              <div key={label} style={{ background: '#13132a', borderRadius: 6, padding: '6px 10px', border: '1px solid #1e1e3a' }}>
-                <div style={{ fontSize: 10, color: '#4a4a6a' }}>{label}</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f0f0ff', fontSize: 12 }}>{val}</div>
+              <div key={label} style={{ background: 'var(--bg-card2)', borderRadius: 6, padding: '6px 10px', border: '1px solid #1e1e3a' }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{label}</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)', fontSize: 12 }}>{val}</div>
               </div>
             ))}
           </div>
@@ -114,9 +114,9 @@ function AlertDetail({ item }) {
               { label: 'Avg Chat Value', val: formatMoney(r.avgChatValue || 0) },
               { label: 'Subs', val: r.subs || 0 },
             ].map(({ label, val }) => (
-              <div key={label} style={{ background: '#13132a', borderRadius: 6, padding: '6px 10px', border: '1px solid #1e1e3a' }}>
-                <div style={{ fontSize: 10, color: '#4a4a6a' }}>{label}</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f0f0ff', fontSize: 12 }}>{val}</div>
+              <div key={label} style={{ background: 'var(--bg-card2)', borderRadius: 6, padding: '6px 10px', border: '1px solid #1e1e3a' }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{label}</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)', fontSize: 12 }}>{val}</div>
               </div>
             ))}
           </div>
@@ -168,8 +168,8 @@ export default function FallingAlert({ snapshots, nameKey, label, minMessages = 
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                 <div>
-                  <div style={{ fontWeight: 600, color: '#f0f0ff', fontSize: 13 }}>{item.name}</div>
-                  <div style={{ fontSize: 11, color: '#8888aa', marginTop: 1 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 13 }}>{item.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1 }}>
                     {item.days} Tage in Folge fallend · {formatMoney(item.firstRevenue)} → {formatMoney(item.recentRevenue)}
                   </div>
                 </div>
@@ -179,9 +179,9 @@ export default function FallingAlert({ snapshots, nameKey, label, minMessages = 
                   <div style={{ fontFamily: 'monospace', fontWeight: 700, color: '#ef4444', fontSize: 14 }}>
                     {item.totalDrop.toFixed(1)}%
                   </div>
-                  <div style={{ fontSize: 10, color: '#8888aa' }}>Gesamtrückgang</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>Gesamtrückgang</div>
                 </div>
-                <span style={{ color: '#4a4a6a', fontSize: 14, transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 14, transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
               </div>
             </div>
             {isOpen && <AlertDetail item={item} />}

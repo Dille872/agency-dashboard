@@ -184,7 +184,7 @@ export default function ScheduleTab({ session }) {
   const nextWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d) }
 
   const cellStyleBase = (dayIso) => ({
-    border: `1px solid ${weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.2)' : '#1e1e3a'}`,
+    border: `1px solid ${weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.2)' : 'var(--border)'}`,
     background: weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.04)' : 'transparent',
   })
 
@@ -193,11 +193,11 @@ export default function ScheduleTab({ session }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={prevWeek} style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', color: '#8888aa', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14 }}>‹</button>
-          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: '#f0f0ff' }}>
+          <button onClick={prevWeek} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', color: 'var(--text-secondary)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14 }}>‹</button>
+          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
             KW {kw} · {formatDate(weekDays[0])} – {formatDate(weekDays[6])} {weekDays[0].getFullYear()}
           </span>
-          <button onClick={nextWeek} style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', color: '#8888aa', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14 }}>›</button>
+          <button onClick={nextWeek} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', color: 'var(--text-secondary)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14 }}>›</button>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={sendPlanToAll} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -214,20 +214,20 @@ export default function ScheduleTab({ session }) {
         <table style={{ borderCollapse: 'collapse', minWidth: 700, width: '100%' }}>
           <thead>
             <tr>
-              <th style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', padding: '8px 12px', textAlign: 'left', fontSize: 11, color: '#4a4a6a', fontWeight: 700, minWidth: 130 }}>Model / Schicht</th>
+              <th style={{ background: 'var(--bg-input)', border: '1px solid #1e1e3a', padding: '8px 12px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, minWidth: 130 }}>Model / Schicht</th>
               {weekDays.map((day, di) => (
                 <th key={di} style={{
-                  background: isToday(day) ? 'rgba(124,58,237,0.15)' : '#0e0e1c',
-                  border: `1px solid ${isToday(day) ? 'rgba(124,58,237,0.3)' : '#1e1e3a'}`,
+                  background: isToday(day) ? 'rgba(124,58,237,0.15)' : 'var(--bg-card)',
+                  border: `1px solid ${isToday(day) ? 'rgba(124,58,237,0.3)' : 'var(--border)'}`,
                   padding: '6px 8px', textAlign: 'center', fontSize: 11,
-                  color: isToday(day) ? '#a78bfa' : '#4a4a6a', fontWeight: 700, whiteSpace: 'nowrap', minWidth: 90,
+                  color: isToday(day) ? '#a78bfa' : 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap', minWidth: 90,
                 }}>
                   {DAYS[di]} {formatDate(day)}{isToday(day) ? ' ●' : ''}
                 </th>
               ))}
             </tr>
             <tr>
-              <td style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', padding: '4px 12px', fontSize: 10, color: '#4a4a6a' }}>Tages-Notiz</td>
+              <td style={{ background: 'var(--bg-input)', border: '1px solid #1e1e3a', padding: '4px 12px', fontSize: 10, color: 'var(--text-muted)' }}>Tages-Notiz</td>
               {weekDays.map((day, di) => {
                 const dayIso = isoDate(day)
                 return (
@@ -238,10 +238,10 @@ export default function ScheduleTab({ session }) {
                         onChange={e => setDayNotes(prev => ({ ...prev, [dayIso]: e.target.value }))}
                         onBlur={() => setEditingNote(null)}
                         onKeyDown={e => e.key === 'Enter' && setEditingNote(null)}
-                        style={{ width: '100%', background: '#0b0b1a', border: '1px solid #7c3aed', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none' }}
+                        style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none' }}
                       />
                     ) : (
-                      <span style={{ color: dayNotes[dayIso] ? '#f59e0b' : '#2e2e5a', fontSize: 10 }}>{dayNotes[dayIso] || '+ Notiz'}</span>
+                      <span style={{ color: dayNotes[dayIso] ? '#f59e0b' : 'var(--border-bright)', fontSize: 10 }}>{dayNotes[dayIso] || '+ Notiz'}</span>
                     )}
                   </td>
                 )
@@ -254,8 +254,8 @@ export default function ScheduleTab({ session }) {
                 {SHIFTS.map((shift, si) => (
                   <tr key={shift}>
                     {si === 0 && (
-                      <td rowSpan={3} style={{ background: '#0b0b1a', border: '1px solid #1e1e3a', borderLeft: '3px solid #7c3aed', padding: '8px 10px', verticalAlign: 'middle' }}>
-                        <div style={{ fontWeight: 700, color: '#f0f0ff', fontSize: 12, marginBottom: 5 }}>{model.name}</div>
+                      <td rowSpan={3} style={{ background: 'var(--bg-input)', border: '1px solid #1e1e3a', borderLeft: '3px solid #7c3aed', padding: '8px 10px', verticalAlign: 'middle' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 12, marginBottom: 5 }}>{model.name}</div>
                         {SHIFTS.map(s => (
                           <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                             <span style={{ width: 6, height: 6, borderRadius: 2, background: SHIFT_COLORS[s], flexShrink: 0, display: 'inline-block' }} />
@@ -265,11 +265,11 @@ export default function ScheduleTab({ session }) {
                                 onBlur={() => setEditingShiftTime(null)}
                                 onKeyDown={e => e.key === 'Enter' && setEditingShiftTime(null)}
                                 placeholder={`${s} Zeiten`}
-                                style={{ width: 80, background: '#0b0b1a', border: '1px solid #7c3aed', color: '#f0f0ff', padding: '1px 4px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
+                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 4px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
                               />
                             ) : (
                               <span onClick={() => setEditingShiftTime(`${model.id}__${s}`)}
-                                style={{ fontSize: 9, color: shiftTimes[`${model.id}__${s}`] ? '#8888aa' : '#2e2e5a', cursor: 'text', fontFamily: 'monospace' }}>
+                                style={{ fontSize: 9, color: shiftTimes[`${model.id}__${s}`] ? 'var(--text-secondary)' : 'var(--border-bright)', cursor: 'text', fontFamily: 'monospace' }}>
                                 {shiftTimes[`${model.id}__${s}`] || `${s} +Zeit`}
                               </span>
                             )}
@@ -289,7 +289,7 @@ export default function ScheduleTab({ session }) {
 
                       return (
                         <td key={di} onClick={() => setEditingCell(isEditing ? null : cellId)} style={{
-                          border: `1px solid ${hasConflict ? 'rgba(239,68,68,0.3)' : isToday(day) ? 'rgba(124,58,237,0.2)' : '#1e1e3a'}`,
+                          border: `1px solid ${hasConflict ? 'rgba(239,68,68,0.3)' : isToday(day) ? 'rgba(124,58,237,0.2)' : 'var(--border)'}`,
                           background: hasConflict ? 'rgba(239,68,68,0.05)' : isToday(day) ? 'rgba(124,58,237,0.04)' : 'transparent',
                           padding: '5px 6px', textAlign: 'center', cursor: 'pointer',
                           borderLeft: `2px solid ${SHIFT_COLORS[shift]}`,
@@ -299,7 +299,7 @@ export default function ScheduleTab({ session }) {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onClick={e => e.stopPropagation()}>
                               <select autoFocus value={cell.chatter || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, chatter: e.target.value })}
-                                style={{ background: '#0b0b1a', border: '1px solid #7c3aed', color: '#f0f0ff', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
+                                style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
                                 <option value="">— leer —</option>
                                 {chatters.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                               </select>
@@ -307,7 +307,7 @@ export default function ScheduleTab({ session }) {
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
                                 placeholder="Notiz (optional)"
                                 onKeyDown={e => e.key === 'Enter' && setEditingCell(null)}
-                                style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}
+                                style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}
                               />
                               {/* Recurring toggle */}
                               <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10 }} onClick={e => e.stopPropagation()}>
@@ -321,7 +321,7 @@ export default function ScheduleTab({ session }) {
                                   }}
                                   style={{ accentColor: '#7c3aed' }}
                                 />
-                                <span style={{ color: isRecurring ? '#a78bfa' : '#4a4a6a' }}>
+                                <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>
                                   {isRecurring ? '↻ Wöchentlich (aktiv)' : '↻ Wöchentlich wiederholen'}
                                 </span>
                               </label>
@@ -329,12 +329,12 @@ export default function ScheduleTab({ session }) {
                             </div>
                           ) : cell.chatter ? (
                             <div>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: '#f0f0ff' }}>{cell.chatter}</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
                               {isRecurring && <div style={{ fontSize: 8, color: '#a78bfa', marginTop: 1 }}>↻</div>}
                               {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 1 }}>{cell.note}</div>}
                             </div>
                           ) : (
-                            <span style={{ fontSize: 10, color: hasConflict ? 'rgba(239,68,68,0.5)' : '#2e2e5a' }}>
+                            <span style={{ fontSize: 10, color: hasConflict ? 'rgba(239,68,68,0.5)' : 'var(--border-bright)' }}>
                               {hasConflict ? '⚠ leer' : '+ eintragen'}
                             </span>
                           )}
@@ -344,7 +344,7 @@ export default function ScheduleTab({ session }) {
                   </tr>
                 ))}
                 {mi < models.length - 1 && (
-                  <tr><td colSpan={9} style={{ height: 6, background: '#070710', border: 'none' }} /></tr>
+                  <tr><td colSpan={9} style={{ height: 6, background: 'var(--bg-base)', border: 'none' }} /></tr>
                 )}
               </React.Fragment>
             ))}
@@ -362,7 +362,7 @@ export default function ScheduleTab({ session }) {
                 <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10, background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444' }}>
                   {c.type === 'unbesetzt' ? 'Unbesetzt' : 'Überlastet'}
                 </span>
-                <span style={{ color: '#c0c0e0' }}>{c.msg}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{c.msg}</span>
               </div>
             ))}
           </div>
@@ -376,7 +376,7 @@ export default function ScheduleTab({ session }) {
 
       {/* Legend + Recurring + Next week */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#8888aa', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
           {SHIFTS.map(s => (
             <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 10, height: 10, borderRadius: 2, background: SHIFT_COLORS[s] }} />{s}
@@ -385,7 +385,7 @@ export default function ScheduleTab({ session }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ color: '#a78bfa', fontSize: 12 }}>↻</span> Wiederkehrend
           </div>
-          <span style={{ color: '#4a4a6a' }}>· Klick auf Zelle zum Bearbeiten</span>
+          <span style={{ color: 'var(--text-muted)' }}>· Klick auf Zelle zum Bearbeiten</span>
         </div>
         <button onClick={async () => {
           if (!window.confirm(`Plan auf KW ${kw + 1} übertragen?`)) return

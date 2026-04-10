@@ -205,7 +205,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#070710', fontFamily: 'var(--font-sans)', color: '#f0f0ff' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       {/* Header */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 100,
@@ -217,8 +217,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
           <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #06b6d4, #7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff', fontFamily: 'monospace' }}>T</div>
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#f0f0ff' }}>Thirteen 87</span>
-            <span style={{ fontSize: 10, color: '#4a4a6a', marginLeft: 6 }}>Chatter Portal</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Thirteen 87</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>Chatter Portal</span>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
@@ -235,13 +235,13 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: isOnline ? '#10b981' : '#ef4444', display: 'inline-block' }} />
             {isOnline ? 'Online' : 'Offline'}
           </button>
-          <span style={{ fontSize: 12, color: '#8888aa' }}>{displayName}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
           {onSwitchToAdmin && (
             <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
               ⚙ Admin
             </button>
           )}
-          <button onClick={() => supabase.auth.signOut()} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, background: 'transparent', border: '1px solid #1e1e3a', color: '#4a4a6a', cursor: 'pointer', fontFamily: 'inherit' }}>↩</button>
+          <button onClick={() => supabase.auth.signOut()} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, background: 'transparent', border: '1px solid #1e1e3a', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>↩</button>
         </div>
       </header>
 
@@ -254,7 +254,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
               <div style={{ fontSize: 14, fontWeight: 700, color: '#10b981', marginBottom: 3 }}>
                 Heute: {todayShifts.map(s => s.shift).join(' + ')} · {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
               </div>
-              <div style={{ fontSize: 11, color: '#8888aa' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 {todayShifts.flatMap(s => Object.keys(s.models)).join(', ')}
               </div>
             </div>
@@ -271,8 +271,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         {/* KPIs */}
         {/* Last day label */}
         {lastStatDate && (
-          <div style={{ fontSize: 11, color: '#4a4a6a', marginBottom: 8, fontFamily: 'monospace' }}>
-            Letzter Tag mit Daten: <span style={{ color: '#8888aa', fontWeight: 600 }}>{new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'monospace' }}>
+            Letzter Tag mit Daten: <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
           </div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
@@ -282,9 +282,9 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
             { label: 'Ø Antwortzeit', val: formatResponseTime(chatterStats?.avgResponseSeconds), sub: (chatterStats?.avgResponseSeconds || 0) <= 120 ? 'Gut ✓' : (chatterStats?.avgResponseSeconds || 0) <= 210 ? 'Ok' : 'Zu langsam', good: (chatterStats?.avgResponseSeconds || 0) <= 120 },
             { label: 'Nachrichten', val: (chatterStats?.sentMessages || 0).toString(), sub: lastStatDate ? new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : 'Keine Daten', good: (chatterStats?.sentMessages || 0) > 50 },
           ].map(kpi => (
-            <div key={kpi.label} style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', borderRadius: 10, padding: '12px 14px' }}>
-              <div style={{ fontSize: 10, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 4 }}>{kpi.label}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: '#f0f0ff', lineHeight: 1.2 }}>{kpi.val}</div>
+            <div key={kpi.label} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 4 }}>{kpi.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)', lineHeight: 1.2 }}>{kpi.val}</div>
               <div style={{ fontSize: 11, color: kpi.good ? '#10b981' : '#ef4444', marginTop: 2 }}>{kpi.sub}</div>
             </div>
           ))}
@@ -292,13 +292,13 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 16 }}>
           {/* My Shifts */}
-          <div style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 3, height: 11, background: '#06b6d4', borderRadius: 2, display: 'inline-block' }} />
               Meine Schichten – KW {kw}
             </div>
             {myShifts.length === 0 ? (
-              <div style={{ color: '#4a4a6a', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Noch kein Dienstplan für diese Woche</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Noch kein Dienstplan für diese Woche</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {myShifts.map((s, i) => {
@@ -307,22 +307,22 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                   return (
                     <div key={i} style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 12px', background: today ? 'rgba(16,185,129,0.05)' : '#13132a',
-                      borderRadius: 8, border: `1px solid ${today ? 'rgba(16,185,129,0.3)' : '#1e1e3a'}`,
+                      padding: '10px 12px', background: today ? 'rgba(16,185,129,0.05)' : 'var(--bg-card2)',
+                      borderRadius: 8, border: `1px solid ${today ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 4, height: 36, borderRadius: 2, background: SHIFT_COLORS[s.shift], flexShrink: 0 }} />
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: today ? '#10b981' : '#f0f0ff' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: today ? '#10b981' : 'var(--text-primary)' }}>
                             {DAYS[weekDays.indexOf(weekDays.find(d => isoDate(d) === s.dayIso))]} {formatDate(s.day)}{today ? ' · Heute' : ''}
                           </div>
-                          <div style={{ fontSize: 10, color: '#8888aa', marginTop: 1 }}>{s.shift}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>{s.shift}</div>
                         </div>
                       </div>
                       <span style={{
                         fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700,
                         background: today ? 'rgba(16,185,129,0.15)' : past ? 'rgba(255,255,255,0.04)' : 'rgba(124,58,237,0.15)',
-                        color: today ? '#10b981' : past ? '#4a4a6a' : '#a78bfa',
+                        color: today ? '#10b981' : past ? 'var(--text-muted)' : '#a78bfa',
                       }}>
                         {today ? 'Aktiv' : past ? 'Erledigt' : 'Geplant'}
                       </span>
@@ -334,33 +334,33 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
           </div>
 
           {/* Messages + Note */}
-          <div style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
               Nachrichten vom Team
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
               {messages.length === 0 ? (
-                <div style={{ color: '#4a4a6a', fontSize: 13, padding: '8px 0' }}>Noch keine Nachrichten</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Nachrichten</div>
               ) : messages.slice(0, 4).map(msg => (
-                <div key={msg.id} style={{ padding: '9px 12px', background: '#13132a', borderRadius: 8, border: '1px solid rgba(124,58,237,0.2)' }}>
+                <div key={msg.id} style={{ padding: '9px 12px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid rgba(124,58,237,0.2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4' }}>{msg.sent_by || 'Team'}</span>
-                    <span style={{ fontSize: 10, color: '#4a4a6a', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#c0c0e0', lineHeight: 1.5 }}>{msg.text}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{msg.text}</div>
                 </div>
               ))}
             </div>
             <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12 }}>
-              <div style={{ fontSize: 10, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Schichtnotiz hinterlassen</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Schichtnotiz hinterlassen</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 120 }}>
-                  <label style={{ fontSize: 10, color: '#4a4a6a' }}>Model</label>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Model</label>
                   <select
                     value={noteModel}
                     onChange={e => setNoteModel(e.target.value)}
-                    style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: noteModel ? '#f0f0ff' : '#4a4a6a', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteModel ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   >
                     <option value="">— Model wählen —</option>
                     {myShifts.filter(s => s.dayIso === todayIso).flatMap(s => Object.values(s.models)).map((_, i) => null)}
@@ -374,11 +374,11 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <label style={{ fontSize: 10, color: '#4a4a6a' }}>Schicht</label>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Schicht</label>
                   <select
                     value={noteShift}
                     onChange={e => setNoteShift(e.target.value)}
-                    style={{ background: '#0b0b1a', border: '1px solid #2e2e5a', color: noteShift ? '#f0f0ff' : '#4a4a6a', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   >
                     <option value="">— Schicht —</option>
                     {['Früh', 'Spät', 'Nacht'].map(s => <option key={s} value={s}>{s}</option>)}
@@ -390,10 +390,10 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                 onChange={e => setNoteText(e.target.value)}
                 rows={2}
                 placeholder="z.B. Sehr aktiv heute, viele PPVs verkauft..."
-                style={{ width: '100%', background: '#0b0b1a', border: '1px solid #2e2e5a', color: '#f0f0ff', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
+                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
               />
               <button onClick={sendNote} disabled={sendingNote || !noteText.trim()} style={{
-                background: noteText.trim() ? '#7c3aed' : '#1e1e3a', color: noteText.trim() ? '#fff' : '#4a4a6a',
+                background: noteText.trim() ? '#7c3aed' : 'var(--border)', color: noteText.trim() ? '#fff' : 'var(--text-muted)',
                 border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: noteText.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
               }}>{sendingNote ? 'Senden...' : 'Notiz senden'}</button>
             </div>
@@ -401,8 +401,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         </div>
 
         {/* Week Stats */}
-        <div style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 11, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
             Meine Stats – KW {kw}
           </div>
@@ -414,9 +414,9 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
               { label: 'Buy Rate KW', val: `${weekBuyRate.toFixed(1)}%`, good: weekBuyRate >= 25 },
               { label: 'Aktiv (Std) KW', val: (weekActiveMinutes / 60).toFixed(1) + 'h', good: weekActiveMinutes > 300 },
             ].map(stat => (
-              <div key={stat.label} style={{ ...sR, flexDirection: 'column', borderBottom: 'none', padding: '10px 14px', background: '#13132a', borderRadius: 8, border: '1px solid #1e1e3a' }}>
-                <div style={{ fontSize: 10, color: '#4a4a6a', marginBottom: 4 }}>{stat.label}</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: stat.good ? '#10b981' : '#f0f0ff' }}>{stat.val}</div>
+              <div key={stat.label} style={{ ...sR, flexDirection: 'column', borderBottom: 'none', padding: '10px 14px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a' }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{stat.label}</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: stat.good ? '#10b981' : 'var(--text-primary)' }}>{stat.val}</div>
               </div>
             ))}
           </div>

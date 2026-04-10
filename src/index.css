@@ -1,55 +1,96 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg-base: #080b14;
-  --bg-surface: #0e1220;
-  --bg-card: #121829;
-  --bg-card-hover: #161e30;
-  --bg-elevated: #1a2235;
-  --border: #1e2d45;
-  --border-light: #243350;
-  --accent: #6c63ff;
-  --accent-2: #4f8bff;
-  --accent-glow: rgba(108, 99, 255, 0.18);
-  --accent-2-glow: rgba(79, 139, 255, 0.15);
-  --green: #22d3a0;
-  --green-glow: rgba(34, 211, 160, 0.15);
-  --red: #ff5263;
-  --red-glow: rgba(255, 82, 99, 0.15);
-  --yellow: #f5b942;
-  --yellow-glow: rgba(245, 185, 66, 0.15);
-  --text-primary: #e8edf5;
-  --text-secondary: #8a9bbf;
-  --text-muted: #4a5978;
-  --text-accent: #a09af8;
+  --bg-base: #070710;
+  --bg-card: #0e0e1c;
+  --bg-card2: #13132a;
+  --bg-input: #0b0b1a;
+  --border: #1e1e3a;
+  --border-bright: #2e2e5a;
+  --accent: #7c3aed;
+  --accent2: #4f46e5;
+  --accent-glow: rgba(124,58,237,0.25);
+  --cyan: #06b6d4;
+  --green: #10b981;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+  --orange: #f97316;
+  --text-primary: #f0f0ff;
+  --text-secondary: #8888aa;
+  --text-muted: #4a4a6a;
+  --font-mono: 'Space Mono', monospace;
   --font-sans: 'DM Sans', sans-serif;
-  --font-mono: 'DM Mono', monospace;
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 22px;
-  --shadow: 0 4px 24px rgba(0,0,0,0.35);
-  --shadow-lg: 0 8px 40px rgba(0,0,0,0.5);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.5);
+  --shadow-glow: 0 0 32px rgba(124,58,237,0.15);
 }
 
-html { font-size: 14px; }
-body {
-  font-family: var(--font-sans);
+/* ── LIGHT MODE ─────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-base: #f0f0f8;
+  --bg-card: #ffffff;
+  --bg-card2: #f5f5ff;
+  --bg-input: #ececf8;
+  --border: #d0d0e8;
+  --border-bright: #b0b0d0;
+  --accent: #7c3aed;
+  --accent2: #4f46e5;
+  --accent-glow: rgba(124,58,237,0.15);
+  --cyan: #0891b2;
+  --green: #059669;
+  --red: #dc2626;
+  --yellow: #d97706;
+  --orange: #ea580c;
+  --text-primary: #0f0f1e;
+  --text-secondary: #4a4a6a;
+  --text-muted: #8888aa;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+  --shadow-glow: 0 0 32px rgba(124,58,237,0.1);
+}
+
+html, body {
   background: var(--bg-base);
   color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
   line-height: 1.5;
   min-height: 100vh;
-  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.2s, color 0.2s;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-surface); }
-::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
 
-button { cursor: pointer; font-family: var(--font-sans); }
-input { font-family: var(--font-sans); }
+input[type="date"], input[type="time"] {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+input[type="date"]:focus, input[type="time"]:focus { border-color: var(--accent); }
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: var(--icon-filter, invert(0.6));
+  cursor: pointer;
+}
+[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.3);
+}
+
+button { cursor: pointer; font-family: var(--font-sans); border: none; outline: none; }
 table { border-collapse: collapse; width: 100%; }
+th { text-align: left; }
+.mono { font-family: var(--font-mono); }
 
 /* ── MOBILE ─────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
