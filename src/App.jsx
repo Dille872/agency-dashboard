@@ -251,7 +251,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.0.5</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.0.6</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
