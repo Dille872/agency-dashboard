@@ -4,6 +4,10 @@ import { sendTelegramMessage, notifyOwner, getUpdates } from '../telegram'
 import Card from './Card'
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
+const DISPLAY_NAMES = {
+  'dillemc@hotmail.com': 'Christoph',
+}
+const getDisplayName = (email) => DISPLAY_NAMES[email] || email?.split('@')[0] || 'Unbekannt'
 
 const MODEL_MSG_TYPES = [
   { key: 'content_request', label: 'Content anfragen' },
@@ -64,7 +68,7 @@ function AddContactForm({ type, onSave, onCancel, isOwner }) {
 
 export default function CommTab({ session }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
-  const userName = session?.user?.email?.split('@')[0] || 'Unbekannt'
+  const userName = getDisplayName(session?.user?.email)
 
   const [models, setModels] = useState([])
   const [selectedModel, setSelectedModel] = useState(null)
@@ -466,7 +470,7 @@ export default function CommTab({ session }) {
                           {msg.direction === 'out' ? '→ Gesendet' : '← Empfangen'}
                         </span>
                       </td>
-                      <td style={{ ...tdS, fontWeight: 600, color: msg.direction === 'out' ? (msg.sent_by === 'dillemc' ? '#a78bfa' : '#06b6d4') : '#10b981' }}>
+                      <td style={{ ...tdS, fontWeight: 600, color: msg.direction === 'out' ? (msg.sent_by === 'Christoph' ? '#a78bfa' : '#06b6d4') : '#10b981' }}>
                         {msg.direction === 'out' ? (msg.sent_by || '—') : msg.model_name}
                       </td>
                       <td style={{ ...tdS, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.text}</td>
