@@ -245,7 +245,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
           <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#10b981', marginBottom: 3 }}>
-                Heute: {todayShifts.map(s => s.shift).join(' + ')} · {todayIso}
+                Heute: {todayShifts.map(s => s.shift).join(' + ')} · {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
               </div>
               <div style={{ fontSize: 11, color: '#8888aa' }}>
                 {todayShifts.flatMap(s => Object.keys(s.models)).join(', ')}
@@ -265,9 +265,9 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
           {[
             { label: 'Revenue heute', val: formatMoney(chatterStats?.revenue || 0), sub: revDelta !== 0 ? `${revDelta > 0 ? '▲' : '▼'} ${Math.abs(revDelta).toFixed(1)}% vs gestern` : 'Kein Vortag', good: revDelta >= 0 },
-            { label: '$/Stunde', val: formatMoney(chatterStats?.revenuePerHour || 0), sub: 'Heute', good: (chatterStats?.revenuePerHour || 0) > 20 },
             { label: 'PPV Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(1)}%` : '—', sub: 'Heute', good: (chatterStats?.buyRate || 0) >= 25 },
             { label: 'Ø Antwortzeit', val: formatResponseTime(chatterStats?.avgResponseSeconds), sub: (chatterStats?.avgResponseSeconds || 0) <= 120 ? 'Gut ✓' : (chatterStats?.avgResponseSeconds || 0) <= 210 ? 'Ok' : 'Zu langsam', good: (chatterStats?.avgResponseSeconds || 0) <= 120 },
+            { label: 'Nachrichten', val: (chatterStats?.sentMessages || 0).toString(), sub: 'Heute', good: (chatterStats?.sentMessages || 0) > 50 },
           ].map(kpi => (
             <div key={kpi.label} style={{ background: '#0e0e1c', border: '1px solid #1e1e3a', borderRadius: 10, padding: '12px 14px' }}>
               <div style={{ fontSize: 10, color: '#4a4a6a', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 4 }}>{kpi.label}</div>
@@ -396,7 +396,6 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
             {[
               { label: 'Revenue KW', val: formatMoney(weekRevenue), good: weekRevenue > 500 },
-              { label: '$/Stunde KW', val: formatMoney(weekRPH), good: weekRPH > 20 },
               { label: 'Nachrichten KW', val: weekMessages.toString(), good: weekMessages > 200 },
               { label: 'Sent PPVs KW', val: weekSentPPVs.toString(), good: weekSentPPVs > 50 },
               { label: 'Buy Rate KW', val: `${weekBuyRate.toFixed(1)}%`, good: weekBuyRate >= 25 },
