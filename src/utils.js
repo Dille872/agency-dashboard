@@ -208,27 +208,42 @@ export function computeModelTrend(snapshots, creatorName) {
 }
 
 export function computeModelStatus(row, trend) {
-  if (row.avgChatValue > 0 && row.avgChatValue < 3 && row.sellingChats > 10)
-    return { status: 'Preisproblem', recommendation: 'Chat-Preise erhöhen' }
-  if (trend === 'Steigend' && row.revenue > 100)
-    return { status: 'Skalieren', recommendation: 'Budget erhöhen' }
+  const total = row.revenue || 1
+  const msgPct = (row.messageRevenue / total) * 100
+
+  if (trend === 'Fallend' && row.avgChatValue > 0 && row.avgChatValue < 5)
+    return { status: 'Preisproblem', recommendation: 'PPV-Preise erhöhen' }
+  if (trend === 'Fallend' && msgPct < 50)
+    return { status: 'Beobachten', recommendation: 'Chat-Aktivität prüfen' }
   if (trend === 'Fallend')
-    return { status: 'Beobachten', recommendation: 'Strategie prüfen' }
+    return { status: 'Beobachten', recommendation: 'Chatter-Fokus erhöhen' }
+  if (trend === 'Steigend' && msgPct >= 70)
+    return { status: 'Skalieren', recommendation: 'Chatter-Zeit ausbauen' }
+  if (trend === 'Steigend')
+    return { status: 'Skalieren', recommendation: 'Weiter so' }
   if (trend === 'Instabil')
     return { status: 'Instabil', recommendation: 'Konsistenz verbessern' }
+  if (row.avgChatValue > 0 && row.avgChatValue < 5 && row.sellingChats > 10)
+    return { status: 'Preisproblem', recommendation: 'PPV-Preise erhöhen' }
   return { status: 'Gemischt', recommendation: 'Weiter beobachten' }
 }
 
 export function computeChatterStatus(row, trend) {
-  if (row.revenuePerHour < 10 && row.activeMinutes > 60)
+  if (row.activeMinutes > 60 && row.sentMessages < 20)
     return { status: 'Activity Issue', recommendation: 'Zu wenig Output' }
   if (row.buyRate < 20 && row.sentPPVs > 5)
-    return { status: 'Quality Issue', recommendation: 'Qualität pro Sale sinkt' }
+    return { status: 'Quality Issue', recommendation: 'PPV-Qualität verbessern' }
   if (row.avgRevenuePerBoughtPPV < 8 && row.boughtPPVs > 3)
-    return { status: 'Price Drop', recommendation: 'Verkauft mehr, aber billiger' }
-  if (trend === 'Steigend')
+    return { status: 'Price Drop', recommendation: 'PPV-Preise erhöhen' }
+  if (trend === 'Steigend' && row.revenuePerHour > 15)
     return { status: 'Strong', recommendation: 'Läuft stark' }
-  return { status: 'Stabil', recommendation: 'Beobachten' }
+  if (trend === 'Steigend')
+    return { status: 'Strong', recommendation: 'Gute Entwicklung' }
+  if (trend === 'Fallend' && row.buyRate < 25)
+    return { status: 'Quality Issue', recommendation: 'Chat-Strategie prüfen' }
+  if (trend === 'Fallend')
+    return { status: 'Price Drop', recommendation: 'Upselling verbessern' }
+  return { status: 'Stabil', recommendation: 'Weiter beobachten' }
 }
 
 export function computeHeatmapStatus(current, previous) {

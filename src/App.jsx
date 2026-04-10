@@ -243,7 +243,8 @@ export default function App() {
           lastFileName={currentChatterSnap?.fileName}
           lastDate={currentChatterSnap?.uploadedAt ? new Date(currentChatterSnap.uploadedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null}
         />
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>v1.0.3</span>
           <button onClick={clearAllData} style={{
             padding: '8px 14px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',

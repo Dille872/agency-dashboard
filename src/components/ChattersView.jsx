@@ -115,13 +115,26 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
             <table>
               <thead>
                 <tr>
-                  {['Name','Revenue','Δ Rev','Aktiv (Min)','$/Std','7T Rev','7T $/Std','Trend','Sent PPVs Δ','Bought PPVs Δ','Buy Rate','Δ Buy Rate','Avg Rev/PPV','Status','Empfehlung'].map(h => (
+                  {['Name','Revenue','Δ Rev','Aktiv (Min)','$/Std','7T Rev','7T $/Std','Trend','Antwortzeit','Sent PPVs Δ','Bought PPVs Δ','Buy Rate','Δ Buy Rate','Avg Rev/PPV','Status','Empfehlung'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {tableRows.map((r, i) => (
+                {tableRows.map((r, i) => {
+                  const secs = r.avgResponseSeconds || 0
+                  const mins = Math.floor(secs / 60)
+                  const remSecs = Math.round(secs % 60)
+                  const responseFormatted = secs > 0 ? `${mins}:${remSecs.toString().padStart(2, '0')}` : '—'
+                  const responseColor = secs === 0 ? 'var(--text-muted)'
+                    : secs <= 120 ? '#10b981'
+                    : secs <= 210 ? '#f59e0b'
+                    : '#ef4444'
+                  const responseBg = secs === 0 ? 'transparent'
+                    : secs <= 120 ? 'rgba(16,185,129,0.1)'
+                    : secs <= 210 ? 'rgba(245,158,11,0.1)'
+                    : 'rgba(239,68,68,0.1)'
+                  return (
                   <tr key={r.name + i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.name}</td>
                     <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{formatMoney(r.revenue)}</td>
@@ -131,6 +144,11 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
                     <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(r.rev7)}</td>
                     <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(r.rph7)}</td>
                     <td style={tdStyle}><span style={{ color: trendColors[r.trend] || 'var(--text-secondary)', fontWeight: 600, fontSize: 11 }}>{r.trend}</span></td>
+                    <td style={tdStyle}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: responseColor, background: responseBg, padding: '2px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                        {responseFormatted}
+                      </span>
+                    </td>
                     <td style={tdStyle}><span style={deltaStyle(r.sentPPVsDelta)}>{r.sentPPVsDelta > 0 ? '+' : ''}{r.sentPPVsDelta || '—'}</span></td>
                     <td style={tdStyle}><span style={deltaStyle(r.boughtPPVsDelta)}>{r.boughtPPVsDelta > 0 ? '+' : ''}{r.boughtPPVsDelta || '—'}</span></td>
                     <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)' }}>{r.buyRate.toFixed(1)}%</td>
@@ -139,7 +157,8 @@ export default function ChattersView({ selectedDate, chatterSnapshots }) {
                     <td style={tdStyle}><span style={{ background: `${statusColors[r.status]}22`, color: statusColors[r.status] || 'var(--text-secondary)', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.status}</span></td>
                     <td style={{ ...tdStyle, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{r.recommendation}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
