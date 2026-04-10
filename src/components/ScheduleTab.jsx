@@ -225,7 +225,6 @@ export default function ScheduleTab({ session }) {
   const sendReminder = async (modelId, dayIso, shift, chatterName, hoursBeforeStr) => {
     const hoursBefore = parseInt(hoursBeforeStr)
     setSendingReminder(true)
-    // Find chatter telegram id
     const chatter = chatters.find(c => c.name === chatterName)
     if (!chatter?.telegram_id) {
       alert(`Kein Telegram für ${chatterName}`)
@@ -233,20 +232,42 @@ export default function ScheduleTab({ session }) {
       setReminderCell(null)
       return
     }
-    // Find model name
     const model = models.find(m => String(m.id) === String(modelId))
     const modelName = model?.name || 'Unbekannt'
-    // Get shift time
     const berlinTime = shiftTimes[`${modelId}__${shift}`] || ''
     const startTime = berlinTime ? berlinTime.split('-')[0].trim() : ''
-    // Format date
-    const dayDate = new Date(dayIso + 'T00:00:00')
-    const dayFormatted = dayDate.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })
-    const msg = `🔔 Schicht-Erinnerung!\n\nDu hast in ${hoursBefore} Stunde${hoursBefore !== 1 ? 'n' : ''} ${shift}schicht bei ${modelName}.\n📅 ${dayFormatted}${startTime ? `\n⏰ ${startTime} Uhr (DE-Zeit)` : ''}\n\n– Thirteen 87`
-    await sendTelegramMessage(chatter.telegram_id, msg)
+
+    // Calculate send_at: shift start time minus hoursBefore in Berlin timezone
+    let sendAt
+    if (startTime) {
+      const [h, m] = startTime.split(':').map(Number)
+      // Create datetime in Berlin timezone
+      const shiftDateTime = new Date(`${dayIso}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`)
+      // Adjust for Berlin offset (CET=+1, CEST=+2)
+      const berlinOffset = -new Date(shiftDateTime.toLocaleString('en-US', { timeZone: 'Europe/Berlin' })).getTimezoneOffset()
+      const utcShift = new Date(shiftDateTime.getTime() - berlinOffset * 60000)
+      sendAt = new Date(utcShift.getTime() - hoursBefore * 3600000).toISOString()
+    } else {
+      // No time set – send in hoursBefore hours from now
+      sendAt = new Date(Date.now() - hoursBefore * 3600000).toISOString()
+    }
+
+    await supabase.from('reminders').insert({
+      chatter_name: chatterName,
+      chatter_telegram_id: chatter.telegram_id,
+      model_name: modelName,
+      shift,
+      shift_date: dayIso,
+      shift_start_time: startTime || '?',
+      send_at: sendAt,
+      sent: false,
+    })
+
     setSendingReminder(false)
     setReminderCell(null)
-    alert(`✓ Erinnerung an ${chatterName} gesendet!`)
+
+    const sendAtLocal = new Date(sendAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    alert(`✓ Erinnerung geplant! ${chatterName} wird benachrichtigt am ${sendAtLocal} Uhr`)
   }
 
   // Conflict detection
