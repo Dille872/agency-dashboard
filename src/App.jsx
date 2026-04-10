@@ -52,7 +52,17 @@ export default function App() {
     loadUserRole()
     loadAllData()
     loadBadgeCounts()
-    const interval = setInterval(loadBadgeCounts, 15000)
+    const interval = setInterval(() => {
+      loadBadgeCounts()
+      // Send heartbeat so admin shows as online in chatter list
+      if (session?.user) {
+        supabase.from('online_status').upsert({
+          display_name: userDisplayName || session.user.email?.split('@')[0],
+          last_seen: new Date().toISOString(),
+          shift_online: false,
+        }, { onConflict: 'display_name' }).then(() => {})
+      }
+    }, 30000)
     return () => clearInterval(interval)
   }, [session])
 
@@ -60,13 +70,20 @@ export default function App() {
     try {
       const { data } = await supabase
         .from('user_roles').select('*').eq('user_id', session.user.id).single()
+      const name = data?.display_name || session.user.email?.split('@')[0]
       if (data) {
         setUserRole(data.role)
-        setUserDisplayName(data.display_name || session.user.email?.split('@')[0])
+        setUserDisplayName(name)
       } else {
         setUserRole('chatter')
-        setUserDisplayName(session.user.email?.split('@')[0] || 'Chatter')
+        setUserDisplayName(name)
       }
+      // Send immediate heartbeat
+      await supabase.from('online_status').upsert({
+        display_name: name,
+        last_seen: new Date().toISOString(),
+        shift_online: false,
+      }, { onConflict: 'display_name' })
     } catch {
       setUserRole('chatter')
       setUserDisplayName(session.user.email?.split('@')[0] || 'Chatter')
@@ -348,7 +365,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.3.6</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.3.7</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
