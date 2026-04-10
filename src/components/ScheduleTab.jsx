@@ -65,16 +65,18 @@ export default function ScheduleTab({ session }) {
   }, [])
 
   useEffect(() => {
-    loadSchedule()
-  }, [weekStart])
+    if (weekKey) loadSchedule()
+  }, [weekKey])
 
   const loadModels = async () => {
-    const { data } = await supabase.from('models_contact').select('*').order('name')
+    const { data, error } = await supabase.from('models_contact').select('*').order('name')
+    if (error) console.error('loadModels error:', error)
     setModels(data || [])
   }
 
   const loadChatters = async () => {
-    const { data } = await supabase.from('chatters_contact').select('*').order('name')
+    const { data, error } = await supabase.from('chatters_contact').select('*').order('name')
+    if (error) console.error('loadChatters error:', error)
     setChatters(data || [])
   }
 
