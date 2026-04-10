@@ -95,6 +95,7 @@ export default function CommTab({ session }) {
 
   useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
+    setTimeout(loadOnlineStatuses, 3000) // reload after heartbeat sent
     const interval = setInterval(() => {
       pollTelegram()
       loadOnlineStatuses()
@@ -114,7 +115,7 @@ export default function CommTab({ session }) {
   const loadOnlineStatuses = async () => {
     const { data } = await supabase.from('online_status').select('*')
     const map = {}
-    const cutoff = new Date(Date.now() - 60000) // 60 seconds
+    const cutoff = new Date(Date.now() - 120000) // 2 minutes
     for (const s of data || []) {
       map[s.display_name] = {
         dashboardOnline: new Date(s.last_seen) > cutoff,
