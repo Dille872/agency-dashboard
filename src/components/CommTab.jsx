@@ -146,7 +146,7 @@ function ModelAliasManager({ models }) {
   )
 }
 
-export default function CommTab({ session }) {
+export default function CommTab({ session, section = 'nachrichten' }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
   const userName = getDisplayName(session?.user?.email)
 
@@ -168,7 +168,11 @@ export default function CommTab({ session }) {
 
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const [activeSection, setActiveSection] = useState('models')
+  const [activeSection, setActiveSection] = useState(() => {
+    if (section === 'models') return 'modelboards'
+    if (section === 'chatters') return 'chatters'
+    return 'inbox'
+  })
   const [onlineStatuses, setOnlineStatuses] = useState({})
   const lastUpdateIdRef = React.useRef(0)
 
@@ -479,29 +483,28 @@ export default function CommTab({ session }) {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[
-          { key: 'models', label: 'Models' },
-          { key: 'chatters', label: 'Chatters' },
-          { key: 'inbox', label: `Posteingang${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
-          { key: 'history', label: 'Verlauf' },
-          { key: 'requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
-          { key: 'shiftlog', label: 'Schicht-Log' },
-          { key: 'stats', label: 'Statistik' },
-          { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
-          { key: 'modelboards', label: `Model Boards${modelBoardActivity.filter(a => { const d = new Date(a.created_at); return (Date.now() - d) < 86400000 }).length > 0 ? ` (neu)` : ''}` },
+          { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => (Date.now() - new Date(a.created_at)) < 86400000).length > 0) ? 1 : 0 },
+          { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
+          { key: 'nachrichten', label: 'Nachrichten', badge: unreadCount },
         ].map(s => (
           <button key={s.key} onClick={() => {
             setActiveSection(s.key)
-            if (s.key === 'shiftlog' || s.key === 'stats') loadShiftLogs()
-            if (s.key === 'requests') loadContentRequests()
-            if (s.key === 'swaps') loadSwaps()
-            if (s.key === 'modelboards') { loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
+            if (s.key === 'models') { loadContentRequests(); loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
+            if (s.key === 'chatters') { loadShiftLogs(); loadSwaps() }
+            if (s.key === 'nachrichten') setUnreadCount(0)
           }} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
             background: activeSection === s.key ? '#7c3aed' : 'transparent',
-            color: activeSection === s.key ? '#fff' : s.key === 'inbox' && unreadCount > 0 ? '#f59e0b' : s.key === 'swaps' && swaps.filter(sw => sw.status === 'offen').length > 0 ? '#f59e0b' : 'var(--text-secondary)',
-            border: `1px solid ${activeSection === s.key ? '#7c3aed' : (s.key === 'inbox' && unreadCount > 0) || (s.key === 'swaps' && swaps.filter(sw => sw.status === 'offen').length > 0) ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
+            color: activeSection === s.key ? '#fff' : s.badge > 0 ? '#f59e0b' : 'var(--text-secondary)',
+            border: `1px solid ${activeSection === s.key ? '#7c3aed' : s.badge > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
             fontWeight: 600, fontSize: 13, fontFamily: 'inherit',
-          }}>{s.label}</button>
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            {s.label}
+            {s.badge > 0 && activeSection !== s.key && (
+              <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4 }}>{s.badge}</span>
+            )}
+          </button>
         ))}
       </div>
 
@@ -761,7 +764,7 @@ export default function CommTab({ session }) {
       )}
 
       {/* POSTEINGANG */}
-      {activeSection === 'inbox' && (
+      {activeSection === 'nachrichten' && (
         <Card title={`Posteingang – Antworten (${inboxMessages.length})`}>
           {unreadCount > 0 && (
             <div style={{ marginBottom: 12 }}>
@@ -799,7 +802,7 @@ export default function CommTab({ session }) {
       )}
 
       {/* VERLAUF */}
-      {activeSection === 'history' && (
+      {activeSection === 'nachrichten' && (
         <Card title="Nachrichtenverlauf">
           {messages.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Nachrichten</div>
@@ -838,7 +841,7 @@ export default function CommTab({ session }) {
       )}
 
       {/* CONTENT-ANFRAGEN */}
-      {activeSection === 'requests' && (
+      {activeSection === 'models' && (
         <Card title={`Content-Anfragen (${contentRequests.length})`}>
           {contentRequests.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Anfragen</div>
@@ -884,7 +887,7 @@ export default function CommTab({ session }) {
       )}
 
       {/* SCHICHT-LOG */}
-      {activeSection === 'shiftlog' && (
+      {activeSection === 'chatters' && (
         <Card title="Schicht-Log">
           {shiftLogs.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Schicht-Logs</div>
@@ -927,7 +930,7 @@ export default function CommTab({ session }) {
       )}
 
       {/* STATISTIK */}
-      {activeSection === 'stats' && (
+      {activeSection === 'chatters' && (
         <Card title="Chatter Statistik">
           {chatterStats.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Daten</div>
@@ -963,7 +966,7 @@ export default function CommTab({ session }) {
       )}
 
       {/* SCHICHT-TAUSCH */}
-      {activeSection === 'swaps' && (
+      {activeSection === 'chatters' && (
         <Card title="Schicht-Tausch Anfragen">
           {swaps.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
@@ -998,7 +1001,7 @@ export default function CommTab({ session }) {
       )}
 
       {/* MODEL BOARDS */}
-      {activeSection === 'modelboards' && (
+      {activeSection === 'models' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Card title="Letzte Änderungen">
             {modelBoardActivity.length === 0 ? (

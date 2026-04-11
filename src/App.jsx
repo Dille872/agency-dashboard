@@ -23,6 +23,8 @@ export default function App() {
   const [dataLoading, setDataLoading] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotes, setUnreadNotes] = useState(0)
+  const [unreadModelChanges, setUnreadModelChanges] = useState(0)
+  const [openSwaps, setOpenSwaps] = useState(0)
   const [userRole, setUserRole] = useState(null)
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
@@ -92,13 +94,11 @@ export default function App() {
   }
 
   const loadBadgeCounts = async () => {
-    // Unread messages
     const { count: msgCount } = await supabase
       .from('messages').select('*', { count: 'exact', head: true })
       .eq('direction', 'in').eq('read', false)
     setUnreadMessages(msgCount || 0)
 
-    // Unread notes – notes newer than last time we visited notes tab
     const lastVisit = lastNoteCheck.current
     if (lastVisit) {
       const { count: noteCount } = await supabase
@@ -107,6 +107,19 @@ export default function App() {
         .neq('author', session?.user?.email?.split('@')[0])
       setUnreadNotes(noteCount || 0)
     }
+
+    // Model board changes in last 24h
+    const since24h = new Date(Date.now() - 86400000).toISOString()
+    const { count: modelCount } = await supabase
+      .from('model_board_activity').select('*', { count: 'exact', head: true })
+      .gt('created_at', since24h)
+    setUnreadModelChanges(modelCount || 0)
+
+    // Open swap requests
+    const { count: swapCount } = await supabase
+      .from('shift_swaps').select('*', { count: 'exact', head: true })
+      .eq('status', 'offen')
+    setOpenSwaps(swapCount || 0)
   }
 
   const loadAllData = async () => {
@@ -301,12 +314,16 @@ export default function App() {
               { key: 'models', label: 'Models' },
               { key: 'chatters', label: 'Chatters' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
-              { key: 'comm', label: 'Kommunikation', badge: unreadMessages },
+              { key: 'nachrichten', label: 'Nachrichten', badge: unreadMessages },
+              { key: 'models-comm', label: 'Model Komm.', badge: unreadModelChanges },
+              { key: 'chatters-comm', label: 'Chatter Komm.', badge: openSwaps },
               { key: 'schedule', label: 'Dienstplan' },
             ].map(tab => (
               <button key={tab.key} onClick={() => {
                 setActiveTab(tab.key)
-                if (tab.key === 'comm') setUnreadMessages(0)
+                if (tab.key === 'nachrichten') setUnreadMessages(0)
+                if (tab.key === 'models-comm') setUnreadModelChanges(0)
+                if (tab.key === 'chatters-comm') setOpenSwaps(0)
                 if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
               }} style={{
                 padding: '6px 14px', borderRadius: 8,
@@ -326,13 +343,6 @@ export default function App() {
               </button>
             ))}
           </div>
-          <button onClick={toggleTheme} style={{
-            fontSize: 16, padding: '5px 10px', borderRadius: 6,
-            background: 'transparent', border: '1px solid var(--border)',
-            color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
           <button onClick={() => setViewMode('chatter')} style={{
             fontSize: 11, padding: '5px 10px', borderRadius: 6,
             background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
@@ -348,6 +358,13 @@ export default function App() {
             background: 'transparent', border: '1px solid var(--border)',
             color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>↩</button>
+          <button onClick={toggleTheme} style={{
+            fontSize: 16, padding: '5px 10px', borderRadius: 6,
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
         </div>
       </header>
 
@@ -363,16 +380,13 @@ export default function App() {
             <input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} />
           </div>
           {allDates.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Gespeicherte Tage</label>
-              <select value={businessDate} onChange={e => setBusinessDate(e.target.value)} style={{
-                background: 'var(--bg-input)', border: '1px solid var(--border)',
-                color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 8,
-                fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', outline: 'none', maxWidth: 140,
-              }}>
-                {allDates.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
+            <select value={businessDate} onChange={e => setBusinessDate(e.target.value)} style={{
+              background: 'var(--bg-input)', border: '1px solid var(--border)',
+              color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 8,
+              fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', outline: 'none', maxWidth: 140, marginTop: 18,
+            }}>
+              {allDates.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
           )}
           {(currentModelSnap || currentChatterSnap) && (
             <button onClick={() => deleteDay(businessDate)} style={{
@@ -385,26 +399,21 @@ export default function App() {
         {/* Uploads */}
         <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
           <UploadBox
-            label="Daily Model CSV"
+            label="Daily Model"
             onFile={handleModelUpload}
             lastFileName={currentModelSnap?.fileName}
             lastDate={currentModelSnap?.uploadedAt ? new Date(currentModelSnap.uploadedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null}
           />
           <UploadBox
-            label="Daily Chatter CSV"
+            label="Daily Chatter"
             onFile={handleChatterUpload}
             lastFileName={currentChatterSnap?.fileName}
             lastDate={currentChatterSnap?.uploadedAt ? new Date(currentChatterSnap.uploadedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null}
           />
         </div>
-        {/* Version + Delete */}
+        {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.5</span>
-          <button onClick={clearAllData} style={{
-            padding: '7px 12px', background: 'transparent',
-            border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
-            borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }}>Daten löschen</button>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.6</span>
         </div>
       </div>
 
@@ -424,8 +433,12 @@ export default function App() {
           <ChattersView selectedDate={businessDate} chatterSnapshots={chatterSnapshots} onDateChange={setBusinessDate} />
         ) : activeTab === 'notes' ? (
           <NotesTab session={session} />
-        ) : activeTab === 'comm' ? (
-          <CommTab session={session} />
+        ) : activeTab === 'nachrichten' ? (
+          <CommTab session={session} section="nachrichten" />
+        ) : activeTab === 'models-comm' ? (
+          <CommTab session={session} section="models" />
+        ) : activeTab === 'chatters-comm' ? (
+          <CommTab session={session} section="chatters" />
         ) : (
           <ScheduleTab session={session} />
         )}
