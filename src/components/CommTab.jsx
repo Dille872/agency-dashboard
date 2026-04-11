@@ -67,6 +67,85 @@ function AddContactForm({ type, onSave, onCancel, isOwner }) {
   )
 }
 
+function ModelAliasManager({ models }) {
+  const [aliases, setAliases] = useState([])
+  const [newModel, setNewModel] = useState('')
+  const [newCsvName, setNewCsvName] = useState('')
+  const [newLabel, setNewLabel] = useState('')
+
+  useEffect(() => { loadAliases() }, [])
+
+  const loadAliases = async () => {
+    const { data } = await supabase.from('model_aliases').select('*').order('model_name')
+    setAliases(data || [])
+  }
+
+  const addAlias = async () => {
+    if (!newModel || !newCsvName.trim()) return
+    await supabase.from('model_aliases').insert({
+      model_name: newModel,
+      csv_name: newCsvName.trim(),
+      alias_label: newLabel.trim() || null,
+    })
+    setNewModel(''); setNewCsvName(''); setNewLabel('')
+    loadAliases()
+  }
+
+  const deleteAlias = async (id) => {
+    await supabase.from('model_aliases').delete().eq('id', id)
+    loadAliases()
+  }
+
+  const inputS = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }
+
+  return (
+    <Card title="CSV Account-Zuordnung">
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+        Hier kannst du mehrere CSV-Namen einem Model zuordnen – z.B. "Sandra VIP" gehört zu Sandra.
+      </div>
+      {/* Existing aliases grouped by model */}
+      {models.filter(m => aliases.some(a => a.model_name === m.name)).map(m => (
+        <div key={m.id} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{m.name}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {aliases.filter(a => a.model_name === m.name).map(a => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{a.csv_name}</span>
+                {a.alias_label && <span style={{ color: 'var(--text-muted)' }}>· {a.alias_label}</span>}
+                <button onClick={() => deleteAlias(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                  onMouseEnter={e => e.target.style.color = '#ef4444'}
+                  onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {/* Add new */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Model</label>
+          <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ ...inputS }}>
+            <option value="">— wählen —</option>
+            {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>CSV-Name (exakt)</label>
+          <input value={newCsvName} onChange={e => setNewCsvName(e.target.value)} placeholder="z.B. Sandra VIP" style={{ ...inputS, width: 130 }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Label (optional)</label>
+          <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="z.B. Hauptaccount" style={{ ...inputS, width: 120 }} />
+        </div>
+        <button onClick={addAlias} disabled={!newModel || !newCsvName.trim()}
+          style={{ background: newModel && newCsvName.trim() ? '#f59e0b' : 'var(--border)', color: newModel && newCsvName.trim() ? '#000' : 'var(--text-muted)', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          + Hinzufügen
+        </button>
+      </div>
+    </Card>
+  )
+}
+
 export default function CommTab({ session }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
   const userName = getDisplayName(session?.user?.email)
@@ -944,6 +1023,10 @@ export default function CommTab({ session }) {
               </div>
             )}
           </Card>
+
+          {/* CSV Aliases Management */}
+          <ModelAliasManager models={models} />
+
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {models.map(m => (
               <button key={m.id} onClick={() => { setSelectedBoardModel(selectedBoardModel === m.name ? null : m.name); loadModelBoard(m.name) }}
