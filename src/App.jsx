@@ -8,6 +8,7 @@ import NotesTab from './components/NotesTab'
 import CommTab from './components/CommTab'
 import ScheduleTab from './components/ScheduleTab'
 import ChatterPortal from './components/ChatterPortal'
+import ModelPortal from './components/ModelPortal'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -234,7 +235,16 @@ export default function App() {
 
   // Show chatter portal for chatter role, unless admin switched to chatter view
   const showChatterPortal = userRole !== null && ((userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter')
+  const showModelPortal = userRole !== null && ((userRole === 'model' && viewMode !== 'admin') || viewMode === 'model')
   const isAdmin = userRole === 'admin'
+
+  if (showModelPortal) return (
+    <ModelPortal
+      session={session}
+      displayName={userDisplayName}
+      onSwitchToAdmin={isAdmin ? () => setViewMode('admin') : null}
+    />
+  )
 
   if (showChatterPortal) return (
     <ChatterPortal
@@ -383,7 +393,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.5.9</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.0</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',

@@ -328,6 +328,26 @@ export default function CommTab({ session }) {
   const [shiftLogs, setShiftLogs] = useState([])
   const [chatterStats, setChatterStats] = useState([])
   const [swaps, setSwaps] = useState([])
+  const [modelBoardActivity, setModelBoardActivity] = useState([])
+  const [modelBoards, setModelBoards] = useState({})
+  const [selectedBoardModel, setSelectedBoardModel] = useState(null)
+
+  const loadModelBoardActivity = async () => {
+    const { data } = await supabase.from('model_board_activity')
+      .select('*').order('created_at', { ascending: false }).limit(50)
+    setModelBoardActivity(data || [])
+  }
+
+  const loadModelBoard = async (modelName) => {
+    const { data } = await supabase.from('model_board')
+      .select('*').eq('model_name', modelName).order('sort_order')
+    const map = {}
+    for (const item of data || []) {
+      if (!map[item.category]) map[item.category] = []
+      map[item.category].push(item)
+    }
+    setModelBoards(prev => ({ ...prev, [modelName]: map }))
+  }
 
   const loadShiftLogs = async () => {
     const { data } = await supabase.from('shift_logs').select('*').order('checked_in_at', { ascending: false }).limit(100)
@@ -388,8 +408,15 @@ export default function CommTab({ session }) {
           { key: 'shiftlog', label: 'Schicht-Log' },
           { key: 'stats', label: 'Statistik' },
           { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
+          { key: 'modelboards', label: `Model Boards${modelBoardActivity.filter(a => { const d = new Date(a.created_at); return (Date.now() - d) < 86400000 }).length > 0 ? ` (neu)` : ''}` },
         ].map(s => (
-          <button key={s.key} onClick={() => { setActiveSection(s.key); if (s.key === 'shiftlog' || s.key === 'stats') loadShiftLogs(); if (s.key === 'requests') loadContentRequests(); if (s.key === 'swaps') loadSwaps() }} style={{
+          <button key={s.key} onClick={() => {
+            setActiveSection(s.key)
+            if (s.key === 'shiftlog' || s.key === 'stats') loadShiftLogs()
+            if (s.key === 'requests') loadContentRequests()
+            if (s.key === 'swaps') loadSwaps()
+            if (s.key === 'modelboards') { loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
+          }} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
             background: activeSection === s.key ? '#7c3aed' : 'transparent',
             color: activeSection === s.key ? '#fff' : s.key === 'inbox' && unreadCount > 0 ? '#f59e0b' : s.key === 'swaps' && swaps.filter(sw => sw.status === 'offen').length > 0 ? '#f59e0b' : 'var(--text-secondary)',
@@ -889,6 +916,64 @@ export default function CommTab({ session }) {
             </div>
           )}
         </Card>
+      )}
+
+      {/* MODEL BOARDS */}
+      {activeSection === 'modelboards' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Card title="Letzte Änderungen">
+            {modelBoardActivity.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Noch keine Änderungen</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {modelBoardActivity.slice(0, 10).map(a => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#f59e0b', flexShrink: 0 }}>
+                      {a.model_name[0]}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b' }}>{a.model_name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}> hat <b>{a.category}</b> {a.action}</span>
+                      {a.details && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}> · {a.details}</span>}
+                    </div>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
+                      {new Date(a.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {models.map(m => (
+              <button key={m.id} onClick={() => { setSelectedBoardModel(selectedBoardModel === m.name ? null : m.name); loadModelBoard(m.name) }}
+                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                  background: selectedBoardModel === m.name ? '#f59e0b' : 'transparent',
+                  color: selectedBoardModel === m.name ? '#000' : 'var(--text-secondary)',
+                  border: `1px solid ${selectedBoardModel === m.name ? '#f59e0b' : 'var(--border)'}` }}>
+                {m.name}
+              </button>
+            ))}
+          </div>
+          {selectedBoardModel && modelBoards[selectedBoardModel] && Object.keys(modelBoards[selectedBoardModel]).length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+              {Object.entries(modelBoards[selectedBoardModel]).map(([cat, items]) => (
+                <Card key={cat} title={cat.charAt(0).toUpperCase() + cat.slice(1)}>
+                  {items.map(item => (
+                    <div key={item.id} style={{ padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)', marginBottom: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
+                      {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{item.content}</div>}
+                      {item.price && <div style={{ fontSize: 12, fontWeight: 700, color: '#10b981', marginTop: 3 }}>{item.price}</div>}
+                    </div>
+                  ))}
+                </Card>
+              ))}
+            </div>
+          )}
+          {selectedBoardModel && (!modelBoards[selectedBoardModel] || Object.keys(modelBoards[selectedBoardModel]).length === 0) && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>Noch kein Board für {selectedBoardModel}</div>
+          )}
+        </div>
       )}
     </div>
   )
