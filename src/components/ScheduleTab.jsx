@@ -86,6 +86,8 @@ export default function ScheduleTab({ session }) {
   const [newAbsenceFrom, setNewAbsenceFrom] = useState('')
   const [newAbsenceTo, setNewAbsenceTo] = useState('')
   const [newAbsenceReason, setNewAbsenceReason] = useState('')
+  const [scheduleStatus, setScheduleStatus] = useState('draft')
+  const [publishing, setPublishing] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -213,6 +215,7 @@ export default function ScheduleTab({ session }) {
       setSchedule(data[0].assignments || {})
       setDayNotes(data[0].day_notes || {})
       setShiftTimes(cleanTimes)
+      setScheduleStatus(data[0].status || 'draft')
       setHasSavedData(true)
     } else {
       // Auto-fill from recurring shifts
@@ -239,10 +242,24 @@ export default function ScheduleTab({ session }) {
     if (existing) {
       await supabase.from('schedule').update({ assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes }).eq('week_start', weekKey)
     } else {
-      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes })
+      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, status: 'draft' })
     }
     setHasSavedData(true)
     setSaving(false)
+  }
+
+  const togglePublish = async () => {
+    setPublishing(true)
+    const newStatus = scheduleStatus === 'live' ? 'draft' : 'live'
+    const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', weekKey).single()
+    if (existing) {
+      await supabase.from('schedule').update({ status: newStatus, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes }).eq('week_start', weekKey)
+    } else {
+      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, status: newStatus })
+    }
+    setScheduleStatus(newStatus)
+    setHasSavedData(true)
+    setPublishing(false)
   }
 
   const getCellKey = (modelId, dayIso, shift) => `${modelId}__${dayIso}__${shift}`
@@ -398,10 +415,25 @@ export default function ScheduleTab({ session }) {
             KW {kw} · {formatDate(weekDays[0])} – {formatDate(weekDays[6])} {weekDays[0].getFullYear()}
           </span>
           <button onClick={nextWeek} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', color: 'var(--text-secondary)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14 }}>›</button>
+          {/* Status Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: scheduleStatus === 'live' ? 'rgba(16,185,129,0.12)' : 'rgba(100,100,120,0.12)', border: `1px solid ${scheduleStatus === 'live' ? 'rgba(16,185,129,0.3)' : 'rgba(100,100,120,0.3)'}` }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: scheduleStatus === 'live' ? '#10b981' : '#888', display: 'inline-block' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: scheduleStatus === 'live' ? '#10b981' : 'var(--text-muted)' }}>
+              {scheduleStatus === 'live' ? 'Live' : 'Entwurf'}
+            </span>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={sendPlanToAll} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {sending ? 'Sende...' : '✈ Plan versenden'}
+          </button>
+          <button onClick={togglePublish} disabled={publishing} style={{
+            background: scheduleStatus === 'live' ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+            color: scheduleStatus === 'live' ? '#ef4444' : '#10b981',
+            border: `1px solid ${scheduleStatus === 'live' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+            borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit'
+          }}>
+            {publishing ? '...' : scheduleStatus === 'live' ? '⏸ Entwurf' : '▶ Veröffentlichen'}
           </button>
           <button onClick={saveSchedule} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {saving ? 'Speichern...' : 'Speichern'}
