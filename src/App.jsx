@@ -413,7 +413,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.7</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.8</span>
         </div>
       </div>
 
@@ -434,11 +434,11 @@ export default function App() {
         ) : activeTab === 'notes' ? (
           <NotesTab session={session} />
         ) : activeTab === 'nachrichten' ? (
-          <CommTab session={session} section="nachrichten" />
+          <CommTab key="nachrichten" session={session} section="nachrichten" />
         ) : activeTab === 'models-comm' ? (
-          <CommTab session={session} section="models" />
+          <CommTab key="models-comm" session={session} section="models" />
         ) : activeTab === 'chatters-comm' ? (
-          <CommTab session={session} section="chatters" />
+          <CommTab key="chatters-comm" session={session} section="chatters" />
         ) : (
           <ScheduleTab session={session} />
         )}
