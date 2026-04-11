@@ -169,15 +169,18 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [activeSection, setActiveSection] = useState(() => {
-    if (section === 'models') return 'modelboards'
+    if (section === 'models') return 'models'
     if (section === 'chatters') return 'chatters'
-    return 'inbox'
+    return 'nachrichten'
   })
   const [onlineStatuses, setOnlineStatuses] = useState({})
   const lastUpdateIdRef = React.useRef(0)
 
   useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
+    // Load section-specific data
+    if (section === 'models') { loadContentRequests(); loadModelBoardActivity() }
+    if (section === 'chatters') { loadShiftLogs(); loadSwaps() }
     setTimeout(loadOnlineStatuses, 3000) // reload after heartbeat sent
     const interval = setInterval(() => {
       pollTelegram()
