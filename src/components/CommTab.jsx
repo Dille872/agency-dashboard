@@ -201,11 +201,12 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const loadOnlineStatuses = async () => {
     const { data } = await supabase.from('online_status').select('*')
     const map = {}
-    const cutoff = new Date(Date.now() - 120000) // 2 minutes
+    const cutoff = new Date(Date.now() - 120000)
     for (const s of data || []) {
       map[s.display_name] = {
         dashboardOnline: new Date(s.last_seen) > cutoff,
         shiftOnline: s.shift_online && new Date(s.last_seen) > cutoff,
+        lastSeen: s.last_seen,
       }
     }
     setOnlineStatuses(map)
@@ -239,12 +240,44 @@ export default function CommTab({ session, section = 'nachrichten' }) {
 
         const { data: modelData } = await supabase.from('models_contact').select('*').eq('telegram_id', fromId).single()
         if (modelData) {
-          let availability = modelData.availability
           const lower = text.toLowerCase()
-          if (lower.includes('nicht verfügbar') || lower.includes('not available') || lower.includes('busy') || lower.includes('nicht da')) availability = 'unavailable'
-          else if (lower.includes('verfügbar') || lower.includes('available') || lower.includes('ok')) availability = 'available'
-          await supabase.from('models_contact').update({ availability, availability_note: text }).eq('id', modelData.id)
+          let statusUpdate = {}
+
+          // Parse status commands
+          if (lower.includes('nicht verfügbar') || lower.includes('not available') || lower.includes('busy') || lower.includes('nicht da') || lower.includes('/ab') || lower.includes('beschäftigt')) {
+            // Check for "bis HH:MM" or "bis HH uhr"
+            const untilMatch = lower.match(/bis\s+(\d{1,2})(?::(\d{2}))?\s*(uhr)?/)
+            const statusUntil = untilMatch ? (() => {
+              const d = new Date()
+              d.setHours(parseInt(untilMatch[1]), parseInt(untilMatch[2] || '0'), 0, 0)
+              return d.toISOString()
+            })() : null
+            statusUpdate = { status: 'unavailable', status_until: statusUntil, status_note: text, availability: 'unavailable' }
+          } else if (lower.includes('pause')) {
+            const untilMatch = lower.match(/bis\s+(\d{1,2})(?::(\d{2}))?\s*(uhr)?/)
+            const statusUntil = untilMatch ? (() => {
+              const d = new Date()
+              d.setHours(parseInt(untilMatch[1]), parseInt(untilMatch[2] || '0'), 0, 0)
+              return d.toISOString()
+            })() : new Date(Date.now() + 3600000).toISOString()
+            statusUpdate = { status: 'pause', status_until: statusUntil, status_note: text, availability: 'unavailable' }
+          } else if (lower.includes('verfügbar') || lower.includes('available') || lower.includes('/an') || lower.includes('bin da') || lower.includes('zurück') || lower.includes('back')) {
+            statusUpdate = { status: 'available', status_until: null, status_note: null, availability: 'available' }
+          } else {
+            statusUpdate = { availability: modelData.availability, status_note: text }
+          }
+
+          await supabase.from('models_contact').update(statusUpdate).eq('id', modelData.id)
           await supabase.from('messages').insert({ model_name: modelData.name, model_telegram_id: fromId, direction: 'in', contact_type: 'model', text, status: 'received', read: false })
+
+          // Confirm to model
+          const confirmMsg = statusUpdate.status === 'available' ? `✓ Status auf <b>Verfügbar</b> gesetzt` :
+            statusUpdate.status === 'unavailable' ? `✓ Status auf <b>Nicht verfügbar</b> gesetzt${statusUpdate.status_until ? ` bis ${new Date(statusUpdate.status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : ''}` :
+            statusUpdate.status === 'pause' ? `✓ <b>Pause</b> bis ${new Date(statusUpdate.status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : null
+          if (confirmMsg) {
+            const { sendTelegramMessage } = await import('../telegram.js')
+            await sendTelegramMessage(fromId, confirmMsg)
+          }
           await notifyOwner(`📨 Antwort von Model <b>${modelData.name}</b>:\n${text}`)
           loadMessages(); loadModels()
           continue
@@ -540,10 +573,21 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                     </div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{model.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
-                        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: AVAIL_COLORS[model.availability || 'unknown'], marginRight: 4, verticalAlign: 'middle' }} />
-                        {AVAIL_LABELS[model.availability || 'unknown']}
-                        {isOwner && model.telegram_id ? ` · TG: ${model.telegram_id}` : model.telegram_id ? ' · Telegram ✓' : ' · Kein Telegram'}
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {(() => {
+                          const s = model.status || 'unknown'
+                          const until = model.status_until ? new Date(model.status_until) : null
+                          const untilStr = until ? until.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null
+                          const color = s === 'available' ? '#10b981' : s === 'pause' ? '#f59e0b' : s === 'unavailable' ? '#ef4444' : '#555580'
+                          const label = s === 'available' ? 'Verfügbar' : s === 'pause' ? `Pause${untilStr ? ` bis ${untilStr}` : ''}` : s === 'unavailable' ? `Nicht verfügbar${untilStr ? ` bis ${untilStr}` : ''}` : 'Unbekannt'
+                          const isOnlineDash = model.last_seen && (Date.now() - new Date(model.last_seen)) < 180000
+                          return <>
+                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: color, verticalAlign: 'middle' }} />
+                            <span style={{ color }}>{label}</span>
+                            {isOnlineDash && <span style={{ color: '#06b6d4', fontSize: 9, background: 'rgba(6,182,212,0.1)', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>ONLINE</span>}
+                            {model.last_seen && <span style={{ color: 'var(--text-muted)' }}>· zuletzt {formatTime(model.last_seen)}</span>}
+                          </>
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -650,7 +694,10 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                           dashboardOnline={onlineStatuses[chatter.name]?.dashboardOnline || false}
                           shiftOnline={onlineStatuses[chatter.name]?.shiftOnline || false}
                         />
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{chatter.last_contacted ? formatTime(chatter.last_contacted) : '—'}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                          {onlineStatuses[chatter.name]?.lastSeen && <span>zuletzt {formatTime(onlineStatuses[chatter.name].lastSeen)}</span>}
+                          {chatter.last_contacted && <span>kontaktiert {formatTime(chatter.last_contacted)}</span>}
+                        </div>
                       </div>
                     </div>
                     {/* Availability panel */}

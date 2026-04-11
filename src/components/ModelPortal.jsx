@@ -47,8 +47,49 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [editingItem, setEditingItem] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  // Calendar state
-  const [calItems, setCalItems] = useState([])
+  const [modelStatus, setModelStatus] = useState(null) // full models_contact row
+  const [settingStatus, setSettingStatus] = useState(false)
+  const [statusNote, setStatusNote] = useState('')
+  const [statusUntil, setStatusUntil] = useState('')
+
+  // Heartbeat – update last_seen every 60s
+  useEffect(() => {
+    if (!displayName) return
+    const heartbeat = async () => {
+      await supabase.from('models_contact').update({ last_seen: new Date().toISOString() }).eq('name', displayName)
+    }
+    heartbeat()
+    const interval = setInterval(heartbeat, 60000)
+    return () => clearInterval(interval)
+  }, [displayName])
+
+  const loadModelStatus = async () => {
+    const { data } = await supabase.from('models_contact').select('*').eq('name', displayName).single()
+    setModelStatus(data)
+    // Auto-clear expired pause/unavailable
+    if (data?.status_until && new Date(data.status_until) < new Date()) {
+      await supabase.from('models_contact').update({ status: 'available', status_until: null, status_note: null }).eq('name', displayName)
+      setModelStatus(prev => ({ ...prev, status: 'available', status_until: null, status_note: null }))
+    }
+  }
+
+  const setStatus = async (status) => {
+    setSaving(true)
+    const until = statusUntil ? (() => {
+      const [h, m] = statusUntil.split(':')
+      const d = new Date(); d.setHours(parseInt(h), parseInt(m), 0, 0)
+      return d.toISOString()
+    })() : null
+    await supabase.from('models_contact').update({
+      status,
+      status_until: status === 'available' ? null : until,
+      status_note: status === 'available' ? null : statusNote || null,
+      availability: status === 'available' ? 'available' : 'unavailable',
+    }).eq('name', displayName)
+    setStatusNote(''); setStatusUntil(''); setSettingStatus(false)
+    await loadModelStatus()
+    setSaving(false)
+  }
   const [showAddCal, setShowAddCal] = useState(false)
   const [calTitle, setCalTitle] = useState('')
   const [calDesc, setCalDesc] = useState('')
@@ -79,7 +120,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }, [displayName])
 
   const loadAll = async () => {
-    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue()
+    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus()
   }
 
   const loadBoard = async () => {
@@ -249,7 +290,49 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {activeSection === 'home' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Banner offene Anfragen */}
+            {/* Status Banner */}
+        {(() => {
+          const s = modelStatus?.status || 'unknown'
+          const until = modelStatus?.status_until ? new Date(modelStatus.status_until) : null
+          const untilStr = until ? until.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null
+          const color = s === 'available' ? '#10b981' : s === 'pause' ? '#f59e0b' : s === 'unavailable' ? '#ef4444' : '#555580'
+          const bg = s === 'available' ? 'rgba(16,185,129,0.08)' : s === 'pause' ? 'rgba(245,158,11,0.08)' : s === 'unavailable' ? 'rgba(239,68,68,0.06)' : 'rgba(100,100,100,0.06)'
+          const border = s === 'available' ? 'rgba(16,185,129,0.25)' : s === 'pause' ? 'rgba(245,158,11,0.25)' : s === 'unavailable' ? 'rgba(239,68,68,0.2)' : '#1e1e3a'
+          const label = s === 'available' ? 'Ich bin verfügbar' : s === 'pause' ? `Pause${untilStr ? ` bis ${untilStr}` : ''}` : s === 'unavailable' ? `Nicht verfügbar${untilStr ? ` bis ${untilStr}` : ''}` : 'Status nicht gesetzt'
+          return (
+            <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color }}>{label}</div>
+                    {modelStatus?.status_note && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{modelStatus.status_note}</div>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {s !== 'available' && <button onClick={() => setStatus('available')} style={{ padding: '7px 16px', borderRadius: 7, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Wieder verfügbar</button>}
+                  {s === 'available' && <button onClick={() => setSettingStatus('pause')} style={{ padding: '7px 16px', borderRadius: 7, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Pause</button>}
+                  {s === 'available' && <button onClick={() => setSettingStatus('unavailable')} style={{ padding: '7px 16px', borderRadius: 7, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Nicht verfügbar</button>}
+                </div>
+              </div>
+              {settingStatus && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${border}`, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input type="time" value={statusUntil} onChange={e => setStatusUntil(e.target.value)}
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                  <input value={statusNote} onChange={e => setStatusNote(e.target.value)} placeholder="Notiz (optional, nur für Admins)"
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', flex: 1, minWidth: 180 }} />
+                  <button onClick={() => setStatus(settingStatus)} disabled={saving}
+                    style={{ padding: '6px 16px', borderRadius: 6, background: settingStatus === 'pause' ? '#f59e0b' : '#ef4444', color: '#000', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    {settingStatus === 'pause' ? 'Pause setzen' : 'Nicht verfügbar setzen'}
+                  </button>
+                  <button onClick={() => setSettingStatus(false)} style={{ padding: '6px 12px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Banner offene Anfragen */}
             {openRequests.length > 0 && (
               <div onClick={() => setActiveSection('anfragen')} style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                 <div>
