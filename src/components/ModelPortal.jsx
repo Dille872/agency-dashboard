@@ -90,6 +90,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     await loadModelStatus()
     setSaving(false)
   }
+  const [calItems, setCalItems] = useState([])
   const [showAddCal, setShowAddCal] = useState(false)
   const [calTitle, setCalTitle] = useState('')
   const [calDesc, setCalDesc] = useState('')
