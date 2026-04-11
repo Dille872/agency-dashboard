@@ -438,6 +438,25 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 )}
               </div>
 
+              {/* Bot Commands */}
+              <div style={cardS}>
+                <div style={{ ...labelS, marginBottom: 12 }}><span style={{ width: 3, height: 11, background: '#a78bfa', borderRadius: 2, display: 'inline-block', marginRight: 6 }} />Bot-Befehle · @thirteen87agency_bot</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {[
+                    { cmd: 'verfügbar', desc: 'Status auf verfügbar setzen', color: '#10b981' },
+                    { cmd: 'nicht verfügbar', desc: 'Status auf nicht verfügbar', color: '#ef4444' },
+                    { cmd: 'pause bis 18', desc: 'Pause bis 18:00 Uhr', color: '#f59e0b' },
+                    { cmd: 'zurück', desc: 'Pause beenden', color: '#06b6d4' },
+                    { cmd: '/start', desc: 'Telegram ID anzeigen', color: '#a78bfa' },
+                  ].map(b => (
+                    <div key={b.cmd} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: b.color, background: b.color + '20', padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>{b.cmd}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
           </div>
         )}
