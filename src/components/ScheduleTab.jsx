@@ -375,6 +375,8 @@ export default function ScheduleTab({ session }) {
     setAutoPlanning(false)
     alert('✓ Plan wurde automatisch ausgefüllt – bitte prüfen und anpassen!')
   }
+
+  const getCellKey = (modelId, dayIso, shift) => `${modelId}__${dayIso}__${shift}`
   const getRecurringKey = (modelId, dayOfWeek, shift) => `${modelId}__${dayOfWeek}__${shift}`
 
   const setCell = (modelId, dayIso, shift, value) => {
