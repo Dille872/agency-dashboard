@@ -276,8 +276,12 @@ export default function ScheduleTab({ session }) {
     setSendingReminder(false)
     setReminderCell(null)
 
-    const sendAtLocal = new Date(sendAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-    alert(`✓ Erinnerung geplant! ${chatterName} wird benachrichtigt am ${sendAtLocal} Uhr`)
+    const sendAtBerlin = new Date(sendAt).toLocaleString('de-DE', {
+      timeZone: 'Europe/Berlin',
+      day: '2-digit', month: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    })
+    alert(`✓ Erinnerung geplant! ${chatterName} wird benachrichtigt am ${sendAtBerlin} Uhr (DE-Zeit)`)
   }
 
   // Conflict detection
