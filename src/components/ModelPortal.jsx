@@ -212,7 +212,6 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
-          <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer' }}>{theme === 'dark' ? '☀' : '☾'}</button>
           {isPreview ? (
             <select value={previewModel} onChange={e => setPreviewModel(e.target.value)} style={{ background: 'var(--bg-input)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', padding: '4px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
               {allModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
@@ -222,6 +221,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           )}
           {onSwitchToAdmin && <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⚙ Admin</button>}
           <button onClick={() => supabase.auth.signOut()} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, background: 'transparent', border: '1px solid #1e1e3a', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>↩</button>
+          <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer' }}>{theme === 'dark' ? '☀' : '☾'}</button>
         </div>
       </header>
 

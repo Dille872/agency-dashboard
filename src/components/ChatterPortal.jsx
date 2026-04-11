@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.5.8'
+const APP_VERSION = 'v1.5.9'
 
 const ADMIN_TZ = 'Europe/Berlin'
 
@@ -518,9 +518,6 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
-          <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
           {onSwitchToAdmin && (
             <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
@@ -528,6 +525,9 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
             </button>
           )}
           <button onClick={() => supabase.auth.signOut()} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, background: 'transparent', border: '1px solid #1e1e3a', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>↩</button>
+          <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
         </div>
       </header>
 

@@ -289,7 +289,7 @@ export default function App() {
         minHeight: 56,
       }}>
         {/* Left */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+        <div onClick={() => setActiveTab('models')} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer' }}>
           <div style={{
             width: 28, height: 28, borderRadius: 8, flexShrink: 0,
             background: 'linear-gradient(135deg, #7c3aed, #06b6d4)',
@@ -315,8 +315,8 @@ export default function App() {
               { key: 'chatters', label: 'Chatters' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
               { key: 'nachrichten', label: 'Nachrichten', badge: unreadMessages },
-              { key: 'models-comm', label: 'Model Komm.', badge: unreadModelChanges },
-              { key: 'chatters-comm', label: 'Chatter Komm.', badge: openSwaps },
+              { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
+              { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'schedule', label: 'Dienstplan' },
             ].map(tab => (
               <button key={tab.key} onClick={() => {
@@ -413,7 +413,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.9</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.7.0</span>
         </div>
       </div>
 
