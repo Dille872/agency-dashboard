@@ -486,14 +486,24 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[
-          { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => (Date.now() - new Date(a.created_at)) < 86400000).length > 0) ? 1 : 0 },
-          { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
-          { key: 'nachrichten', label: 'Nachrichten', badge: unreadCount },
-        ].map(s => (
+          (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => (Date.now() - new Date(a.created_at)) < 86400000).length > 0) ? 1 : 0 },
+          section === 'models' && { key: 'modelboards', label: `Boards${modelBoardActivity.filter(a => (Date.now() - new Date(a.created_at)) < 86400000).length > 0 ? ' (neu)' : ''}` },
+          section === 'models' && { key: 'content-requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
+          (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
+          section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
+          section === 'chatters' && { key: 'stats', label: 'Statistik' },
+          section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
+          (section === 'nachrichten' || !section) && { key: 'nachrichten', label: 'Posteingang', badge: unreadCount },
+          (section === 'nachrichten' || !section) && { key: 'history', label: 'Verlauf' },
+        ].filter(Boolean).map(s => (
           <button key={s.key} onClick={() => {
             setActiveSection(s.key)
-            if (s.key === 'models') { loadContentRequests(); loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
-            if (s.key === 'chatters') { loadShiftLogs(); loadSwaps() }
+            if (s.key === 'models') { /* already loaded */ }
+            if (s.key === 'modelboards') { loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
+            if (s.key === 'content-requests') loadContentRequests()
+            if (s.key === 'chatters') { /* already loaded */ }
+            if (s.key === 'swaps') loadSwaps()
+            if (s.key === 'stats' || s.key === 'shiftlog') loadShiftLogs()
             if (s.key === 'nachrichten') setUnreadCount(0)
           }} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
@@ -805,7 +815,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       )}
 
       {/* VERLAUF */}
-      {activeSection === 'nachrichten' && (
+      {activeSection === 'history' && (
         <Card title="Nachrichtenverlauf">
           {messages.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Nachrichten</div>
@@ -844,7 +854,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       )}
 
       {/* CONTENT-ANFRAGEN */}
-      {activeSection === 'models' && (
+      {activeSection === 'content-requests' && (
         <Card title={`Content-Anfragen (${contentRequests.length})`}>
           {contentRequests.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Anfragen</div>
@@ -890,7 +900,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       )}
 
       {/* SCHICHT-LOG */}
-      {activeSection === 'chatters' && (
+      {activeSection === 'shiftlog' && (
         <Card title="Schicht-Log">
           {shiftLogs.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Schicht-Logs</div>
@@ -933,7 +943,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       )}
 
       {/* STATISTIK */}
-      {activeSection === 'chatters' && (
+      {activeSection === 'stats' && (
         <Card title="Chatter Statistik">
           {chatterStats.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Daten</div>
@@ -969,7 +979,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       )}
 
       {/* SCHICHT-TAUSCH */}
-      {activeSection === 'chatters' && (
+      {activeSection === 'swaps' && (
         <Card title="Schicht-Tausch Anfragen">
           {swaps.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
@@ -1004,7 +1014,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       )}
 
       {/* MODEL BOARDS */}
-      {activeSection === 'models' && (
+      {activeSection === 'modelboards' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Card title="Letzte Änderungen">
             {modelBoardActivity.length === 0 ? (
