@@ -241,6 +241,69 @@ export default function CommTab({ session }) {
     setShowAddChatter(false); loadChatters()
   }
 
+  const [editingChatter, setEditingChatter] = useState(null) // {id, name}
+  const [editChatterName, setEditChatterName] = useState('')
+  const [availabilities, setAvailabilities] = useState({}) // chatterName → [{day_of_week, time_from, time_to}]
+  const [showAvailability, setShowAvailability] = useState(null) // chatterName
+  const [newAvailDay, setNewAvailDay] = useState('')
+  const [newAvailFrom, setNewAvailFrom] = useState('')
+  const [newAvailTo, setNewAvailTo] = useState('')
+
+  const DAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+
+  const loadAvailabilities = async () => {
+    const { data } = await supabase.from('chatter_availability').select('*')
+    const map = {}
+    for (const a of data || []) {
+      if (!map[a.chatter_name]) map[a.chatter_name] = []
+      map[a.chatter_name].push(a)
+    }
+    setAvailabilities(map)
+  }
+
+  const saveChatterName = async () => {
+    if (!editChatterName.trim() || !editingChatter) return
+    const oldName = editingChatter.name
+    const newName = editChatterName.trim()
+    await supabase.from('chatters_contact').update({ name: newName }).eq('id', editingChatter.id)
+    // Update all references
+    await supabase.from('chatter_availability').update({ chatter_name: newName }).eq('chatter_name', oldName)
+    await supabase.from('absences').update({ chatter_name: newName }).eq('chatter_name', oldName)
+    await supabase.from('reminders').update({ chatter_name: newName }).eq('chatter_name', oldName)
+    await supabase.from('shift_swaps').update({ requester_name: newName }).eq('requester_name', oldName)
+    // Update schedule assignments
+    const { data: schedules } = await supabase.from('schedule').select('*')
+    for (const sched of schedules || []) {
+      const assignments = sched.assignments || {}
+      let changed = false
+      for (const [key, val] of Object.entries(assignments)) {
+        if (val.chatter === oldName) { assignments[key].chatter = newName; changed = true }
+      }
+      if (changed) await supabase.from('schedule').update({ assignments }).eq('id', sched.id)
+    }
+    setEditingChatter(null)
+    loadChatters()
+  }
+
+  const addAvailability = async (chatterName) => {
+    if (!newAvailDay === '' || !newAvailFrom || !newAvailTo) return
+    await supabase.from('chatter_availability').insert({
+      chatter_name: chatterName,
+      day_of_week: parseInt(newAvailDay),
+      time_from: newAvailFrom,
+      time_to: newAvailTo,
+    })
+    setNewAvailDay(''); setNewAvailFrom(''); setNewAvailTo('')
+    loadAvailabilities()
+  }
+
+  const deleteAvailability = async (id) => {
+    await supabase.from('chatter_availability').delete().eq('id', id)
+    loadAvailabilities()
+  }
+
+  useEffect(() => { loadAvailabilities() }, [])
+
   const markAllRead = async () => {
     await supabase.from('messages').update({ read: true }).eq('direction', 'in').eq('read', false)
     loadMessages()
@@ -419,35 +482,91 @@ export default function CommTab({ session }) {
               {chatters.map(chatter => {
                 const isSelected = selectedChatters.has(chatter.id)
                 return (
-                  <div key={chatter.id} onClick={() => toggleChatter(chatter.id)} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8,
-                    border: `1px solid ${isSelected ? '#06b6d4' : 'var(--border)'}`,
-                    cursor: 'pointer', transition: 'border-color 0.15s',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSelected ? '#06b6d4' : 'var(--border-bright)'}`, background: isSelected ? '#06b6d4' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        {isSelected && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-                      </div>
-                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #06b6d433, #7c3aed33)', border: '1px solid #2e2e5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#06b6d4', flexShrink: 0 }}>
-                        {chatter.name[0]}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{chatter.name}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
-                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: AVAIL_COLORS[chatter.availability || 'unknown'], marginRight: 4, verticalAlign: 'middle' }} />
-                          {AVAIL_LABELS[chatter.availability || 'unknown']}
-                          {isOwner && chatter.telegram_id ? ` · TG: ${chatter.telegram_id}` : chatter.telegram_id ? ' · Telegram ✓' : ' · Kein Telegram'}
+                  <div key={chatter.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                    <div onClick={() => toggleChatter(chatter.id)} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: showAvailability === chatter.name ? '8px 8px 0 0' : 8,
+                      border: `1px solid ${isSelected ? '#06b6d4' : 'var(--border)'}`,
+                      cursor: 'pointer', transition: 'border-color 0.15s',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSelected ? '#06b6d4' : 'var(--border-bright)'}`, background: isSelected ? '#06b6d4' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {isSelected && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                        </div>
+                        <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #06b6d433, #7c3aed33)', border: '1px solid #2e2e5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#06b6d4', flexShrink: 0 }}>
+                          {chatter.name[0]}
+                        </div>
+                        <div>
+                          {editingChatter?.id === chatter.id ? (
+                            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <input value={editChatterName} onChange={e => setEditChatterName(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveChatterName(); if (e.key === 'Escape') setEditingChatter(null) }}
+                                autoFocus
+                                style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '3px 7px', borderRadius: 5, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 100 }} />
+                              <button onClick={saveChatterName} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓</button>
+                              <button onClick={() => setEditingChatter(null)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{chatter.name}</div>
+                              <button onClick={e => { e.stopPropagation(); setEditingChatter(chatter); setEditChatterName(chatter.name) }} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
+                            </div>
+                          )}
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: AVAIL_COLORS[chatter.availability || 'unknown'], marginRight: 4, verticalAlign: 'middle' }} />
+                            {AVAIL_LABELS[chatter.availability || 'unknown']}
+                            {isOwner && chatter.telegram_id ? ` · TG: ${chatter.telegram_id}` : chatter.telegram_id ? ' · Telegram ✓' : ' · Kein Telegram'}
+                          </div>
                         </div>
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button onClick={e => { e.stopPropagation(); setShowAvailability(showAvailability === chatter.name ? null : chatter.name) }}
+                          style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.1)' : 'transparent', color: availabilities[chatter.name]?.length ? '#06b6d4' : 'var(--text-muted)', border: `1px solid ${availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.3)' : 'var(--border)'}`, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                          🗓 {availabilities[chatter.name]?.length ? availabilities[chatter.name].length : '+'}
+                        </button>
+                        <OnlineStatus
+                          dashboardOnline={onlineStatuses[chatter.name]?.dashboardOnline || false}
+                          shiftOnline={onlineStatuses[chatter.name]?.shiftOnline || false}
+                        />
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{chatter.last_contacted ? formatTime(chatter.last_contacted) : '—'}</div>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <OnlineStatus
-                        dashboardOnline={onlineStatuses[chatter.name]?.dashboardOnline || false}
-                        shiftOnline={onlineStatuses[chatter.name]?.shiftOnline || false}
-                      />
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{chatter.last_contacted ? formatTime(chatter.last_contacted) : '—'}</div>
-                    </div>
+                    {/* Availability panel */}
+                    {showAvailability === chatter.name && (
+                      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid #06b6d4', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
+                        <div style={{ fontSize: 10, color: '#06b6d4', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Verfügbarkeit</div>
+                        {/* Existing */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                          {(availabilities[chatter.name] || []).map(a => (
+                            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)', borderRadius: 5, padding: '3px 8px', fontSize: 11 }}>
+                              <span style={{ color: '#06b6d4', fontWeight: 700 }}>{DAY_NAMES[a.day_of_week]}</span>
+                              <span style={{ color: 'var(--text-secondary)' }}>{a.time_from}–{a.time_to}</span>
+                              <button onClick={() => deleteAvailability(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, padding: 0, lineHeight: 1 }}>✕</button>
+                            </div>
+                          ))}
+                          {(!availabilities[chatter.name] || availabilities[chatter.name].length === 0) && (
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Keine Verfügbarkeit eingetragen</span>
+                          )}
+                        </div>
+                        {/* Add new */}
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <select value={newAvailDay} onChange={e => setNewAvailDay(e.target.value)}
+                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '4px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit', outline: 'none' }}>
+                            <option value="">Tag</option>
+                            {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                          </select>
+                          <input type="time" value={newAvailFrom} onChange={e => setNewAvailFrom(e.target.value)}
+                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '4px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace', outline: 'none' }} />
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>bis</span>
+                          <input type="time" value={newAvailTo} onChange={e => setNewAvailTo(e.target.value)}
+                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '4px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace', outline: 'none' }} />
+                          <button onClick={() => addAvailability(chatter.name)} disabled={newAvailDay === '' || !newAvailFrom || !newAvailTo}
+                            style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 5, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            + Hinzufügen
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}

@@ -289,7 +289,92 @@ export default function ScheduleTab({ session }) {
     setPublishing(false)
   }
 
-  const getCellKey = (modelId, dayIso, shift) => `${modelId}__${dayIso}__${shift}`
+  const [autoPlanning, setAutoPlanning] = useState(false)
+
+  const autoGeneratePlan = async () => {
+    setAutoPlanning(true)
+    // Load availabilities and absences
+    const { data: availData } = await supabase.from('chatter_availability').select('*')
+    const { data: absData } = await supabase.from('absences').select('*')
+
+    // Build availability map: chatterName → [{day_of_week, time_from, time_to}]
+    const availMap = {}
+    for (const a of availData || []) {
+      if (!availMap[a.chatter_name]) availMap[a.chatter_name] = []
+      availMap[a.chatter_name].push(a)
+    }
+
+    const newSchedule = { ...schedule }
+
+    for (const day of weekDays) {
+      const dayIso = isoDate(day)
+      const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1 // 0=Mo..6=So
+
+      for (const model of models) {
+        for (const shift of SHIFTS) {
+          const cellKey = getCellKey(model.id, dayIso, shift)
+          // Skip if already filled
+          if (newSchedule[cellKey]?.chatter) continue
+
+          // Check recurring first
+          const recurringKey = getRecurringKey(model.id, dayOfWeek, shift)
+          if (recurring[recurringKey]?.chatter) {
+            const chatterName = recurring[recurringKey].chatter
+            // Check not absent
+            const isAbsent = (absData || []).some(a => a.chatter_name === chatterName && dayIso >= a.date_from && dayIso <= a.date_to)
+            if (!isAbsent) {
+              newSchedule[cellKey] = { chatter: chatterName, note: recurring[recurringKey].note || '', isRecurring: true }
+              continue
+            }
+          }
+
+          // Find available chatter based on shift time and availability profile
+          const timeStr = (shiftTimes[`${model.id}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+          const shiftStart = timeStr ? timeStr.split('-')[0].trim() : null
+          const shiftEnd = timeStr ? timeStr.split('-')[1]?.trim() : null
+
+          const candidates = chatters.filter(c => {
+            // Check not absent
+            const absent = (absData || []).some(a => a.chatter_name === c.name && dayIso >= a.date_from && dayIso <= a.date_to)
+            if (absent) return false
+            // Check availability profile
+            const avails = availMap[c.name] || []
+            if (avails.length === 0) return true // No restrictions = always available
+            return avails.some(a => {
+              if (a.day_of_week !== dayOfWeek) return false
+              if (!shiftStart) return true
+              // Check time overlap
+              return shiftStart >= a.time_from && (!shiftEnd || shiftEnd <= a.time_to)
+            })
+          })
+
+          // Check not already double-booked this day/shift
+          const alreadyBooked = new Set(
+            Object.entries(newSchedule)
+              .filter(([k, v]) => k.includes(`__${dayIso}__${shift}`) && v.chatter)
+              .map(([_, v]) => v.chatter)
+          )
+          const available = candidates.filter(c => !alreadyBooked.has(c.name))
+
+          if (available.length > 0) {
+            // Pick the one with fewest shifts this week
+            const shiftCounts = {}
+            for (const [k, v] of Object.entries(newSchedule)) {
+              if (k.includes(`__${dayIso.slice(0, 7)}`)) {
+                if (v.chatter) shiftCounts[v.chatter] = (shiftCounts[v.chatter] || 0) + 1
+              }
+            }
+            available.sort((a, b) => (shiftCounts[a.name] || 0) - (shiftCounts[b.name] || 0))
+            newSchedule[cellKey] = { chatter: available[0].name, note: '' }
+          }
+        }
+      }
+    }
+
+    setSchedule(newSchedule)
+    setAutoPlanning(false)
+    alert('✓ Plan wurde automatisch ausgefüllt – bitte prüfen und anpassen!')
+  }
   const getRecurringKey = (modelId, dayOfWeek, shift) => `${modelId}__${dayOfWeek}__${shift}`
 
   const setCell = (modelId, dayIso, shift, value) => {
@@ -453,6 +538,9 @@ export default function ScheduleTab({ session }) {
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={sendPlanToAll} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {sending ? 'Sende...' : '✈ Plan versenden'}
+          </button>
+          <button onClick={autoGeneratePlan} disabled={autoPlanning} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {autoPlanning ? '⏳ Plane...' : '⚡ Auto-Plan'}
           </button>
           <button onClick={togglePublish} disabled={publishing} style={{
             background: scheduleStatus === 'live' ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
