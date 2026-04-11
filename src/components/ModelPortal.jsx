@@ -121,7 +121,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }, [displayName])
 
   const loadAll = async () => {
-    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus()
+    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos()
   }
 
   const loadBoard = async () => {
@@ -228,6 +228,52 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     loadContentRequests()
   }
 
+  // Videos
+  const [videos, setVideos] = useState([])
+  const [showAddVideo, setShowAddVideo] = useState(false)
+  const [videoTitle, setVideoTitle] = useState('')
+  const [videoDesc, setVideoDesc] = useState('')
+  const [videoDate, setVideoDate] = useState('')
+  const [videoFile, setVideoFile] = useState(null)
+  const [videoPreview, setVideoPreview] = useState(null)
+  const [uploadingVideo, setUploadingVideo] = useState(false)
+
+  const loadVideos = async () => {
+    const { data } = await supabase.from('model_videos').select('*').eq('model_name', displayName).order('release_date')
+    setVideos(data || [])
+  }
+
+  const addVideo = async () => {
+    if (!videoTitle.trim()) return
+    setUploadingVideo(true)
+    let thumbnailUrl = null
+    if (videoFile) {
+      const ext = videoFile.name.split('.').pop()
+      const path = `${displayName}/${Date.now()}.${ext}`
+      const { data: uploadData } = await supabase.storage.from('model-media').upload(path, videoFile)
+      if (uploadData) {
+        const { data: urlData } = supabase.storage.from('model-media').getPublicUrl(path)
+        thumbnailUrl = urlData.publicUrl
+      }
+    }
+    await supabase.from('model_videos').insert({
+      model_name: displayName,
+      title: videoTitle.trim(),
+      description: videoDesc.trim() || null,
+      release_date: videoDate || null,
+      thumbnail_url: thumbnailUrl,
+    })
+    await logActivity('Video hinzugefügt', 'videos', videoTitle.trim())
+    setVideoTitle(''); setVideoDesc(''); setVideoDate(''); setVideoFile(null); setVideoPreview(null); setShowAddVideo(false)
+    await loadVideos()
+    setUploadingVideo(false)
+  }
+
+  const deleteVideo = async (id) => {
+    await supabase.from('model_videos').delete().eq('id', id)
+    loadVideos()
+  }
+
   const totalRevenue = Object.values(revenue).reduce((s, v) => s + v, 0)
   const csvNames = aliases.length > 0 ? aliases.map(a => a.csv_name) : [displayName]
   const multiAccount = csvNames.length > 1
@@ -274,6 +320,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           {[
             { key: 'home', label: '🏠 Übersicht' },
             { key: 'board', label: '📋 Mein Board' },
+            { key: 'videos', label: `🎬 Videos${videos.length > 0 ? ` (${videos.length})` : ''}` },
             { key: 'kalender', label: `📅 Kalender${upcomingCal.length > 0 ? ` (${upcomingCal.length})` : ''}` },
             { key: 'anfragen', label: `✉ Anfragen${openRequests.length > 0 ? ` (${openRequests.length})` : ''}` },
             { key: 'umsatz', label: '💰 Umsatz' },
@@ -603,6 +650,64 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* VIDEOS */}
+        {activeSection === 'videos' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {!showAddVideo ? (
+              <button onClick={() => setShowAddVideo(true)} style={{ padding: '10px', borderRadius: 8, background: 'var(--bg-card)', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                + Neues Video eintragen
+              </button>
+            ) : (
+              <div style={cardS}>
+                <div style={{ ...labelS, marginBottom: 14 }}><span style={{ width: 3, height: 11, background: '#ef4444', borderRadius: 2, display: 'inline-block', marginRight: 6 }} />Neues Video</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input value={videoTitle} onChange={e => setVideoTitle(e.target.value)} style={inputS} placeholder="Titel *" autoFocus />
+                  <textarea value={videoDesc} onChange={e => setVideoDesc(e.target.value)} style={{ ...inputS, resize: 'vertical' }} rows={2} placeholder="Beschreibung (optional)" />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Release Datum</label>
+                      <input type="date" value={videoDate} onChange={e => setVideoDate(e.target.value)} style={inputS} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Vorschaubild (JPG/PNG)</label>
+                    <input type="file" accept="image/*" onChange={e => {
+                      const f = e.target.files[0]
+                      if (f) { setVideoFile(f); setVideoPreview(URL.createObjectURL(f)) }
+                    }} style={{ ...inputS, padding: '4px' }} />
+                    {videoPreview && <img src={videoPreview} alt="Vorschau" style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 8, marginTop: 8, border: '1px solid #1e1e3a' }} />}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <button onClick={addVideo} disabled={uploadingVideo || !videoTitle.trim()} style={{ flex: 1, padding: '9px', borderRadius: 7, background: videoTitle.trim() ? '#ef4444' : 'var(--border)', color: videoTitle.trim() ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {uploadingVideo ? '⏳ Wird hochgeladen...' : '+ Speichern'}
+                    </button>
+                    <button onClick={() => { setShowAddVideo(false); setVideoTitle(''); setVideoDesc(''); setVideoDate(''); setVideoFile(null); setVideoPreview(null) }} style={{ padding: '9px 16px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {videos.length === 0 ? (
+              <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>Noch keine Videos eingetragen</div>
+            ) : videos.map(video => (
+              <div key={video.id} style={{ ...cardS, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                {video.thumbnail_url ? (
+                  <img src={video.thumbnail_url} alt={video.title} style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 7, flexShrink: 0, border: '1px solid #1e1e3a' }} />
+                ) : (
+                  <div style={{ width: 80, height: 60, borderRadius: 7, background: 'var(--bg-card2)', border: '1px solid #1e1e3a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🎬</div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>{video.title}</div>
+                  {video.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4, lineHeight: 1.4 }}>{video.description}</div>}
+                  {video.release_date && <div style={{ fontSize: 11, color: '#f59e0b', fontFamily: 'monospace' }}>📅 {new Date(video.release_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
+                </div>
+                <button onClick={() => deleteVideo(video.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, padding: 0, flexShrink: 0 }}
+                  onMouseEnter={e => e.target.style.color = '#ef4444'} onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
+              </div>
+            ))}
           </div>
         )}
 

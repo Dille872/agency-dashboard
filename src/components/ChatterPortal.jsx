@@ -188,6 +188,28 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   const [newRequestModel, setNewRequestModel] = useState('')
   const [newRequestText, setNewRequestText] = useState('')
   const [sendingRequest, setSendingRequest] = useState(false)
+  const [assignedModelBoards, setAssignedModelBoards] = useState({}) // modelName → board map
+  const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
+  const [selectedModelInfo, setSelectedModelInfo] = useState(null)
+
+  const loadAssignedModelData = async (modelNames) => {
+    if (!modelNames || modelNames.length === 0) return
+    const boards = {}
+    const vids = {}
+    for (const name of modelNames) {
+      const { data: boardData } = await supabase.from('model_board').select('*').eq('model_name', name).order('sort_order')
+      const map = {}
+      for (const item of boardData || []) {
+        if (!map[item.category]) map[item.category] = []
+        map[item.category].push(item)
+      }
+      boards[name] = map
+      const { data: videoData } = await supabase.from('model_videos').select('*').eq('model_name', name).order('release_date')
+      vids[name] = videoData || []
+    }
+    setAssignedModelBoards(boards)
+    setAssignedModelVideos(vids)
+  }
 
   const loadContentRequests = async () => {
     const twoWeeksAgo = new Date()
@@ -306,10 +328,25 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
       d.setDate(today.getDate() + i)
       return d
     })
-    // Get unique week starts
     const weekStarts = [...new Set(days.map(d => isoDate(getWeekStart(d))))]
     const { data } = await supabase.from('schedule').select('*').in('week_start', weekStarts).eq('status', 'live')
     setNext7Schedules(data || [])
+    // Extract model names assigned to this chatter
+    const todayIso = isoDate(new Date())
+    const assignedNames = new Set()
+    for (const sched of data || []) {
+      for (const [key, val] of Object.entries(sched.assignments || {})) {
+        if (val.chatter === displayName) {
+          assignedNames.add(key.split('__')[0])
+        }
+      }
+    }
+    // Also get model names from models_contact
+    const { data: modelsData } = await supabase.from('models_contact').select('name, id')
+    const modelNameMap = {}
+    for (const m of modelsData || []) modelNameMap[String(m.id)] = m.name
+    const resolvedNames = [...assignedNames].map(id => modelNameMap[id] || id).filter(Boolean)
+    if (resolvedNames.length > 0) loadAssignedModelData(resolvedNames)
   }
 
   const loadMyReminders = async () => {
@@ -818,6 +855,74 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
             ))}
           </div>
         </div>
+
+        {/* Meine Models – Board & Videos */}
+        {Object.keys(assignedModelBoards).length > 0 && (
+          <div style={{ margin: '0 0 16px 0' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Meine Models</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {Object.keys(assignedModelBoards).map(name => (
+                <button key={name} onClick={() => setSelectedModelInfo(selectedModelInfo === name ? null : name)}
+                  style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                    background: selectedModelInfo === name ? '#f59e0b' : 'var(--bg-card)',
+                    color: selectedModelInfo === name ? '#000' : 'var(--text-secondary)',
+                    border: `1px solid ${selectedModelInfo === name ? '#f59e0b' : '#1e1e3a'}` }}>
+                  {name}
+                </button>
+              ))}
+            </div>
+
+            {selectedModelInfo && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Board */}
+                {Object.entries(assignedModelBoards[selectedModelInfo] || {}).map(([cat, items]) => {
+                  const catColors = { preise: '#10b981', nogos: '#ef4444', regeln: '#a78bfa', services: '#f59e0b', einschraenkungen: '#06b6d4', reise: '#06b6d4', termine: '#7c3aed' }
+                  const catLabels = { preise: 'Preisstruktur', nogos: 'No Gos', regeln: 'Content Regeln', services: 'Services', einschraenkungen: 'Einschränkungen', reise: 'Reiseplan', termine: 'Termine' }
+                  const color = catColors[cat] || '#a78bfa'
+                  return (
+                    <div key={cat} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                        <span style={{ width: 3, height: 11, background: color, borderRadius: 2, display: 'inline-block' }} />
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catLabels[cat] || cat}</span>
+                      </div>
+                      {items.map(item => (
+                        <div key={item.id} style={{ padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a', marginBottom: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
+                          {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{item.content}</div>}
+                          {item.price && <div style={{ fontSize: 12, fontWeight: 700, color, marginTop: 3 }}>{item.price}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+
+                {/* Videos */}
+                {(assignedModelVideos[selectedModelInfo] || []).length > 0 && (
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                      <span style={{ width: 3, height: 11, background: '#ef4444', borderRadius: 2, display: 'inline-block' }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Bevorstehende Videos</span>
+                    </div>
+                    {(assignedModelVideos[selectedModelInfo] || []).map(video => (
+                      <div key={video.id} style={{ display: 'flex', gap: 12, padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a', marginBottom: 6, alignItems: 'flex-start' }}>
+                        {video.thumbnail_url ? (
+                          <img src={video.thumbnail_url} alt={video.title} style={{ width: 60, height: 45, objectFit: 'cover', borderRadius: 5, flexShrink: 0 }} />
+                        ) : (
+                          <div style={{ width: 60, height: 45, borderRadius: 5, background: '#1e1e3a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🎬</div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{video.title}</div>
+                          {video.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{video.description}</div>}
+                          {video.release_date && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 3, fontFamily: 'monospace' }}>📅 {new Date(video.release_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Bot Commands */}
         <div style={{ margin: '0 0 16px 0', background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 18px' }}>
