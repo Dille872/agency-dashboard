@@ -14,8 +14,21 @@ const CATEGORIES = [
   { key: 'termine', label: 'Termine', color: '#7c3aed' },
 ]
 
-export default function ModelPortal({ session, displayName, onSwitchToAdmin }) {
+export default function ModelPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isPreview }) {
   const [theme, setThemeState] = useState(() => getTheme())
+  const [previewModel, setPreviewModel] = useState('')
+  const [allModels, setAllModels] = useState([])
+  const displayName = isPreview ? (previewModel || '') : initialDisplayName
+
+  useEffect(() => {
+    if (isPreview) {
+      supabase.from('models_contact').select('name').order('name').then(({ data }) => {
+        setAllModels(data || [])
+        if (data && data.length > 0) setPreviewModel(data[0].name)
+      })
+    }
+  }, [isPreview])
+
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next); setThemeState(next)
@@ -29,13 +42,15 @@ export default function ModelPortal({ session, displayName, onSwitchToAdmin }) {
   const [newPrice, setNewPrice] = useState('')
   const [newDateFrom, setNewDateFrom] = useState('')
   const [newDateTo, setNewDateTo] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [editingItem, setEditingItem] = useState(null)
+  const [collapsed, setCollapsed] = useState({})
+  const toggleCollapse = (key) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }))
 
   useEffect(() => {
-    loadBoard()
-    loadContentRequests()
-  }, [])
+    if (displayName) {
+      loadBoard()
+      loadContentRequests()
+    }
+  }, [displayName])
 
   const loadBoard = async () => {
     const { data } = await supabase.from('model_board')
@@ -155,7 +170,14 @@ export default function ModelPortal({ session, displayName, onSwitchToAdmin }) {
           <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer' }}>
             {theme === 'dark' ? '☀' : '☾'}
           </button>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
+          {isPreview ? (
+            <select value={previewModel} onChange={e => { setPreviewModel(e.target.value) }}
+              style={{ background: 'var(--bg-input)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', padding: '4px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+              {allModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+            </select>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
+          )}
           {onSwitchToAdmin && (
             <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⚙ Admin</button>
           )}
@@ -163,20 +185,23 @@ export default function ModelPortal({ session, displayName, onSwitchToAdmin }) {
         </div>
       </header>
 
-      <main style={{ padding: '20px', maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+      <main style={{ padding: '20px', maxWidth: 800, margin: '0 auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {CATEGORIES.map(cat => (
             <div key={cat.key} style={cardStyle}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div onClick={() => toggleCollapse(cat.key)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed[cat.key] ? 0 : 14, cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                   <span style={{ width: 3, height: 12, background: cat.color, borderRadius: 2, display: 'inline-block' }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{cat.label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cat.label}</span>
+                  <span style={{ fontSize: 10, background: 'var(--bg-card2)', color: 'var(--text-muted)', padding: '1px 7px', borderRadius: 10, border: '1px solid var(--border)' }}>
+                    {(board[cat.key] || []).length}
+                  </span>
                 </div>
-                <span style={{ fontSize: 10, background: 'var(--bg-card2)', color: 'var(--text-muted)', padding: '1px 7px', borderRadius: 10, border: '1px solid var(--border)' }}>
-                  {(board[cat.key] || []).length}
-                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{collapsed[cat.key] ? '▼' : '▲'}</span>
               </div>
+
+              {!collapsed[cat.key] && (<>
 
               {(board[cat.key] || []).map(item => (
                 <div key={item.id}>
@@ -232,6 +257,7 @@ export default function ModelPortal({ session, displayName, onSwitchToAdmin }) {
                   + Hinzufügen
                 </button>
               )}
+              </>)}
             </div>
           ))}
 

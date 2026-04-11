@@ -241,8 +241,9 @@ export default function App() {
   if (showModelPortal) return (
     <ModelPortal
       session={session}
-      displayName={userDisplayName}
+      displayName={userRole === 'admin' ? 'Vorschau' : userDisplayName}
       onSwitchToAdmin={isAdmin ? () => setViewMode('admin') : null}
+      isPreview={userRole === 'admin'}
     />
   )
 
@@ -337,6 +338,11 @@ export default function App() {
             background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
             color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
           }}>Chatter-Ansicht</button>
+          <button onClick={() => setViewMode('model')} style={{
+            fontSize: 11, padding: '5px 10px', borderRadius: 6,
+            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
+            color: '#f59e0b', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
+          }}>Model-Ansicht</button>
           <button onClick={handleLogout} style={{
             fontSize: 12, padding: '5px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',
@@ -393,7 +399,7 @@ export default function App() {
         </div>
         {/* Version + Delete */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.0</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.6.1</span>
           <button onClick={clearAllData} style={{
             padding: '7px 12px', background: 'transparent',
             border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
