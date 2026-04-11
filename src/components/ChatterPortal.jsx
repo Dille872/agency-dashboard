@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.5.7'
+const APP_VERSION = 'v1.5.8'
 
 const ADMIN_TZ = 'Europe/Berlin'
 
@@ -72,6 +72,82 @@ function getKW(date) {
   const d = new Date(date)
   const onejan = new Date(d.getFullYear(), 0, 1)
   return Math.ceil(((d - onejan) / 86400000 + onejan.getDay() + 1) / 7)
+}
+
+function SwapRequestForm({ displayName, myNext7Shifts }) {
+  const [swapShift, setSwapShift] = useState('')
+  const [swapReason, setSwapReason] = useState('')
+  const [sending, setSending] = useState(false)
+  const [mySwaps, setMySwaps] = useState([])
+
+  useEffect(() => {
+    loadMySwaps()
+  }, [])
+
+  const loadMySwaps = async () => {
+    const { data } = await supabase.from('shift_swaps').select('*')
+      .eq('requester_name', displayName)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    setMySwaps(data || [])
+  }
+
+  const submitSwap = async () => {
+    if (!swapShift) return
+    setSending(true)
+    const parts = swapShift.split('__')
+    await supabase.from('shift_swaps').insert({
+      requester_name: displayName,
+      shift_date: parts[0],
+      shift: parts[1],
+      model_name: parts[2] || '?',
+      reason: swapReason || null,
+      status: 'offen',
+    })
+    setSwapShift('')
+    setSwapReason('')
+    await loadMySwaps()
+    setSending(false)
+    alert('✓ Tausch-Anfrage gesendet!')
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <select value={swapShift} onChange={e => setSwapShift(e.target.value)}
+          style={{ flex: 1, minWidth: 160, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: swapShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+          <option value="">— Schicht wählen —</option>
+          {myNext7Shifts.map((s, i) => {
+            const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+            const modelName = s.models[0]?.modelName || '?'
+            const val = `${s.dayIso}__${s.shift}__${modelName}`
+            return <option key={i} value={val}>{dayLabel} · {s.shift} · {modelName}</option>
+          })}
+        </select>
+        <input value={swapReason} onChange={e => setSwapReason(e.target.value)}
+          placeholder="Grund (optional)"
+          style={{ flex: 1, minWidth: 120, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
+        <button onClick={submitSwap} disabled={!swapShift || sending}
+          style={{ background: swapShift ? 'rgba(245,158,11,0.15)' : 'var(--border)', color: swapShift ? '#f59e0b' : 'var(--text-muted)', border: `1px solid ${swapShift ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`, borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          {sending ? '...' : '↔ Anfragen'}
+        </button>
+      </div>
+      {mySwaps.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {mySwaps.map(s => (
+            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12 }}>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {new Date(s.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {s.shift} · {s.model_name}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: s.status === 'offen' ? '#f59e0b' : s.status === 'angenommen' ? '#10b981' : '#ef4444' }}>
+                {s.status === 'offen' ? 'Offen' : s.status === 'angenommen' ? `✓ ${s.accepted_by}` : 'Abgelehnt'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ChatterPortal({ session, displayName, onSwitchToAdmin }) {
@@ -710,6 +786,15 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
               })}
             </div>
           )}
+        </div>
+
+        {/* Schicht-Tausch */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
+            Schicht-Tausch anfragen
+          </div>
+          <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
         </div>
 
         {/* Week Stats */}

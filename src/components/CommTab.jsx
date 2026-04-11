@@ -6,7 +6,7 @@ import OnlineStatus from './OnlineStatus'
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 const DISPLAY_NAMES = {
-  'dillemc@hotmail.com': 'Christoph',
+  'dillemc@hotmail.com': 'Chris',
 }
 const getDisplayName = (email) => DISPLAY_NAMES[email] || email?.split('@')[0] || 'Unbekannt'
 
@@ -263,10 +263,35 @@ export default function CommTab({ session }) {
   }
 
   const [shiftLogs, setShiftLogs] = useState([])
+  const [chatterStats, setChatterStats] = useState([])
+  const [swaps, setSwaps] = useState([])
 
   const loadShiftLogs = async () => {
     const { data } = await supabase.from('shift_logs').select('*').order('checked_in_at', { ascending: false }).limit(100)
     setShiftLogs(data || [])
+    // Calculate stats per chatter
+    const logs = data || []
+    const statsMap = {}
+    for (const log of logs) {
+      const name = log.display_name
+      if (!statsMap[name]) statsMap[name] = { name, totalShifts: 0, lateShifts: 0, totalMinutes: 0 }
+      statsMap[name].totalShifts++
+      if (log.checked_in_at && log.checked_out_at) {
+        const mins = (new Date(log.checked_out_at) - new Date(log.checked_in_at)) / 60000
+        statsMap[name].totalMinutes += mins
+      }
+    }
+    setChatterStats(Object.values(statsMap).sort((a, b) => b.totalShifts - a.totalShifts))
+  }
+
+  const loadSwaps = async () => {
+    const { data } = await supabase.from('shift_swaps').select('*').order('created_at', { ascending: false })
+    setSwaps(data || [])
+  }
+
+  const updateSwap = async (id, status, acceptedBy = null) => {
+    await supabase.from('shift_swaps').update({ status, ...(acceptedBy ? { accepted_by: acceptedBy } : {}) }).eq('id', id)
+    loadSwaps()
   }
 
   const [contentRequests, setContentRequests] = useState([])
@@ -298,12 +323,14 @@ export default function CommTab({ session }) {
           { key: 'history', label: 'Verlauf' },
           { key: 'requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           { key: 'shiftlog', label: 'Schicht-Log' },
+          { key: 'stats', label: 'Statistik' },
+          { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
         ].map(s => (
-          <button key={s.key} onClick={() => { setActiveSection(s.key); if (s.key === 'shiftlog') loadShiftLogs(); if (s.key === 'requests') loadContentRequests() }} style={{
+          <button key={s.key} onClick={() => { setActiveSection(s.key); if (s.key === 'shiftlog' || s.key === 'stats') loadShiftLogs(); if (s.key === 'requests') loadContentRequests(); if (s.key === 'swaps') loadSwaps() }} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
             background: activeSection === s.key ? '#7c3aed' : 'transparent',
-            color: activeSection === s.key ? '#fff' : s.key === 'inbox' && unreadCount > 0 ? '#f59e0b' : 'var(--text-secondary)',
-            border: `1px solid ${activeSection === s.key ? '#7c3aed' : s.key === 'inbox' && unreadCount > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
+            color: activeSection === s.key ? '#fff' : s.key === 'inbox' && unreadCount > 0 ? '#f59e0b' : s.key === 'swaps' && swaps.filter(sw => sw.status === 'offen').length > 0 ? '#f59e0b' : 'var(--text-secondary)',
+            border: `1px solid ${activeSection === s.key ? '#7c3aed' : (s.key === 'inbox' && unreadCount > 0) || (s.key === 'swaps' && swaps.filter(sw => sw.status === 'offen').length > 0) ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
             fontWeight: 600, fontSize: 13, fontFamily: 'inherit',
           }}>{s.label}</button>
         ))}
@@ -669,6 +696,77 @@ export default function CommTab({ session }) {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* STATISTIK */}
+      {activeSection === 'stats' && (
+        <Card title="Chatter Statistik">
+          {chatterStats.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Daten</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {chatterStats.map(stat => {
+                const avgH = stat.totalShifts > 0 ? (stat.totalMinutes / stat.totalShifts / 60).toFixed(1) : '—'
+                const totalH = (stat.totalMinutes / 60).toFixed(0)
+                return (
+                  <div key={stat.name} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>
+                      {stat.name[0]}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 120 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{stat.name}</div>
+                    </div>
+                    {[
+                      { label: 'Schichten', val: stat.totalShifts },
+                      { label: 'Gesamtstunden', val: `${totalH}h` },
+                      { label: 'Ø pro Schicht', val: avgH !== '—' ? `${avgH}h` : '—' },
+                    ].map(item => (
+                      <div key={item.label} style={{ textAlign: 'center', minWidth: 80 }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{item.val}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{item.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* SCHICHT-TAUSCH */}
+      {activeSection === 'swaps' && (
+        <Card title="Schicht-Tausch Anfragen">
+          {swaps.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {swaps.map(swap => (
+                <div key={swap.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${swap.status === 'offen' ? 'rgba(245,158,11,0.3)' : swap.status === 'angenommen' ? 'rgba(16,185,129,0.3)' : 'var(--border)'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                        <span style={{ color: '#a78bfa' }}>{swap.requester_name}</span> · {swap.shift}schicht · {new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Model: {swap.model_name}{swap.reason ? ` · ${swap.reason}` : ''}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700, background: swap.status === 'offen' ? 'rgba(245,158,11,0.15)' : swap.status === 'angenommen' ? 'rgba(16,185,129,0.15)' : 'rgba(100,100,120,0.15)', color: swap.status === 'offen' ? '#f59e0b' : swap.status === 'angenommen' ? '#10b981' : 'var(--text-muted)' }}>
+                        {swap.status === 'offen' ? 'Offen' : swap.status === 'angenommen' ? `✓ ${swap.accepted_by}` : 'Abgelehnt'}
+                      </span>
+                      {swap.status === 'offen' && (
+                        <>
+                          <button onClick={() => updateSwap(swap.id, 'angenommen', 'Admin')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Annehmen</button>
+                          <button onClick={() => updateSwap(swap.id, 'abgelehnt')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </Card>
