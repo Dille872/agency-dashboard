@@ -333,6 +333,19 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           )
         })()}
 
+        {/* Welcome banner for new models */}
+        {activeSection === 'home' && Object.keys(board).length === 0 && !isPreview && (
+          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, padding: '16px 20px', marginBottom: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>👋 Willkommen!</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
+              Dein Board ist noch leer. Trage deine Preise, No Gos und Content-Regeln ein damit dein Chatter-Team weiß was sie anbieten können.
+            </div>
+            <button onClick={() => setActiveSection('board')} style={{ padding: '7px 16px', borderRadius: 7, background: '#f59e0b', color: '#000', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Board jetzt aufbauen →
+            </button>
+          </div>
+        )}
+
         {/* Banner offene Anfragen */}
             {openRequests.length > 0 && (
               <div onClick={() => setActiveSection('anfragen')} style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>

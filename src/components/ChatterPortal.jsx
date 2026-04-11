@@ -824,8 +824,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
           <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12 }}>Bot-Befehle · @thirteen87agency_bot</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
-              { cmd: '/an', desc: 'Schicht starten', color: '#10b981' },
-              { cmd: '/ab', desc: 'Schicht beenden', color: '#ef4444' },
+              { cmd: '/on', desc: 'Schicht starten', color: '#10b981' },
+              { cmd: '/off', desc: 'Schicht beenden', color: '#ef4444' },
               { cmd: '/start', desc: 'Telegram ID anzeigen', color: '#a78bfa' },
             ].map(b => (
               <div key={b.cmd} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a' }}>

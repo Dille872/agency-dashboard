@@ -95,4 +95,25 @@ th { text-align: left; }
 /* ── MOBILE ─────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   html, body { font-size: 13px; }
+  .hide-mobile { display: none !important; }
+  header { padding: 0 12px !important; min-height: 50px !important; flex-wrap: wrap; }
+  main { padding: 10px !important; }
+  /* Stack grids on mobile */
+  [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+  /* Smaller buttons on mobile */
+  button { font-size: 12px !important; padding: 6px 10px !important; }
+  /* Full width inputs */
+  input, select, textarea { width: 100% !important; font-size: 14px !important; }
+  /* Tabs wrap */
+  [style*="display: flex"][style*="gap: 8"] { flex-wrap: wrap !important; }
+  /* Cards full width */
+  [style*="border-radius: 10px"] { border-radius: 8px !important; }
+  /* Tables scroll horizontally */
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  header .hide-sm { display: none !important; }
+  [style*="minmax(280px"] { grid-template-columns: 1fr !important; }
+  [style*="minmax(320px"] { grid-template-columns: 1fr !important; }
+  [style*="minmax(340px"] { grid-template-columns: 1fr !important; }
 }

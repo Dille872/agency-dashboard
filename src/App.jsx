@@ -10,6 +10,7 @@ import ScheduleTab from './components/ScheduleTab'
 import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
+import OnboardingTab from './components/OnboardingTab'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -320,6 +321,7 @@ export default function App() {
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'schedule', label: 'Dienstplan' },
               { key: 'export', label: 'Export' },
+              { key: 'team', label: 'Team' },
             ].map(tab => (
               <button key={tab.key} onClick={() => {
                 setActiveTab(tab.key)
@@ -415,7 +417,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.7.2</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.7.3</span>
         </div>
       </div>
 
@@ -443,6 +445,8 @@ export default function App() {
           <CommTab key="chatters-comm" session={session} section="chatters" />
         ) : activeTab === 'export' ? (
           <ExportTab />
+        ) : activeTab === 'team' ? (
+          <OnboardingTab />
         ) : (
           <ScheduleTab session={session} />
         )}
