@@ -278,10 +278,10 @@ export default function ScheduleTab({ session }) {
 
     const sendAtBerlin = new Date(sendAt).toLocaleString('de-DE', {
       timeZone: 'Europe/Berlin',
-      day: '2-digit', month: '2-digit',
+      day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
     })
-    alert(`✓ Erinnerung geplant! ${chatterName} wird benachrichtigt am ${sendAtBerlin} Uhr (DE-Zeit)`)
+    alert(`✓ Erinnerung geplant!\n${chatterName} wird am ${sendAtBerlin} Uhr (DE) benachrichtigt.`)
   }
 
   // Conflict detection
