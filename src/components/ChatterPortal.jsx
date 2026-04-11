@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.5.6'
+const APP_VERSION = 'v1.5.7'
 
 const ADMIN_TZ = 'Europe/Berlin'
 
@@ -354,15 +354,16 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         for (const [key, val] of Object.entries(assignments)) {
           const parts = key.split('__')
           if (parts[1] === dayIso && parts[2] === shift && val.chatter === displayName) {
-            modelsInShift.push({ ...val, modelId: parts[0] })
+            const modelId = parts[0]
+            const modelObj = models.find(m => String(m.id) === String(modelId))
+            const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+            const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
+            modelsInShift.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime })
           }
         }
         if (modelsInShift.length > 0) {
-          const modelId = modelsInShift[0].modelId
-          const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
-          const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
           const reminder = myReminders.find(r => r.shift_date === dayIso && r.shift === shift)
-          myNext7Shifts.push({ day, dayIso, shift, models: modelsInShift, timeStr, localTime, reminder })
+          myNext7Shifts.push({ day, dayIso, shift, models: modelsInShift, reminder })
         }
       }
     }
@@ -521,34 +522,41 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                   const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
                   return (
                     <div key={i} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '10px 12px', background: today ? 'rgba(16,185,129,0.05)' : 'var(--bg-card2)',
                       borderRadius: 8, border: `1px solid ${today ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 4, height: 36, borderRadius: 2, background: SHIFT_COLORS[s.shift], flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: today ? '#10b981' : 'var(--text-primary)' }}>
-                            {dayLabel}{today ? ' · Heute' : ''}
-                          </div>
-                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>
-                            {s.shift}{s.localTime ? ` · ${s.localTime} (lokal)` : ''}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s.models.length > 1 ? 8 : 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 4, height: 32, borderRadius: 2, background: SHIFT_COLORS[s.shift], flexShrink: 0 }} />
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: today ? '#10b981' : 'var(--text-primary)' }}>
+                              {dayLabel}{today ? ' · Heute' : ''}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>
+                              {s.shift}{s.models[0]?.localTime ? ` · ${s.models[0].localTime} (lokal)` : s.models[0]?.timeStr ? ` · ${s.models[0].timeStr} (DE)` : ''}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {s.reminder && (
-                          <span style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)', padding: '2px 7px', borderRadius: 4 }}>
-                            🔔 Reminder
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {s.reminder && (
+                            <span style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)', padding: '2px 7px', borderRadius: 4 }}>🔔</span>
+                          )}
+                          <span style={{
+                            fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700,
+                            background: today ? 'rgba(16,185,129,0.15)' : past ? 'rgba(255,255,255,0.04)' : 'rgba(124,58,237,0.15)',
+                            color: today ? '#10b981' : past ? 'var(--text-muted)' : '#a78bfa',
+                          }}>
+                            {today ? 'Heute' : past ? 'Erledigt' : 'Geplant'}
                           </span>
-                        )}
-                        <span style={{
-                          fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700,
-                          background: today ? 'rgba(16,185,129,0.15)' : past ? 'rgba(255,255,255,0.04)' : 'rgba(124,58,237,0.15)',
-                          color: today ? '#10b981' : past ? 'var(--text-muted)' : '#a78bfa',
-                        }}>
-                          {today ? 'Heute' : past ? 'Erledigt' : 'Geplant'}
-                        </span>
+                        </div>
+                      </div>
+                      {/* Model list */}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 14 }}>
+                        {s.models.map((m, mi) => (
+                          <span key={mi} style={{ fontSize: 10, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 7px', color: 'var(--text-secondary)' }}>
+                            {m.modelName}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   )
