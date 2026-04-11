@@ -77,7 +77,7 @@ export default function ScheduleTab({ session }) {
   const [sending, setSending] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
-  const [reminderCell, setReminderCell] = useState(null) // cellId being reminded
+  const [reminderCell, setReminderCell] = useState(null) // { cellId, modelId, dayIso, shift, chatterName }
   const [sendingReminder, setSendingReminder] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
@@ -507,11 +507,11 @@ export default function ScheduleTab({ session }) {
                               {isRecurring && <div style={{ fontSize: 8, color: '#a78bfa', marginTop: 1 }}>↻</div>}
                               {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 1 }}>{cell.note}</div>}
                               {/* Reminder button */}
-                              {reminderCell === cellId ? (
+                              {reminderCell?.cellId === cellId ? (
                                 <div onClick={e => e.stopPropagation()} style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
                                   <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 2 }}>Erinnerung senden:</div>
                                   {['1', '3', '12', '24'].map(h => (
-                                    <button key={h} onClick={() => sendReminder(model.id, dayIso, shift, cell.chatter, h)}
+                                    <button key={h} onClick={() => sendReminder(reminderCell.modelId, reminderCell.dayIso, reminderCell.shift, reminderCell.chatterName, h)}
                                       disabled={sendingReminder}
                                       style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
                                       {h}h vorher
@@ -523,7 +523,7 @@ export default function ScheduleTab({ session }) {
                                   </button>
                                 </div>
                               ) : (
-                                <button onClick={e => { e.stopPropagation(); setReminderCell(reminderCell === cellId ? null : cellId) }}
+                                <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
                                   style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
                                   🔔
                                 </button>
