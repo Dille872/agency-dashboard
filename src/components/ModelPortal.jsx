@@ -43,6 +43,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [newDateFrom, setNewDateFrom] = useState('')
   const [newDateTo, setNewDateTo] = useState('')
   const [collapsed, setCollapsed] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [editingItem, setEditingItem] = useState(null)
   const toggleCollapse = (key) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }))
 
   useEffect(() => {
