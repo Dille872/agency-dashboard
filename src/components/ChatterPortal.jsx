@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.4.7'
+const APP_VERSION = 'v1.5.6'
 
 const ADMIN_TZ = 'Europe/Berlin'
 
@@ -96,6 +96,12 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   const [chatterStats, setChatterStats] = useState(null)
   const [chatterSnapshots, setChatterSnapshots] = useState([])
   const [weekStart] = useState(() => getWeekStart(new Date()))
+  const [myReminders, setMyReminders] = useState([])
+  const [myAbsences, setMyAbsences] = useState([])
+  const [newAbsenceDate, setNewAbsenceDate] = useState('')
+  const [newAbsenceReason, setNewAbsenceReason] = useState('')
+  const [next7Schedules, setNext7Schedules] = useState([])
+  const [absentLoading, setAbsentLoading] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -175,6 +181,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
     loadStats()
     loadModels()
     loadContentRequests()
+    loadMyReminders()
+    loadMyAbsences()
     sendHeartbeat(false)
     const interval = setInterval(() => {
       loadMessages()
@@ -211,6 +219,61 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
       setScheduleData(data.assignments || {})
       setShiftTimes(data.shift_times || {})
     }
+    // Also load next 7 days schedules
+    await loadNext7Days()
+  }
+
+  const loadNext7Days = async () => {
+    const today = new Date()
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today)
+      d.setDate(today.getDate() + i)
+      return d
+    })
+    // Get unique week starts
+    const weekStarts = [...new Set(days.map(d => isoDate(getWeekStart(d))))]
+    const { data } = await supabase.from('schedule').select('*').in('week_start', weekStarts).eq('status', 'live')
+    setNext7Schedules(data || [])
+  }
+
+  const loadMyReminders = async () => {
+    const { data } = await supabase.from('reminders')
+      .select('*')
+      .eq('chatter_name', displayName)
+      .eq('sent', false)
+      .order('send_at')
+    setMyReminders(data || [])
+  }
+
+  const loadMyAbsences = async () => {
+    const today = isoDate(new Date())
+    const { data } = await supabase.from('absences')
+      .select('*')
+      .eq('chatter_name', displayName)
+      .gte('date_to', today)
+      .order('date_from')
+    setMyAbsences(data || [])
+  }
+
+  const addAbsence = async () => {
+    if (!newAbsenceDate) return
+    setAbsentLoading(true)
+    await supabase.from('absences').insert({
+      chatter_name: displayName,
+      date_from: newAbsenceDate,
+      date_to: newAbsenceDate,
+      reason: newAbsenceReason || 'Nicht verfügbar',
+    })
+    setNewAbsenceDate('')
+    setNewAbsenceReason('')
+    await loadMyAbsences()
+    setAbsentLoading(false)
+    alert('✓ Abwesenheit eingetragen!')
+  }
+
+  const deleteAbsence = async (id) => {
+    await supabase.from('absences').delete().eq('id', id)
+    loadMyAbsences()
   }
 
   const [lastStatDate, setLastStatDate] = useState(null)
@@ -261,7 +324,6 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   for (const day of weekDays) {
     const dayIso = isoDate(day)
     for (const shift of SHIFTS) {
-      // Look through all models for this chatter
       const modelsInShift = []
       for (const [key, val] of Object.entries(scheduleData)) {
         const parts = key.split('__')
@@ -271,6 +333,37 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
       }
       if (modelsInShift.length > 0) {
         myShifts.push({ day, dayIso, shift, models: modelsInShift })
+      }
+    }
+  }
+
+  // Get my shifts next 7 days from all loaded schedules
+  const next7Days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date()
+    d.setDate(d.getDate() + i)
+    return d
+  })
+  const myNext7Shifts = []
+  for (const day of next7Days) {
+    const dayIso = isoDate(day)
+    for (const sched of next7Schedules) {
+      const assignments = sched.assignments || {}
+      const times = sched.shift_times || {}
+      for (const shift of SHIFTS) {
+        const modelsInShift = []
+        for (const [key, val] of Object.entries(assignments)) {
+          const parts = key.split('__')
+          if (parts[1] === dayIso && parts[2] === shift && val.chatter === displayName) {
+            modelsInShift.push({ ...val, modelId: parts[0] })
+          }
+        }
+        if (modelsInShift.length > 0) {
+          const modelId = modelsInShift[0].modelId
+          const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+          const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
+          const reminder = myReminders.find(r => r.shift_date === dayIso && r.shift === shift)
+          myNext7Shifts.push({ day, dayIso, shift, models: modelsInShift, timeStr, localTime, reminder })
+        }
       }
     }
   }
@@ -412,19 +505,20 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 16 }}>
-          {/* My Shifts */}
+          {/* My Shifts – next 7 days */}
           <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 3, height: 11, background: '#06b6d4', borderRadius: 2, display: 'inline-block' }} />
-              Meine Schichten – KW {kw}
+              Meine Schichten – nächste 7 Tage
             </div>
-            {myShifts.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Noch kein Dienstplan für diese Woche</div>
+            {myNext7Shifts.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Kein veröffentlichter Plan für die nächsten 7 Tage</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {myShifts.map((s, i) => {
+                {myNext7Shifts.map((s, i) => {
                   const today = isToday(s.day)
                   const past = s.day < new Date() && !today
+                  const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
                   return (
                     <div key={i} style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -435,39 +529,58 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                         <div style={{ width: 4, height: 36, borderRadius: 2, background: SHIFT_COLORS[s.shift], flexShrink: 0 }} />
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: today ? '#10b981' : 'var(--text-primary)' }}>
-                            {DAYS[weekDays.indexOf(weekDays.find(d => isoDate(d) === s.dayIso))]} {formatDate(s.day)}{today ? ' · Heute' : ''}
+                            {dayLabel}{today ? ' · Heute' : ''}
                           </div>
                           <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>
-                            {s.shift}
-                            {(() => {
-                              const modelIds = Object.keys(s.models || {})
-                              for (const key of Object.keys(scheduleData)) {
-                                const parts = key.split('__')
-                                if (parts[1] === s.dayIso && parts[2] === s.shift) {
-                                  const berlinTime = shiftTimes[`${parts[0]}__${s.shift}`]
-                                  if (berlinTime) {
-                                    const local = convertTimeToLocal(berlinTime)
-                                    return ` · ${local}`
-                                  }
-                                }
-                              }
-                              return ''
-                            })()}
+                            {s.shift}{s.localTime ? ` · ${s.localTime} (lokal)` : ''}
                           </div>
                         </div>
                       </div>
-                      <span style={{
-                        fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700,
-                        background: today ? 'rgba(16,185,129,0.15)' : past ? 'rgba(255,255,255,0.04)' : 'rgba(124,58,237,0.15)',
-                        color: today ? '#10b981' : past ? 'var(--text-muted)' : '#a78bfa',
-                      }}>
-                        {today ? 'Aktiv' : past ? 'Erledigt' : 'Geplant'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {s.reminder && (
+                          <span style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)', padding: '2px 7px', borderRadius: 4 }}>
+                            🔔 Reminder
+                          </span>
+                        )}
+                        <span style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700,
+                          background: today ? 'rgba(16,185,129,0.15)' : past ? 'rgba(255,255,255,0.04)' : 'rgba(124,58,237,0.15)',
+                          color: today ? '#10b981' : past ? 'var(--text-muted)' : '#a78bfa',
+                        }}>
+                          {today ? 'Heute' : past ? 'Erledigt' : 'Geplant'}
+                        </span>
+                      </div>
                     </div>
                   )
                 })}
               </div>
             )}
+
+            {/* Abwesenheit eintragen */}
+            <div style={{ marginTop: 16, borderTop: '1px solid #1e1e3a', paddingTop: 14 }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Ich bin nicht verfügbar am</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                <input type="date" value={newAbsenceDate} onChange={e => setNewAbsenceDate(e.target.value)}
+                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1 }} />
+                <input value={newAbsenceReason} onChange={e => setNewAbsenceReason(e.target.value)}
+                  placeholder="Grund (optional)"
+                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', flex: 1 }} />
+                <button onClick={addAbsence} disabled={!newAbsenceDate || absentLoading}
+                  style={{ background: newAbsenceDate ? 'rgba(239,68,68,0.15)' : 'var(--border)', color: newAbsenceDate ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${newAbsenceDate ? 'rgba(239,68,68,0.3)' : 'var(--border)'}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                  + Eintragen
+                </button>
+              </div>
+              {myAbsences.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {myAbsences.map(a => (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
+                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {a.reason}</span>
+                      <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Messages + Note */}
