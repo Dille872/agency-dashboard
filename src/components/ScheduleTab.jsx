@@ -77,15 +77,57 @@ export default function ScheduleTab({ session }) {
   const [sending, setSending] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
-  const [reminderCell, setReminderCell] = useState(null) // { cellId, modelId, dayIso, shift, chatterName }
+  const [reminderCell, setReminderCell] = useState(null)
   const [sendingReminder, setSendingReminder] = useState(false)
+  const [activeReminders, setActiveReminders] = useState({}) // cellKey → true
+  const [absences, setAbsences] = useState([]) // [{id, chatter_name, date_from, date_to, reason}]
+  const [showAbsences, setShowAbsences] = useState(false)
+  const [newAbsenceName, setNewAbsenceName] = useState('')
+  const [newAbsenceFrom, setNewAbsenceFrom] = useState('')
+  const [newAbsenceTo, setNewAbsenceTo] = useState('')
+  const [newAbsenceReason, setNewAbsenceReason] = useState('')
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
-  useEffect(() => { loadModels(); loadChatters(); loadRecurring(); checkShiftAlerts() }, [])
+  useEffect(() => { loadModels(); loadChatters(); loadRecurring(); checkShiftAlerts(); loadAbsences(); loadActiveReminders() }, [])
   useEffect(() => { if (weekKey) loadSchedule() }, [weekKey])
+
+  const loadAbsences = async () => {
+    const { data } = await supabase.from('absences').select('*').order('date_from')
+    setAbsences(data || [])
+  }
+
+  const loadActiveReminders = async () => {
+    const { data } = await supabase.from('reminders').select('shift_date, shift, chatter_name').eq('sent', false)
+    const map = {}
+    for (const r of data || []) {
+      map[`${r.chatter_name}__${r.shift_date}__${r.shift}`] = true
+    }
+    setActiveReminders(map)
+  }
+
+  const addAbsence = async () => {
+    if (!newAbsenceName || !newAbsenceFrom || !newAbsenceTo) return
+    await supabase.from('absences').insert({
+      chatter_name: newAbsenceName,
+      date_from: newAbsenceFrom,
+      date_to: newAbsenceTo,
+      reason: newAbsenceReason || 'Abwesend',
+    })
+    setNewAbsenceName(''); setNewAbsenceFrom(''); setNewAbsenceTo(''); setNewAbsenceReason('')
+    loadAbsences()
+  }
+
+  const deleteAbsence = async (id) => {
+    await supabase.from('absences').delete().eq('id', id)
+    loadAbsences()
+  }
+
+  const isAbsent = (chatterName, dayIso) => {
+    return absences.some(a => a.chatter_name === chatterName && dayIso >= a.date_from && dayIso <= a.date_to)
+  }
 
   const checkShiftAlerts = async () => {
     // Check every 5 minutes if a shift started 15 min ago and chatter is not online
@@ -267,21 +309,18 @@ export default function ScheduleTab({ session }) {
       chatter_telegram_id: chatter.telegram_id,
       model_name: modelName,
       shift,
-      shift_date: dayIso,
+      shift_date: reminderCell.dayIso,
       shift_start_time: startTime || '?',
       send_at: sendAt,
       sent: false,
     })
 
+    // Mark reminder as active in UI
+    setActiveReminders(prev => ({ ...prev, [`${chatterName}__${reminderCell.dayIso}__${shift}`]: true }))
+
     setSendingReminder(false)
     setReminderCell(null)
-
-    const sendAtBerlin = new Date(sendAt).toLocaleString('de-DE', {
-      timeZone: 'Europe/Berlin',
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    })
-    alert(`✓ Erinnerung geplant!\n${chatterName} wird am ${sendAtBerlin} Uhr (DE) benachrichtigt.`)
+    alert(`✓ Erinnerung eingestellt – ${chatterName} wird ${hoursBefore} Stunde${hoursBefore !== 1 ? 'n' : ''} vorher benachrichtigt`)
   }
 
   // Conflict detection
@@ -461,10 +500,12 @@ export default function ScheduleTab({ session }) {
                       const recurringKey = getRecurringKey(model.id, dayOfWeek, shift)
                       const isRecurring = !!recurring[recurringKey]
 
+                      const isChatterAbsent = cell.chatter ? isAbsent(cell.chatter, dayIso) : false
+
                       return (
                         <td key={di} onClick={() => setEditingCell(isEditing ? null : cellId)} style={{
-                          border: `1px solid ${hasConflict ? 'rgba(239,68,68,0.3)' : isToday(day) ? 'rgba(124,58,237,0.2)' : 'var(--border)'}`,
-                          background: hasConflict ? 'rgba(239,68,68,0.05)' : isToday(day) ? 'rgba(124,58,237,0.04)' : 'transparent',
+                          border: `1px solid ${isChatterAbsent ? 'rgba(239,68,68,0.5)' : hasConflict ? 'rgba(239,68,68,0.3)' : isToday(day) ? 'rgba(124,58,237,0.2)' : 'var(--border)'}`,
+                          background: isChatterAbsent ? 'rgba(239,68,68,0.08)' : hasConflict ? 'rgba(239,68,68,0.05)' : isToday(day) ? 'rgba(124,58,237,0.04)' : 'transparent',
                           padding: '5px 6px', textAlign: 'center', cursor: 'pointer',
                           borderLeft: `2px solid ${SHIFT_COLORS[shift]}`,
                           minWidth: 90, verticalAlign: 'middle',
@@ -475,7 +516,10 @@ export default function ScheduleTab({ session }) {
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, chatter: e.target.value })}
                                 style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
                                 <option value="">— leer —</option>
-                                {chatters.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                {chatters.map(c => {
+                                  const absent = isAbsent(c.name, dayIso)
+                                  return <option key={c.id} value={c.name} disabled={absent} style={{ color: absent ? '#4a4a6a' : 'inherit' }}>{c.name}{absent ? ' (abwesend)' : ''}</option>
+                                })}
                               </select>
                               <input value={cell.note || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
@@ -504,7 +548,10 @@ export default function ScheduleTab({ session }) {
                           ) : cell.chatter ? (
                             <div>
                               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
-                              {isRecurring && <div style={{ fontSize: 8, color: '#a78bfa', marginTop: 1 }}>↻</div>}
+                              <div style={{ display: 'flex', gap: 4, marginTop: 1 }}>
+                                {isRecurring && <span style={{ fontSize: 8, color: '#a78bfa' }}>↻</span>}
+                                {activeReminders[`${cell.chatter}__${dayIso}__${shift}`] && <span style={{ fontSize: 8, color: '#06b6d4' }}>🔔</span>}
+                              </div>
                               {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 1 }}>{cell.note}</div>}
                               {/* Reminder button */}
                               {reminderCell?.cellId === cellId ? (
@@ -524,7 +571,7 @@ export default function ScheduleTab({ session }) {
                                 </div>
                               ) : (
                                 <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
-                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : 'var(--text-muted)', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : 'var(--border)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
                                   🔔
                                 </button>
                               )}
@@ -577,6 +624,71 @@ export default function ScheduleTab({ session }) {
           ✓ Keine Konflikte – Plan ist vollständig
         </div>
       )}
+
+      {/* Absence Panel */}
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <div onClick={() => setShowAbsences(!showAbsences)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', cursor: 'pointer', background: 'var(--bg-card2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>🚫 Abwesenheiten</span>
+            {absences.length > 0 && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>{absences.length}</span>}
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{showAbsences ? '▲' : '▼'}</span>
+        </div>
+        {showAbsences && (
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Chatter</label>
+                <select value={newAbsenceName} onChange={e => setNewAbsenceName(e.target.value)}
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+                  <option value="">— wählen —</option>
+                  {chatters.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Von</label>
+                <input type="date" value={newAbsenceFrom} onChange={e => setNewAbsenceFrom(e.target.value)}
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Bis</label>
+                <input type="date" value={newAbsenceTo} onChange={e => setNewAbsenceTo(e.target.value)}
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 120 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Grund (optional)</label>
+                <input value={newAbsenceReason} onChange={e => setNewAbsenceReason(e.target.value)}
+                  placeholder="z.B. Urlaub, Krank..."
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
+              </div>
+              <button onClick={addAbsence} disabled={!newAbsenceName || !newAbsenceFrom || !newAbsenceTo}
+                style={{ background: newAbsenceName && newAbsenceFrom && newAbsenceTo ? '#ef4444' : 'var(--border)', color: newAbsenceName && newAbsenceFrom && newAbsenceTo ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                + Eintragen
+              </button>
+            </div>
+            {absences.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Keine Abwesenheiten eingetragen</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {absences.map(a => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: '3px solid #ef4444' }}>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#ef4444' }}>{a.chatter_name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                        {new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} – {new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                      </span>
+                      {a.reason && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{a.reason}</span>}
+                    </div>
+                    <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
+                      onMouseEnter={e => e.target.style.color = '#ef4444'}
+                      onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Legend + Recurring + Next week */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
