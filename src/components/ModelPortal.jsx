@@ -116,10 +116,15 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const { data: snaps } = await supabase.from('model_snapshots').select('rows, business_date').gte('business_date', monthStart)
     const csvNames = myAliases.length > 0 ? myAliases.map(a => a.csv_name) : [displayName]
     const revenueMap = {}
+    const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     for (const csvName of csvNames) {
       revenueMap[csvName] = 0
+      const normCsvName = normalize(csvName)
       for (const snap of snaps || []) {
-        const row = snap.rows?.find(r => r.name?.toLowerCase() === csvName.toLowerCase())
+        const row = snap.rows?.find(r => {
+          const rowName = r.creator || r.name || ''
+          return normalize(rowName) === normCsvName
+        })
         if (row) revenueMap[csvName] += row.revenue || 0
       }
     }
