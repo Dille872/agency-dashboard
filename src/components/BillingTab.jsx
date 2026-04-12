@@ -46,11 +46,12 @@ export default function BillingTab() {
     // Load snapshots for selected month
     const monthStart = selectedMonth + '-01'
     const [year, month] = selectedMonth.split('-')
-    const monthEnd = `${year}-${month}-31`
+    const nextMonth = month === '12' ? `${parseInt(year)+1}-01` : `${year}-${String(parseInt(month)+1).padStart(2,'0')}`
+    const monthEnd = nextMonth + '-01'
     const { data: snapData } = await supabase.from('model_snapshots').select('rows, business_date')
-      .gte('business_date', monthStart).lte('business_date', monthEnd)
+      .gte('business_date', monthStart).lt('business_date', monthEnd)
     const { data: chatSnapData } = await supabase.from('chatter_snapshots').select('rows, business_date')
-      .gte('business_date', monthStart).lte('business_date', monthEnd)
+      .gte('business_date', monthStart).lt('business_date', monthEnd)
     setSnapshots(snapData || [])
     setChatterSnapshots(chatSnapData || [])
   }
@@ -157,6 +158,8 @@ export default function BillingTab() {
     const modelShare = base - agencyShare
     return { base, agencyShare, modelShare, rev, setting }
   }
+
+  const monthName = new Date(selectedMonth + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
 
   // Generate months for selector
   const months = []
