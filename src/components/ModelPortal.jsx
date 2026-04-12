@@ -104,6 +104,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [aliases, setAliases] = useState([])
   const [revenue, setRevenue] = useState({})
   const [dailySubs, setDailySubs] = useState([])
+  const [subsCalMonth, setSubsCalMonth] = useState(() => {
+    const n = new Date()
+    return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0')
+  })
   const [activeSection, setActiveSection] = useState('home') // home | board | kalender | umsatz | anfragen
 
   useEffect(() => {
@@ -157,11 +161,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const now = new Date()
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
     // Load last 14 days for chart
-    const day14 = new Date(now)
-    day14.setDate(day14.getDate() - 13)
-    const day14Iso = day14.toISOString().slice(0, 10)
     const { data: snaps } = await supabase.from('model_snapshots').select('rows, business_date').gte('business_date', monthStart)
-    const { data: snaps14 } = await supabase.from('model_snapshots').select('rows, business_date').gte('business_date', day14Iso).order('business_date')
+    const { data: snapsAll } = await supabase.from('model_snapshots').select('rows, business_date').order('business_date')
     const csvNames = myAliases.length > 0 ? myAliases.map(a => a.csv_name) : [displayName]
     const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     const revenueMap = {}
@@ -179,7 +180,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     setRevenue(revenueMap)
     // Build daily subs data for chart
     const dailySubs = []
-    for (const snap of snaps14 || []) {
+    for (const snap of snapsAll || []) {
       let subs = 0
       for (const csvName of csvNames) {
         const normCsvName = normalize(csvName)
@@ -425,62 +426,72 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               </div>
             )}
 
-            {/* Subs Chart */}
+            {/* Subs Kalender */}
             {dailySubs.length > 0 && (() => {
+              const subsMap = {}
+              for (const d of dailySubs) subsMap[d.date] = d.subs
               const maxSubs = Math.max(...dailySubs.map(d => d.subs), 1)
+              const now2 = new Date()
+              const calYear = subsCalMonth.split('-')[0]
+              const calMonth = parseInt(subsCalMonth.split('-')[1]) - 1
+              const firstDay = new Date(calYear, calMonth, 1)
+              const lastDay = new Date(calYear, calMonth + 1, 0)
+              const startDow = (firstDay.getDay() + 6) % 7
               const totalSubs = dailySubs.reduce((s, d) => s + d.subs, 0)
-              const avgSubs = totalSubs / dailySubs.length
-              const chartW = 100
-              const chartH = 60
-              const pts = dailySubs.map((d, i) => {
-                const x = dailySubs.length === 1 ? chartW / 2 : (i / (dailySubs.length - 1)) * chartW
-                const y = chartH - (d.subs / maxSubs) * (chartH - 8) - 4
-                return `${x},${y}`
-              }).join(' ')
+              const monthSubs = dailySubs.filter(d => d.date.startsWith(subsCalMonth)).reduce((s, d) => s + d.subs, 0)
+              const maxMonth = Math.max(...dailySubs.filter(d => d.date.startsWith(subsCalMonth)).map(d => d.subs), 1)
+              const cells = []
+              for (let i = 0; i < startDow; i++) cells.push(null)
+              for (let d = 1; d <= lastDay.getDate(); d++) cells.push(d)
+              const monthLabel2 = firstDay.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+              const getColor = (subs) => {
+                if (!subs) return 'var(--bg-card2)'
+                const intensity = subs / maxMonth
+                if (intensity >= 0.8) return 'rgba(245,158,11,0.9)'
+                if (intensity >= 0.6) return 'rgba(245,158,11,0.65)'
+                if (intensity >= 0.4) return 'rgba(245,158,11,0.4)'
+                if (intensity >= 0.2) return 'rgba(245,158,11,0.2)'
+                return 'rgba(245,158,11,0.08)'
+              }
               return (
                 <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 4 }}>Neue Subs · letzte {dailySubs.length} Tage</div>
-                      <div style={{ display: 'flex', gap: 16 }}>
-                        <div>
-                          <div style={{ fontSize: 20, fontWeight: 700, color: '#f59e0b', fontFamily: 'monospace' }}>{totalSubs}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Gesamt</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{avgSubs.toFixed(1)}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Ø pro Tag</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{Math.max(...dailySubs.map(d => d.subs))}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Bester Tag</div>
-                        </div>
-                      </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Neue Subs Tracker</div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <button onClick={() => {
+                        const [y, m] = subsCalMonth.split('-').map(Number)
+                        const prev = m === 1 ? (y-1) + '-12' : y + '-' + String(m-1).padStart(2,'0')
+                        setSubsCalMonth(prev)
+                      }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 5, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>{'<'}</button>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', minWidth: 110, textAlign: 'center' }}>{monthLabel2}</span>
+                      <button onClick={() => {
+                        const [y, m] = subsCalMonth.split('-').map(Number)
+                        const next = m === 12 ? (y+1) + '-01' : y + '-' + String(m+1).padStart(2,'0')
+                        setSubsCalMonth(next)
+                      }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 5, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>{'>'}</button>
                     </div>
                   </div>
-                  <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 80, overflow: 'visible' }}>
-                    <defs>
-                      <linearGradient id="subsFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />
-                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    <polyline points={pts} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeLinejoin="round" />
-                    {dailySubs.map((d, i) => {
-                      const x = dailySubs.length === 1 ? chartW / 2 : (i / (dailySubs.length - 1)) * chartW
-                      const y = chartH - (d.subs / maxSubs) * (chartH - 8) - 4
-                      const isMax = d.subs === maxSubs
+                  <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+                    <div><div style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b', fontFamily: 'monospace' }}>{monthSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Diesen Monat</div></div>
+                    <div><div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{totalSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Gesamt</div></div>
+                    <div><div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{maxMonth}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Bester Tag</div></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+                    {['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => (
+                      <div key={d} style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', paddingBottom: 4, fontWeight: 700 }}>{d}</div>
+                    ))}
+                    {cells.map((day, i) => {
+                      if (!day) return <div key={'e'+i} />
+                      const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0')
+                      const subs = subsMap[dateStr] || 0
+                      const isToday2 = dateStr === new Date().toISOString().slice(0,10)
                       return (
-                        <g key={i}>
-                          <circle cx={x} cy={y} r={isMax ? 3 : 2} fill={isMax ? '#f59e0b' : '#f59e0b'} opacity={isMax ? 1 : 0.6} />
-                          {isMax && <text x={x} y={y - 5} textAnchor="middle" fontSize="5" fill="#f59e0b" fontWeight="700">{d.subs}</text>}
-                        </g>
+                        <div key={day} style={{ borderRadius: 5, padding: '4px 2px', textAlign: 'center', background: getColor(subs), border: isToday2 ? '1px solid #f59e0b' : '1px solid transparent', cursor: subs > 0 ? 'default' : 'default' }}>
+                          <div style={{ fontSize: 8, color: subs > 0 ? '#000' : 'var(--text-muted)', fontWeight: subs > 0 ? 700 : 400, opacity: subs > 0 ? 0.6 : 0.4 }}>{day}</div>
+                          {subs > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: subs / maxMonth >= 0.6 ? '#000' : '#f59e0b', lineHeight: 1 }}>{subs}</div>}
+                        </div>
                       )
                     })}
-                  </svg>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{dailySubs[0]?.date ? new Date(dailySubs[0].date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{dailySubs[dailySubs.length - 1]?.date ? new Date(dailySubs[dailySubs.length - 1].date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span>
                   </div>
                 </div>
               )
