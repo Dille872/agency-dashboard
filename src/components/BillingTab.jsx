@@ -161,7 +161,7 @@ export default function BillingTab() {
   const CheckBox = ({ checked, onChange, label }) => (
     <label onClick={onChange} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
       <div style={{ width: 14, height: 14, borderRadius: 3, border: `1px solid ${checked ? '#7c3aed' : '#2e2e5a'}`, background: checked ? '#7c3aed' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {checked && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+        {checked && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>v</span>}
       </div>
       {label}
     </label>
@@ -266,7 +266,7 @@ export default function BillingTab() {
                     </div>
                     <button onClick={saveBilling} disabled={saving}
                       style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {saving ? '...' : '✓ Speichern'}
+                      {saving ? '...' : 'Speichern'}
                     </button>
                   </div>
                 )}
@@ -347,7 +347,7 @@ export default function BillingTab() {
                     </div>
                     <button onClick={saveBilling} disabled={saving}
                       style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {saving ? '...' : '✓ Speichern'}
+                      {saving ? '...' : 'Speichern'}
                     </button>
                   </div>
                 )}
@@ -421,7 +421,7 @@ export default function BillingTab() {
                     </div>
                     <button onClick={saveBilling} disabled={saving}
                       style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {saving ? '...' : '✓ Speichern'}
+                      {saving ? '...' : 'Speichern'}
                     </button>
                   </div>
                 )}
