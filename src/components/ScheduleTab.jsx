@@ -259,33 +259,6 @@ export default function ScheduleTab({ session }) {
     }
     setScheduleStatus(newStatus)
     setHasSavedData(true)
-
-    // Notify all chatters when going live
-    if (newStatus === 'live') {
-      const { data: chattersData } = await supabase.from('chatters_contact').select('*')
-      for (const chatter of chattersData || []) {
-        if (!chatter.telegram_id) continue
-        // Find this chatter's shifts this week
-        const myShiftLines = []
-        for (const day of weekDays) {
-          const dayIso = isoDate(day)
-          for (const shift of SHIFTS) {
-            for (const [key, val] of Object.entries(schedule)) {
-              const parts = key.split('__')
-              if (parts[1] === dayIso && parts[2] === shift && val.chatter === chatter.name) {
-                const dayLabel = day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
-                const timeStr = (shiftTimes[`${parts[0]}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
-                myShiftLines.push(`${dayLabel} · ${shift}${timeStr ? ` · ${timeStr} (DE)` : ''}`)
-              }
-            }
-          }
-        }
-        const shiftsText = myShiftLines.length > 0 ? `\n\nDeine Schichten KW ${kw}:\n${myShiftLines.join('\n')}` : '\n\nKeine Schichten diese Woche.'
-        const msg = `📅 <b>Dienstplan KW ${kw} ist jetzt live!</b>${shiftsText}\n\n– Thirteen 87`
-        await sendTelegramMessage(chatter.telegram_id, msg)
-      }
-    }
-
     setPublishing(false)
   }
 
