@@ -531,87 +531,83 @@ export default function ScheduleTab({ session }) {
         </div>
       </div>
 
-      {/* Schedule Table */}
+      {/* Schedule - Card Layout */}
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse', minWidth: 700, width: '100%' }}>
-          <thead>
-            <tr>
-              <th style={{ background: 'var(--bg-input)', border: '1px solid #1e1e3a', padding: '8px 12px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, minWidth: 130 }}>Model / Schicht</th>
-              {weekDays.map((day, di) => (
-                <th key={di} style={{
-                  background: isToday(day) ? 'rgba(124,58,237,0.15)' : 'var(--bg-card)',
-                  border: `1px solid ${isToday(day) ? 'rgba(124,58,237,0.3)' : 'var(--border)'}`,
-                  padding: '6px 8px', textAlign: 'center', fontSize: 11,
-                  color: isToday(day) ? '#a78bfa' : 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap', minWidth: 90,
-                }}>
-                  {DAYS[di]} {formatDate(day)}{isToday(day) ? ' ●' : ''}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              <td style={{ background: 'var(--bg-input)', border: '1px solid #1e1e3a', padding: '4px 12px', fontSize: 10, color: 'var(--text-muted)' }}>Tages-Notiz</td>
-              {weekDays.map((day, di) => {
-                const dayIso = isoDate(day)
-                return (
-                  <td key={di} style={{ ...cellStyleBase(dayIso), padding: '4px 6px', cursor: 'text', border: '1px solid #1e1e3a' }}
-                    onClick={() => setEditingNote(editingNote === dayIso ? null : dayIso)}>
-                    {editingNote === dayIso ? (
-                      <input autoFocus value={dayNotes[dayIso] || ''}
-                        onChange={e => setDayNotes(prev => ({ ...prev, [dayIso]: e.target.value }))}
-                        onBlur={() => setEditingNote(null)}
-                        onKeyDown={e => e.key === 'Enter' && setEditingNote(null)}
-                        style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none' }}
-                      />
+        {/* Day headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, minmax(90px, 1fr))', gap: 4, marginBottom: 8 }}>
+          <div />
+          {weekDays.map((day, di) => (
+            <div key={di} style={{
+              textAlign: 'center', padding: '6px 4px', borderRadius: 7,
+              background: isToday(day) ? 'rgba(56,130,246,0.08)' : 'transparent',
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: isToday(day) ? '#378add' : 'var(--text-muted)' }}>{DAYS[di]}</div>
+              <div style={{ fontSize: 10, color: isToday(day) ? '#378add' : 'var(--text-muted)', opacity: .7 }}>{formatDate(day)}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Day notes row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, minmax(90px, 1fr))', gap: 4, marginBottom: 12 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', paddingLeft: 4 }}>Tages-Notiz</div>
+          {weekDays.map((day, di) => {
+            const dayIso = isoDate(day)
+            return (
+              <div key={di} onClick={() => setEditingNote(editingNote === dayIso ? null : dayIso)}
+                style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 6, padding: '4px 6px', cursor: 'text', minHeight: 26 }}>
+                {editingNote === dayIso ? (
+                  <input autoFocus value={dayNotes[dayIso] || ''}
+                    onChange={e => setDayNotes(prev => ({ ...prev, [dayIso]: e.target.value }))}
+                    onBlur={() => setEditingNote(null)}
+                    onKeyDown={e => e.key === 'Enter' && setEditingNote(null)}
+                    style={{ width: '100%', background: 'transparent', border: 'none', color: '#f59e0b', padding: 0, fontSize: 10, fontFamily: 'inherit', outline: 'none' }}
+                  />
+                ) : (
+                  <span style={{ color: dayNotes[dayIso] ? '#f59e0b' : '#2e2e5a', fontSize: 10 }}>{dayNotes[dayIso] || '+'}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Models */}
+        {models.map((model, mi) => {
+          const modelColors = ['#f59e0b', '#10b981', '#a78bfa', '#06b6d4', '#ef4444', '#f97316', '#ec4899', '#14b8a6']
+          const modelColor = modelColors[mi % modelColors.length]
+          return (
+            <div key={model.id} style={{ background: modelColor + '08', border: `1px solid ${modelColor}30`, borderRadius: 12, padding: 10, marginBottom: 10 }}>
+              {/* Model header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', background: modelColor + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: modelColor, flexShrink: 0 }}>{model.name[0]}</div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{model.name}</span>
+              </div>
+
+              {/* Shifts */}
+              {SHIFTS.map(shift => (
+                <div key={shift} style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: 2, background: SHIFT_COLORS[shift], flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700 }}>{shift}</span>
+                    {editingShiftTime === `${model.id}__${shift}` ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }} onClick={e => e.stopPropagation()}>
+                        <input type="time" value={shiftTimes[`${model.id}__${shift}`]?.split('-')[0]?.trim().replace(' (DE)','') || ''}
+                          onChange={e => { const end = shiftTimes[`${model.id}__${shift}`]?.split('-')[1]?.trim().replace(' (DE)','') || ''; setShiftTimes(prev => ({ ...prev, [`${model.id}__${shift}`]: `${e.target.value}-${end}` })) }}
+                          style={{ width: 68, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }} />
+                        <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>–</span>
+                        <input type="time" value={shiftTimes[`${model.id}__${shift}`]?.split('-')[1]?.trim().replace(' (DE)','') || ''}
+                          onChange={e => { const start = shiftTimes[`${model.id}__${shift}`]?.split('-')[0]?.trim().replace(' (DE)','') || ''; setShiftTimes(prev => ({ ...prev, [`${model.id}__${shift}`]: `${start}-${e.target.value}` })) }}
+                          onBlur={() => setEditingShiftTime(null)}
+                          style={{ width: 68, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }} />
+                      </div>
                     ) : (
-                      <span style={{ color: dayNotes[dayIso] ? '#f59e0b' : 'var(--border-bright)', fontSize: 10 }}>{dayNotes[dayIso] || '+ Notiz'}</span>
+                      <span onClick={() => setEditingShiftTime(`${model.id}__${shift}`)} style={{ fontSize: 9, color: shiftTimes[`${model.id}__${shift}`] ? 'var(--text-secondary)' : '#2e2e5a', cursor: 'text', fontFamily: 'monospace' }}>
+                        {shiftTimes[`${model.id}__${shift}`] ? `${shiftTimes[`${model.id}__${shift}`].replace(' (DE)','')} DE` : '+Zeit'}
+                      </span>
                     )}
-                  </td>
-                )
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {models.map((model, mi) => (
-              <React.Fragment key={model.id}>
-                {SHIFTS.map((shift, si) => (
-                  <tr key={shift}>
-                    {si === 0 && (
-                      <td rowSpan={3} style={{ background: 'var(--bg-input)', border: '1px solid #1e1e3a', borderLeft: '3px solid #7c3aed', padding: '8px 10px', verticalAlign: 'middle' }}>
-                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 12, marginBottom: 5 }}>{model.name}</div>
-                        {SHIFTS.map(s => (
-                          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: 2, background: SHIFT_COLORS[s], flexShrink: 0, display: 'inline-block' }} />
-                            {editingShiftTime === `${model.id}__${s}` ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }} onClick={e => e.stopPropagation()}>
-                                <input type="time"
-                                  value={shiftTimes[`${model.id}__${s}`]?.split('-')[0]?.trim().replace(' (DE)','') || ''}
-                                  onChange={e => {
-                                    const end = shiftTimes[`${model.id}__${s}`]?.split('-')[1]?.trim().replace(' (DE)','') || ''
-                                    setShiftTimes(prev => ({ ...prev, [`${model.id}__${s}`]: `${e.target.value}-${end}` }))
-                                  }}
-                                  style={{ width: 70, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
-                                />
-                                <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>–</span>
-                                <input type="time"
-                                  value={shiftTimes[`${model.id}__${s}`]?.split('-')[1]?.trim().replace(' (DE)','') || ''}
-                                  onChange={e => {
-                                    const start = shiftTimes[`${model.id}__${s}`]?.split('-')[0]?.trim().replace(' (DE)','') || ''
-                                    setShiftTimes(prev => ({ ...prev, [`${model.id}__${s}`]: `${start}-${e.target.value}` }))
-                                  }}
-                                  onBlur={() => setEditingShiftTime(null)}
-                                  style={{ width: 70, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }}
-                                />
-                              </div>
-                            ) : (
-                              <span onClick={() => setEditingShiftTime(`${model.id}__${s}`)}
-                                style={{ fontSize: 9, color: shiftTimes[`${model.id}__${s}`] ? 'var(--text-secondary)' : 'var(--border-bright)', cursor: 'text', fontFamily: 'monospace' }}>
-                                {shiftTimes[`${model.id}__${s}`] ? `${shiftTimes[`${model.id}__${s}`].replace(' (DE)','')} (DE)` : `${s} +Zeit`}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </td>
-                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, minmax(90px, 1fr))', gap: 4 }}>
+                    <div />
                     {weekDays.map((day, di) => {
                       const dayIso = isoDate(day)
                       const cell = getCell(model.id, dayIso, shift)
@@ -621,26 +617,25 @@ export default function ScheduleTab({ session }) {
                       const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1
                       const recurringKey = getRecurringKey(model.id, dayOfWeek, shift)
                       const isRecurring = !!recurring[recurringKey]
-
                       const isChatterAbsent = cell.chatter ? isAbsent(cell.chatter, dayIso) : false
+                      const confirmed = cell.confirmed !== false
+                      const isPending = cell.chatter && !confirmed
+
+                      const cellBg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isPending ? 'rgba(245,158,11,0.05)' : cell.chatter ? 'rgba(16,185,129,0.04)' : isToday(day) ? 'rgba(56,130,246,0.04)' : 'var(--bg-card)'
+                      const cellBorder = isChatterAbsent ? 'rgba(239,68,68,0.5)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.35)' : isToday(day) ? 'rgba(56,130,246,0.3)' : '#1e1e3a'
 
                       return (
-                        <td key={di} onClick={() => setEditingCell(isEditing ? null : cellId)} style={{
-                          border: `1px solid ${isChatterAbsent ? 'rgba(239,68,68,0.5)' : hasConflict ? 'rgba(239,68,68,0.3)' : isToday(day) ? 'rgba(124,58,237,0.2)' : 'var(--border)'}`,
-                          background: isChatterAbsent ? 'rgba(239,68,68,0.08)' : hasConflict ? 'rgba(239,68,68,0.05)' : isToday(day) ? 'rgba(124,58,237,0.04)' : 'transparent',
-                          padding: '5px 6px', textAlign: 'center', cursor: 'pointer',
-                          borderLeft: `2px solid ${SHIFT_COLORS[shift]}`,
-                          minWidth: 90, verticalAlign: 'middle',
-                        }}>
+                        <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
+                          style={{ background: cellBg, border: `1px solid ${cellBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3 }}>
                           {isEditing ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onClick={e => e.stopPropagation()}>
                               <select autoFocus value={cell.chatter || ''}
-                                onChange={e => setCell(model.id, dayIso, shift, { ...cell, chatter: e.target.value })}
+                                onChange={e => setCell(model.id, dayIso, shift, { ...cell, chatter: e.target.value, confirmed: true })}
                                 style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
                                 <option value="">— leer —</option>
                                 {chatters.map(c => {
                                   const absent = isAbsent(c.name, dayIso)
-                                  return <option key={c.id} value={c.name} disabled={absent} style={{ color: absent ? '#4a4a6a' : 'inherit' }}>{c.name}{absent ? ' (abwesend)' : ''}</option>
+                                  return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
                                 })}
                               </select>
                               <input value={cell.note || ''}
@@ -649,72 +644,75 @@ export default function ScheduleTab({ session }) {
                                 onKeyDown={e => e.key === 'Enter' && setEditingCell(null)}
                                 style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}
                               />
-                              {/* Recurring toggle */}
+                              {cell.chatter && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10 }} onClick={e => e.stopPropagation()}>
+                                  <input type="checkbox" checked={cell.confirmed !== false}
+                                    onChange={e => setCell(model.id, dayIso, shift, { ...cell, confirmed: e.target.checked })}
+                                    style={{ accentColor: '#10b981' }} />
+                                  <span style={{ color: cell.confirmed !== false ? '#10b981' : '#f59e0b' }}>
+                                    {cell.confirmed !== false ? 'Bestatigt' : 'Klarung notig'}
+                                  </span>
+                                </label>
+                              )}
                               <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10 }} onClick={e => e.stopPropagation()}>
                                 <input type="checkbox" checked={isRecurring}
                                   onChange={async e => {
-                                    if (e.target.checked && cell.chatter) {
-                                      await saveRecurring(model.id, dayOfWeek, shift, cell)
-                                    } else {
-                                      await saveRecurring(model.id, dayOfWeek, shift, { chatter: '' })
-                                    }
+                                    if (e.target.checked && cell.chatter) { await saveRecurring(model.id, dayOfWeek, shift, cell) }
+                                    else { await saveRecurring(model.id, dayOfWeek, shift, { chatter: '' }) }
                                   }}
-                                  style={{ accentColor: '#7c3aed' }}
-                                />
-                                <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>
-                                  {isRecurring ? '↻ Wöchentlich (aktiv)' : '↻ Wöchentlich wiederholen'}
-                                </span>
+                                  style={{ accentColor: '#7c3aed' }} />
+                                <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
                               </label>
-                              <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 3, padding: '3px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Fertig</button>
+                              <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
                             </div>
                           ) : cell.chatter ? (
-                            <div>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
-                              <div style={{ display: 'flex', gap: 4, marginTop: 1 }}>
-                                {isRecurring && <span style={{ fontSize: 8, color: '#a78bfa' }}>↻</span>}
-                                {activeReminders[`${cell.chatter}__${dayIso}__${shift}`] && <span style={{ fontSize: 8, color: '#06b6d4' }}>🔔</span>}
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</span>
+                                <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+                                  background: isPending ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)',
+                                  color: isPending ? '#f59e0b' : '#10b981' }}>
+                                  {isPending ? '! Klarung' : 'v'}
+                                </span>
                               </div>
-                              {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 1 }}>{cell.note}</div>}
-                              {/* Reminder button */}
+                              {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 2, lineHeight: 1.3 }}>{cell.note}</div>}
+                              <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
+                                {isRecurring && <span style={{ fontSize: 8, color: '#a78bfa' }}>↻</span>}
+                                {activeReminders[`${cell.chatter}__${dayIso}__${shift}`] && <span style={{ fontSize: 8, color: '#06b6d4' }}>R</span>}
+                              </div>
                               {reminderCell?.cellId === cellId ? (
-                                <div onClick={e => e.stopPropagation()} style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                  <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 2 }}>Erinnerung senden:</div>
+                                <div onClick={e => e.stopPropagation()} style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                                   {['1', '3', '12', '24'].map(h => (
                                     <button key={h} onClick={() => sendReminder(reminderCell.modelId, reminderCell.dayIso, reminderCell.shift, reminderCell.chatterName, h)}
                                       disabled={sendingReminder}
-                                      style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                                      {h}h vorher
+                                      style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                      {h}h
                                     </button>
                                   ))}
                                   <button onClick={e => { e.stopPropagation(); setReminderCell(null) }}
-                                    style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                                    Abbrechen
-                                  </button>
+                                    style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>X</button>
                                 </div>
                               ) : (
                                 <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
-                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : 'var(--text-muted)', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : 'var(--border)'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                  🔔
+                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Erin
                                 </button>
                               )}
                             </div>
                           ) : (
-                            <span style={{ fontSize: 10, color: hasConflict ? 'rgba(239,68,68,0.5)' : 'var(--border-bright)' }}>
-                              {hasConflict ? '⚠ leer' : '+ eintragen'}
-                            </span>
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span style={{ fontSize: 18, color: hasConflict ? 'rgba(239,68,68,0.4)' : '#2e2e5a' }}>{hasConflict ? '!' : '+'}</span>
+                            </div>
                           )}
-                        </td>
+                        </div>
                       )
                     })}
-                  </tr>
-                ))}
-                {mi < models.length - 1 && (
-                  <tr><td colSpan={9} style={{ height: 6, background: 'var(--bg-base)', border: 'none' }} /></tr>
-                )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
 
       {/* Conflicts below – einklappbar */}
