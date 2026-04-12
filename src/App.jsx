@@ -112,10 +112,9 @@ export default function App() {
     }
 
     // Model board changes in last 24h
-    const since24h = new Date(Date.now() - 86400000).toISOString()
     const { count: modelCount } = await supabase
       .from('model_board_activity').select('*', { count: 'exact', head: true })
-      .gt('created_at', since24h)
+      .eq('read', false)
     setUnreadModelChanges(modelCount || 0)
 
     // Open swap requests
