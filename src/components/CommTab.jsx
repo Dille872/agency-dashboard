@@ -519,8 +519,8 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[
-          (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => (Date.now() - new Date(a.created_at)) < 86400000).length > 0) ? 1 : 0 },
-          section === 'models' && { key: 'modelboards', label: `Boards${modelBoardActivity.filter(a => (Date.now() - new Date(a.created_at)) < 86400000).length > 0 ? ' (neu)' : ''}` },
+          (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => !a.read).length > 0) ? 1 : 0 },
+          section === 'models' && { key: 'modelboards', label: `Boards${modelBoardActivity.filter(a => !a.read).length > 0 ? ` (${modelBoardActivity.filter(a => !a.read).length})` : ''}` },
           section === 'models' && { key: 'content-requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
           section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
@@ -1068,8 +1068,16 @@ export default function CommTab({ session, section = 'nachrichten' }) {
               <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Noch keine Änderungen</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {modelBoardActivity.slice(0, 10).map(a => (
-                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+                  <button onClick={async () => {
+                    await supabase.from('model_board_activity').update({ read: true }).eq('read', false)
+                    setModelBoardActivity(prev => prev.map(a => ({ ...a, read: true })))
+                  }} style={{ background: 'transparent', border: '1px solid #2e2e5a', color: 'var(--text-secondary)', borderRadius: 7, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Alle als gelesen markieren
+                  </button>
+                </div>
+                {modelBoardActivity.slice(0, 20).map(a => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: a.read ? 'var(--bg-card2)' : 'rgba(245,158,11,0.06)', borderRadius: 8, border: `1px solid ${a.read ? 'var(--border)' : 'rgba(245,158,11,0.2)'}` }}>
                     <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#f59e0b', flexShrink: 0 }}>
                       {a.model_name[0]}
                     </div>
@@ -1078,9 +1086,12 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                       <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}> hat <b>{a.category}</b> {a.action}</span>
                       {a.details && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}> · {a.details}</span>}
                     </div>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
-                      {new Date(a.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      {!a.read && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />}
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                        {new Date(a.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
