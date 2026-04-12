@@ -248,17 +248,27 @@ export default function App() {
 
   if (!session) return <LoginPage />
 
-  // Show chatter portal for chatter role, unless admin switched to chatter view
+  // Role permissions
   const showChatterPortal = userRole !== null && ((userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter')
   const showModelPortal = userRole !== null && ((userRole === 'model' && viewMode !== 'admin') || viewMode === 'model')
   const isAdmin = userRole === 'admin'
+  const isManager = userRole === 'admin' || userRole === 'manager'
+
+  // Tab access per role
+  const canAccess = (tab) => {
+    if (userRole === 'admin') return true
+    if (userRole === 'manager') return !['settings', 'export'].includes(tab)
+    if (userRole === 'dienstplan') return ['schedule', 'chatters-comm'].includes(tab)
+    if (userRole === 'creator_manager') return ['models-comm'].includes(tab)
+    return false
+  }
 
   if (showModelPortal) return (
     <ModelPortal
       session={session}
-      displayName={userRole === 'admin' ? 'Vorschau' : userDisplayName}
-      onSwitchToAdmin={isAdmin ? () => setViewMode('admin') : null}
-      isPreview={userRole === 'admin'}
+      displayName={isAdmin || userRole === 'manager' ? 'Vorschau' : userDisplayName}
+      onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
+      isPreview={isAdmin || userRole === 'manager'}
     />
   )
 
@@ -266,9 +276,17 @@ export default function App() {
     <ChatterPortal
       session={session}
       displayName={userDisplayName}
-      onSwitchToAdmin={isAdmin ? () => setViewMode('admin') : null}
+      onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
     />
   )
+
+  // Non-admin roles that work in dashboard
+  if (userRole === 'dienstplan' && viewMode !== 'admin') {
+    if (activeTab !== 'schedule' && activeTab !== 'chatters-comm') setActiveTab('schedule')
+  }
+  if (userRole === 'creator_manager' && viewMode !== 'admin') {
+    if (activeTab !== 'models-comm') setActiveTab('models-comm')
+  }
 
   const currentModelSnap = modelSnapshots.find(s => s.businessDate === businessDate)
   const currentChatterSnap = chatterSnapshots.find(s => s.businessDate === businessDate)
@@ -322,7 +340,7 @@ export default function App() {
               { key: 'schedule', label: 'Dienstplan' },
               { key: 'export', label: 'Export' },
               { key: 'settings', label: '⚙ Einstellungen' },
-            ].map(tab => (
+            ].filter(tab => canAccess(tab.key)).map(tab => (
               <button key={tab.key} onClick={() => {
                 setActiveTab(tab.key)
                 if (tab.key === 'nachrichten') setUnreadMessages(0)
@@ -417,7 +435,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.7.5</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.7.6</span>
         </div>
       </div>
 
