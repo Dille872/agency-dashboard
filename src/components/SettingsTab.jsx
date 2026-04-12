@@ -88,10 +88,9 @@ export default function SettingsTab() {
     if (!email.trim() || !displayName.trim()) return
     setSending(true); setError(''); setSuccess('')
     try {
-      const { data: { session } } = await supabase.auth.getSession()
       const resp = await fetch(`https://xdchyruasjxvrjduchoc.supabase.co/functions/v1/invite-user`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), display_name: displayName.trim(), role }),
       })
       const data = await resp.json()

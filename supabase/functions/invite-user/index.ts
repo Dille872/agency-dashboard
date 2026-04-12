@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-const SUPABASE_URL = Deno.env.get('DB_URL') || Deno.env.get('SUPABASE_URL')!
-const SERVICE_KEY = Deno.env.get('DB_SERVICE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || Deno.env.get('DB_URL')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('DB_SERVICE_KEY')!
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' } })
@@ -22,7 +22,7 @@ serve(async (req) => {
     })
 
     const inviteData = await inviteResp.json()
-    if (!inviteResp.ok) return new Response(JSON.stringify({ error: inviteData.message || 'Invite failed' }), { status: 400 })
+    if (!inviteResp.ok) return new Response(JSON.stringify({ error: inviteData.message || inviteData.msg || JSON.stringify(inviteData) }), { status: 400 })
 
     const userId = inviteData.id
     if (!userId) return new Response(JSON.stringify({ error: 'No user ID returned' }), { status: 400 })
