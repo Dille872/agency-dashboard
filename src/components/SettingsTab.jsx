@@ -108,8 +108,20 @@ export default function SettingsTab() {
     setSending(false)
   }
 
-  const changeRole = async (userId, newRole) => {
-    await supabase.from('user_roles').update({ role: newRole }).eq('user_id', userId)
+  const toggleRole = async (userId, currentRole, newRole) => {
+    // Get current roles array
+    const user = users.find(u => u.user_id === userId)
+    const currentRoles = user?.roles || [currentRole]
+    let updatedRoles
+    if (currentRoles.includes(newRole)) {
+      updatedRoles = currentRoles.filter(r => r !== newRole)
+      if (updatedRoles.length === 0) updatedRoles = ['chatter'] // min 1 role
+    } else {
+      updatedRoles = [...currentRoles, newRole]
+    }
+    // Primary role = first in array
+    const primaryRole = updatedRoles[0]
+    await supabase.from('user_roles').update({ role: primaryRole, roles: updatedRoles }).eq('user_id', userId)
     setEditingRole(null)
     loadUsers()
   }
@@ -229,22 +241,32 @@ export default function SettingsTab() {
                         <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{u.user_id.slice(0, 10)}...</div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color, background: color + '22', padding: '2px 8px', borderRadius: 4 }}>{rc?.label || u.role}</span>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map(r => {
+                        const rc2 = ROLES.find(x => x.key === r)
+                        return <span key={r} style={{ fontSize: 10, fontWeight: 700, color: rc2?.color || color, background: (rc2?.color || color) + '22', padding: '2px 8px', borderRadius: 4 }}>{rc2?.label || r}</span>
+                      })}
                       <button onClick={() => setEditingRole(editingRole === u.user_id ? null : u.user_id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
                       <button onClick={() => deleteUser(u.user_id, u.display_name)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
                     </div>
                   </div>
                   {editingRole === u.user_id && (
-                    <div style={{ background: 'var(--bg-card)', border: `1px solid ${color}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {ROLES.map(r => (
-                        <button key={r.key} onClick={() => changeRole(u.user_id, r.key)} style={{
-                          padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
-                          background: u.role === r.key ? r.color + '22' : 'transparent',
-                          color: u.role === r.key ? r.color : 'var(--text-muted)',
-                          border: `1px solid ${u.role === r.key ? r.color : 'var(--border)'}`,
-                        }}>{r.label}</button>
-                      ))}
+                    <div style={{ background: 'var(--bg-card)', border: `1px solid ${color}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8 }}>Mehrere Rollen möglich – klicken zum an/abwählen</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {ROLES.map(r => {
+                          const userRoles = u.roles || [u.role]
+                          const active = userRoles.includes(r.key)
+                          return (
+                            <button key={r.key} onClick={() => toggleRole(u.user_id, u.role, r.key)} style={{
+                              padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
+                              background: active ? r.color + '22' : 'transparent',
+                              color: active ? r.color : 'var(--text-muted)',
+                              border: `1px solid ${active ? r.color : 'var(--border)'}`,
+                            }}>{active ? '✓ ' : ''}{r.label}</button>
+                          )
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>

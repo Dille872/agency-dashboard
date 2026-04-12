@@ -11,6 +11,7 @@ import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
+import BillingTab from './components/BillingTab'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -255,9 +256,12 @@ export default function App() {
   const isManager = userRole === 'admin' || userRole === 'manager'
 
   // Tab access per role
+  const userRoles = [] // Will be populated when we load roles array - for now use single role
+  const hasRole = (r) => userRole === r || userRole === 'admin'
+
   const canAccess = (tab) => {
     if (userRole === 'admin') return true
-    if (userRole === 'manager') return !['settings', 'export'].includes(tab)
+    if (userRole === 'manager') return !['settings'].includes(tab)
     if (userRole === 'dienstplan') return ['schedule', 'chatters-comm'].includes(tab)
     if (userRole === 'creator_manager') return ['models-comm'].includes(tab)
     return false
@@ -338,6 +342,7 @@ export default function App() {
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'schedule', label: 'Dienstplan' },
+              { key: 'billing', label: '💰 Billing' },
               { key: 'export', label: 'Export' },
               { key: 'settings', label: '⚙ Einstellungen' },
             ].filter(tab => canAccess(tab.key)).map(tab => (
@@ -435,7 +440,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.7.6</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.7.7</span>
         </div>
       </div>
 
@@ -461,6 +466,8 @@ export default function App() {
           <CommTab key="models-comm" session={session} section="models" />
         ) : activeTab === 'chatters-comm' ? (
           <CommTab key="chatters-comm" session={session} section="chatters" />
+        ) : activeTab === 'billing' ? (
+          <BillingTab />
         ) : activeTab === 'export' ? (
           <ExportTab />
         ) : activeTab === 'settings' ? (
