@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 
 const SECTIONS = [
   { key: 'team', label: 'Team' },
+  { key: 'surveys', label: 'Umfragen' },
   { key: 'bot', label: 'Bot Nachrichten' },
   { key: 'model-aliases', label: 'Model CSV' },
   { key: 'chatter-aliases', label: 'Chatter CSV' },
@@ -65,9 +66,20 @@ export default function SettingsTab() {
   const [newMA, setNewMA] = useState({ model_name: '', csv_name: '', alias_label: '' })
   const [newCA, setNewCA] = useState({ chatter_name: '', csv_name: '', telegram_id: '' })
 
+  // Surveys
+  const [surveys, setSurveys] = useState([])
+  const [surveyResponses, setSurveyResponses] = useState([])
+  const [newQuestion, setNewQuestion] = useState('')
+  const [newAnswerType, setNewAnswerType] = useState('choice')
+  const [newOptions, setNewOptions] = useState(['', '', ''])
+  const [newTargetRoles, setNewTargetRoles] = useState([])
+  const [creatingsurvey, setCreatingSurvey] = useState(false)
+  const [expandedSurvey, setExpandedSurvey] = useState(null)
+
   useEffect(() => {
     loadUsers(); loadModels(); loadChatters()
     loadModelAliases(); loadChatterAliases(); loadBotMessages()
+    loadSurveys()
   }, [])
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
@@ -75,6 +87,34 @@ export default function SettingsTab() {
   const loadChatters = async () => { const { data } = await supabase.from('chatters_contact').select('name').order('name'); setChatters(data || []) }
   const loadModelAliases = async () => { const { data } = await supabase.from('model_aliases').select('*').order('model_name'); setModelAliases(data || []) }
   const loadChatterAliases = async () => { const { data } = await supabase.from('chatter_aliases').select('*').order('chatter_name'); setChatterAliases(data || []) }
+
+  const loadSurveys = async () => {
+    const { data } = await supabase.from('surveys').select('*').order('created_at', { ascending: false })
+    setSurveys(data || [])
+    const { data: resp } = await supabase.from('survey_responses').select('*').order('created_at', { ascending: false })
+    setSurveyResponses(resp || [])
+  }
+
+  const createSurvey = async () => {
+    if (!newQuestion.trim()) return
+    setCreatingSurvey(true)
+    const opts = newAnswerType === 'choice' ? newOptions.filter(o => o.trim()) : []
+    await supabase.from('surveys').insert({
+      question: newQuestion.trim(), answer_type: newAnswerType, options: opts,
+      target_roles: newTargetRoles, active: true, created_by: 'Admin',
+    })
+    setNewQuestion(''); setNewOptions(['', '', '']); setNewTargetRoles([])
+    await loadSurveys(); setCreatingSurvey(false)
+  }
+
+  const closeSurvey = async (id) => { await supabase.from('surveys').update({ active: false }).eq('id', id); loadSurveys() }
+  const reopenSurvey = async (id) => { await supabase.from('surveys').update({ active: true }).eq('id', id); loadSurveys() }
+  const deleteSurvey = async (id) => {
+    if (!confirm('Umfrage und alle Antworten löschen?')) return
+    await supabase.from('survey_responses').delete().eq('survey_id', id)
+    await supabase.from('surveys').delete().eq('id', id)
+    loadSurveys()
+  }
   const loadBotMessages = async () => {
     const { data } = await supabase.from('bot_settings').select('*')
     if (data?.length > 0) {
@@ -179,6 +219,117 @@ export default function SettingsTab() {
           }}>{s.label}</button>
         ))}
       </div>
+
+      {/* SURVEYS */}
+      {activeSection === 'surveys' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
+
+          {/* Create new */}
+          <div style={cardS}>
+            <div style={labelS}>Neue Umfrage erstellen</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Frage</label>
+                <input value={newQuestion} onChange={e => setNewQuestion(e.target.value)} placeholder="z.B. Wie war der Traffic heute um 22 Uhr?" style={inputS} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Antworttyp</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[['choice', 'Auswahl'], ['scale', 'Skala 1-5'], ['text', 'Freitext']].map(([k, l]) => (
+                    <button key={k} onClick={() => setNewAnswerType(k)} style={{
+                      padding: '5px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                      background: newAnswerType === k ? '#7c3aed22' : 'transparent',
+                      color: newAnswerType === k ? '#a78bfa' : 'var(--text-muted)',
+                      border: `1px solid ${newAnswerType === k ? '#7c3aed' : 'var(--border)'}`,
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              {newAnswerType === 'choice' && (
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Antwortoptionen</label>
+                  {newOptions.map((opt, i) => (
+                    <input key={i} value={opt} onChange={e => { const o = [...newOptions]; o[i] = e.target.value; setNewOptions(o) }}
+                      placeholder={`Option ${i + 1}`} style={{ ...inputS, marginBottom: 6 }} />
+                  ))}
+                  <button onClick={() => setNewOptions([...newOptions, ''])} style={{ fontSize: 11, color: 'var(--text-muted)', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>+ Option</button>
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Empfänger</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[['chatter', 'Alle Chatters', '#06b6d4'], ['model', 'Alle Models', '#f59e0b']].map(([k, l, c]) => {
+                    const active = newTargetRoles.includes(k)
+                    return (
+                      <button key={k} onClick={() => setNewTargetRoles(prev => active ? prev.filter(r => r !== k) : [...prev, k])} style={{
+                        padding: '5px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                        background: active ? c + '22' : 'transparent', color: active ? c : 'var(--text-muted)',
+                        border: `1px solid ${active ? c : 'var(--border)'}`,
+                      }}>{active ? '✓ ' : ''}{l}</button>
+                    )
+                  })}
+                </div>
+              </div>
+              <button onClick={createSurvey} disabled={creatingsurvey || !newQuestion.trim() || newTargetRoles.length === 0}
+                style={{ padding: '9px', borderRadius: 7, background: newQuestion && newTargetRoles.length > 0 ? '#7c3aed' : 'var(--border)', color: newQuestion && newTargetRoles.length > 0 ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {creatingsurvey ? '...' : '+ Umfrage erstellen'}
+              </button>
+            </div>
+          </div>
+
+          {/* Existing surveys */}
+          {surveys.map(s => {
+            const responses = surveyResponses.filter(r => r.survey_id === s.id)
+            const isExpanded = expandedSurvey === s.id
+            return (
+              <div key={s.id} style={{ ...cardS, borderLeft: `3px solid ${s.active ? '#10b981' : '#555580'}`, borderRadius: '0 10px 10px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: s.active ? 'rgba(16,185,129,0.15)' : 'rgba(100,100,120,0.15)', color: s.active ? '#10b981' : 'var(--text-muted)' }}>
+                        {s.active ? 'AKTIV' : 'GESCHLOSSEN'}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.answer_type} · {(s.target_roles || []).join(', ')}</span>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{s.question}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{responses.length} Antwort{responses.length !== 1 ? 'en' : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => setExpandedSurvey(isExpanded ? null : s.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {isExpanded ? 'Schliessen' : 'Antworten'}
+                    </button>
+                    {s.active ? (
+                      <button onClick={() => closeSurvey(s.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)', cursor: 'pointer', fontFamily: 'inherit' }}>Beenden</button>
+                    ) : (
+                      <button onClick={() => reopenSurvey(s.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit' }}>Reaktivieren</button>
+                    )}
+                    <button onClick={() => deleteSurvey(s.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.4)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                  </div>
+                </div>
+                {isExpanded && responses.length > 0 && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1e1e3a', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {responses.map(r => (
+                      <div key={r.id} style={{ display: 'flex', gap: 10, padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7 }}>
+                        <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>{r.responder_name[0]}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{r.responder_name}</span>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{new Date(r.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>{r.answer}</div>
+                          {r.comment && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{r.comment}</div>}
+                        </div>
+                      </div>
+                    ))}
+                    {isExpanded && responses.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 12 }}>Noch keine Antworten</div>}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {surveys.length === 0 && <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>Noch keine Umfragen</div>}
+        </div>
+      )}
 
       {/* TEAM */}
       {activeSection === 'team' && (

@@ -13,6 +13,7 @@ import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
 import BillingTab from './components/BillingTab'
 import SetPasswordPage from './components/SetPasswordPage'
+import SurveyPopup from './components/SurveyPopup'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -310,6 +311,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
+      <SurveyPopup session={session} displayName={userDisplayName} userRole={userRole} />
       {/* ── HEADER ── */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 100,
@@ -449,7 +451,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.8.0</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.0</span>
         </div>
       </div>
 
