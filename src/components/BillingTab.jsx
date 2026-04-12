@@ -28,6 +28,7 @@ export default function BillingTab() {
   const [snaps, setSnaps] = useState([])
   const [chatSnaps, setChatSnaps] = useState([])
   const [aliases, setAliases] = useState([])
+  const [chatterAliases, setChatterAliases] = useState([])
   const [month, setMonth] = useState(() => {
     const n = new Date()
     return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0')
@@ -47,13 +48,14 @@ export default function BillingTab() {
     const nextM = m === 12 ? 1 : m + 1
     const monthEnd = nextY + '-' + String(nextM).padStart(2, '0') + '-01'
 
-    const [r1, r2, r3, r4, r5, r6] = await Promise.all([
+    const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
       supabase.from('models_contact').select('name').order('name'),
       supabase.from('chatters_contact').select('name').order('name'),
       supabase.from('billing_settings').select('*'),
       supabase.from('model_aliases').select('*'),
       supabase.from('model_snapshots').select('rows,business_date').gte('business_date', monthStart).lt('business_date', monthEnd),
       supabase.from('chatter_snapshots').select('rows,business_date').gte('business_date', monthStart).lt('business_date', monthEnd),
+      supabase.from('chatter_aliases').select('*'),
     ])
     setModels(r1.data || [])
     setChatters(r2.data || [])
@@ -61,6 +63,7 @@ export default function BillingTab() {
     setAliases(r4.data || [])
     setSnaps(r5.data || [])
     setChatSnaps(r6.data || [])
+    setChatterAliases(r7.data || [])
   }
 
   const getSetting = (name, type) => settings.find(s => s.person_name === name && s.person_type === type)
@@ -110,11 +113,14 @@ export default function BillingTab() {
   }
 
   const chatterRev = (chatterName) => {
+    // Get CSV names from chatter_aliases if available
+    const csvNames = chatterAliases.filter(a => norm(a.chatter_name) === norm(chatterName)).map(a => a.csv_name)
+    if (csvNames.length === 0) csvNames.push(chatterName)
     let chat = 0, total = 0
     for (const snap of chatSnaps) {
       for (const row of snap.rows || []) {
         const cn = row.name || row.chatter || ''
-        if (norm(cn) === norm(chatterName) || norm(cn).includes(norm(chatterName))) {
+        if (csvNames.some(c => norm(c) === norm(cn) || norm(cn).includes(norm(c)) || norm(c).includes(norm(cn)))) {
           chat += row.messageRevenue || 0
           total += row.revenue || 0
         }
