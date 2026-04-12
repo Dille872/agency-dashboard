@@ -46,7 +46,9 @@ export default function BillingTab() {
     // Load snapshots for selected month
     const monthStart = selectedMonth + '-01'
     const [year, month] = selectedMonth.split('-')
-    const nextMonth = month === '12' ? `${parseInt(year)+1}-01` : `${year}-${String(parseInt(month)+1).padStart(2,'0')}`
+    const nextYear = String(parseInt(year) + 1)
+    const nextMonthNum = String(parseInt(month) + 1).padStart(2, '0')
+    const nextMonth = month === '12' ? (nextYear + '-01') : (year + '-' + nextMonthNum)
     const monthEnd = nextMonth + '-01'
     const { data: snapData } = await supabase.from('model_snapshots').select('rows, business_date')
       .gte('business_date', monthStart).lt('business_date', monthEnd)
