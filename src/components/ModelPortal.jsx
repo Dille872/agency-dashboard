@@ -103,7 +103,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [messages, setMessages] = useState([])
   const [aliases, setAliases] = useState([])
   const [revenue, setRevenue] = useState({})
-  const [dailySubs, setDailySubs] = useState([])
+  const [dailySubs, setDailySubs] = useState({ combined: [], perAccount: {}, accounts: [] })
+  const [subsAccount, setSubsAccount] = useState('alle')
   const [subsCalMonth, setSubsCalMonth] = useState(() => {
     const n = new Date()
     return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0')
@@ -178,21 +179,32 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       }
     }
     setRevenue(revenueMap)
-    // Build daily subs data for chart
-    const dailySubs = []
+    // Build daily subs data per account
+    const dailySubsMap = {} // { csvName: { date: subs } }
     for (const snap of snapsAll || []) {
-      let subs = 0
       for (const csvName of csvNames) {
         const normCsvName = normalize(csvName)
         const row = snap.rows?.find(r => {
           const rowName = r.creator || r.name || ''
           return normalize(rowName) === normCsvName || normalize(rowName).includes(normCsvName) || normCsvName.includes(normalize(rowName))
         })
-        if (row) subs += row.subs || 0
+        if (row && row.subs > 0) {
+          if (!dailySubsMap[csvName]) dailySubsMap[csvName] = {}
+          dailySubsMap[csvName][snap.business_date] = (dailySubsMap[csvName][snap.business_date] || 0) + (row.subs || 0)
+        }
       }
-      dailySubs.push({ date: snap.business_date, subs })
     }
-    setDailySubs(dailySubs)
+    // Build combined + per-account arrays
+    const allDates = [...new Set((snapsAll || []).map(s => s.business_date))].sort()
+    const combined = allDates.map(date => {
+      const total = csvNames.reduce((s, cn) => s + ((dailySubsMap[cn] || {})[date] || 0), 0)
+      return { date, subs: total }
+    }).filter(d => d.subs > 0)
+    const perAccount = {}
+    for (const csvName of csvNames) {
+      perAccount[csvName] = allDates.map(date => ({ date, subs: (dailySubsMap[csvName] || {})[date] || 0 })).filter(d => d.subs > 0)
+    }
+    setDailySubs({ combined, perAccount, accounts: csvNames })
   }
 
   const logActivity = async (action, category, details) => {
@@ -427,19 +439,18 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             )}
 
             {/* Subs Kalender */}
-            {dailySubs.length > 0 && (() => {
+            {dailySubs.combined.length > 0 && (() => {
+              const activeSubs = subsAccount === 'alle' ? dailySubs.combined : (dailySubs.perAccount[subsAccount] || [])
               const subsMap = {}
-              for (const d of dailySubs) subsMap[d.date] = d.subs
-              const maxSubs = Math.max(...dailySubs.map(d => d.subs), 1)
-              const now2 = new Date()
+              for (const d of activeSubs) subsMap[d.date] = d.subs
               const calYear = subsCalMonth.split('-')[0]
               const calMonth = parseInt(subsCalMonth.split('-')[1]) - 1
               const firstDay = new Date(calYear, calMonth, 1)
               const lastDay = new Date(calYear, calMonth + 1, 0)
               const startDow = (firstDay.getDay() + 6) % 7
-              const totalSubs = dailySubs.reduce((s, d) => s + d.subs, 0)
-              const monthSubs = dailySubs.filter(d => d.date.startsWith(subsCalMonth)).reduce((s, d) => s + d.subs, 0)
-              const maxMonth = Math.max(...dailySubs.filter(d => d.date.startsWith(subsCalMonth)).map(d => d.subs), 1)
+              const totalSubs = activeSubs.reduce((s, d) => s + d.subs, 0)
+              const monthSubs = activeSubs.filter(d => d.date.startsWith(subsCalMonth)).reduce((s, d) => s + d.subs, 0)
+              const maxMonth = Math.max(...activeSubs.filter(d => d.date.startsWith(subsCalMonth)).map(d => d.subs), 1)
               const cells = []
               for (let i = 0; i < startDow; i++) cells.push(null)
               for (let d = 1; d <= lastDay.getDate(); d++) cells.push(d)
@@ -453,17 +464,44 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 if (intensity >= 0.2) return 'rgba(245,158,11,0.2)'
                 return 'rgba(245,158,11,0.08)'
               }
+              const alias = aliases.find(a => a.csv_name === subsAccount)
+              const accountLabel = subsAccount === 'alle' ? 'Alle Accounts' : (alias ? alias.alias_label || subsAccount : subsAccount)
               return (
                 <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Neue Subs Tracker</div>
+
+                  {/* Account Tabs */}
+                  {dailySubs.accounts.length > 1 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {['alle', ...dailySubs.accounts].map(acc => {
+                        const al = aliases.find(a => a.csv_name === acc)
+                        const label = acc === 'alle' ? 'Alle' : (al ? al.alias_label || acc : acc)
+                        const active = subsAccount === acc
+                        return (
+                          <button key={acc} onClick={() => setSubsAccount(acc)} style={{
+                            padding: '4px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
+                            background: active ? '#f59e0b' : 'var(--bg-card2)',
+                            color: active ? '#000' : 'var(--text-muted)',
+                            border: '1px solid ' + (active ? '#f59e0b' : 'var(--border)'),
+                          }}>{label}</button>
+                        )
+                      })}
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Neue Subs Tracker</div>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <div><div style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b', fontFamily: 'monospace' }}>{monthSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Diesen Monat</div></div>
+                      <div><div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{totalSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Gesamt</div></div>
+                      <div><div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{maxMonth}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Bester Tag</div></div>
+                    </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <button onClick={() => {
                         const [y, m] = subsCalMonth.split('-').map(Number)
                         const prev = m === 1 ? (y-1) + '-12' : y + '-' + String(m-1).padStart(2,'0')
                         setSubsCalMonth(prev)
                       }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 5, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>{'<'}</button>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', minWidth: 110, textAlign: 'center' }}>{monthLabel2}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', minWidth: 100, textAlign: 'center' }}>{monthLabel2}</span>
                       <button onClick={() => {
                         const [y, m] = subsCalMonth.split('-').map(Number)
                         const next = m === 12 ? (y+1) + '-01' : y + '-' + String(m+1).padStart(2,'0')
@@ -471,11 +509,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 5, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>{'>'}</button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-                    <div><div style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b', fontFamily: 'monospace' }}>{monthSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Diesen Monat</div></div>
-                    <div><div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{totalSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Gesamt</div></div>
-                    <div><div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{maxMonth}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Bester Tag</div></div>
-                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
                     {['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => (
                       <div key={d} style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', paddingBottom: 4, fontWeight: 700 }}>{d}</div>
@@ -486,7 +520,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       const subs = subsMap[dateStr] || 0
                       const isToday2 = dateStr === new Date().toISOString().slice(0,10)
                       return (
-                        <div key={day} style={{ borderRadius: 5, padding: '4px 2px', textAlign: 'center', background: getColor(subs), border: isToday2 ? '1px solid #f59e0b' : '1px solid transparent', cursor: subs > 0 ? 'default' : 'default' }}>
+                        <div key={day} style={{ borderRadius: 5, padding: '4px 2px', textAlign: 'center', background: getColor(subs), border: isToday2 ? '1px solid #f59e0b' : '1px solid transparent' }}>
                           <div style={{ fontSize: 8, color: subs > 0 ? '#000' : 'var(--text-muted)', fontWeight: subs > 0 ? 700 : 400, opacity: subs > 0 ? 0.6 : 0.4 }}>{day}</div>
                           {subs > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: subs / maxMonth >= 0.6 ? '#000' : '#f59e0b', lineHeight: 1 }}>{subs}</div>}
                         </div>
