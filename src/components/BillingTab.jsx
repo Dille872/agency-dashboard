@@ -1,105 +1,104 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
-function formatMoney(v) {
-  if (!v && v !== 0) return '$0.00'
-  return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function money(v) {
+  return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function norm(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function CheckBox({ checked, onChange, label }) {
+  return (
+    <label onClick={onChange} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+      <div style={{ width: 14, height: 14, borderRadius: 3, border: '1px solid ' + (checked ? '#7c3aed' : '#2e2e5a'), background: checked ? '#7c3aed' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {checked && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>v</span>}
+      </div>
+      {label}
+    </label>
+  )
 }
 
 export default function BillingTab() {
-  const [activeSection, setActiveSection] = useState('models')
+  const [section, setSection] = useState('models')
   const [models, setModels] = useState([])
   const [chatters, setChatters] = useState([])
-  const [billingSettings, setBillingSettings] = useState([])
-  const [snapshots, setSnapshots] = useState([])
-  const [chatterSnapshots, setChatterSnapshots] = useState([])
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
-  const [editingPerson, setEditingPerson] = useState(null)
-  const [editValues, setEditValues] = useState({})
-  const [saving, setSaving] = useState(false)
+  const [settings, setSettings] = useState([])
+  const [snaps, setSnaps] = useState([])
+  const [chatSnaps, setChatSnaps] = useState([])
   const [aliases, setAliases] = useState([])
+  const [month, setMonth] = useState(() => {
+    const n = new Date()
+    return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0')
+  })
+  const [editing, setEditing] = useState(null)
+  const [editVals, setEditVals] = useState({})
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    loadAll()
-  }, [selectedMonth])
+  useEffect(() => { load() }, [month])
 
-  const loadAll = async () => {
-    const [
-      { data: modelsData },
-      { data: chattersData },
-      { data: billingData },
-      { data: aliasData },
-    ] = await Promise.all([
+  const load = async () => {
+    const monthStart = month + '-01'
+    const parts = month.split('-')
+    const y = parseInt(parts[0])
+    const m = parseInt(parts[1])
+    const nextY = m === 12 ? y + 1 : y
+    const nextM = m === 12 ? 1 : m + 1
+    const monthEnd = nextY + '-' + String(nextM).padStart(2, '0') + '-01'
+
+    const [r1, r2, r3, r4, r5, r6] = await Promise.all([
       supabase.from('models_contact').select('name').order('name'),
       supabase.from('chatters_contact').select('name').order('name'),
       supabase.from('billing_settings').select('*'),
       supabase.from('model_aliases').select('*'),
+      supabase.from('model_snapshots').select('rows,business_date').gte('business_date', monthStart).lt('business_date', monthEnd),
+      supabase.from('chatter_snapshots').select('rows,business_date').gte('business_date', monthStart).lt('business_date', monthEnd),
     ])
-    setModels(modelsData || [])
-    setChatters(chattersData || [])
-    setBillingSettings(billingData || [])
-    setAliases(aliasData || [])
-
-    // Load snapshots for selected month
-    const monthStart = selectedMonth + '-01'
-    const [year, month] = selectedMonth.split('-')
-    const nextYear = String(parseInt(year) + 1)
-    const nextMonthNum = String(parseInt(month) + 1).padStart(2, '0')
-    const nextMonth = month === '12' ? (nextYear + '-01') : (year + '-' + nextMonthNum)
-    const monthEnd = nextMonth + '-01'
-    const { data: snapData } = await supabase.from('model_snapshots').select('rows, business_date')
-      .gte('business_date', monthStart).lt('business_date', monthEnd)
-    const { data: chatSnapData } = await supabase.from('chatter_snapshots').select('rows, business_date')
-      .gte('business_date', monthStart).lt('business_date', monthEnd)
-    setSnapshots(snapData || [])
-    setChatterSnapshots(chatSnapData || [])
+    setModels(r1.data || [])
+    setChatters(r2.data || [])
+    setSettings(r3.data || [])
+    setAliases(r4.data || [])
+    setSnaps(r5.data || [])
+    setChatSnaps(r6.data || [])
   }
 
-  const getBillingSetting = (name, type) => billingSettings.find(b => b.person_name === name && b.person_type === type)
-
-  const saveBilling = async () => {
-    if (!editingPerson) return
-    setSaving(true)
-    const { name, type } = editingPerson
-    const existing = getBillingSetting(name, type)
-    if (existing) {
-      await supabase.from('billing_settings').update({ ...editValues, updated_at: new Date().toISOString() }).eq('id', existing.id)
-    } else {
-      await supabase.from('billing_settings').insert({ person_name: name, person_type: type, ...editValues })
-    }
-    setEditingPerson(null)
-    await loadAll()
-    setSaving(false)
-  }
+  const getSetting = (name, type) => settings.find(s => s.person_name === name && s.person_type === type)
 
   const startEdit = (name, type) => {
-    const existing = getBillingSetting(name, type)
-    setEditingPerson({ name, type })
-    setEditValues({
-      percentage: existing?.percentage || 0,
-      include_subs: existing?.include_subs ?? true,
-      include_chat: existing?.include_chat ?? true,
-      include_tips: existing?.include_tips ?? true,
-      include_ppv: existing?.include_ppv ?? true,
+    const s = getSetting(name, type)
+    setEditing({ name, type })
+    setEditVals({
+      percentage: s ? s.percentage : 0,
+      include_subs: s ? s.include_subs : true,
+      include_chat: s ? s.include_chat : true,
+      include_tips: s ? s.include_tips : true,
     })
   }
 
-  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const save = async () => {
+    if (!editing) return
+    setSaving(true)
+    const ex = getSetting(editing.name, editing.type)
+    const payload = { person_name: editing.name, person_type: editing.type, ...editVals, updated_at: new Date().toISOString() }
+    if (ex) {
+      await supabase.from('billing_settings').update(payload).eq('id', ex.id)
+    } else {
+      await supabase.from('billing_settings').insert(payload)
+    }
+    setEditing(null)
+    await load()
+    setSaving(false)
+  }
 
-  const getModelRevenue = (modelName) => {
-    const csvNames = aliases.filter(a => normalize(a.model_name) === normalize(modelName)).map(a => a.csv_name)
+  const modelRev = (modelName) => {
+    const csvNames = aliases.filter(a => norm(a.model_name) === norm(modelName)).map(a => a.csv_name)
     if (csvNames.length === 0) csvNames.push(modelName)
-
     let subs = 0, chat = 0, tips = 0, total = 0
-    for (const snap of snapshots) {
+    for (const snap of snaps) {
       for (const row of snap.rows || []) {
-        const csvName = row.creator || row.name || ''
-        const normCsv = normalize(csvName)
-        const matched = csvNames.some(cn => normalize(cn) === normCsv || normCsv.includes(normalize(cn)) || normalize(cn).includes(normCsv))
-        if (matched) {
+        const cn = row.creator || row.name || ''
+        if (csvNames.some(c => norm(c) === norm(cn) || norm(cn).includes(norm(c)) || norm(c).includes(norm(cn)))) {
           subs += (row.newSubsRevenue || 0) + (row.recurringSubsRevenue || 0)
           chat += row.messageRevenue || 0
           tips += row.tipsRevenue || 0
@@ -110,12 +109,12 @@ export default function BillingTab() {
     return { subs, chat, tips, total }
   }
 
-  const getChatterRevenue = (chatterName) => {
+  const chatterRev = (chatterName) => {
     let chat = 0, total = 0
-    for (const snap of chatterSnapshots) {
+    for (const snap of chatSnaps) {
       for (const row of snap.rows || []) {
-        const name = row.name || row.chatter || ''
-        if (normalize(name) === normalize(chatterName) || normalize(name).includes(normalize(chatterName))) {
+        const cn = row.name || row.chatter || ''
+        if (norm(cn) === norm(chatterName) || norm(cn).includes(norm(chatterName))) {
           chat += row.messageRevenue || 0
           total += row.revenue || 0
         }
@@ -124,150 +123,109 @@ export default function BillingTab() {
     return { chat, total }
   }
 
-  const getChatterPayout = (chatterName) => {
-    const setting = getBillingSetting(chatterName, 'chatter')
-    if (!setting) return null
-    const rev = getChatterRevenue(chatterName)
-    const base = setting.include_chat ? rev.chat : rev.total
-    const chatterShare = base * (setting.percentage / 100)
-    return { base, chatterShare, rev, setting }
-  }
-
-  const calcModelPayout = (modelName) => {
-    const setting = getBillingSetting(modelName, 'model')
-    if (!setting) return null
-    const rev = getModelRevenue(modelName)
-    let base = 0
-    if (setting.include_subs) base += rev.subs
-    if (setting.include_chat) base += rev.chat
-    if (setting.include_tips) base += rev.tips
-    const agencyShare = base * (setting.percentage / 100)
-    const modelShare = base - agencyShare
-    return { base, agencyShare, modelShare, rev, setting }
-  }
-
-  const monthName = new Date(selectedMonth + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-
-  // Generate months for selector
+  const monthLabel = new Date(month + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
   const months = []
   const now = new Date()
   for (let i = 0; i < 6; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'))
   }
 
-  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
-  const inputS = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }
-  const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12 }
-
-  const CheckBox = ({ checked, onChange, label }) => (
-    <label onClick={onChange} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
-      <div style={{ width: 14, height: 14, borderRadius: 3, border: `1px solid ${checked ? '#7c3aed' : '#2e2e5a'}`, background: checked ? '#7c3aed' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {checked && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>v</span>}
-      </div>
-      {label}
-    </label>
-  )
+  const card = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
+  const inp = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Header */}
+
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 8 }}>
           {['models', 'chatters'].map(s => (
-            <button key={s} onClick={() => setActiveSection(s)} style={{
+            <button key={s} onClick={() => setSection(s)} style={{
               padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13,
-              background: activeSection === s ? '#7c3aed' : 'var(--bg-card)',
-              color: activeSection === s ? '#fff' : 'var(--text-secondary)',
-              border: `1px solid ${activeSection === s ? '#7c3aed' : 'var(--border)'}`,
+              background: section === s ? '#7c3aed' : 'var(--bg-card)',
+              color: section === s ? '#fff' : 'var(--text-secondary)',
+              border: '1px solid ' + (section === s ? '#7c3aed' : 'var(--border)'),
             }}>{s === 'models' ? 'Models' : 'Chatters'}</button>
           ))}
         </div>
-        <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
-          style={{ ...inputS, marginLeft: 'auto' }}>
-          {months.map(m => <option key={m} value={m}>{new Date(m + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</option>)}
+        <select value={month} onChange={e => setMonth(e.target.value)} style={{ ...inp, marginLeft: 'auto' }}>
+          {months.map(m => (
+            <option key={m} value={m}>{new Date(m + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</option>
+          ))}
         </select>
       </div>
 
-      {/* MODELS */}
-      {activeSection === 'models' && (
+      {section === 'models' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {models.map(model => {
-            const setting = getBillingSetting(model.name, 'model')
-            const payout = calcModelPayout(model.name)
-            const rev = getModelRevenue(model.name)
-            const isEditing = editingPerson?.name === model.name && editingPerson?.type === 'model'
+            const s = getSetting(model.name, 'model')
+            const rev = modelRev(model.name)
+            const isEdit = editing && editing.name === model.name && editing.type === 'model'
+            let base = 0
+            if (s) {
+              if (s.include_subs) base += rev.subs
+              if (s.include_chat) base += rev.chat
+              if (s.include_tips) base += rev.tips
+            }
+            const agencyShare = s ? base * (s.percentage / 100) : 0
+            const modelShare = base - agencyShare
 
             return (
-              <div key={model.name} style={cardS}>
+              <div key={model.name} style={card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>{model.name[0]}</div>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{model.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthName}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthLabel}</div>
                     </div>
                   </div>
-                  <button onClick={() => isEditing ? setEditingPerson(null) : startEdit(model.name, 'model')}
-                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEditing ? '#7c3aed' : 'transparent', border: `1px solid ${isEditing ? '#7c3aed' : 'var(--border)'}`, color: isEditing ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {isEditing ? 'Schließen' : setting ? '✎ Bearbeiten' : '+ Prozente einstellen'}
+                  <button onClick={() => isEdit ? setEditing(null) : startEdit(model.name, 'model')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEdit ? '#7c3aed' : 'transparent', border: '1px solid ' + (isEdit ? '#7c3aed' : 'var(--border)'), color: isEdit ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    {isEdit ? 'Schliessen' : s ? 'Bearbeiten' : '+ Prozente'}
                   </button>
                 </div>
 
-                {/* Revenue breakdown */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: setting ? 14 : 0 }}>
-                  {[
-                    { label: 'Gesamt', val: rev.total, color: 'var(--text-primary)' },
-                    { label: 'Subs', val: rev.subs, color: '#a78bfa' },
-                    { label: 'Chat', val: rev.chat, color: '#06b6d4' },
-                    { label: 'Tips', val: rev.tips, color: '#f59e0b' },
-                  ].map(item => (
-                    <div key={item.label} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item.label}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: item.color, fontFamily: 'monospace' }}>{formatMoney(item.val)}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
+                  {[['Gesamt', rev.total, 'var(--text-primary)'], ['Subs', rev.subs, '#a78bfa'], ['Chat', rev.chat, '#06b6d4'], ['Tips', rev.tips, '#f59e0b']].map(item => (
+                    <div key={item[0]} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item[0]}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: item[2], fontFamily: 'monospace' }}>{money(item[1])}</div>
                     </div>
                   ))}
                 </div>
 
-                {/* Payout calculation */}
-                {payout && (
-                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {s && (
+                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
                     <div style={{ background: 'rgba(16,185,129,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#10b981', marginBottom: 3 }}>Model bekommt ({100 - payout.setting.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{formatMoney(payout.modelShare)}</div>
+                      <div style={{ fontSize: 10, color: '#10b981', marginBottom: 3 }}>Model ({100 - s.percentage}%)</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{money(modelShare)}</div>
                     </div>
                     <div style={{ background: 'rgba(124,58,237,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(124,58,237,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#a78bfa', marginBottom: 3 }}>Agentur ({payout.setting.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{formatMoney(payout.agencyShare)}</div>
+                      <div style={{ fontSize: 10, color: '#a78bfa', marginBottom: 3 }}>Agentur ({s.percentage}%)</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{money(agencyShare)}</div>
                     </div>
                     <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--text-muted)' }}>
-                      Basis: {formatMoney(payout.base)} · {[payout.setting.include_subs && 'Subs', payout.setting.include_chat && 'Chat', payout.setting.include_tips && 'Tips'].filter(Boolean).join(' + ')}
+                      Basis: {money(base)} · {[s.include_subs && 'Subs', s.include_chat && 'Chat', s.include_tips && 'Tips'].filter(Boolean).join(' + ')}
                     </div>
                   </div>
                 )}
 
-                {/* Edit panel */}
-                {isEditing && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
+                {isEdit && (
+                  <div style={{ marginTop: s ? 0 : 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
                       <div>
-                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Agentur-Anteil %</label>
-                        <input type="number" min="0" max="100" value={editValues.percentage}
-                          onChange={e => setEditValues(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))}
-                          style={{ ...inputS, width: 80 }} />
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Agentur-Anteil %</div>
+                        <input type="number" min="0" max="100" value={editVals.percentage} onChange={e => setEditVals(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))} style={{ ...inp, width: 80 }} />
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        Model: {100 - (editValues.percentage || 0)}%
-                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Model: {100 - (editVals.percentage || 0)}%</div>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Einberechnen:</div>
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
-                      <CheckBox checked={editValues.include_subs} onChange={() => setEditValues(p => ({ ...p, include_subs: !p.include_subs }))} label="Subs" />
-                      <CheckBox checked={editValues.include_chat} onChange={() => setEditValues(p => ({ ...p, include_chat: !p.include_chat }))} label="Chat Revenue" />
-                      <CheckBox checked={editValues.include_tips} onChange={() => setEditValues(p => ({ ...p, include_tips: !p.include_tips }))} label="Tips" />
+                      <CheckBox checked={editVals.include_subs} onChange={() => setEditVals(p => ({ ...p, include_subs: !p.include_subs }))} label="Subs" />
+                      <CheckBox checked={editVals.include_chat} onChange={() => setEditVals(p => ({ ...p, include_chat: !p.include_chat }))} label="Chat Revenue" />
+                      <CheckBox checked={editVals.include_tips} onChange={() => setEditVals(p => ({ ...p, include_tips: !p.include_tips }))} label="Tips" />
                     </div>
-                    <button onClick={saveBilling} disabled={saving}
-                      style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <button onClick={save} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                       {saving ? '...' : 'Speichern'}
                     </button>
                   </div>
@@ -278,77 +236,72 @@ export default function BillingTab() {
         </div>
       )}
 
-      {activeSection === 'chatters' && (
+      {section === 'chatters' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {chatters.map(chatter => {
-            const setting = getBillingSetting(chatter.name, 'chatter')
-            const payout = getChatterPayout(chatter.name)
-            const rev = getChatterRevenue(chatter.name)
-            const isEditing = editingPerson?.name === chatter.name && editingPerson?.type === 'chatter'
+            const s = getSetting(chatter.name, 'chatter')
+            const rev = chatterRev(chatter.name)
+            const isEdit = editing && editing.name === chatter.name && editing.type === 'chatter'
+            const base = s && s.include_chat ? rev.chat : rev.total
+            const chatterShare = s ? base * (s.percentage / 100) : 0
 
             return (
-              <div key={chatter.name} style={cardS}>
+              <div key={chatter.name} style={card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(6,182,212,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#06b6d4' }}>{chatter.name[0]}</div>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{chatter.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthName}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthLabel}</div>
                     </div>
                   </div>
-                  <button onClick={() => isEditing ? setEditingPerson(null) : startEdit(chatter.name, 'chatter')}
-                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEditing ? '#7c3aed' : 'transparent', border: `1px solid ${isEditing ? '#7c3aed' : 'var(--border)'}`, color: isEditing ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {isEditing ? 'Schließen' : setting ? '✎ Bearbeiten' : '+ % einstellen'}
+                  <button onClick={() => isEdit ? setEditing(null) : startEdit(chatter.name, 'chatter')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEdit ? '#7c3aed' : 'transparent', border: '1px solid ' + (isEdit ? '#7c3aed' : 'var(--border)'), color: isEdit ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    {isEdit ? 'Schliessen' : s ? 'Bearbeiten' : '+ Prozente'}
                   </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: payout ? 14 : 0 }}>
-                  <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Chat Revenue</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(rev.chat)}</div>
-                  </div>
-                  <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Gesamt</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{formatMoney(rev.total)}</div>
-                  </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
+                  {[['Chat Revenue', rev.chat, '#06b6d4'], ['Gesamt', rev.total, 'var(--text-primary)']].map(item => (
+                    <div key={item[0]} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item[0]}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: item[2], fontFamily: 'monospace' }}>{money(item[1])}</div>
+                    </div>
+                  ))}
                 </div>
 
-                {payout && (
-                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {s && (
+                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
                     <div style={{ background: 'rgba(6,182,212,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(6,182,212,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter bekommt ({payout.setting.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(payout.chatterShare)}</div>
+                      <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter ({s.percentage}%)</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{money(chatterShare)}</div>
                     </div>
                     <div style={{ background: 'rgba(16,185,129,0.06)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
                       <div style={{ fontSize: 10, color: '#10b981', marginBottom: 3 }}>Basis</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{formatMoney(payout.base)}</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{money(base)}</div>
                     </div>
                     <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--text-muted)' }}>
-                      {payout.setting.include_chat ? 'Basis: Chat Revenue' : 'Basis: Gesamt-Revenue'}
+                      {s.include_chat ? 'Basis: Chat Revenue' : 'Basis: Gesamt'}
                     </div>
                   </div>
                 )}
 
-                {!setting && !isEditing && (
+                {!s && !isEdit && (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Noch keine Prozente eingestellt</div>
                 )}
 
-                {isEditing && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
+                {isEdit && (
+                  <div style={{ marginTop: s ? 0 : 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
                       <div>
-                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter-Anteil %</label>
-                        <input type="number" min="0" max="100" value={editValues.percentage}
-                          onChange={e => setEditValues(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))}
-                          style={{ ...inputS, width: 80 }} />
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Chatter-Anteil %</div>
+                        <input type="number" min="0" max="100" value={editVals.percentage} onChange={e => setEditVals(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))} style={{ ...inp, width: 80 }} />
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Basis:</div>
                     <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
-                      <CheckBox checked={editValues.include_chat} onChange={() => setEditValues(p => ({ ...p, include_chat: !p.include_chat }))} label="Nur Chat Revenue" />
+                      <CheckBox checked={editVals.include_chat} onChange={() => setEditVals(p => ({ ...p, include_chat: !p.include_chat }))} label="Nur Chat Revenue" />
                     </div>
-                    <button onClick={saveBilling} disabled={saving}
-                      style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <button onClick={save} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                       {saving ? '...' : 'Speichern'}
                     </button>
                   </div>
@@ -358,80 +311,7 @@ export default function BillingTab() {
           })}
         </div>
       )}
-          {chatters.map(chatter => {
-            const setting = getBillingSetting(chatter.name, 'chatter')
-            const payout = getChatterPayout(chatter.name)
-            const isEditing = editingPerson?.name === chatter.name && editingPerson?.type === 'chatter'
 
-            return (
-              <div key={chatter.name} style={cardS}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(6,182,212,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#06b6d4' }}>{chatter.name[0]}</div>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{chatter.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthName}</div>
-                    </div>
-                  </div>
-                  <button onClick={() => isEditing ? setEditingPerson(null) : startEdit(chatter.name, 'chatter')}
-                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEditing ? '#7c3aed' : 'transparent', border: `1px solid ${isEditing ? '#7c3aed' : 'var(--border)'}`, color: isEditing ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {isEditing ? 'Schließen' : setting ? '✎ Bearbeiten' : '+ % einstellen'}
-                  </button>
-                </div>
-
-                {payout && (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 12 }}>
-                      <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Agentur-Basis</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{formatMoney(payout.totalAgencyShare)}</div>
-                      </div>
-                      <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Chatter-Anteil ({payout.setting.percentage}%)</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(payout.chatterShare)}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <div style={{ background: 'rgba(6,182,212,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(6,182,212,0.2)' }}>
-                        <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter bekommt</div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(payout.chatterShare)}</div>
-                      </div>
-                      <div style={{ background: 'rgba(124,58,237,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(124,58,237,0.2)' }}>
-                        <div style={{ fontSize: 10, color: '#a78bfa', marginBottom: 3 }}>Agentur behält</div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{formatMoney(payout.agencyKeeps)}</div>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {!setting && !isEditing && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Noch keine Prozente eingestellt</div>
-                )}
-
-                {isEditing && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
-                      <div>
-                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter-Anteil vom Agentur-Anteil %</label>
-                        <input type="number" min="0" max="100" value={editValues.percentage}
-                          onChange={e => setEditValues(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))}
-                          style={{ ...inputS, width: 80 }} />
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        Agentur behält: {100 - (editValues.percentage || 0)}%
-                      </div>
-                    </div>
-                    <button onClick={saveBilling} disabled={saving}
-                      style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {saving ? '...' : 'Speichern'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
