@@ -108,42 +108,27 @@ export default function BillingTab() {
     return { subs, chat, tips, total }
   }
 
-  // Chatter payout is calculated from the agency share of their assigned models
+  const getChatterRevenue = (chatterName) => {
+    let chat = 0, total = 0
+    for (const snap of chatterSnapshots) {
+      for (const row of snap.rows || []) {
+        const name = row.name || row.chatter || ''
+        if (normalize(name) === normalize(chatterName) || normalize(name).includes(normalize(chatterName))) {
+          chat += row.messageRevenue || 0
+          total += row.revenue || 0
+        }
+      }
+    }
+    return { chat, total }
+  }
+
   const getChatterPayout = (chatterName) => {
     const setting = getBillingSetting(chatterName, 'chatter')
     if (!setting) return null
-
-    // Find all models this chatter was assigned to this month via schedule
-    // We sum up agency share from each model and calculate chatter's cut
-    let totalAgencyShare = 0
-    let totalModelRevenue = 0
-
-    // Go through all models and check if chatter is assigned
-    for (const model of models) {
-      const modelSetting = getBillingSetting(model.name, 'model')
-      if (!modelSetting) continue
-
-      const rev = getModelRevenue(model.name)
-      let base = 0
-      if (modelSetting.include_subs) base += rev.subs
-      if (modelSetting.include_chat) base += rev.chat
-      if (modelSetting.include_tips) base += rev.tips
-
-      const agencyShare = base * (modelSetting.percentage / 100)
-      totalAgencyShare += agencyShare
-      totalModelRevenue += base
-    }
-
-    const chatterShare = totalAgencyShare * (setting.percentage / 100)
-    const agencyKeeps = totalAgencyShare - chatterShare
-
-    return {
-      totalAgencyShare,
-      totalModelRevenue,
-      chatterShare,
-      agencyKeeps,
-      setting,
-    }
+    const rev = getChatterRevenue(chatterName)
+    const base = setting.include_chat ? rev.chat : rev.total
+    const chatterShare = base * (setting.percentage / 100)
+    return { base, chatterShare, rev, setting }
   }
 
   const calcModelPayout = (modelName) => {
@@ -293,9 +278,84 @@ export default function BillingTab() {
 
       {activeSection === 'chatters' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ ...cardS, background: 'rgba(6,182,212,0.04)', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            💡 Der Chatter-Anteil wird vom <b style={{ color: '#06b6d4' }}>Agentur-Anteil</b> aller Models berechnet. Beispiel: Agentur verdient $300, Chatter hat 50% → bekommt $150.
-          </div>
+          {chatters.map(chatter => {
+            const setting = getBillingSetting(chatter.name, 'chatter')
+            const payout = getChatterPayout(chatter.name)
+            const rev = getChatterRevenue(chatter.name)
+            const isEditing = editingPerson?.name === chatter.name && editingPerson?.type === 'chatter'
+
+            return (
+              <div key={chatter.name} style={cardS}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(6,182,212,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#06b6d4' }}>{chatter.name[0]}</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{chatter.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthName}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => isEditing ? setEditingPerson(null) : startEdit(chatter.name, 'chatter')}
+                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEditing ? '#7c3aed' : 'transparent', border: `1px solid ${isEditing ? '#7c3aed' : 'var(--border)'}`, color: isEditing ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    {isEditing ? 'Schließen' : setting ? '✎ Bearbeiten' : '+ % einstellen'}
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: payout ? 14 : 0 }}>
+                  <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Chat Revenue</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(rev.chat)}</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Gesamt</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{formatMoney(rev.total)}</div>
+                  </div>
+                </div>
+
+                {payout && (
+                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ background: 'rgba(6,182,212,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(6,182,212,0.2)' }}>
+                      <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter bekommt ({payout.setting.percentage}%)</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(payout.chatterShare)}</div>
+                    </div>
+                    <div style={{ background: 'rgba(16,185,129,0.06)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
+                      <div style={{ fontSize: 10, color: '#10b981', marginBottom: 3 }}>Basis</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{formatMoney(payout.base)}</div>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--text-muted)' }}>
+                      {payout.setting.include_chat ? 'Basis: Chat Revenue' : 'Basis: Gesamt-Revenue'}
+                    </div>
+                  </div>
+                )}
+
+                {!setting && !isEditing && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Noch keine Prozente eingestellt</div>
+                )}
+
+                {isEditing && (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter-Anteil %</label>
+                        <input type="number" min="0" max="100" value={editValues.percentage}
+                          onChange={e => setEditValues(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))}
+                          style={{ ...inputS, width: 80 }} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Basis:</div>
+                    <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
+                      <CheckBox checked={editValues.include_chat} onChange={() => setEditValues(p => ({ ...p, include_chat: !p.include_chat }))} label="Nur Chat Revenue" />
+                    </div>
+                    <button onClick={saveBilling} disabled={saving}
+                      style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {saving ? '...' : '✓ Speichern'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
           {chatters.map(chatter => {
             const setting = getBillingSetting(chatter.name, 'chatter')
             const payout = getChatterPayout(chatter.name)
