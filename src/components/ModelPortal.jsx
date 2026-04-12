@@ -103,6 +103,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [messages, setMessages] = useState([])
   const [aliases, setAliases] = useState([])
   const [revenue, setRevenue] = useState({})
+  const [dailySubs, setDailySubs] = useState([])
   const [activeSection, setActiveSection] = useState('home') // home | board | kalender | umsatz | anfragen
 
   useEffect(() => {
@@ -155,10 +156,15 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     setAliases(myAliases)
     const now = new Date()
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    // Load last 14 days for chart
+    const day14 = new Date(now)
+    day14.setDate(day14.getDate() - 13)
+    const day14Iso = day14.toISOString().slice(0, 10)
     const { data: snaps } = await supabase.from('model_snapshots').select('rows, business_date').gte('business_date', monthStart)
+    const { data: snaps14 } = await supabase.from('model_snapshots').select('rows, business_date').gte('business_date', day14Iso).order('business_date')
     const csvNames = myAliases.length > 0 ? myAliases.map(a => a.csv_name) : [displayName]
-    const revenueMap = {}
     const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const revenueMap = {}
     for (const csvName of csvNames) {
       revenueMap[csvName] = 0
       const normCsvName = normalize(csvName)
@@ -171,6 +177,21 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       }
     }
     setRevenue(revenueMap)
+    // Build daily subs data for chart
+    const dailySubs = []
+    for (const snap of snaps14 || []) {
+      let subs = 0
+      for (const csvName of csvNames) {
+        const normCsvName = normalize(csvName)
+        const row = snap.rows?.find(r => {
+          const rowName = r.creator || r.name || ''
+          return normalize(rowName) === normCsvName || normalize(rowName).includes(normCsvName) || normCsvName.includes(normalize(rowName))
+        })
+        if (row) subs += row.subs || 0
+      }
+      dailySubs.push({ date: snap.business_date, subs })
+    }
+    setDailySubs(dailySubs)
   }
 
   const logActivity = async (action, category, details) => {
@@ -403,6 +424,67 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b', fontWeight: 700 }}>Ansehen →</span>
               </div>
             )}
+
+            {/* Subs Chart */}
+            {dailySubs.length > 0 && (() => {
+              const maxSubs = Math.max(...dailySubs.map(d => d.subs), 1)
+              const totalSubs = dailySubs.reduce((s, d) => s + d.subs, 0)
+              const avgSubs = totalSubs / dailySubs.length
+              const chartW = 100
+              const chartH = 60
+              const pts = dailySubs.map((d, i) => {
+                const x = dailySubs.length === 1 ? chartW / 2 : (i / (dailySubs.length - 1)) * chartW
+                const y = chartH - (d.subs / maxSubs) * (chartH - 8) - 4
+                return `${x},${y}`
+              }).join(' ')
+              return (
+                <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 4 }}>Neue Subs · letzte {dailySubs.length} Tage</div>
+                      <div style={{ display: 'flex', gap: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: '#f59e0b', fontFamily: 'monospace' }}>{totalSubs}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Gesamt</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{avgSubs.toFixed(1)}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Ø pro Tag</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{Math.max(...dailySubs.map(d => d.subs))}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Bester Tag</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 80, overflow: 'visible' }}>
+                    <defs>
+                      <linearGradient id="subsFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />
+                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <polyline points={pts} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeLinejoin="round" />
+                    {dailySubs.map((d, i) => {
+                      const x = dailySubs.length === 1 ? chartW / 2 : (i / (dailySubs.length - 1)) * chartW
+                      const y = chartH - (d.subs / maxSubs) * (chartH - 8) - 4
+                      const isMax = d.subs === maxSubs
+                      return (
+                        <g key={i}>
+                          <circle cx={x} cy={y} r={isMax ? 3 : 2} fill={isMax ? '#f59e0b' : '#f59e0b'} opacity={isMax ? 1 : 0.6} />
+                          {isMax && <text x={x} y={y - 5} textAnchor="middle" fontSize="5" fill="#f59e0b" fontWeight="700">{d.subs}</text>}
+                        </g>
+                      )
+                    })}
+                  </svg>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{dailySubs[0]?.date ? new Date(dailySubs[0].date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{dailySubs[dailySubs.length - 1]?.date ? new Date(dailySubs[dailySubs.length - 1].date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span>
+                  </div>
+                </div>
+              )
+            })()}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
 
