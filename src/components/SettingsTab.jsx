@@ -95,7 +95,13 @@ export default function SettingsTab() {
       })
       const data = await resp.json()
       if (data.ok) {
-        setSuccess(`✓ Einladung an ${email} gesendet!`)
+        // Auto-create contact entry based on role
+        if (role === 'chatter') {
+          await supabase.from('chatters_contact').upsert({ name: displayName.trim() }, { onConflict: 'name' })
+        } else if (role === 'model') {
+          await supabase.from('models_contact').upsert({ name: displayName.trim() }, { onConflict: 'name' })
+        }
+        setSuccess(`Einladung an ${email} gesendet!`)
         setEmail(''); setDisplayName('')
         loadUsers()
       } else {
