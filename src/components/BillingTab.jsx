@@ -121,7 +121,7 @@ export default function BillingTab() {
       for (const row of snap.rows || []) {
         const cn = row.name || row.chatter || ''
         if (csvNames.some(c => norm(c) === norm(cn) || norm(cn).includes(norm(c)) || norm(c).includes(norm(cn)))) {
-          chat += row.messageRevenue || 0
+          chat += row.revenue || 0
           total += row.revenue || 0
         }
       }
