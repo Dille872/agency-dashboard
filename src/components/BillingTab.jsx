@@ -178,7 +178,7 @@ export default function BillingTab() {
               background: activeSection === s ? '#7c3aed' : 'var(--bg-card)',
               color: activeSection === s ? '#fff' : 'var(--text-secondary)',
               border: `1px solid ${activeSection === s ? '#7c3aed' : 'var(--border)'}`,
-            }}>{s === 'models' ? '🎭 Models' : '💬 Chatters'}</button>
+            }}>{s === 'models' ? 'Models' : 'Chatters'}</button>
           ))}
         </div>
         <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
