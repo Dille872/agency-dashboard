@@ -94,7 +94,9 @@ export default function BillingTab() {
     for (const snap of snapshots) {
       for (const row of snap.rows || []) {
         const csvName = row.creator || row.name || ''
-        if (csvNames.some(cn => normalize(cn) === normalize(csvName) || normalize(csvName).includes(normalize(cn)))) {
+        const normCsv = normalize(csvName)
+        const matched = csvNames.some(cn => normalize(cn) === normCsv || normCsv.includes(normalize(cn)) || normalize(cn).includes(normCsv))
+        if (matched) {
           subs += (row.newSubsRevenue || 0) + (row.recurringSubsRevenue || 0)
           chat += row.messageRevenue || 0
           tips += row.tipsRevenue || 0
@@ -105,18 +107,42 @@ export default function BillingTab() {
     return { subs, chat, tips, total }
   }
 
-  const getChatterRevenue = (chatterName) => {
-    let chat = 0, total = 0
-    for (const snap of chatterSnapshots) {
-      for (const row of snap.rows || []) {
-        const name = row.name || row.chatter || ''
-        if (normalize(name) === normalize(chatterName) || normalize(name).includes(normalize(chatterName))) {
-          chat += row.messageRevenue || 0
-          total += row.revenue || 0
-        }
-      }
+  // Chatter payout is calculated from the agency share of their assigned models
+  const getChatterPayout = (chatterName) => {
+    const setting = getBillingSetting(chatterName, 'chatter')
+    if (!setting) return null
+
+    // Find all models this chatter was assigned to this month via schedule
+    // We sum up agency share from each model and calculate chatter's cut
+    let totalAgencyShare = 0
+    let totalModelRevenue = 0
+
+    // Go through all models and check if chatter is assigned
+    for (const model of models) {
+      const modelSetting = getBillingSetting(model.name, 'model')
+      if (!modelSetting) continue
+
+      const rev = getModelRevenue(model.name)
+      let base = 0
+      if (modelSetting.include_subs) base += rev.subs
+      if (modelSetting.include_chat) base += rev.chat
+      if (modelSetting.include_tips) base += rev.tips
+
+      const agencyShare = base * (modelSetting.percentage / 100)
+      totalAgencyShare += agencyShare
+      totalModelRevenue += base
     }
-    return { chat, total }
+
+    const chatterShare = totalAgencyShare * (setting.percentage / 100)
+    const agencyKeeps = totalAgencyShare - chatterShare
+
+    return {
+      totalAgencyShare,
+      totalModelRevenue,
+      chatterShare,
+      agencyKeeps,
+      setting,
+    }
   }
 
   const calcModelPayout = (modelName) => {
@@ -131,18 +157,6 @@ export default function BillingTab() {
     const modelShare = base - agencyShare
     return { base, agencyShare, modelShare, rev, setting }
   }
-
-  const calcChatterPayout = (chatterName) => {
-    const setting = getBillingSetting(chatterName, 'chatter')
-    if (!setting) return null
-    const rev = getChatterRevenue(chatterName)
-    const base = setting.include_chat ? rev.chat : rev.total
-    const chatterShare = base * (setting.percentage / 100)
-    const agencyShare = base - chatterShare
-    return { base, chatterShare, agencyShare, rev, setting }
-  }
-
-  const monthName = new Date(selectedMonth + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
 
   // Generate months for selector
   const months = []
@@ -274,13 +288,14 @@ export default function BillingTab() {
         </div>
       )}
 
-      {/* CHATTERS */}
       {activeSection === 'chatters' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ ...cardS, background: 'rgba(6,182,212,0.04)', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            💡 Der Chatter-Anteil wird vom <b style={{ color: '#06b6d4' }}>Agentur-Anteil</b> aller Models berechnet. Beispiel: Agentur verdient $300, Chatter hat 50% → bekommt $150.
+          </div>
           {chatters.map(chatter => {
             const setting = getBillingSetting(chatter.name, 'chatter')
-            const payout = calcChatterPayout(chatter.name)
-            const rev = getChatterRevenue(chatter.name)
+            const payout = getChatterPayout(chatter.name)
             const isEditing = editingPerson?.name === chatter.name && editingPerson?.type === 'chatter'
 
             return (
@@ -295,54 +310,51 @@ export default function BillingTab() {
                   </div>
                   <button onClick={() => isEditing ? setEditingPerson(null) : startEdit(chatter.name, 'chatter')}
                     style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEditing ? '#7c3aed' : 'transparent', border: `1px solid ${isEditing ? '#7c3aed' : 'var(--border)'}`, color: isEditing ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {isEditing ? 'Schließen' : setting ? '✎ Bearbeiten' : '+ Prozente einstellen'}
+                    {isEditing ? 'Schließen' : setting ? '✎ Bearbeiten' : '+ % einstellen'}
                   </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: setting ? 14 : 0 }}>
-                  {[
-                    { label: 'Chat Revenue', val: rev.chat, color: '#06b6d4' },
-                    { label: 'Gesamt', val: rev.total, color: 'var(--text-primary)' },
-                  ].map(item => (
-                    <div key={item.label} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item.label}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: item.color, fontFamily: 'monospace' }}>{formatMoney(item.val)}</div>
-                    </div>
-                  ))}
-                </div>
-
                 {payout && (
-                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <div style={{ background: 'rgba(6,182,212,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(6,182,212,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter bekommt ({payout.setting.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(payout.chatterShare)}</div>
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 12 }}>
+                      <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Agentur-Basis</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{formatMoney(payout.totalAgencyShare)}</div>
+                      </div>
+                      <div style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Chatter-Anteil ({payout.setting.percentage}%)</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(payout.chatterShare)}</div>
+                      </div>
                     </div>
-                    <div style={{ background: 'rgba(124,58,237,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(124,58,237,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#a78bfa', marginBottom: 3 }}>Agentur ({100 - payout.setting.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{formatMoney(payout.agencyShare)}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div style={{ background: 'rgba(6,182,212,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(6,182,212,0.2)' }}>
+                        <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter bekommt</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{formatMoney(payout.chatterShare)}</div>
+                      </div>
+                      <div style={{ background: 'rgba(124,58,237,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(124,58,237,0.2)' }}>
+                        <div style={{ fontSize: 10, color: '#a78bfa', marginBottom: 3 }}>Agentur behält</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{formatMoney(payout.agencyKeeps)}</div>
+                      </div>
                     </div>
-                    <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--text-muted)' }}>
-                      Basis: {formatMoney(payout.base)} · {payout.setting.include_chat ? 'Chat Revenue' : 'Gesamt'}
-                    </div>
-                  </div>
+                  </>
+                )}
+
+                {!setting && !isEditing && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Noch keine Prozente eingestellt</div>
                 )}
 
                 {isEditing && (
                   <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
                       <div>
-                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter-Anteil %</label>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter-Anteil vom Agentur-Anteil %</label>
                         <input type="number" min="0" max="100" value={editValues.percentage}
                           onChange={e => setEditValues(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))}
                           style={{ ...inputS, width: 80 }} />
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        Agentur: {100 - (editValues.percentage || 0)}%
+                        Agentur behält: {100 - (editValues.percentage || 0)}%
                       </div>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Basis:</div>
-                    <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
-                      <CheckBox checked={editValues.include_chat} onChange={() => setEditValues(p => ({ ...p, include_chat: !p.include_chat }))} label="Nur Chat Revenue" />
                     </div>
                     <button onClick={saveBilling} disabled={saving}
                       style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
