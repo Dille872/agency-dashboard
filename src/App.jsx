@@ -12,12 +12,14 @@ import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
 import BillingTab from './components/BillingTab'
+import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
 export default function App() {
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [needsPassword, setNeedsPassword] = useState(false)
 
   const [activeTab, setActiveTab] = useState('models')
   const [businessDate, setBusinessDate] = useState(todayISO())
@@ -46,8 +48,14 @@ export default function App() {
       setSession(session)
       setAuthLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
+      if (event === 'PASSWORD_RECOVERY' || event === 'USER_UPDATED') {
+        setNeedsPassword(event === 'PASSWORD_RECOVERY')
+      }
+      if (event === 'SIGNED_IN' && window.location.hash.includes('type=invite')) {
+        setNeedsPassword(true)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -247,6 +255,8 @@ export default function App() {
   )
 
   if (!session) return <LoginPage />
+
+  if (needsPassword) return <SetPasswordPage onDone={() => setNeedsPassword(false)} />
 
   // Role permissions
   const showChatterPortal = userRole !== null && ((userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter')
