@@ -33,7 +33,7 @@ function formatMoney(v) {
   return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-export default function ModelPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isPreview }) {
+export default function ModelPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isPreview, unreadCustomContent, onMarkCustomContentRead }) {
   const [theme, setThemeState] = useState(() => getTheme())
   const [previewModel, setPreviewModel] = useState('')
   const [allModels, setAllModels] = useState([])
@@ -435,13 +435,19 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
             { key: 'home', label: '🏠 Übersicht' },
-            { key: 'board', label: '📋 Mein Board' },
+            { key: 'board', label: `📋 Mein Board${unreadCustomContent > 0 ? ` (${unreadCustomContent})` : ''}` },
             { key: 'videos', label: `🎬 Videos${videos.length > 0 ? ` (${videos.length})` : ''}` },
             { key: 'kalender', label: `📅 Kalender${upcomingCal.length > 0 ? ` (${upcomingCal.length})` : ''}` },
             { key: 'anfragen', label: `✉ Anfragen${openRequests.length > 0 ? ` (${openRequests.length})` : ''}` },
             { key: 'umsatz', label: '💰 Umsatz' },
           ].map(t => (
-            <button key={t.key} onClick={() => setActiveSection(t.key)} style={{
+            <button key={t.key} onClick={async () => {
+                setActiveSection(t.key)
+                if (t.key === 'board' && unreadCustomContent > 0) {
+                  await supabase.from('custom_content').update({ read_by_model: true }).eq('model_name', displayName).eq('read_by_model', false)
+                  if (onMarkCustomContentRead) onMarkCustomContentRead()
+                }
+              }} style={{
               padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13,
               background: activeSection === t.key ? '#f59e0b' : 'var(--bg-card)',
               color: activeSection === t.key ? '#000' : 'var(--text-secondary)',

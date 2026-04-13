@@ -448,6 +448,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const [chatterStats, setChatterStats] = useState([])
   const [swaps, setSwaps] = useState([])
   const [modelBoardActivity, setModelBoardActivity] = useState([])
+  const [unreadAdminCC, setUnreadAdminCC] = useState([])
   const [modelBoards, setModelBoards] = useState({})
   const [selectedBoardModel, setSelectedBoardModel] = useState(null)
 
@@ -455,6 +456,16 @@ export default function CommTab({ session, section = 'nachrichten' }) {
     const { data } = await supabase.from('model_board_activity')
       .select('*').order('created_at', { ascending: false }).limit(50)
     setModelBoardActivity(data || [])
+
+    // Also load unread custom content for admin
+    const { data: ccData } = await supabase.from('custom_content')
+      .select('*').eq('read_by_admin', false).order('created_at', { ascending: false })
+    setUnreadAdminCC(ccData || [])
+  }
+
+  const markAdminCCRead = async () => {
+    await supabase.from('custom_content').update({ read_by_admin: true }).eq('read_by_admin', false)
+    setUnreadAdminCC([])
   }
 
   const loadModelBoard = async (modelName) => {
@@ -1088,6 +1099,32 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       {/* MODEL BOARDS */}
       {activeSection === 'modelboards' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Unread Custom Content */}
+          {unreadAdminCC.length > 0 && (
+            <Card title={`Neue Custom Content Aufträge (${unreadAdminCC.length})`}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                {unreadAdminCC.map(cc => (
+                  <div key={cc.id} style={{ display: 'flex', gap: 10, padding: '9px 12px', background: 'rgba(124,58,237,0.05)', borderRadius: 8, border: '1px solid rgba(124,58,237,0.2)' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>{cc.model_name[0]}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{cc.model_name}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{new Date(cc.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{cc.title}</div>
+                      {cc.requested_by && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>von {cc.requested_by}</div>}
+                      {cc.due_date && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>fällig: {new Date(cc.due_date + 'T00:00:00').toLocaleDateString('de-DE')}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={markAdminCCRead} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'transparent', border: '1px solid #2e2e5a', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                Alle als gelesen markieren
+              </button>
+            </Card>
+          )}
+
           <Card title="Letzte Änderungen">
             {modelBoardActivity.length === 0 ? (
               <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Noch keine Änderungen</div>

@@ -31,6 +31,7 @@ export default function App() {
   const [unreadNotes, setUnreadNotes] = useState(0)
   const [unreadModelChanges, setUnreadModelChanges] = useState(0)
   const [openSwaps, setOpenSwaps] = useState(0)
+  const [unreadCustomContent, setUnreadCustomContent] = useState(0)
   const [userRole, setUserRole] = useState(null)
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
@@ -120,11 +121,27 @@ export default function App() {
       setUnreadNotes(noteCount || 0)
     }
 
-    // Model board changes in last 24h
+    // Model board changes
     const { count: modelCount } = await supabase
       .from('model_board_activity').select('*', { count: 'exact', head: true })
       .eq('read', false)
-    setUnreadModelChanges(modelCount || 0)
+
+    // Unread custom content for admin
+    const { count: ccCount } = await supabase
+      .from('custom_content').select('*', { count: 'exact', head: true })
+      .eq('read_by_admin', false)
+
+    setUnreadModelChanges((modelCount || 0) + (ccCount || 0))
+
+    // Unread custom content for model portal
+    if (userRole === 'model' && userDisplayName) {
+      const { count: modelCcCount } = await supabase
+        .from('custom_content').select('*', { count: 'exact', head: true })
+        .eq('model_name', userDisplayName)
+        .eq('read_by_model', false)
+        .eq('completed', false)
+      setUnreadCustomContent(modelCcCount || 0)
+    }
 
     // Open swap requests
     const { count: swapCount } = await supabase
@@ -283,6 +300,8 @@ export default function App() {
       displayName={isAdmin || userRole === 'manager' ? 'Vorschau' : userDisplayName}
       onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
       isPreview={isAdmin || userRole === 'manager'}
+      unreadCustomContent={unreadCustomContent}
+      onMarkCustomContentRead={() => setUnreadCustomContent(0)}
     />
   )
 
