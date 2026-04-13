@@ -507,6 +507,19 @@ export default function CommTab({ session, section = 'nachrichten' }) {
 
   const updateRequestStatus = async (id, status) => {
     await supabase.from('content_requests').update({ status }).eq('id', id)
+
+    // Send Telegram notification to model when confirmed
+    if (status === 'bestaetigt') {
+      const req = contentRequests.find(r => r.id === id)
+      if (req) {
+        const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).single()
+        if (modelData?.telegram_id) {
+          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\nVon: ${req.chatter_name}\n${req.request_text}\n\n– Thirteen 87`
+          await sendTelegramMessage(modelData.telegram_id, msg)
+        }
+      }
+    }
+
     loadContentRequests()
   }
 
@@ -908,8 +921,8 @@ export default function CommTab({ session, section = 'nachrichten' }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {contentRequests.map(req => {
-                const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
-                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
+                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestatigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
                 return (
                   <div key={req.id} style={{ padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
@@ -929,6 +942,9 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                       <div style={{ display: 'flex', gap: 6 }}>
                         {req.status !== 'angefragt' && (
                           <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt</button>
+                        )}
+                        {req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
+                          <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Bestatigen + TG</button>
                         )}
                         {req.status !== 'erledigt' && (
                           <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
