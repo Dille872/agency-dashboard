@@ -102,6 +102,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [calTitle, setCalTitle] = useState('')
   const [calDesc, setCalDesc] = useState('')
   const [calDate, setCalDate] = useState('')
+  const [calTime, setCalTime] = useState('')
   const [calCategory, setCalCategory] = useState('aufgabe')
   const [calReminder, setCalReminder] = useState('')
 
@@ -257,11 +258,12 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       title: calTitle.trim(),
       description: calDesc.trim() || null,
       due_date: calDate,
+      due_time: calTime || null,
       category: calCategory,
       reminder_hours: calReminder ? parseInt(calReminder) : null,
       reminder_sent: false,
     })
-    setCalTitle(''); setCalDesc(''); setCalDate(''); setCalReminder(''); setShowAddCal(false)
+    setCalTitle(''); setCalDesc(''); setCalDate(''); setCalTime(''); setCalReminder(''); setShowAddCal(false)
     await loadCalendar(); setSaving(false)
   }
 
@@ -517,12 +519,29 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
         {/* Banner offene Anfragen */}
             {openRequests.length > 0 && (
-              <div onClick={() => setActiveSection('anfragen')} style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 2 }}>{openRequests.length} offene Content-Anfrage{openRequests.length !== 1 ? 'n' : ''}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{openRequests.slice(0, 2).map(r => r.chatter_name).join(' · ')}</div>
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '2px solid rgba(245,158,11,0.4)', borderRadius: 10, padding: '14px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, cursor: 'pointer' }} onClick={() => setActiveSection('anfragen')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#000', flexShrink: 0 }}>{openRequests.length}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>Offene Content-Anfrage{openRequests.length !== 1 ? 'n' : ''}</div>
+                  </div>
+                  <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, background: '#f59e0b', color: '#000', fontWeight: 700 }}>Alle ansehen →</span>
                 </div>
-                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b', fontWeight: 700 }}>Ansehen →</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {openRequests.slice(0, 3).map(r => {
+                    const statusColor = r.status === 'bestaetigt' ? '#06b6d4' : r.status === 'angefragt' ? '#f59e0b' : '#a78bfa'
+                    const statusLabel = r.status === 'bestaetigt' ? 'Bestätigt' : r.status === 'angefragt' ? 'Angefragt' : 'Neu'
+                    return (
+                      <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--bg-card)', borderRadius: 7, border: `1px solid ${statusColor}33` }}>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{r.request_text?.slice(0, 50)}{r.request_text?.length > 50 ? '...' : ''}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>von {r.chatter_name}</div>
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor, flexShrink: 0 }}>{statusLabel}</span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
@@ -638,6 +657,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                           {item.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{item.description}</div>}
                           <div style={{ fontSize: 10, color: isOverdue ? '#ef4444' : isToday ? '#10b981' : 'var(--text-muted)', marginTop: 3, fontFamily: 'monospace' }}>
                             {isOverdue ? '⚠ Überfällig · ' : isToday ? '● Heute · ' : ''}{new Date(item.due_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                            {item.due_time && <span style={{ color: '#a78bfa' }}> · {item.due_time.slice(0,5)} Uhr</span>}
                             {item.reminder_hours && <span style={{ color: '#06b6d4' }}> · 🔔 {item.reminder_hours}h vorher</span>}
                           </div>
                         </div>
@@ -947,6 +967,18 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                   <input type="date" value={calDate} onChange={e => setCalDate(e.target.value)} style={inputS} />
                 </div>
                 <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uhrzeit</label>
+                  <input type="time" value={calTime} onChange={e => setCalTime(e.target.value)} style={inputS} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uhrzeit</label>
+                  <input type="time" value={calTime} onChange={e => setCalTime(e.target.value)} style={inputS} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uhrzeit</label>
+                  <input type="time" value={calTime} onChange={e => setCalTime(e.target.value)} style={inputS} />
+                </div>
+                <div>
                   <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Erinnerung</label>
                   <select value={calReminder} onChange={e => setCalReminder(e.target.value)} style={inputS}>
                     <option value="">Keine Erinnerung</option>
@@ -984,6 +1016,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       <div style={{ fontSize: 11, fontFamily: 'monospace', color: isOverdue ? '#ef4444' : isToday ? '#10b981' : 'var(--text-muted)' }}>
                         {isOverdue ? '⚠ Überfällig · ' : isToday ? '● Heute · ' : ''}
                         {new Date(item.due_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        {item.due_time && <span style={{ color: '#a78bfa' }}> · {item.due_time.slice(0, 5)} Uhr</span>}
                       </div>
                     </div>
                     <button onClick={() => deleteCalItem(item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}

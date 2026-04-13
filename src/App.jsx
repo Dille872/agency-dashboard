@@ -367,15 +367,19 @@ export default function App() {
             {[
               { key: 'models', label: 'Models' },
               { key: 'chatters', label: 'Chatters' },
+              { key: 'divider' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
               { key: 'nachrichten', label: 'Nachrichten', badge: unreadMessages },
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'schedule', label: 'Dienstplan' },
-              { key: 'billing', label: '💰 Billing' },
               { key: 'export', label: 'Export' },
               { key: 'settings', label: '⚙ Einstellungen' },
-            ].filter(tab => canAccess(tab.key)).map(tab => (
+            ].filter(tab => tab.key === 'divider' || canAccess(tab.key)).map(tab => {
+              if (tab.key === 'divider') return (
+                <div key="divider" style={{ width: 1, height: 24, background: 'var(--border)', alignSelf: 'center', margin: '0 4px' }} />
+              )
+              return (
               <button key={tab.key} onClick={() => {
                 setActiveTab(tab.key)
                 if (tab.key === 'nachrichten') setUnreadMessages(0)
@@ -398,7 +402,7 @@ export default function App() {
                   }}>{tab.badge}</span>
                 )}
               </button>
-            ))}
+            )})
           </div>
           <button onClick={() => setViewMode('chatter')} style={{
             fontSize: 11, padding: '5px 10px', borderRadius: 6,
@@ -496,8 +500,6 @@ export default function App() {
           <CommTab key="models-comm" session={session} section="models" />
         ) : activeTab === 'chatters-comm' ? (
           <CommTab key="chatters-comm" session={session} section="chatters" />
-        ) : activeTab === 'billing' ? (
-          <BillingTab />
         ) : activeTab === 'export' ? (
           <ExportTab />
         ) : activeTab === 'settings' ? (
