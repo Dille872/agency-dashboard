@@ -402,7 +402,7 @@ export default function App() {
                   }}>{tab.badge}</span>
                 )}
               </button>
-            )})
+            )})}
           </div>
           <button onClick={() => setViewMode('chatter')} style={{
             fontSize: 11, padding: '5px 10px', borderRadius: 6,
