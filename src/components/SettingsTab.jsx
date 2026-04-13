@@ -209,6 +209,8 @@ export default function SettingsTab() {
     setOffboardingUser(null)
     loadUsers()
   }
+
+  const loadBotMessages = async () => {
     const { data } = await supabase.from('bot_settings').select('*')
     if (data?.length > 0) {
       const map = { ...DEFAULT_BOT_MESSAGES }
