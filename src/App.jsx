@@ -367,17 +367,19 @@ export default function App() {
             {[
               { key: 'models', label: 'Models' },
               { key: 'chatters', label: 'Chatters' },
-              { key: 'divider' },
+              { key: 'divider1' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
               { key: 'nachrichten', label: 'Nachrichten', badge: unreadMessages },
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
+              { key: 'divider2' },
               { key: 'schedule', label: 'Dienstplan' },
               { key: 'export', label: 'Export' },
+              { key: 'divider3' },
               { key: 'settings', label: '⚙ Einstellungen' },
-            ].filter(tab => tab.key === 'divider' || canAccess(tab.key)).map(tab => {
-              if (tab.key === 'divider') return (
-                <div key="divider" style={{ width: 1, height: 24, background: 'var(--border)', alignSelf: 'center', margin: '0 4px' }} />
+            ].filter(tab => tab.key.startsWith('divider') || canAccess(tab.key)).map(tab => {
+              if (tab.key.startsWith('divider')) return (
+                <div key={tab.key} style={{ width: 1.5, height: 28, background: 'linear-gradient(to bottom, transparent, #f59e0b, transparent)', margin: '0 2px' }} />
               )
               return (
               <button key={tab.key} onClick={() => {
@@ -474,7 +476,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.0</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.1</span>
         </div>
       </div>
 
