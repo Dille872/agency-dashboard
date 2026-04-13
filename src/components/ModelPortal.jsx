@@ -843,6 +843,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 )
               })}
             </div>
+
+            {CATEGORIES.map(cat => (
               <div key={cat.key} style={cardS}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
