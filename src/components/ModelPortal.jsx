@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.6.4'
+const APP_VERSION = 'v1.9.0'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -12,6 +12,13 @@ const CATEGORIES = [
   { key: 'einschraenkungen', label: 'Einschränkungen', color: '#06b6d4' },
   { key: 'reise', label: 'Reiseplan', color: '#06b6d4' },
   { key: 'termine', label: 'Termine', color: '#7c3aed' },
+]
+
+const SERVICE_ITEMS = [
+  { key: 'bewertungen', label: 'Bewertungen' },
+  { key: 'audios', label: 'Audios' },
+  { key: 'video_chat', label: 'Video Chat (VC)' },
+  { key: 'telefonieren', label: 'Telefonieren' },
 ]
 
 const CAL_CATEGORIES = [
@@ -127,7 +134,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }, [displayName])
 
   const loadAll = async () => {
-    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos()
+    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices()
   }
 
   const loadBoard = async () => {
@@ -272,9 +279,78 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [videoPreview, setVideoPreview] = useState(null)
   const [uploadingVideo, setUploadingVideo] = useState(false)
 
+  // Custom Content
+  const [customContent, setCustomContent] = useState([])
+  const [expandedContent, setExpandedContent] = useState(null)
+  const [showAddContent, setShowAddContent] = useState(false)
+  const [newCustomContent, setNewCustomContent] = useState({ title: '', description: '', due_date: '', reminder_days: '' })
+  const [savingContent, setSavingContent] = useState(false)
+
+  // Services (yes/no board items)
+  const [services, setServices] = useState({}) // { key: { enabled: bool, note: string } }
+
   const loadVideos = async () => {
     const { data } = await supabase.from('model_videos').select('*').eq('model_name', displayName).order('release_date')
     setVideos(data || [])
+  }
+
+  const loadCustomContent = async () => {
+    const { data } = await supabase.from('custom_content').select('*').eq('model_name', displayName).order('created_at', { ascending: false })
+    setCustomContent(data || [])
+  }
+
+  const loadServices = async () => {
+    const { data } = await supabase.from('model_board').select('*').eq('model_name', displayName).eq('category', 'service_flags')
+    const map = {}
+    for (const item of data || []) map[item.title] = { enabled: item.yes_no, note: item.content }
+    setServices(map)
+  }
+
+  const saveService = async (key, enabled, note) => {
+    const existing = await supabase.from('model_board').select('id').eq('model_name', displayName).eq('category', 'service_flags').eq('title', key).single()
+    if (existing.data) {
+      await supabase.from('model_board').update({ yes_no: enabled, content: note || null }).eq('id', existing.data.id)
+    } else {
+      await supabase.from('model_board').insert({ model_name: displayName, category: 'service_flags', title: key, yes_no: enabled, content: note || null, sort_order: 0 })
+    }
+    loadServices()
+  }
+
+  const addCustomContent = async () => {
+    if (!newCustomContent.title.trim()) return
+    setSavingContent(true)
+    const { data: inserted } = await supabase.from('custom_content').insert({
+      model_name: displayName,
+      title: newCustomContent.title.trim(),
+      description: newCustomContent.description.trim() || null,
+      requested_by: displayName,
+      due_date: newCustomContent.due_date || null,
+      reminder_days: newCustomContent.reminder_days ? parseInt(newContent.reminder_days) : null,
+    }).select().single()
+    // Also add to calendar if due date set
+    if (inserted && newCustomContent.due_date) {
+      await supabase.from('model_calendar').insert({
+        model_name: displayName,
+        title: 'Custom Content: ' + newCustomContent.title.trim(),
+        due_date: newCustomContent.due_date,
+        category: 'content',
+        note: newCustomContent.description || null,
+      })
+    }
+    setNewCustomContent({ title: '', description: '', due_date: '', reminder_days: '' })
+    setShowAddContent(false)
+    await loadCustomContent()
+    setSavingContent(false)
+  }
+
+  const completeContent = async (id) => {
+    await supabase.from('custom_content').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', id)
+    loadCustomContent()
+  }
+
+  const deleteContent = async (id) => {
+    await supabase.from('custom_content').delete().eq('id', id)
+    loadCustomContent()
   }
 
   const addVideo = async () => {
@@ -651,7 +727,122 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* BOARD */}
         {activeSection === 'board' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {CATEGORIES.map(cat => (
+            {/* Services Ja/Nein */}
+            <div style={{ ...cardS, borderLeft: '3px solid #f97316', borderRadius: '0 10px 10px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span style={{ width: 3, height: 14, background: '#f97316', borderRadius: 2, display: 'inline-block' }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Services</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
+                {SERVICE_ITEMS.map(svc => {
+                  const s = services[svc.key] || {}
+                  const enabled = s.enabled
+                  return (
+                    <div key={svc.key} style={{ ...itemS, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{svc.label}</span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => saveService(svc.key, true, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === true ? 'rgba(16,185,129,0.2)' : 'transparent', color: enabled === true ? '#10b981' : 'var(--text-muted)', border: `1px solid ${enabled === true ? '#10b981' : 'var(--border)'}` }}>Ja</button>
+                        <button onClick={() => saveService(svc.key, false, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === false ? 'rgba(239,68,68,0.2)' : 'transparent', color: enabled === false ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${enabled === false ? '#ef4444' : 'var(--border)'}` }}>Nein</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Custom Content */}
+            <div style={{ ...cardS, borderLeft: '3px solid #7c3aed', borderRadius: '0 10px 10px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 3, height: 14, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Custom Content</span>
+                  <span style={{ fontSize: 10, background: 'var(--bg-card2)', color: 'var(--text-muted)', padding: '1px 7px', borderRadius: 10, border: '1px solid var(--border)' }}>{customContent.filter(c => !c.completed).length} offen</span>
+                </div>
+                <button onClick={() => setShowAddContent(!showAddContent)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.15)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>+ Neu</button>
+              </div>
+
+              {/* Add form */}
+              {showAddContent && (
+                <div style={{ ...itemS, border: '1px solid #7c3aed', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <input value={newCustomContent.title} onChange={e => setNewCustomContent(p => ({ ...p, title: e.target.value }))} style={inputS} placeholder="Titel *" autoFocus />
+                    <textarea value={newCustomContent.description} onChange={e => setNewCustomContent(p => ({ ...p, description: e.target.value }))} style={{ ...inputS, resize: 'vertical' }} rows={2} placeholder="Beschreibung (optional)" />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Fällig bis</label>
+                        <input type="date" value={newCustomContent.due_date} onChange={e => setNewCustomContent(p => ({ ...p, due_date: e.target.value }))} style={inputS} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Erinnerung (Tage vorher)</label>
+                        <select value={newCustomContent.reminder_days} onChange={e => setNewCustomContent(p => ({ ...p, reminder_days: e.target.value }))} style={inputS}>
+                          <option value="">Keine</option>
+                          <option value="1">1 Tag</option>
+                          <option value="2">2 Tage</option>
+                          <option value="3">3 Tage</option>
+                          <option value="7">1 Woche</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={addCustomContent} disabled={savingContent || !newCustomContent.title.trim()} style={{ flex: 1, padding: '7px', borderRadius: 7, background: newCustomContent.title ? '#7c3aed' : 'var(--border)', color: newContent.title ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {savingContent ? '...' : '+ Speichern'}
+                      </button>
+                      <button onClick={() => setShowAddContent(false)} style={{ padding: '7px 12px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Content list */}
+              {customContent.length === 0 && !showAddContent && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Noch keine Custom Content Aufträge</div>
+              )}
+              {customContent.map(cc => {
+                const isExpanded = expandedContent === cc.id
+                const isOverdue = cc.due_date && !cc.completed && cc.due_date < new Date().toISOString().slice(0, 10)
+                const borderColor = cc.completed ? '#10b981' : isOverdue ? '#ef4444' : '#f59e0b'
+                const bgColor = cc.completed ? 'rgba(16,185,129,0.03)' : isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)'
+                return (
+                  <div key={cc.id} style={{ background: bgColor, border: `1px solid ${borderColor}44`, borderRadius: 8, marginBottom: 6, overflow: 'hidden', opacity: cc.completed ? 0.6 : 1 }}>
+                    <div onClick={() => setExpandedContent(isExpanded ? null : cc.id)}
+                      style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                        <div style={{ width: 14, height: 14, borderRadius: 3, background: cc.completed ? '#10b981' : 'transparent', border: `1px solid ${cc.completed ? '#10b981' : '#2e2e5a'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {cc.completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>v</span>}
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textDecoration: cc.completed ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cc.title}</span>
+                        {cc.due_date && !cc.completed && (
+                          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: isOverdue ? '#ef444422' : '#f59e0b22', color: isOverdue ? '#ef4444' : '#f59e0b', flexShrink: 0 }}>
+                            {isOverdue ? 'Überfällig · ' : ''}{new Date(cc.due_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{isExpanded ? '▼' : '▶'}</span>
+                    </div>
+                    {isExpanded && (
+                      <div style={{ padding: '10px 12px 12px', borderTop: `1px solid ${borderColor}22` }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div><div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>Angefragt von</div><div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{cc.requested_by || '—'}</div></div>
+                          <div><div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>Erstellt am</div><div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{new Date(cc.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div></div>
+                          {cc.due_date && <div><div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>Fällig bis</div><div style={{ fontSize: 12, fontWeight: 600, color: isOverdue ? '#ef4444' : '#f59e0b' }}>{new Date(cc.due_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div></div>}
+                          {cc.reminder_days && <div><div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>Erinnerung</div><div style={{ fontSize: 12, fontWeight: 600, color: '#06b6d4' }}>{cc.reminder_days} {cc.reminder_days === 1 ? 'Tag' : 'Tage'} vorher</div></div>}
+                        </div>
+                        {cc.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'var(--bg-card2)', padding: '8px 10px', borderRadius: 6, lineHeight: 1.5, marginBottom: 10 }}>{cc.description}</div>}
+                        {!cc.completed && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => completeContent(cc.id)} style={{ flex: 1, padding: '7px', borderRadius: 7, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              Als erledigt markieren
+                            </button>
+                            <button onClick={() => deleteContent(cc.id)} style={{ padding: '7px 12px', borderRadius: 7, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                          </div>
+                        )}
+                        {cc.completed && <div style={{ fontSize: 11, color: '#10b981' }}>Erledigt am {new Date(cc.completed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
               <div key={cat.key} style={cardS}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
