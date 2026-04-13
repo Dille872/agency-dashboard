@@ -52,6 +52,7 @@ export default function SettingsTab() {
   const [error, setError] = useState('')
   const [users, setUsers] = useState([])
   const [editingRole, setEditingRole] = useState(null)
+  const [offboarding, setOffboarding] = useState(null)
 
   // Bot
   const [botMessages, setBotMessages] = useState({ ...DEFAULT_BOT_MESSAGES })
@@ -115,7 +116,99 @@ export default function SettingsTab() {
     await supabase.from('surveys').delete().eq('id', id)
     loadSurveys()
   }
-  const loadBotMessages = async () => {
+  const [offboardingUser, setOffboardingUser] = useState(null)
+  const [offboardStep, setOffboardStep] = useState('confirm') // confirm | exporting | done
+
+  const startOffboarding = (user) => {
+    setOffboardingUser(user)
+    setOffboardStep('confirm')
+  }
+
+  const exportUserData = async (user) => {
+    setOffboardStep('exporting')
+    const name = user.display_name
+    const role = user.role
+    const exportData = { name, role, exported_at: new Date().toISOString() }
+
+    if (role === 'model') {
+      const [{ data: board }, { data: snaps }, { data: calendar }, { data: videos }, { data: cc }] = await Promise.all([
+        supabase.from('model_board').select('*').eq('model_name', name),
+        supabase.from('model_snapshots').select('business_date, rows').order('business_date'),
+        supabase.from('model_calendar').select('*').eq('model_name', name),
+        supabase.from('model_videos').select('*').eq('model_name', name),
+        supabase.from('custom_content').select('*').eq('model_name', name),
+      ])
+      // Filter snapshots for this model
+      const modelSnaps = (snaps || []).map(s => ({
+        date: s.business_date,
+        rows: (s.rows || []).filter(r => (r.creator || r.name || '').toLowerCase().includes(name.toLowerCase()))
+      })).filter(s => s.rows.length > 0)
+      exportData.board = board || []
+      exportData.revenue_snapshots = modelSnaps
+      exportData.calendar = calendar || []
+      exportData.videos = videos || []
+      exportData.custom_content = cc || []
+    } else if (role === 'chatter') {
+      const [{ data: contact }, { data: snaps }, { data: shiftLogs }] = await Promise.all([
+        supabase.from('chatters_contact').select('*').eq('name', name),
+        supabase.from('chatter_snapshots').select('business_date, rows').order('business_date'),
+        supabase.from('shift_logs').select('*').eq('display_name', name),
+      ])
+      const chatterSnaps = (snaps || []).map(s => ({
+        date: s.business_date,
+        rows: (s.rows || []).filter(r => (r.name || '').toLowerCase().includes(name.toLowerCase()))
+      })).filter(s => s.rows.length > 0)
+      exportData.contact = contact?.[0] || {}
+      exportData.revenue_snapshots = chatterSnaps
+      exportData.shift_logs = shiftLogs || []
+    }
+
+    // Download JSON
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name}_export_${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    setOffboardStep('done')
+  }
+
+  const deleteUserData = async (user) => {
+    const name = user.display_name
+    const role = user.role
+    if (!confirm(`ACHTUNG: Alle Daten von "${name}" werden unwiderruflich gelöscht. Fortfahren?`)) return
+
+    if (role === 'model') {
+      await Promise.all([
+        supabase.from('model_board').delete().eq('model_name', name),
+        supabase.from('model_board_activity').delete().eq('model_name', name),
+        supabase.from('model_calendar').delete().eq('model_name', name),
+        supabase.from('model_videos').delete().eq('model_name', name),
+        supabase.from('custom_content').delete().eq('model_name', name),
+        supabase.from('content_requests').delete().eq('model_name', name),
+        supabase.from('model_aliases').delete().eq('model_name', name),
+        supabase.from('models_contact').delete().eq('name', name),
+        supabase.from('online_status').delete().eq('display_name', name),
+      ])
+    } else if (role === 'chatter') {
+      await Promise.all([
+        supabase.from('chatters_contact').delete().eq('name', name),
+        supabase.from('shift_logs').delete().eq('display_name', name),
+        supabase.from('online_status').delete().eq('display_name', name),
+        supabase.from('reminders').delete().eq('chatter_name', name),
+        supabase.from('absences').delete().eq('chatter_name', name),
+        supabase.from('chatter_aliases').delete().eq('chatter_name', name),
+        supabase.from('content_requests').delete().eq('chatter_name', name),
+        supabase.from('notes').delete().ilike('text', `%${name}%`),
+      ])
+    }
+
+    // Remove from user_roles
+    await supabase.from('user_roles').delete().eq('user_id', user.user_id)
+    setOffboardingUser(null)
+    loadUsers()
+  }
     const { data } = await supabase.from('bot_settings').select('*')
     if (data?.length > 0) {
       const map = { ...DEFAULT_BOT_MESSAGES }
@@ -175,6 +268,96 @@ export default function SettingsTab() {
     if (!confirm(`${name} wirklich entfernen?`)) return
     await supabase.from('user_roles').delete().eq('user_id', userId)
     loadUsers()
+  }
+
+  const offboardUser = async (userId, name, role) => {
+    if (!confirm(`Offboarding für ${name} starten?\n\nDies exportiert alle Daten und löscht dann alles aus dem System.`)) return
+
+    setOffboarding(name)
+
+    try {
+      // Collect all data for export
+      const exportData = { name, role, exportedAt: new Date().toISOString() }
+
+      if (role === 'model') {
+        const [{ data: board }, { data: snaps }, { data: videos }, { data: calendar }, { data: cc }] = await Promise.all([
+          supabase.from('model_board').select('*').eq('model_name', name),
+          supabase.from('model_snapshots').select('business_date, rows').order('business_date'),
+          supabase.from('model_videos').select('*').eq('model_name', name),
+          supabase.from('model_calendar').select('*').eq('model_name', name),
+          supabase.from('custom_content').select('*').eq('model_name', name),
+        ])
+        // Filter snapshots for this model
+        const modelSnaps = (snaps || []).map(s => ({
+          date: s.business_date,
+          data: (s.rows || []).filter(r => (r.creator || r.name || '').toLowerCase().includes(name.toLowerCase()))
+        })).filter(s => s.data.length > 0)
+
+        exportData.board = board || []
+        exportData.snapshots = modelSnaps
+        exportData.videos = videos || []
+        exportData.calendar = calendar || []
+        exportData.customContent = cc || []
+      } else if (role === 'chatter') {
+        const [{ data: snaps }, { data: shiftLogs }, { data: notes }] = await Promise.all([
+          supabase.from('chatter_snapshots').select('business_date, rows').order('business_date'),
+          supabase.from('shift_logs').select('*').eq('display_name', name),
+          supabase.from('notes').select('*').ilike('text', `%${name}%`),
+        ])
+        const chatterSnaps = (snaps || []).map(s => ({
+          date: s.business_date,
+          data: (s.rows || []).filter(r => (r.name || '').toLowerCase() === name.toLowerCase())
+        })).filter(s => s.data.length > 0)
+
+        exportData.snapshots = chatterSnaps
+        exportData.shiftLogs = shiftLogs || []
+        exportData.notes = notes || []
+      }
+
+      // Download JSON
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `offboarding_${name.replace(/\s/g, '_')}_${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+
+      // Wait a moment then delete
+      await new Promise(r => setTimeout(r, 1000))
+
+      if (confirm(`Export fertig! Jetzt alle Daten von ${name} löschen?`)) {
+        if (role === 'model') {
+          await Promise.all([
+            supabase.from('model_board').delete().eq('model_name', name),
+            supabase.from('model_videos').delete().eq('model_name', name),
+            supabase.from('model_calendar').delete().eq('model_name', name),
+            supabase.from('custom_content').delete().eq('model_name', name),
+            supabase.from('model_board_activity').delete().eq('model_name', name),
+            supabase.from('models_contact').delete().eq('name', name),
+            supabase.from('model_aliases').delete().eq('model_name', name),
+            supabase.from('content_requests').delete().eq('model_name', name),
+          ])
+        } else if (role === 'chatter') {
+          await Promise.all([
+            supabase.from('shift_logs').delete().eq('display_name', name),
+            supabase.from('online_status').delete().eq('display_name', name),
+            supabase.from('chatters_contact').delete().eq('name', name),
+            supabase.from('chatter_aliases').delete().eq('chatter_name', name),
+            supabase.from('reminders').delete().eq('chatter_name', name),
+            supabase.from('absences').delete().eq('chatter_name', name),
+            supabase.from('content_requests').delete().eq('chatter_name', name),
+          ])
+        }
+        // Remove from user_roles
+        await supabase.from('user_roles').delete().eq('user_id', userId)
+        alert(`${name} wurde vollständig aus dem System entfernt.`)
+        loadUsers()
+      }
+    } catch (e) {
+      alert('Fehler beim Offboarding: ' + e.message)
+    }
+    setOffboarding(null)
   }
 
   const saveBotMessage = async (key, value) => {
@@ -403,7 +586,7 @@ export default function SettingsTab() {
                         return <span key={r} style={{ fontSize: 10, fontWeight: 700, color: rc2?.color || color, background: (rc2?.color || color) + '22', padding: '2px 8px', borderRadius: 4 }}>{rc2?.label || r}</span>
                       })}
                       <button onClick={() => setEditingRole(editingRole === u.user_id ? null : u.user_id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
-                      <button onClick={() => deleteUser(u.user_id, u.display_name)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                      <button onClick={() => startOffboarding(u)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', fontFamily: 'inherit' }}>Offboard</button>
                     </div>
                   </div>
                   {editingRole === u.user_id && (
@@ -428,6 +611,58 @@ export default function SettingsTab() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* OFFBOARDING MODAL */}
+      {offboardingUser && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 20 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 14, padding: '28px 32px', width: '100%', maxWidth: 420 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#ef4444' }}>{offboardingUser.display_name[0]}</div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{offboardingUser.display_name} offboarden</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{offboardingUser.role}</div>
+              </div>
+            </div>
+
+            {offboardStep === 'confirm' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  Empfohlen: Erst Daten exportieren, dann löschen.
+                </div>
+                <button onClick={() => exportUserData(offboardingUser)} style={{ padding: '10px', borderRadius: 8, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  1. Daten exportieren (JSON)
+                </button>
+                <button onClick={() => deleteUserData(offboardingUser)} style={{ padding: '10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  2. Alle Daten löschen
+                </button>
+                <button onClick={() => setOffboardingUser(null)} style={{ padding: '8px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Abbrechen
+                </button>
+              </div>
+            )}
+
+            {offboardStep === 'exporting' && (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+                Export wird vorbereitet...
+              </div>
+            )}
+
+            {offboardStep === 'done' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 13, color: '#10b981', textAlign: 'center', padding: '10px 0' }}>
+                  Export erfolgreich heruntergeladen!
+                </div>
+                <button onClick={() => deleteUserData(offboardingUser)} style={{ padding: '10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Jetzt alle Daten löschen
+                </button>
+                <button onClick={() => setOffboardingUser(null)} style={{ padding: '8px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Später löschen
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
