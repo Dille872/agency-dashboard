@@ -190,25 +190,38 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
   const [sendingRequest, setSendingRequest] = useState(false)
   const [assignedModelBoards, setAssignedModelBoards] = useState({}) // modelName → board map
   const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
+  const [assignedServices, setAssignedServices] = useState({}) // modelName → services
+  const [assignedCustomContent, setAssignedCustomContent] = useState({}) // modelName → custom content
   const [selectedModelInfo, setSelectedModelInfo] = useState(null)
 
   const loadAssignedModelData = async (modelNames) => {
     if (!modelNames || modelNames.length === 0) return
     const boards = {}
     const vids = {}
+    const svcs = {}
+    const customContents = {}
     for (const name of modelNames) {
       const { data: boardData } = await supabase.from('model_board').select('*').eq('model_name', name).order('sort_order')
       const map = {}
       for (const item of boardData || []) {
-        if (!map[item.category]) map[item.category] = []
-        map[item.category].push(item)
+        if (item.category === 'service_flags') {
+          if (!svcs[name]) svcs[name] = {}
+          svcs[name][item.title] = { enabled: item.yes_no, note: item.content }
+        } else {
+          if (!map[item.category]) map[item.category] = []
+          map[item.category].push(item)
+        }
       }
       boards[name] = map
       const { data: videoData } = await supabase.from('model_videos').select('*').eq('model_name', name).order('release_date')
       vids[name] = videoData || []
+      const { data: ccData } = await supabase.from('custom_content').select('*').eq('model_name', name).eq('completed', false).order('due_date')
+      customContents[name] = ccData || []
     }
     setAssignedModelBoards(boards)
     setAssignedModelVideos(vids)
+    setAssignedServices(svcs)
+    setAssignedCustomContent(customContents)
   }
 
   const loadContentRequests = async () => {
@@ -880,9 +893,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                   const catLabels = { preise: 'Preisstruktur', nogos: 'No Gos', regeln: 'Content Regeln', services: 'Services', einschraenkungen: 'Einschränkungen', reise: 'Reiseplan', termine: 'Termine' }
                   const color = catColors[cat] || '#a78bfa'
                   return (
-                    <div key={cat} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 16px' }}>
+                    <div key={cat} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: `3px solid ${color}`, borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                        <span style={{ width: 3, height: 11, background: color, borderRadius: 2, display: 'inline-block' }} />
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catLabels[cat] || cat}</span>
                       </div>
                       {items.map(item => (
@@ -896,13 +908,57 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                   )
                 })}
 
+                {/* Services */}
+                {Object.keys(assignedServices[selectedModelInfo] || {}).length > 0 && (
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #f97316', borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Services</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
+                      {Object.entries(assignedServices[selectedModelInfo] || {}).map(([key, svc]) => {
+                        const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren' }
+                        return (
+                          <div key={key} style={{ padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{labels[key] || key}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: svc.enabled ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: svc.enabled ? '#10b981' : '#ef4444' }}>
+                                {svc.enabled ? 'Ja' : 'Nein'}
+                              </span>
+                            </div>
+                            {svc.enabled && svc.note && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>{svc.note}</div>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Custom Content */}
+                {(assignedCustomContent[selectedModelInfo] || []).length > 0 && (
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #7c3aed', borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+                      Custom Content · {(assignedCustomContent[selectedModelInfo] || []).length} offen
+                    </div>
+                    {(assignedCustomContent[selectedModelInfo] || []).map(cc => {
+                      const isOverdue = cc.due_date && cc.due_date < new Date().toISOString().slice(0, 10)
+                      const color = isOverdue ? '#ef4444' : '#f59e0b'
+                      return (
+                        <div key={cc.id} style={{ padding: '8px 10px', background: isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)', borderRadius: 7, border: `1px solid ${color}44`, marginBottom: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cc.title}</span>
+                            {cc.due_date && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: color + '22', color, flexShrink: 0 }}>
+                              {isOverdue ? 'Überfällig · ' : ''}{new Date(cc.due_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                            </span>}
+                          </div>
+                          {cc.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>{cc.description}</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
                 {/* Videos */}
                 {(assignedModelVideos[selectedModelInfo] || []).length > 0 && (
-                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                      <span style={{ width: 3, height: 11, background: '#ef4444', borderRadius: 2, display: 'inline-block' }} />
-                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Bevorstehende Videos</span>
-                    </div>
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bevorstehende Videos</div>
                     {(assignedModelVideos[selectedModelInfo] || []).map(video => (
                       <div key={video.id} style={{ display: 'flex', gap: 12, padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a', marginBottom: 6, alignItems: 'flex-start' }}>
                         {video.thumbnail_url ? (
@@ -913,7 +969,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{video.title}</div>
                           {video.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{video.description}</div>}
-                          {video.release_date && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 3, fontFamily: 'monospace' }}>📅 {new Date(video.release_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
+                          {video.release_date && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 3, fontFamily: 'monospace' }}>{new Date(video.release_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
                         </div>
                       </div>
                     ))}
