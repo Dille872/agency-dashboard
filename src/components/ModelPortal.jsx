@@ -173,6 +173,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const { data: snapsAll } = await supabase.from('model_snapshots').select('rows, business_date').order('business_date')
     const csvNames = myAliases.length > 0 ? myAliases.map(a => a.csv_name) : [displayName]
     const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    // If no aliases, we do a loose match on displayName in all rows
+    const noAliases = myAliases.length === 0
     const revenueMap = {}
     for (const csvName of csvNames) {
       revenueMap[csvName] = 0
@@ -180,7 +182,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       for (const snap of snaps || []) {
         const row = snap.rows?.find(r => {
           const rowName = r.creator || r.name || ''
-          return normalize(rowName) === normCsvName
+          const normRow = normalize(rowName)
+          if (noAliases) return normRow.includes(normCsvName) || normCsvName.includes(normRow)
+          return normRow === normCsvName
         })
         if (row) revenueMap[csvName] += row.revenue || 0
       }
@@ -193,7 +197,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         const normCsvName = normalize(csvName)
         const row = snap.rows?.find(r => {
           const rowName = r.creator || r.name || ''
-          return normalize(rowName) === normCsvName || normalize(rowName).includes(normCsvName) || normCsvName.includes(normalize(rowName))
+          const normRow = normalize(rowName)
+          if (noAliases) return normRow.includes(normCsvName) || normCsvName.includes(normRow)
+          return normRow === normCsvName || normRow.includes(normCsvName) || normCsvName.includes(normRow)
         })
         if (row && row.subs > 0) {
           if (!dailySubsMap[csvName]) dailySubsMap[csvName] = {}
@@ -738,12 +744,22 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                   const s = services[svc.key] || {}
                   const enabled = s.enabled
                   return (
-                    <div key={svc.key} style={{ ...itemS, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{svc.label}</span>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => saveService(svc.key, true, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === true ? 'rgba(16,185,129,0.2)' : 'transparent', color: enabled === true ? '#10b981' : 'var(--text-muted)', border: `1px solid ${enabled === true ? '#10b981' : 'var(--border)'}` }}>Ja</button>
-                        <button onClick={() => saveService(svc.key, false, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === false ? 'rgba(239,68,68,0.2)' : 'transparent', color: enabled === false ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${enabled === false ? '#ef4444' : 'var(--border)'}` }}>Nein</button>
+                    <div key={svc.key} style={{ ...itemS, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{svc.label}</span>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => saveService(svc.key, true, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === true ? 'rgba(16,185,129,0.2)' : 'transparent', color: enabled === true ? '#10b981' : 'var(--text-muted)', border: `1px solid ${enabled === true ? '#10b981' : 'var(--border)'}` }}>Ja</button>
+                          <button onClick={() => saveService(svc.key, false, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === false ? 'rgba(239,68,68,0.2)' : 'transparent', color: enabled === false ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${enabled === false ? '#ef4444' : 'var(--border)'}` }}>Nein</button>
+                        </div>
                       </div>
+                      {enabled === true && (
+                        <input
+                          defaultValue={s.note || ''}
+                          onBlur={e => saveService(svc.key, true, e.target.value)}
+                          placeholder="Preis / Dauer / Details..."
+                          style={{ ...inputS, fontSize: 11, padding: '4px 8px' }}
+                        />
+                      )}
                     </div>
                   )
                 })}
