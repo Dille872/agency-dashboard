@@ -508,13 +508,22 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const updateRequestStatus = async (id, status) => {
     await supabase.from('content_requests').update({ status }).eq('id', id)
 
-    // Send Telegram notification to model when confirmed
     if (status === 'bestaetigt') {
       const req = contentRequests.find(r => r.id === id)
       if (req) {
+        // Auto-create custom_content entry for the model
+        await supabase.from('custom_content').insert({
+          model_name: req.model_name,
+          title: req.request_text,
+          description: null,
+          requested_by: req.chatter_name,
+          created_date: new Date().toISOString().slice(0, 10),
+        })
+
+        // Send Telegram to model
         const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).single()
         if (modelData?.telegram_id) {
-          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\nVon: ${req.chatter_name}\n${req.request_text}\n\n– Thirteen 87`
+          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\n${req.request_text}\n\n– Thirteen 87`
           await sendTelegramMessage(modelData.telegram_id, msg)
         }
       }
