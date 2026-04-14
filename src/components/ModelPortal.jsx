@@ -971,14 +971,6 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                   <input type="time" value={calTime} onChange={e => setCalTime(e.target.value)} style={inputS} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uhrzeit</label>
-                  <input type="time" value={calTime} onChange={e => setCalTime(e.target.value)} style={inputS} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uhrzeit</label>
-                  <input type="time" value={calTime} onChange={e => setCalTime(e.target.value)} style={inputS} />
-                </div>
-                <div>
                   <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Erinnerung</label>
                   <select value={calReminder} onChange={e => setCalReminder(e.target.value)} style={inputS}>
                     <option value="">Keine Erinnerung</option>
