@@ -11,7 +11,7 @@ import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
-import BillingTab from './components/BillingTab'
+import TodoTab from './components/TodoTab'
 import SetPasswordPage from './components/SetPasswordPage'
 import SurveyPopup from './components/SurveyPopup'
 import UploadBox from './components/UploadBox'
@@ -32,6 +32,7 @@ export default function App() {
   const [unreadModelChanges, setUnreadModelChanges] = useState(0)
   const [openSwaps, setOpenSwaps] = useState(0)
   const [unreadCustomContent, setUnreadCustomContent] = useState(0)
+  const [openTodos, setOpenTodos] = useState(0)
   const [userRole, setUserRole] = useState(null)
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
@@ -143,8 +144,11 @@ export default function App() {
       setUnreadCustomContent(modelCcCount || 0)
     }
 
-    // Open swap requests
-    const { count: swapCount } = await supabase
+    // Open todos
+    const { count: todoCount } = await supabase
+      .from('todos').select('*', { count: 'exact', head: true })
+      .eq('completed', false)
+    setOpenTodos(todoCount || 0)
       .from('shift_swaps').select('*', { count: 'exact', head: true })
       .eq('status', 'offen')
     setOpenSwaps(swapCount || 0)
@@ -370,6 +374,7 @@ export default function App() {
               { key: 'divider1' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
               { key: 'nachrichten', label: 'Nachrichten', badge: unreadMessages },
+              { key: 'todos', label: 'Todos', badge: openTodos },
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'divider2' },
@@ -475,7 +480,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.5</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.6</span>
         </div>
       </div>
 
@@ -501,6 +506,8 @@ export default function App() {
           <CommTab key="models-comm" session={session} section="models" />
         ) : activeTab === 'chatters-comm' ? (
           <CommTab key="chatters-comm" session={session} section="chatters" />
+        ) : activeTab === 'todos' ? (
+          <TodoTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (
