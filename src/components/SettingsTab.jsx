@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import BillingTab from './BillingTab'
+import ExportTab from './ExportTab'
 
 const SECTIONS = [
   { key: 'team', label: 'Team' },
   { key: 'surveys', label: 'Umfragen' },
   { key: 'billing', label: 'Billing' },
+  { key: 'export', label: 'Export' },
   { key: 'bot', label: 'Bot Nachrichten' },
   { key: 'model-aliases', label: 'Model CSV' },
   { key: 'chatter-aliases', label: 'Chatter CSV' },
@@ -408,6 +410,7 @@ export default function SettingsTab() {
       </div>
 
       {activeSection === 'billing' && <BillingTab />}
+      {activeSection === 'export' && <ExportTab />}
 
       {/* SURVEYS */}
       {activeSection === 'surveys' && (

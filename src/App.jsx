@@ -374,7 +374,6 @@ export default function App() {
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'divider2' },
               { key: 'schedule', label: 'Dienstplan' },
-              { key: 'export', label: 'Export' },
               { key: 'divider3' },
               { key: 'settings', label: '⚙ Einstellungen' },
             ].filter(tab => tab.key.startsWith('divider') || canAccess(tab.key)).map(tab => {
@@ -476,7 +475,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.2</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.3</span>
         </div>
       </div>
 
@@ -502,8 +501,6 @@ export default function App() {
           <CommTab key="models-comm" session={session} section="models" />
         ) : activeTab === 'chatters-comm' ? (
           <CommTab key="chatters-comm" session={session} section="chatters" />
-        ) : activeTab === 'export' ? (
-          <ExportTab />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (

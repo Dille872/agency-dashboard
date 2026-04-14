@@ -450,6 +450,8 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const [modelBoardActivity, setModelBoardActivity] = useState([])
   const [unreadAdminCC, setUnreadAdminCC] = useState([])
   const [modelBoards, setModelBoards] = useState({})
+  const [modelServices, setModelServices] = useState({})
+  const [modelCustomContent, setModelCustomContent] = useState({})
   const [selectedBoardModel, setSelectedBoardModel] = useState(null)
 
   const loadModelBoardActivity = async () => {
@@ -472,11 +474,19 @@ export default function CommTab({ session, section = 'nachrichten' }) {
     const { data } = await supabase.from('model_board')
       .select('*').eq('model_name', modelName).order('sort_order')
     const map = {}
+    const svcs = {}
     for (const item of data || []) {
-      if (!map[item.category]) map[item.category] = []
-      map[item.category].push(item)
+      if (item.category === 'service_flags') {
+        svcs[item.title] = { enabled: item.yes_no, note: item.content }
+      } else {
+        if (!map[item.category]) map[item.category] = []
+        map[item.category].push(item)
+      }
     }
     setModelBoards(prev => ({ ...prev, [modelName]: map }))
+    setModelServices(prev => ({ ...prev, [modelName]: svcs }))
+    const { data: ccData } = await supabase.from('custom_content').select('*').eq('model_name', modelName).order('created_at', { ascending: false })
+    setModelCustomContent(prev => ({ ...prev, [modelName]: ccData || [] }))
   }
 
   const loadShiftLogs = async () => {
@@ -1174,23 +1184,82 @@ export default function CommTab({ session, section = 'nachrichten' }) {
               </button>
             ))}
           </div>
-          {selectedBoardModel && modelBoards[selectedBoardModel] && Object.keys(modelBoards[selectedBoardModel]).length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
-              {Object.entries(modelBoards[selectedBoardModel]).map(([cat, items]) => (
-                <Card key={cat} title={cat.charAt(0).toUpperCase() + cat.slice(1)}>
-                  {items.map(item => (
-                    <div key={item.id} style={{ padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)', marginBottom: 6 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
-                      {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{item.content}</div>}
-                      {item.price && <div style={{ fontSize: 12, fontWeight: 700, color: '#10b981', marginTop: 3 }}>{item.price}</div>}
+          {selectedBoardModel && modelBoards[selectedBoardModel] !== undefined && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Regular categories */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+                {Object.entries(modelBoards[selectedBoardModel] || {}).map(([cat, items]) => {
+                  const catColors = { preise: '#10b981', nogos: '#ef4444', regeln: '#a78bfa', services: '#f59e0b', einschraenkungen: '#06b6d4', reise: '#06b6d4', termine: '#7c3aed' }
+                  const catLabels = { preise: 'Preisstruktur', nogos: 'No Gos', regeln: 'Content Regeln', services: 'Services', einschraenkungen: 'Einschränkungen', reise: 'Reiseplan', termine: 'Termine' }
+                  const color = catColors[cat] || '#a78bfa'
+                  return (
+                    <div key={cat} style={{ background: 'var(--bg-card)', border: `1px solid #1e1e3a`, borderLeft: `3px solid ${color}`, borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
+                      <div style={{ fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>{catLabels[cat] || cat}</div>
+                      {items.map(item => (
+                        <div key={item.id} style={{ padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)', marginBottom: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
+                          {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{item.content}</div>}
+                          {item.price && <div style={{ fontSize: 12, fontWeight: 700, color, marginTop: 3 }}>{item.price}</div>}
+                        </div>
+                      ))}
+                      {items.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Leer</div>}
                     </div>
-                  ))}
-                </Card>
-              ))}
+                  )
+                })}
+              </div>
+
+              {/* Services */}
+              {modelServices[selectedBoardModel] && Object.keys(modelServices[selectedBoardModel]).length > 0 && (
+                <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #f97316', borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Services</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                    {Object.entries(modelServices[selectedBoardModel]).map(([key, svc]) => {
+                      const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren' }
+                      return (
+                        <div key={key} style={{ padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{labels[key] || key}</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: svc.enabled ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: svc.enabled ? '#10b981' : '#ef4444' }}>
+                              {svc.enabled ? 'Ja' : 'Nein'}
+                            </span>
+                          </div>
+                          {svc.enabled && svc.note && <div style={{ fontSize: 11, color: '#f59e0b' }}>{svc.note}</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Content */}
+              {(modelCustomContent[selectedBoardModel] || []).length > 0 && (
+                <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #7c3aed', borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>
+                    Custom Content · {(modelCustomContent[selectedBoardModel] || []).filter(c => !c.completed).length} offen
+                  </div>
+                  {(modelCustomContent[selectedBoardModel] || []).map(cc => {
+                    const isOverdue = cc.due_date && !cc.completed && cc.due_date < new Date().toISOString().slice(0, 10)
+                    const color = cc.completed ? '#10b981' : isOverdue ? '#ef4444' : '#f59e0b'
+                    return (
+                      <div key={cc.id} style={{ padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: `1px solid ${color}33`, marginBottom: 6, opacity: cc.completed ? 0.6 : 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', textDecoration: cc.completed ? 'line-through' : 'none' }}>{cc.title}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: color + '22', color, flexShrink: 0 }}>
+                            {cc.completed ? 'Erledigt' : isOverdue ? 'Überfällig' : 'Offen'}
+                          </span>
+                        </div>
+                        {cc.requested_by && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>von {cc.requested_by}</div>}
+                        {cc.due_date && <div style={{ fontSize: 10, color, marginTop: 2 }}>fällig: {new Date(cc.due_date + 'T00:00:00').toLocaleDateString('de-DE')}</div>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {Object.keys(modelBoards[selectedBoardModel] || {}).length === 0 && !modelServices[selectedBoardModel] && (
+                <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>Noch kein Board für {selectedBoardModel}</div>
+              )}
             </div>
-          )}
-          {selectedBoardModel && (!modelBoards[selectedBoardModel] || Object.keys(modelBoards[selectedBoardModel]).length === 0) && (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>Noch kein Board für {selectedBoardModel}</div>
           )}
         </div>
       )}
