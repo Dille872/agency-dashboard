@@ -1170,9 +1170,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
             )}
           </Card>
 
-          {/* CSV Aliases Management */}
-          <ModelAliasManager models={models} />
-
+          {/* Model buttons */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {models.map(m => (
               <button key={m.id} onClick={() => { setSelectedBoardModel(selectedBoardModel === m.name ? null : m.name); loadModelBoard(m.name) }}
