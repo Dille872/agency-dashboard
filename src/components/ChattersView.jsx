@@ -23,8 +23,8 @@ const trendColors = {
 
 function isDeletedUser(name) {
   if (!name) return true
-  // Match patterns like "D****", "K****", "e**" – letter(s) followed by stars
-  return /^.{1,3}\*+$/.test(name.trim())
+  // Match any name containing stars – deleted users
+  return name.includes('*')
 }
 
 function computeChatterTrend(snapshots, name) {
