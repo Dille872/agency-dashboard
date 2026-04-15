@@ -13,7 +13,7 @@ export default function TodoTab({ session, userDisplayName }) {
   const [newDesc, setNewDesc] = useState('')
   const [newPriority, setNewPriority] = useState('normal')
   const [saving, setSaving] = useState(false)
-  const [admins, setAdmins] = useState([])
+  const [adminNames, setAdminNames] = useState([])
 
   useEffect(() => {
     loadTodos()
@@ -30,8 +30,8 @@ export default function TodoTab({ session, userDisplayName }) {
   }
 
   const loadAdmins = async () => {
-    const { data } = await supabase.from('user_roles').select('display_name, user_id').in('role', ['admin'])
-    setAdmins(data || [])
+    const { data } = await supabase.from('user_roles').select('display_name').order('display_name')
+    setAdminNames([...new Set((data || []).filter(u => u.display_name).map(u => u.display_name))])
   }
 
   const notifyOtherAdmins = async (msg) => {
