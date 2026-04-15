@@ -84,19 +84,23 @@ export default function App() {
     return () => clearInterval(interval)
   }, [session])
 
+  const [userRoles, setUserRoles] = useState([])
+
   const loadUserRole = async () => {
     try {
       const { data } = await supabase
         .from('user_roles').select('*').eq('user_id', session.user.id).single()
       const name = data?.display_name || session.user.email?.split('@')[0]
       if (data) {
+        const roles = data.roles && data.roles.length > 0 ? data.roles : [data.role]
         setUserRole(data.role)
+        setUserRoles(roles)
         setUserDisplayName(name)
       } else {
         setUserRole('chatter')
+        setUserRoles(['chatter'])
         setUserDisplayName(name)
       }
-      // Send immediate heartbeat
       await supabase.from('online_status').upsert({
         display_name: name,
         last_seen: new Date().toISOString(),
@@ -104,6 +108,7 @@ export default function App() {
       }, { onConflict: 'display_name' })
     } catch {
       setUserRole('chatter')
+      setUserRoles(['chatter'])
       setUserDisplayName(session.user.email?.split('@')[0] || 'Chatter')
     }
   }
@@ -288,7 +293,7 @@ export default function App() {
   const isManager = userRole === 'admin' || userRole === 'manager'
 
   // Tab access per role
-  const userRoles = [] // Will be populated when we load roles array - for now use single role
+  const isSocialMedia = userRoles.includes('social_media')
   const hasRole = (r) => userRole === r || userRole === 'admin'
 
   const canAccess = (tab) => {
@@ -296,6 +301,7 @@ export default function App() {
     if (userRole === 'manager') return !['settings'].includes(tab)
     if (userRole === 'dienstplan') return ['schedule', 'chatters-comm'].includes(tab)
     if (userRole === 'creator_manager') return ['models-comm'].includes(tab)
+    if (isSocialMedia) return ['social'].includes(tab)
     return false
   }
 
@@ -315,6 +321,7 @@ export default function App() {
       session={session}
       displayName={userDisplayName}
       onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
+      isSocialMedia={isSocialMedia}
     />
   )
 

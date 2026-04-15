@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
+import SocialTab from './SocialTab'
 import { getTheme, setTheme } from '../theme'
 
 const APP_VERSION = 'v1.5.9'
@@ -150,8 +151,9 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
   )
 }
 
-export default function ChatterPortal({ session, displayName, onSwitchToAdmin }) {
+export default function ChatterPortal({ session, displayName, onSwitchToAdmin, isSocialMedia }) {
   const [theme, setThemeState] = useState(() => getTheme())
+  const [showSocialPortal, setShowSocialPortal] = useState(false)
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -569,6 +571,11 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
+          {isSocialMedia && (
+            <button onClick={() => setShowSocialPortal(!showSocialPortal)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: showSocialPortal ? '#ec4899' : 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.3)', color: showSocialPortal ? '#fff' : '#ec4899', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+              Social
+            </button>
+          )}
           {onSwitchToAdmin && (
             <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
               ⚙ Admin
@@ -582,6 +589,9 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
       </header>
 
       <main style={{ padding: '16px 20px', maxWidth: 1200, margin: '0 auto' }}>
+        {showSocialPortal ? (
+          <SocialTab session={session} userDisplayName={displayName} userRole="social_media" />
+        ) : (
 
         {/* Today Banner */}
         {todayShifts.length > 0 && (
@@ -996,6 +1006,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin })
             ))}
           </div>
         </div>
+        )}
       </main>
     </div>
   )

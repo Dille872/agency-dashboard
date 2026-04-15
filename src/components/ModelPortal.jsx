@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.9.0'
+const APP_VERSION = 'v2.0.1'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -31,6 +31,97 @@ const CAL_CATEGORIES = [
 function formatMoney(v) {
   if (!v && v !== 0) return '—'
   return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function SocialModelView({ displayName, cardS, itemS }) {
+  const [posts, setPosts] = React.useState([])
+  const [accounts, setAccounts] = React.useState([])
+
+  React.useEffect(() => {
+    const load = async () => {
+      const { data: a } = await supabase.from('social_accounts').select('*').eq('model_name', displayName)
+      setAccounts(a || [])
+      const { data: p } = await supabase.from('social_posts').select('*').eq('model_name', displayName).order('created_at', { ascending: false })
+      setPosts(p || [])
+    }
+    load()
+  }, [displayName])
+
+  const pendingApproval = posts.filter(p => p.status === 'freigabe')
+  const recentPosts = posts.filter(p => p.status === 'gepostet').slice(0, 5)
+
+  const approve = async (id) => {
+    await supabase.from('social_posts').update({ status: 'fertig', approved_by_model: true }).eq('id', id)
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, status: 'fertig', approved_by_model: true } : p))
+  }
+
+  const reject = async (id, feedback) => {
+    await supabase.from('social_posts').update({ status: 'abgelehnt', model_feedback: feedback || null }).eq('id', id)
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, status: 'abgelehnt' } : p))
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Freigaben */}
+      {pendingApproval.length > 0 && (
+        <div style={{ ...cardS, borderLeft: '3px solid #f59e0b', borderRadius: '0 10px 10px 0' }}>
+          <div style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 10 }}>
+            Freigabe ausstehend · {pendingApproval.length}
+          </div>
+          {pendingApproval.map(post => (
+            <div key={post.id} style={{ ...itemS, border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.04)', marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{post.title}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                {post.platform}{post.scheduled_at ? ` · geplant ${new Date(post.scheduled_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
+              </div>
+              {post.material_link && <div style={{ fontSize: 11, marginBottom: 8 }}><a href={post.material_link} target="_blank" rel="noreferrer" style={{ color: '#7c3aed' }}>Material ansehen</a></div>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => approve(post.id)} style={{ flex: 1, padding: '7px', borderRadius: 7, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Freigeben</button>
+                <button onClick={() => reject(post.id)} style={{ padding: '7px 12px', borderRadius: 7, background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>✕ Ablehnen</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Meine Accounts */}
+      {accounts.length > 0 && (
+        <div style={cardS}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 10 }}>Meine Accounts</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+            {accounts.map(acc => (
+              <div key={acc.id} style={{ ...itemS }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{acc.account_name}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{acc.platform}{acc.theme ? ` · ${acc.theme}` : ''}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Letzte Posts */}
+      {recentPosts.length > 0 && (
+        <div style={cardS}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 10 }}>Zuletzt gepostet</div>
+          {recentPosts.map(post => (
+            <div key={post.id} style={itemS}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{post.title}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{post.platform}{post.posted_at ? ` · ${new Date(post.posted_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}</div>
+                </div>
+                {post.views > 0 && <span style={{ fontSize: 11, color: '#10b981', fontWeight: 700 }}>{post.views.toLocaleString()} Views</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pendingApproval.length === 0 && accounts.length === 0 && (
+        <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>Kein Social Tracking aktiv</div>
+      )}
+    </div>
+  )
 }
 
 export default function ModelPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isPreview, unreadCustomContent, onMarkCustomContentRead }) {
@@ -441,6 +532,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             { key: 'videos', label: `🎬 Videos${videos.length > 0 ? ` (${videos.length})` : ''}` },
             { key: 'kalender', label: `📅 Kalender${upcomingCal.length > 0 ? ` (${upcomingCal.length})` : ''}` },
             { key: 'anfragen', label: `✉ Anfragen${openRequests.length > 0 ? ` (${openRequests.length})` : ''}` },
+            { key: 'social', label: 'Social' },
             { key: 'umsatz', label: '💰 Umsatz' },
           ].map(t => (
             <button key={t.key} onClick={async () => {
@@ -1109,6 +1201,11 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               )
             })}
           </div>
+        )}
+
+        {/* SOCIAL */}
+        {activeSection === 'social' && (
+          <SocialModelView displayName={displayName} cardS={cardS} itemS={itemS} />
         )}
 
         {/* UMSATZ */}

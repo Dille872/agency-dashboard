@@ -20,6 +20,7 @@ const ROLES = [
   { key: 'creator_manager', label: 'Creator Mgr', color: '#f59e0b', desc: 'Nur Creator Tab' },
   { key: 'chatter', label: 'Chatter', color: '#a78bfa', desc: 'Nur Chatter Portal' },
   { key: 'model', label: 'Model', color: '#ef4444', desc: 'Nur Model Portal' },
+  { key: 'social_media', label: 'Social Media', color: '#ec4899', desc: 'Social Portal (Zusatzrolle)' },
 ]
 
 const DEFAULT_BOT_MESSAGES = {
