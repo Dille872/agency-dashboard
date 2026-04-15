@@ -4,7 +4,7 @@ import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
 import { getTheme, setTheme } from '../theme'
 
-const APP_VERSION = 'v1.5.9'
+const APP_VERSION = 'v2.0.1'
 
 const ADMIN_TZ = 'Europe/Berlin'
 
