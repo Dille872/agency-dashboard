@@ -38,22 +38,6 @@ export default function TodoTab({ session, userDisplayName }) {
   }
 
   const notifyOtherAdmins = async (msg) => {
-    // Get all admin telegram IDs except current user
-    const { data: allAdmins } = await supabase.from('user_roles').select('display_name').eq('role', 'admin')
-    const others = (allAdmins || []).filter(a => a.display_name !== userDisplayName)
-    // Get their telegram IDs from models_contact or chatters_contact or bot_settings
-    // Use hardcoded admin TG IDs from bot_settings
-    const { data: settings } = await supabase.from('bot_settings').select('key, value')
-    const tgMap = {}
-    for (const s of settings || []) tgMap[s.key] = s.value
-    // Try to find telegram IDs for other admins via chatters_contact or models_contact
-    for (const admin of others) {
-      const { data: contact } = await supabase.from('chatters_contact').select('telegram_id').eq('name', admin.display_name).single()
-      if (contact?.telegram_id) {
-        await sendTelegramMessage(contact.telegram_id, msg)
-      }
-    }
-    // Also always notify both Chris and Rey via their known IDs
     const knownAdminTG = [1538601588, 528328429]
     for (const tgId of knownAdminTG) {
       await sendTelegramMessage(tgId, msg)
