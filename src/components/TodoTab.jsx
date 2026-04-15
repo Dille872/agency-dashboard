@@ -12,6 +12,7 @@ export default function TodoTab({ session, userDisplayName }) {
   const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [newPriority, setNewPriority] = useState('normal')
+  const [newAssignedTo, setNewAssignedTo] = useState('')
   const [saving, setSaving] = useState(false)
   const [adminNames, setAdminNames] = useState([])
 
@@ -65,10 +66,11 @@ export default function TodoTab({ session, userDisplayName }) {
       description: newDesc.trim() || null,
       priority: newPriority,
       created_by: userDisplayName,
+      assigned_to: newAssignedTo || null,
     })
     // Notify other admins
     await notifyOtherAdmins(`📋 <b>Neue Aufgabe von ${userDisplayName}</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}`)
-    setNewTitle(''); setNewDesc(''); setNewPriority('normal'); setShowAdd(false)
+    setNewTitle(''); setNewDesc(''); setNewPriority('normal'); setNewAssignedTo(''); setShowAdd(false)
     setSaving(false)
   }
 
@@ -134,15 +136,27 @@ export default function TodoTab({ session, userDisplayName }) {
             <input value={newTitle} onChange={e => setNewTitle(e.target.value)} style={inputS} placeholder="Aufgabe *" autoFocus
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && addTodo()} />
             <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} style={{ ...inputS, resize: 'vertical' }} rows={2} placeholder="Beschreibung (optional)" />
-            <div style={{ display: 'flex', gap: 6 }}>
-              {Object.entries(PRIORITY_LABELS).map(([k, l]) => (
-                <button key={k} onClick={() => setNewPriority(k)} style={{
-                  padding: '4px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
-                  background: newPriority === k ? PRIORITY_COLORS[k] + '22' : 'transparent',
-                  color: newPriority === k ? PRIORITY_COLORS[k] : 'var(--text-muted)',
-                  border: `1px solid ${newPriority === k ? PRIORITY_COLORS[k] : 'var(--border)'}`,
-                }}>{l}</button>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Zuständig</label>
+                <select value={newAssignedTo} onChange={e => setNewAssignedTo(e.target.value)} style={inputS}>
+                  <option value="">Alle / Offen</option>
+                  {adminNames.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Priorität</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {Object.entries(PRIORITY_LABELS).map(([k, l]) => (
+                    <button key={k} onClick={() => setNewPriority(k)} style={{
+                      flex: 1, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
+                      background: newPriority === k ? PRIORITY_COLORS[k] + '22' : 'transparent',
+                      color: newPriority === k ? PRIORITY_COLORS[k] : 'var(--text-muted)',
+                      border: `1px solid ${newPriority === k ? PRIORITY_COLORS[k] : 'var(--border)'}`,
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={addTodo} disabled={saving || !newTitle.trim()} style={{
@@ -169,6 +183,7 @@ export default function TodoTab({ session, userDisplayName }) {
                   {todo.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>{todo.description}</div>}
                   <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 4, background: color + '22', color }}>{PRIORITY_LABELS[todo.priority]}</span>
+                    {todo.assigned_to && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>→ {todo.assigned_to}</span>}
                     <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>von {todo.created_by} · {formatDate(todo.created_at)}</span>
                   </div>
                 </div>
