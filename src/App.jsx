@@ -12,6 +12,7 @@ import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
 import TodoTab from './components/TodoTab'
+import SocialTab from './components/SocialTab'
 import SetPasswordPage from './components/SetPasswordPage'
 import SurveyPopup from './components/SurveyPopup'
 import UploadBox from './components/UploadBox'
@@ -379,6 +380,7 @@ export default function App() {
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'divider2' },
               { key: 'schedule', label: 'Dienstplan' },
+              { key: 'social', label: 'Social' },
               { key: 'divider3' },
               { key: 'settings', label: '⚙ Einstellungen' },
             ].filter(tab => tab.key.startsWith('divider') || canAccess(tab.key)).map(tab => {
@@ -508,6 +510,8 @@ export default function App() {
           <CommTab key="chatters-comm" session={session} section="chatters" />
         ) : activeTab === 'todos' ? (
           <TodoTab session={session} userDisplayName={userDisplayName} />
+        ) : activeTab === 'social' ? (
+          <SocialTab session={session} userDisplayName={userDisplayName} userRole={userRole} />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (
