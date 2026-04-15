@@ -374,7 +374,7 @@ export default function App() {
               { key: 'divider1' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
               { key: 'nachrichten', label: 'Nachrichten', badge: unreadMessages },
-              { key: 'todos', label: 'Todos', badge: openTodos },
+              { key: 'todos', label: 'ToDos', badge: openTodos },
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'divider2' },
@@ -480,7 +480,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.6</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v1.9.7</span>
         </div>
       </div>
 
