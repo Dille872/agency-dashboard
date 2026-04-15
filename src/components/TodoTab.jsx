@@ -8,6 +8,7 @@ const PRIORITY_LABELS = { wichtig: 'Wichtig', normal: 'Normal', niedrig: 'Niedri
 export default function TodoTab({ session, userDisplayName }) {
   const [todos, setTodos] = useState([])
   const [filter, setFilter] = useState('offen')
+  const [filterPerson, setFilterPerson] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc] = useState('')
@@ -31,8 +32,9 @@ export default function TodoTab({ session, userDisplayName }) {
   }
 
   const loadAdmins = async () => {
-    const { data } = await supabase.from('user_roles').select('display_name').order('display_name')
-    setAdminNames([...new Set((data || []).filter(u => u.display_name).map(u => u.display_name))])
+    const { data } = await supabase.from('user_roles').select('display_name, role').order('display_name')
+    const admins = (data || []).filter(u => u.display_name && ['admin', 'manager'].includes(u.role))
+    setAdminNames([...new Set(admins.map(u => u.display_name))])
   }
 
   const notifyOtherAdmins = async (msg) => {
@@ -103,7 +105,8 @@ export default function TodoTab({ session, userDisplayName }) {
 
   const openTodos = todos.filter(t => !t.completed)
   const doneTodos = todos.filter(t => t.completed)
-  const displayed = filter === 'offen' ? openTodos : filter === 'erledigt' ? doneTodos : todos
+  const byStatus = filter === 'offen' ? openTodos : filter === 'erledigt' ? doneTodos : todos
+  const displayed = filterPerson ? byStatus.filter(t => t.assigned_to === filterPerson || t.created_by === filterPerson) : byStatus
 
   const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 16px', marginBottom: 10 }
   const inputS = { width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none' }
@@ -112,8 +115,8 @@ export default function TodoTab({ session, userDisplayName }) {
     <div style={{ maxWidth: 680 }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {[['alle', 'Alle', todos.length], ['offen', 'Offen', openTodos.length], ['erledigt', 'Erledigt', doneTodos.length]].map(([key, label, count]) => (
             <button key={key} onClick={() => setFilter(key)} style={{
               padding: '5px 14px', borderRadius: 7, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
@@ -121,6 +124,15 @@ export default function TodoTab({ session, userDisplayName }) {
               color: filter === key ? '#fff' : 'var(--text-muted)',
               border: `1px solid ${filter === key ? '#7c3aed' : 'var(--border)'}`,
             }}>{label} {count > 0 && <span style={{ fontSize: 10, marginLeft: 4, opacity: .8 }}>{count}</span>}</button>
+          ))}
+          <div style={{ width: 1, background: 'var(--border)', alignSelf: 'stretch' }} />
+          {adminNames.map(name => (
+            <button key={name} onClick={() => setFilterPerson(filterPerson === name ? '' : name)} style={{
+              padding: '5px 14px', borderRadius: 7, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+              background: filterPerson === name ? 'rgba(124,58,237,0.2)' : 'transparent',
+              color: filterPerson === name ? '#a78bfa' : 'var(--text-muted)',
+              border: `1px solid ${filterPerson === name ? '#7c3aed' : 'var(--border)'}`,
+            }}>{name}</button>
           ))}
         </div>
         <button onClick={() => setShowAdd(!showAdd)} style={{
@@ -170,10 +182,10 @@ export default function TodoTab({ session, userDisplayName }) {
       )}
 
       {/* Open todos */}
-      {(filter === 'alle' || filter === 'offen') && openTodos.length > 0 && (
+      {(filter === 'alle' || filter === 'offen') && displayed.filter(t => !t.completed).length > 0 && (
         <div style={cardS}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Offen · {openTodos.length}</div>
-          {openTodos.map(todo => {
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Offen · {displayed.filter(t => !t.completed).length}</div>
+          {displayed.filter(t => !t.completed).map(todo => {
             const color = PRIORITY_COLORS[todo.priority] || '#f59e0b'
             return (
               <div key={todo.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, marginBottom: 6, background: color + '06', border: `0.5px solid ${color}33` }}>
@@ -196,10 +208,10 @@ export default function TodoTab({ session, userDisplayName }) {
       )}
 
       {/* Done todos */}
-      {(filter === 'alle' || filter === 'erledigt') && doneTodos.length > 0 && (
+      {(filter === 'alle' || filter === 'erledigt') && displayed.filter(t => t.completed).length > 0 && (
         <div style={cardS}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Erledigt · {doneTodos.length}</div>
-          {doneTodos.map(todo => (
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Erledigt · {displayed.filter(t => t.completed).length}</div>
+          {displayed.filter(t => t.completed).map(todo => (
             <div key={todo.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, marginBottom: 6, background: 'var(--bg-card2)', border: '0.5px solid var(--border)', opacity: 0.55 }}>
               <div onClick={() => toggleTodo(todo)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: 1, cursor: 'pointer', background: '#10b981', border: '1.5px solid #10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>v</span>
