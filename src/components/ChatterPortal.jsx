@@ -592,6 +592,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
         {showSocialPortal ? (
           <SocialTab session={session} userDisplayName={displayName} userRole="social_media" />
         ) : (
+        <div>
 
         {/* Today Banner */}
         {todayShifts.length > 0 && (
@@ -1005,6 +1006,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
               </div>
             ))}
           </div>
+        </div>
         </div>
         )}
       </main>
