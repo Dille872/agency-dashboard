@@ -53,12 +53,7 @@ function getWeekStart(date) {
 function getWeekDays(ws) {
   return Array.from({ length: 7 }, (_, i) => { const d = new Date(ws); d.setDate(d.getDate() + i); return d })
 }
-function isoDate(date) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
+function isoDate(date) { return date.toISOString().slice(0, 10) }
 function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) }
 function isToday(date) { return isoDate(date) === isoDate(new Date()) }
 function getKW(date) {
@@ -219,15 +214,16 @@ export default function ScheduleTab({ session }) {
   const loadSchedule = async () => {
     const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey)
     if (data && data.length > 0) {
-      const rawTimes = data[0].shift_times || {}
+      const row = data[0]
+      const rawTimes = row.shift_times || {}
       const cleanTimes = {}
       for (const [k, v] of Object.entries(rawTimes)) {
         cleanTimes[k] = String(v).replace(' (DE)', '').replace('(DE)', '')
       }
-      setSchedule(data[0].assignments || {})
-      setDayNotes(data[0].day_notes || {})
+      setSchedule(row.assignments || {})
+      setDayNotes(row.day_notes || {})
       setShiftTimes(cleanTimes)
-      setScheduleStatus(data[0].status || 'draft')
+      setScheduleStatus(row.status || 'draft')
       setHasSavedData(true)
     } else {
       // Auto-fill from recurring shifts
