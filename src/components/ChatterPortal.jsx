@@ -190,6 +190,12 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
   const [contentRequests, setContentRequests] = useState([])
   const [newRequestModel, setNewRequestModel] = useState('')
   const [newRequestText, setNewRequestText] = useState('')
+  const [newRequestType, setNewRequestType] = useState('video')
+  const [newRequestPrice, setNewRequestPrice] = useState('')
+  const [newRequestDeposit, setNewRequestDeposit] = useState('')
+  const [newRequestDuration, setNewRequestDuration] = useState('')
+  const [newRequestQuantity, setNewRequestQuantity] = useState('1')
+  const [newRequestCustomerId, setNewRequestCustomerId] = useState('')
   const [sendingRequest, setSendingRequest] = useState(false)
   const [assignedModelBoards, setAssignedModelBoards] = useState({}) // modelName → board map
   const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
@@ -239,16 +245,23 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
   }
 
   const submitContentRequest = async () => {
-    if (!newRequestModel || !newRequestText.trim()) return
+    if (!newRequestModel || !newRequestText.trim() || !newRequestPrice) return
     setSendingRequest(true)
     await supabase.from('content_requests').insert({
       chatter_name: displayName,
       model_name: newRequestModel,
       request_text: newRequestText.trim(),
+      content_type: newRequestType,
+      price: parseFloat(newRequestPrice) || 0,
+      deposit: parseFloat(newRequestDeposit) || 0,
+      duration: newRequestDuration.trim() || null,
+      quantity: parseInt(newRequestQuantity) || 1,
+      customer_id: newRequestCustomerId.trim() || null,
       status: 'neu',
     })
-    setNewRequestModel('')
-    setNewRequestText('')
+    setNewRequestModel(''); setNewRequestText(''); setNewRequestType('video')
+    setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
+    setNewRequestQuantity('1'); setNewRequestCustomerId('')
     await loadContentRequests()
     setSendingRequest(false)
     alert('✓ Anfrage gesendet!')
@@ -972,21 +985,69 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
 
           {/* New request form */}
           <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>Neue Anfrage stellen</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-              <select value={newRequestModel} onChange={e => setNewRequestModel(e.target.value)}
-                style={{ flex: 1, minWidth: 120, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: newRequestModel ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
-                <option value="">— Model wählen —</option>
-                {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-              </select>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10, fontWeight: 600 }}>Neue Anfrage</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Model *</label>
+                <select value={newRequestModel} onChange={e => setNewRequestModel(e.target.value)}
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+                  <option value="">— wählen —</option>
+                  {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Typ *</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[['video','Video'],['bild','Bild'],['audio','Audio']].map(([k,l]) => (
+                    <button key={k} onClick={() => setNewRequestType(k)} style={{
+                      flex: 1, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
+                      background: newRequestType === k ? 'rgba(124,58,237,0.2)' : 'transparent',
+                      color: newRequestType === k ? '#a78bfa' : 'var(--text-muted)',
+                      border: `1px solid ${newRequestType === k ? '#7c3aed' : 'var(--border)'}`,
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Kundennummer</label>
+                <input value={newRequestCustomerId} onChange={e => setNewRequestCustomerId(e.target.value)}
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  placeholder="#FAN-xxxx" />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Gesamtpreis *</label>
+                <input type="number" value={newRequestPrice} onChange={e => setNewRequestPrice(e.target.value)}
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  placeholder="$0" />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Anzahlung</label>
+                <input type="number" value={newRequestDeposit} onChange={e => setNewRequestDeposit(e.target.value)}
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  placeholder="$0 (optional)" />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Länge / Anzahl</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <input value={newRequestDuration} onChange={e => setNewRequestDuration(e.target.value)}
+                    style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    placeholder="5 Min" />
+                  <input type="number" value={newRequestQuantity} onChange={e => setNewRequestQuantity(e.target.value)} min="1"
+                    style={{ width: 60, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    placeholder="1" />
+                </div>
+              </div>
             </div>
-            <textarea value={newRequestText} onChange={e => setNewRequestText(e.target.value)} rows={2}
-              placeholder="z.B. Neues Chatset benötigt – Subscriber fragt nach Alltags-Fotos..."
-              style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }} />
-            <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim()} style={{
-              background: (newRequestModel && newRequestText.trim()) ? '#06b6d4' : 'var(--border)',
-              color: (newRequestModel && newRequestText.trim()) ? '#fff' : 'var(--text-muted)',
-              border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Wunsch des Kunden *</label>
+              <textarea value={newRequestText} onChange={e => setNewRequestText(e.target.value)} rows={2}
+                placeholder="Was möchte der Kunde genau?"
+                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
+            </div>
+            <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim() || !newRequestPrice} style={{
+              width: '100%', background: (newRequestModel && newRequestText.trim() && newRequestPrice) ? '#06b6d4' : 'var(--border)',
+              color: (newRequestModel && newRequestText.trim() && newRequestPrice) ? '#fff' : 'var(--text-muted)',
+              border: 'none', borderRadius: 7, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}>{sendingRequest ? 'Senden...' : '+ Anfrage senden'}</button>
           </div>
 
@@ -996,20 +1057,30 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {contentRequests.map(req => {
-                const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
-                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
+                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                const remainder = (req.price || 0) - (req.deposit || 0)
                 return (
                   <div key={req.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
+                        {req.content_type && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
+                        {req.customer_id && <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{req.customer_id}</span>}
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: 10, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                          {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
-                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
                       </div>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{req.request_text}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{req.request_text}</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {req.price > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981' }}>${req.price}</span>}
+                      {req.deposit > 0 && <span style={{ fontSize: 10, color: '#f59e0b' }}>Anzahlung: ${req.deposit}{!req.deposit_paid ? ' (offen)' : ' ✓'}</span>}
+                      {req.deposit > 0 && remainder > 0 && <span style={{ fontSize: 10, color: remainder > 0 && !req.remainder_paid ? '#ef4444' : '#10b981' }}>Rest: ${remainder}{!req.remainder_paid ? ' (offen)' : ' ✓'}</span>}
+                      {req.duration && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{req.duration}</span>}
+                      {req.quantity > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
+                    </div>
                   </div>
                 )
               })}

@@ -544,7 +544,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
         // Send Telegram to model
         const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).single()
         if (modelData?.telegram_id) {
-          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\n${req.request_text}\n\n– Thirteen 87`
+          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\n${req.request_text}${req.content_type ? '\nTyp: ' + req.content_type : ''}${req.price ? '\nPreis: $' + req.price : ''}${req.duration ? '\nLänge: ' + req.duration : ''}\n\n– Thirteen 87`
           await sendTelegramMessage(modelData.telegram_id, msg)
         }
       }
@@ -952,34 +952,69 @@ export default function CommTab({ session, section = 'nachrichten' }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {contentRequests.map(req => {
                 const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
-                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestatigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                const remainder = (req.price || 0) - (req.deposit || 0)
                 return (
                   <div key={req.id} style={{ padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#06b6d4' }}>{req.chatter_name}</span>
                         <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>→</span>
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
+                        {req.content_type && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
+                        {req.customer_id && <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{req.customer_id}</span>}
                         {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>NEU</span>}
                       </div>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
                         {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>{req.request_text}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>{req.request_text}</div>
+
+                    {/* Price & Payment */}
+                    {req.price > 0 && (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8, padding: '6px 8px', background: 'var(--bg-card)', borderRadius: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981' }}>Gesamt: ${req.price}</span>
+                        {req.deposit > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
+                              Anzahlung: ${req.deposit} {req.deposit_paid ? '✓' : '(offen)'}
+                            </span>
+                            {!req.deposit_paid && (
+                              <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
+                                style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
+                            )}
+                          </div>
+                        )}
+                        {req.deposit > 0 && remainder > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: req.remainder_paid ? '#10b981' : '#ef4444' }}>
+                              Rest: ${remainder} {req.remainder_paid ? '✓' : '(offen)'}
+                            </span>
+                            {!req.remainder_paid && (
+                              <button onClick={async () => { await supabase.from('content_requests').update({ remainder_paid: true }).eq('id', req.id); loadContentRequests() }}
+                                style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
+                            )}
+                          </div>
+                        )}
+                        {req.duration && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{req.duration}</span>}
+                        {req.quantity > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {req.status !== 'angefragt' && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {req.status !== 'angefragt' && req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
                           <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt</button>
                         )}
                         {req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
-                          <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Bestatigen + TG</button>
+                          <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Bestätigen + TG</button>
                         )}
-                        {req.status !== 'erledigt' && (
+                        {req.status !== 'erledigt' && req.status !== 'abgelehnt' && (
                           <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
                         )}
-                        {req.status !== 'abgelehnt' && (
+                        {req.status !== 'abgelehnt' && req.status !== 'erledigt' && (
                           <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
                         )}
                       </div>
