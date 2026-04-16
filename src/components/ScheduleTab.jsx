@@ -53,7 +53,12 @@ function getWeekStart(date) {
 function getWeekDays(ws) {
   return Array.from({ length: 7 }, (_, i) => { const d = new Date(ws); d.setDate(d.getDate() + i); return d })
 }
-function isoDate(date) { return date.toISOString().slice(0, 10) }
+function isoDate(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
 function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) }
 function isToday(date) { return isoDate(date) === isoDate(new Date()) }
 function getKW(date) {
@@ -141,7 +146,7 @@ export default function ScheduleTab({ session }) {
   const checkShiftAlerts = async () => {
     // Check every 5 minutes if a shift started 15 min ago and chatter is not online
     const now = new Date()
-    const todayIso = now.toISOString().slice(0, 10)
+    const todayIso = isoDate(now)
     const currentHour = now.getHours()
     const currentMin = now.getMinutes()
 

@@ -379,7 +379,17 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
       d.setDate(today.getDate() + i)
       return d
     })
-    const weekStarts = [...new Set(days.map(d => isoDate(getWeekStart(d))))]
+    // Get both Monday-based and Sunday-based week starts to cover all schedule formats
+    const weekStartsSet = new Set()
+    for (const d of days) {
+      const mondayStart = isoDate(getWeekStart(d))
+      weekStartsSet.add(mondayStart)
+      // Also add Sunday-based (one day before Monday)
+      const sundayStart = new Date(getWeekStart(d))
+      sundayStart.setDate(sundayStart.getDate() - 1)
+      weekStartsSet.add(isoDate(sundayStart))
+    }
+    const weekStarts = [...weekStartsSet]
     const { data } = await supabase.from('schedule').select('*').in('week_start', weekStarts).eq('status', 'live')
     setNext7Schedules(data || [])
     // Extract model names assigned to this chatter
