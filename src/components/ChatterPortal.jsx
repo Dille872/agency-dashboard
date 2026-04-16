@@ -795,59 +795,6 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
           </div>
         </div>
 
-        {/* Content Requests */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 3, height: 11, background: '#06b6d4', borderRadius: 2, display: 'inline-block' }} />
-            Content-Anfragen
-          </div>
-
-          {/* New request form */}
-          <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>Neue Anfrage stellen</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-              <select value={newRequestModel} onChange={e => setNewRequestModel(e.target.value)}
-                style={{ flex: 1, minWidth: 120, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: newRequestModel ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
-                <option value="">— Model wählen —</option>
-                {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-              </select>
-            </div>
-            <textarea value={newRequestText} onChange={e => setNewRequestText(e.target.value)} rows={2}
-              placeholder="z.B. Neues Chatset benötigt – Subscriber fragt nach Alltags-Fotos..."
-              style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }} />
-            <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim()} style={{
-              background: (newRequestModel && newRequestText.trim()) ? '#06b6d4' : 'var(--border)',
-              color: (newRequestModel && newRequestText.trim()) ? '#fff' : 'var(--text-muted)',
-              border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            }}>{sendingRequest ? 'Senden...' : '+ Anfrage senden'}</button>
-          </div>
-
-          {/* Request history */}
-          {contentRequests.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>Keine Anfragen in den letzten 2 Wochen</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {contentRequests.map(req => {
-                const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
-                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
-                return (
-                  <div key={req.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                          {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{req.request_text}</div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
           <div style={{ background: 'rgba(245,158,11,0.06)', border: '1.5px solid rgba(245,158,11,0.25)', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
@@ -959,6 +906,60 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
         )}
 
 
+
+        {/* Content Requests */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 3, height: 11, background: '#06b6d4', borderRadius: 2, display: 'inline-block' }} />
+            Content-Anfragen
+          </div>
+
+          {/* New request form */}
+          <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>Neue Anfrage stellen</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <select value={newRequestModel} onChange={e => setNewRequestModel(e.target.value)}
+                style={{ flex: 1, minWidth: 120, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: newRequestModel ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+                <option value="">— Model wählen —</option>
+                {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+              </select>
+            </div>
+            <textarea value={newRequestText} onChange={e => setNewRequestText(e.target.value)} rows={2}
+              placeholder="z.B. Neues Chatset benötigt – Subscriber fragt nach Alltags-Fotos..."
+              style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }} />
+            <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim()} style={{
+              background: (newRequestModel && newRequestText.trim()) ? '#06b6d4' : 'var(--border)',
+              color: (newRequestModel && newRequestText.trim()) ? '#fff' : 'var(--text-muted)',
+              border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            }}>{sendingRequest ? 'Senden...' : '+ Anfrage senden'}</button>
+          </div>
+
+          {/* Request history */}
+          {contentRequests.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>Keine Anfragen in den letzten 2 Wochen</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {contentRequests.map(req => {
+                const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
+                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                return (
+                  <div key={req.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                          {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{req.request_text}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Schicht-Tausch */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
