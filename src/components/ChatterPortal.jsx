@@ -161,6 +161,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
     setThemeState(next)
   }
   const [isOnline, setIsOnline] = useState(false)
+  const [selectedShift, setSelectedShift] = useState('')
   const [currentLogId, setCurrentLogId] = useState(null)
   const [checkInTime, setCheckInTime] = useState(null)
   const [messages, setMessages] = useState([])
@@ -261,18 +262,19 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
     }, { onConflict: 'display_name' })
   }
 
-  const checkIn = async () => {
-    const todayShiftNames = todayShifts.map(s => s.shift).join(', ')
+  const checkIn = async (shiftName) => {
+    const shiftToLog = shiftName || selectedShift || todayShifts.map(s => s.shift).join(', ') || 'Manuell'
     const { data } = await supabase.from('shift_logs').insert({
       display_name: displayName,
       checked_in_at: new Date().toISOString(),
-      shift: todayShiftNames || 'Manuell',
+      shift: shiftToLog,
     }).select().single()
     if (data) {
       setCurrentLogId(data.id)
       setCheckInTime(new Date())
     }
     setIsOnline(true)
+    setSelectedShift('')
     await sendHeartbeat(true)
   }
 
@@ -599,18 +601,31 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
           <div style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: isOnline ? '#10b981' : 'var(--text-primary)', marginBottom: 3 }}>
-                {isOnline ? '🟢 Schicht aktiv' : '⚪ Schicht noch nicht gestartet'} · {todayShifts.map(s => s.shift).join(' + ')}
+                {isOnline ? '🟢 Schicht aktiv' : '⚪ Schicht noch nicht gestartet'}
+                {isOnline
+                  ? ` · ${todayShifts.find(s => s.shift === selectedShift)?.shift || todayShifts.map(s => s.shift).join(' + ')}`
+                  : todayShifts.length === 1 ? ` · ${todayShifts[0].shift}` : ''}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                 {checkInTime && ` · Eingecheckt: ${checkInTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {!isOnline ? (
-                <button onClick={checkIn} style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  ✓ Schicht starten
-                </button>
+                <>
+                  {todayShifts.length > 1 && (
+                    <select value={selectedShift} onChange={e => setSelectedShift(e.target.value)}
+                      style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}>
+                      <option value="">Schicht wählen...</option>
+                      {todayShifts.map(s => <option key={s.shift} value={s.shift}>{s.shift} · {s.models.join(', ')}</option>)}
+                    </select>
+                  )}
+                  <button onClick={() => checkIn()} disabled={todayShifts.length > 1 && !selectedShift}
+                    style={{ background: todayShifts.length > 1 && !selectedShift ? 'var(--border)' : '#10b981', color: todayShifts.length > 1 && !selectedShift ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: todayShifts.length > 1 && !selectedShift ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    ✓ {todayShifts.length === 1 ? `${todayShifts[0].shift} starten` : 'Schicht starten'}
+                  </button>
+                </>
               ) : (
                 <button onClick={checkOut} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                   ✕ Schicht beenden
