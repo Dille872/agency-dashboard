@@ -96,6 +96,13 @@ export default function ScheduleTab({ session }) {
   useEffect(() => { loadModels(); loadChatters(); loadRecurring(); checkShiftAlerts(); loadAbsences(); loadActiveReminders() }, [])
   useEffect(() => { if (weekKey) loadSchedule() }, [weekKey])
 
+  // Auto-save after 2 seconds of inactivity
+  useEffect(() => {
+    if (!weekKey) return
+    const timer = setTimeout(() => { saveSchedule() }, 2000)
+    return () => clearTimeout(timer)
+  }, [schedule, dayNotes, shiftTimes])
+
   const loadAbsences = async () => {
     const { data } = await supabase.from('absences').select('*').order('date_from')
     setAbsences(data || [])
@@ -434,7 +441,7 @@ export default function ScheduleTab({ session }) {
       const dayIso = isoDate(day)
       for (const shift of SHIFTS) {
         const cell = getCell(model.id, dayIso, shift)
-        if (!cell.chatter) conflicts.push({ type: 'unbesetzt', msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift, modelId: model.id })
+        if (!cell.chatter || cell.chatter === '__FREI__') { if (cell.chatter !== '__FREI__') conflicts.push({ type: 'unbesetzt', msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift, modelId: model.id }) }
       }
     }
   }
@@ -526,6 +533,7 @@ export default function ScheduleTab({ session }) {
             {publishing ? '...' : scheduleStatus === 'live' ? '⏸ Entwurf' : '▶ Veröffentlichen'}
           </button>
           <button onClick={saveSchedule} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {saving ? '↻ Speichert...' : '✓ Speichern'}
             {saving ? 'Speichern...' : 'Speichern'}
           </button>
         </div>
@@ -618,11 +626,12 @@ export default function ScheduleTab({ session }) {
                       const recurringKey = getRecurringKey(model.id, dayOfWeek, shift)
                       const isRecurring = !!recurring[recurringKey]
                       const isChatterAbsent = cell.chatter ? isAbsent(cell.chatter, dayIso) : false
+                      const isFrei = cell.chatter === '__FREI__'
                       const confirmed = cell.confirmed !== false
-                      const isPending = cell.chatter && !confirmed
+                      const isPending = cell.chatter && !isFrei && !confirmed
 
-                      const cellBg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isPending ? 'rgba(245,158,11,0.05)' : cell.chatter ? 'rgba(16,185,129,0.04)' : isToday(day) ? 'rgba(56,130,246,0.04)' : 'var(--bg-card)'
-                      const cellBorder = isChatterAbsent ? 'rgba(239,68,68,0.5)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.35)' : isToday(day) ? 'rgba(56,130,246,0.3)' : '#1e1e3a'
+                      const cellBg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.05)' : isPending ? 'rgba(245,158,11,0.05)' : cell.chatter ? 'rgba(16,185,129,0.04)' : isToday(day) ? 'rgba(56,130,246,0.04)' : 'var(--bg-card)'
+                      const cellBorder = isChatterAbsent ? 'rgba(239,68,68,0.5)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.35)' : isToday(day) ? 'rgba(56,130,246,0.3)' : '#1e1e3a'
 
                       return (
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
@@ -633,6 +642,7 @@ export default function ScheduleTab({ session }) {
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, chatter: e.target.value, confirmed: true })}
                                 style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
                                 <option value="">— leer —</option>
+                                <option value="__FREI__">✓ Freischicht</option>
                                 {chatters.map(c => {
                                   const absent = isAbsent(c.name, dayIso)
                                   return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
@@ -667,6 +677,12 @@ export default function ScheduleTab({ session }) {
                             </div>
                           ) : cell.chatter ? (
                             <div style={{ flex: 1 }}>
+                              {isFrei ? (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: '#10b981' }}>Freischicht</span>
+                                  <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(16,185,129,0.2)', color: '#10b981' }}>✓</span>
+                                </div>
+                              ) : (
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</span>
                                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
@@ -675,12 +691,15 @@ export default function ScheduleTab({ session }) {
                                   {isPending ? '! Klarung' : 'v'}
                                 </span>
                               </div>
-                              {cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 2, lineHeight: 1.3 }}>{cell.note}</div>}
+                              )}
+                              {!isFrei && cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 2, lineHeight: 1.3 }}>{cell.note}</div>}
+                              {!isFrei && (
                               <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
                                 {isRecurring && <span style={{ fontSize: 8, color: '#a78bfa' }}>↻</span>}
                                 {activeReminders[`${cell.chatter}__${dayIso}__${shift}`] && <span style={{ fontSize: 8, color: '#06b6d4' }}>R</span>}
                               </div>
-                              {reminderCell?.cellId === cellId ? (
+                              )}
+                              {!isFrei && (reminderCell?.cellId === cellId ? (
                                 <div onClick={e => e.stopPropagation()} style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                                   {['1', '3', '12', '24'].map(h => (
                                     <button key={h} onClick={() => sendReminder(reminderCell.modelId, reminderCell.dayIso, reminderCell.shift, reminderCell.chatterName, h)}
@@ -697,7 +716,7 @@ export default function ScheduleTab({ session }) {
                                   style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
                                   Erin
                                 </button>
-                              )}
+                              ))}
                             </div>
                           ) : (
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
