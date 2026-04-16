@@ -848,38 +848,6 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
             </div>
           )}
         </div>
-
-        {/* Schicht-Tausch */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
-            Schicht-Tausch anfragen
-          </div>
-          <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
-        </div>
-
-        {/* Week Stats */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
-            Meine Stats – KW {kw}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
-            {[
-              { label: 'Revenue KW', val: formatMoney(weekRevenue), good: weekRevenue > 500 },
-              { label: 'Nachrichten KW', val: weekMessages.toString(), good: weekMessages > 200 },
-              { label: 'Sent PPVs KW', val: weekSentPPVs.toString(), good: weekSentPPVs > 50 },
-              { label: 'Buy Rate KW', val: `${weekBuyRate.toFixed(1)}%`, good: weekBuyRate >= 25 },
-              { label: 'Aktiv (Std) KW', val: (weekActiveMinutes / 60).toFixed(1) + 'h', good: weekActiveMinutes > 300 },
-            ].map(stat => (
-              <div key={stat.label} style={{ ...sR, flexDirection: 'column', borderBottom: 'none', padding: '10px 14px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{stat.label}</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: stat.good ? '#10b981' : 'var(--text-primary)' }}>{stat.val}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
           <div style={{ background: 'rgba(245,158,11,0.06)', border: '1.5px solid rgba(245,158,11,0.25)', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
@@ -989,6 +957,40 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
             )}
           </div>
         )}
+
+
+
+        {/* Schicht-Tausch */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
+            Schicht-Tausch anfragen
+          </div>
+          <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
+        </div>
+
+        {/* Week Stats */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
+            Meine Stats – KW {kw}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
+            {[
+              { label: 'Revenue KW', val: formatMoney(weekRevenue), good: weekRevenue > 500 },
+              { label: 'Nachrichten KW', val: weekMessages.toString(), good: weekMessages > 200 },
+              { label: 'Sent PPVs KW', val: weekSentPPVs.toString(), good: weekSentPPVs > 50 },
+              { label: 'Buy Rate KW', val: `${weekBuyRate.toFixed(1)}%`, good: weekBuyRate >= 25 },
+              { label: 'Aktiv (Std) KW', val: (weekActiveMinutes / 60).toFixed(1) + 'h', good: weekActiveMinutes > 300 },
+            ].map(stat => (
+              <div key={stat.label} style={{ ...sR, flexDirection: 'column', borderBottom: 'none', padding: '10px 14px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a' }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{stat.label}</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: stat.good ? '#10b981' : 'var(--text-primary)' }}>{stat.val}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
 
         {/* Bot Commands */}
         <div style={{ margin: '0 0 16px 0', background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 18px' }}>
