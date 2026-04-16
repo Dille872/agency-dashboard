@@ -511,7 +511,25 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
         }
         if (modelsInShift.length > 0) {
           const reminder = myReminders.find(r => r.shift_date === dayIso && r.shift === shift)
-          myNext7Shifts.push({ day, dayIso, shift, models: modelsInShift, reminder })
+          // Check if shift end time has passed for today
+          const firstModel = modelsInShift[0]
+          const timeStr = firstModel.timeStr || ''
+          const endTimeStr = timeStr.split('-')[1]?.trim()
+          let isExpired = false
+          if (dayIso === todayIso && endTimeStr) {
+            const [endH, endM] = endTimeStr.split(':').map(Number)
+            const now = new Date()
+            const endTime = new Date()
+            endTime.setHours(endH, endM, 0, 0)
+            // Handle overnight shifts (end time < start time means next day)
+            const startTimeStr = timeStr.split('-')[0]?.trim()
+            const [startH] = startTimeStr ? startTimeStr.split(':').map(Number) : [0]
+            if (endH < startH) endTime.setDate(endTime.getDate() + 1)
+            isExpired = now > endTime
+          }
+          if (!isExpired) {
+            myNext7Shifts.push({ day, dayIso, shift, models: modelsInShift, reminder })
+          }
         }
       }
     }
