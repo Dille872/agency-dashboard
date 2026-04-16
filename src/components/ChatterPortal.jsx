@@ -298,7 +298,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
     loadContentRequests()
     loadMyReminders()
     loadMyAbsences()
-    sendHeartbeat(false)
+    loadOnlineStatus()
     const interval = setInterval(() => {
       loadMessages()
       sendHeartbeat(isOnline)
@@ -312,6 +312,24 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
   useEffect(() => {
     sendHeartbeat(isOnline)
   }, [isOnline])
+
+  const loadOnlineStatus = async () => {
+    // Check if there's an open shift log (checked in but not checked out)
+    const { data: openLog } = await supabase
+      .from('shift_logs')
+      .select('*')
+      .eq('display_name', displayName)
+      .is('checked_out_at', null)
+      .order('checked_in_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (openLog) {
+      setIsOnline(true)
+      setCurrentLogId(openLog.id)
+      setCheckInTime(new Date(openLog.checked_in_at))
+      await sendHeartbeat(true)
+    }
+  }
 
   const loadMessages = async () => {
     const { data } = await supabase
@@ -603,8 +621,14 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
               <div style={{ fontSize: 14, fontWeight: 700, color: isOnline ? '#10b981' : 'var(--text-primary)', marginBottom: 3 }}>
                 {isOnline ? '🟢 Schicht aktiv' : '⚪ Schicht noch nicht gestartet'}
                 {isOnline
-                  ? ` · ${todayShifts.find(s => s.shift === selectedShift)?.shift || todayShifts.map(s => s.shift).join(' + ')}`
+                  ? ` · ${selectedShift || todayShifts.map(s => s.shift).join(' + ')}`
                   : todayShifts.length === 1 ? ` · ${todayShifts[0].shift}` : ''}
+              </div>
+              {isOnline && todayShifts.length > 0 && (
+                <div style={{ fontSize: 11, color: '#10b981', marginBottom: 2 }}>
+                  Models: {[...new Set(todayShifts.flatMap(s => s.models))].join(', ')}
+                </div>
+              )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
