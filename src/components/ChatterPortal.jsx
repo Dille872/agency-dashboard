@@ -882,37 +882,39 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
 
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
-          <div style={{ margin: '0 0 16px 0' }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Meine Models</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div style={{ background: 'rgba(245,158,11,0.06)', border: '1.5px solid rgba(245,158,11,0.25)', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+              <span style={{ width: 3, height: 13, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
+              <span style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Meine Models</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {Object.keys(assignedModelBoards).map(name => (
                 <button key={name} onClick={() => setSelectedModelInfo(selectedModelInfo === name ? null : name)}
-                  style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                  style={{ padding: '5px 14px', borderRadius: 7, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
                     background: selectedModelInfo === name ? '#f59e0b' : 'var(--bg-card)',
                     color: selectedModelInfo === name ? '#000' : 'var(--text-secondary)',
-                    border: `1px solid ${selectedModelInfo === name ? '#f59e0b' : '#1e1e3a'}` }}>
+                    border: `1px solid ${selectedModelInfo === name ? '#f59e0b' : '#2e2e5a'}` }}>
                   {name}
                 </button>
               ))}
             </div>
 
             {selectedModelInfo && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Board */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
+                {/* Board categories */}
                 {Object.entries(assignedModelBoards[selectedModelInfo] || {}).map(([cat, items]) => {
                   const catColors = { preise: '#10b981', nogos: '#ef4444', regeln: '#a78bfa', services: '#f59e0b', einschraenkungen: '#06b6d4', reise: '#06b6d4', termine: '#7c3aed' }
                   const catLabels = { preise: 'Preisstruktur', nogos: 'No Gos', regeln: 'Content Regeln', services: 'Services', einschraenkungen: 'Einschränkungen', reise: 'Reiseplan', termine: 'Termine' }
                   const color = catColors[cat] || '#a78bfa'
                   return (
-                    <div key={cat} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: `3px solid ${color}`, borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catLabels[cat] || cat}</span>
-                      </div>
+                    <div key={cat} style={{ background: 'var(--bg-card)', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
+                      <div style={{ fontSize: 9, color, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>{catLabels[cat] || cat}</div>
                       {items.map(item => (
-                        <div key={item.id} style={{ padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a', marginBottom: 6 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
-                          {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{item.content}</div>}
-                          {item.price && <div style={{ fontSize: 12, fontWeight: 700, color, marginTop: 3 }}>{item.price}</div>}
+                        <div key={item.id} style={{ padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid #1e1e3a', marginBottom: 5 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
+                          {item.content && <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>{item.content}</div>}
+                          {item.price && <div style={{ fontSize: 11, fontWeight: 700, color, marginTop: 2 }}>{item.price}</div>}
                         </div>
                       ))}
                     </div>
@@ -921,45 +923,43 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
 
                 {/* Services */}
                 {Object.keys(assignedServices[selectedModelInfo] || {}).length > 0 && (
-                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #f97316', borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Services</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
-                      {Object.entries(assignedServices[selectedModelInfo] || {}).map(([key, svc]) => {
-                        const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren' }
-                        return (
-                          <div key={key} style={{ padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{labels[key] || key}</span>
-                              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: svc.enabled ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: svc.enabled ? '#10b981' : '#ef4444' }}>
-                                {svc.enabled ? 'Ja' : 'Nein'}
-                              </span>
-                            </div>
-                            {svc.enabled && svc.note && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>{svc.note}</div>}
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(249,115,22,0.3)', borderLeft: '3px solid #f97316', borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
+                    <div style={{ fontSize: 9, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Services</div>
+                    {Object.entries(assignedServices[selectedModelInfo] || {}).map(([key, svc]) => {
+                      const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren' }
+                      return (
+                        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid #1e1e3a', marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{labels[key] || key}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: svc.enabled ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: svc.enabled ? '#10b981' : '#ef4444' }}>
+                              {svc.enabled ? 'Ja' : 'Nein'}
+                            </span>
+                            {svc.enabled && svc.note && <span style={{ fontSize: 10, color: '#f59e0b' }}>{svc.note}</span>}
                           </div>
-                        )
-                      })}
-                    </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 
                 {/* Custom Content */}
                 {(assignedCustomContent[selectedModelInfo] || []).length > 0 && (
-                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #7c3aed', borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
-                      Custom Content · {(assignedCustomContent[selectedModelInfo] || []).length} offen
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(124,58,237,0.3)', borderLeft: '3px solid #7c3aed', borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
+                    <div style={{ fontSize: 9, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>
+                      Custom Content · {(assignedCustomContent[selectedModelInfo] || []).length}
                     </div>
                     {(assignedCustomContent[selectedModelInfo] || []).map(cc => {
                       const isOverdue = cc.due_date && cc.due_date < new Date().toISOString().slice(0, 10)
                       const color = isOverdue ? '#ef4444' : '#f59e0b'
                       return (
-                        <div key={cc.id} style={{ padding: '8px 10px', background: isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)', borderRadius: 7, border: `1px solid ${color}44`, marginBottom: 6 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cc.title}</span>
-                            {cc.due_date && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: color + '22', color, flexShrink: 0 }}>
-                              {isOverdue ? 'Überfällig · ' : ''}{new Date(cc.due_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                        <div key={cc.id} style={{ padding: '6px 8px', background: isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)', borderRadius: 6, border: `1px solid ${color}33`, marginBottom: 5 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{cc.title}</span>
+                            {cc.due_date && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: color + '22', color, flexShrink: 0 }}>
+                              {isOverdue ? '! ' : ''}{new Date(cc.due_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
                             </span>}
                           </div>
-                          {cc.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>{cc.description}</div>}
+                          {cc.description && <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{cc.description}</div>}
                         </div>
                       )
                     })}
@@ -968,19 +968,18 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
 
                 {/* Videos */}
                 {(assignedModelVideos[selectedModelInfo] || []).length > 0 && (
-                  <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bevorstehende Videos</div>
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.3)', borderLeft: '3px solid #ef4444', borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
+                    <div style={{ fontSize: 9, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Bevorstehende Videos</div>
                     {(assignedModelVideos[selectedModelInfo] || []).map(video => (
-                      <div key={video.id} style={{ display: 'flex', gap: 12, padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a', marginBottom: 6, alignItems: 'flex-start' }}>
+                      <div key={video.id} style={{ display: 'flex', gap: 10, padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid #1e1e3a', marginBottom: 5, alignItems: 'flex-start' }}>
                         {video.thumbnail_url ? (
-                          <img src={video.thumbnail_url} alt={video.title} style={{ width: 60, height: 45, objectFit: 'cover', borderRadius: 5, flexShrink: 0 }} />
+                          <img src={video.thumbnail_url} alt={video.title} style={{ width: 50, height: 38, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
                         ) : (
-                          <div style={{ width: 60, height: 45, borderRadius: 5, background: '#1e1e3a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🎬</div>
+                          <div style={{ width: 50, height: 38, borderRadius: 4, background: '#1e1e3a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>🎬</div>
                         )}
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{video.title}</div>
-                          {video.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{video.description}</div>}
-                          {video.release_date && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 3, fontFamily: 'monospace' }}>{new Date(video.release_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{video.title}</div>
+                          {video.release_date && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2, fontFamily: 'monospace' }}>{new Date(video.release_date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</div>}
                         </div>
                       </div>
                     ))}
