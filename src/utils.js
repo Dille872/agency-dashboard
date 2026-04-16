@@ -223,9 +223,9 @@ export function computeModelTrend(snapshots, creatorName) {
   const avgRecent = recent.reduce((s, v) => s + v, 0) / recent.length
   const avgPrev = previous.reduce((s, v) => s + v, 0) / previous.length
   const pct = pctChange(avgRecent, avgPrev)
-  // Check instability across recent period
+  // Check instability across recent period - only flag if very erratic
   const diffs = recent.map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
-  if (diffs.filter(d => d > 20).length >= 3) return 'Instabil'
+  if (diffs.filter(d => d > 40).length >= 3) return 'Instabil'
   if (pct > 8) return 'Steigend'
   if (pct < -8) return 'Fallend'
   return 'Seitwärts'
@@ -261,7 +261,7 @@ export function computeChatterTrendFromSnapshots(snapshots, chatterName) {
   const avgPrev = previous.reduce((s, v) => s + v, 0) / previous.length
   const pct = pctChange(avgRecent, avgPrev)
   const diffs = recent.map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
-  if (diffs.filter(d => d > 25).length >= 2) return 'Instabil'
+  if (diffs.filter(d => d > 50).length >= 3) return 'Instabil'
   if (pct > 8) return 'Steigend'
   if (pct < -8) return 'Fallend'
   return 'Seitwärts'
