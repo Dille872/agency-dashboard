@@ -289,6 +289,8 @@ export function computeModelStatus(row, trend) {
 }
 
 export function computeChatterStatus(row, trend) {
+  if (trend === 'Instabil')
+    return { status: 'Instabil', recommendation: 'Unregelmäßige Performance' }
   if (row.activeMinutes > 60 && row.sentMessages < 20)
     return { status: 'Activity Issue', recommendation: 'Zu wenig Output' }
   if (row.buyRate < 20 && row.sentPPVs > 5)
