@@ -192,18 +192,78 @@ export function computeModelTrend(snapshots, creatorName) {
   const vals = []
   for (const snap of sorted) {
     const row = snap.rows.find(r => r.creator === creatorName)
-    if (row) vals.push(row.revenue)
+    if (row && row.revenue > 0) vals.push(row.revenue)
   }
-  if (vals.length < 2) return 'Seitwärts'
-  const last = vals[vals.length - 1]
-  const prev = vals[vals.length - 2]
-  const pct = pctChange(last, prev)
-  if (pct > 10) return 'Steigend'
-  if (pct < -10) return 'Fallend'
-  if (vals.length >= 3) {
-    const diffs = vals.slice(-3).map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
-    if (diffs.some(d => d > 25)) return 'Instabil'
+  if (vals.length < 4) {
+    // Fallback: simple last vs prev
+    if (vals.length < 2) return 'Seitwärts'
+    const pct = pctChange(vals[vals.length - 1], vals[vals.length - 2])
+    if (pct > 10) return 'Steigend'
+    if (pct < -10) return 'Fallend'
+    return 'Seitwärts'
   }
+  // Rolling 7-day average: last 7 vs previous 7
+  const recent = vals.slice(-7)
+  const previous = vals.slice(-14, -7)
+  if (previous.length === 0) {
+    // Not enough data for 14 days - use halves
+    const half = Math.floor(vals.length / 2)
+    const recentHalf = vals.slice(half)
+    const prevHalf = vals.slice(0, half)
+    const avgRecent = recentHalf.reduce((s, v) => s + v, 0) / recentHalf.length
+    const avgPrev = prevHalf.reduce((s, v) => s + v, 0) / prevHalf.length
+    const pct = pctChange(avgRecent, avgPrev)
+    if (pct > 8) return 'Steigend'
+    if (pct < -8) return 'Fallend'
+    // Check instability
+    const diffs = vals.slice(-5).map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
+    if (diffs.filter(d => d > 20).length >= 2) return 'Instabil'
+    return 'Seitwärts'
+  }
+  const avgRecent = recent.reduce((s, v) => s + v, 0) / recent.length
+  const avgPrev = previous.reduce((s, v) => s + v, 0) / previous.length
+  const pct = pctChange(avgRecent, avgPrev)
+  // Check instability across recent period
+  const diffs = recent.map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
+  if (diffs.filter(d => d > 20).length >= 3) return 'Instabil'
+  if (pct > 8) return 'Steigend'
+  if (pct < -8) return 'Fallend'
+  return 'Seitwärts'
+}
+
+export function computeChatterTrendFromSnapshots(snapshots, chatterName) {
+  const sorted = [...snapshots].sort((a, b) => a.businessDate.localeCompare(b.businessDate))
+  // Only active days (50+ messages)
+  const activeDays = []
+  for (const snap of sorted) {
+    const row = snap.rows.find(r => r.name === chatterName)
+    if (row && row.sentMessages >= 50) activeDays.push(row.revenue)
+  }
+  if (activeDays.length < 4) {
+    if (activeDays.length < 2) return 'Seitwärts'
+    const pct = pctChange(activeDays[activeDays.length - 1], activeDays[activeDays.length - 2])
+    if (pct > 10) return 'Steigend'
+    if (pct < -10) return 'Fallend'
+    return 'Seitwärts'
+  }
+  // Last 5 active days vs previous 5 active days
+  const recent = activeDays.slice(-5)
+  const previous = activeDays.slice(-10, -5)
+  const avgRecent = recent.reduce((s, v) => s + v, 0) / recent.length
+  if (previous.length === 0) {
+    const half = Math.floor(activeDays.length / 2)
+    const avgPrev = activeDays.slice(0, half).reduce((s, v) => s + v, 0) / half
+    const pct = pctChange(avgRecent, avgPrev)
+    if (pct > 8) return 'Steigend'
+    if (pct < -8) return 'Fallend'
+    return 'Seitwärts'
+  }
+  const avgPrev = previous.reduce((s, v) => s + v, 0) / previous.length
+  const pct = pctChange(avgRecent, avgPrev)
+  const diffs = recent.map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
+  if (diffs.filter(d => d > 25).length >= 2) return 'Instabil'
+  if (pct > 8) return 'Steigend'
+  if (pct < -8) return 'Fallend'
   return 'Seitwärts'
 }
 

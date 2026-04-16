@@ -5,7 +5,7 @@ import RankingBar from './RankingBar'
 import DeltaList from './DeltaList'
 import Heatmap from './Heatmap'
 import FallingAlert from './FallingAlert'
-import { formatMoney, pctChange, safeDivide, getLast7Snapshots, getPreviousSnapshot, computeChatterStatus } from '../utils'
+import { formatMoney, pctChange, safeDivide, getLast7Snapshots, getPreviousSnapshot, computeChatterStatus, computeChatterTrendFromSnapshots } from '../utils'
 
 const statusColors = {
   'Strong': 'var(--green)',
@@ -28,17 +28,7 @@ function isDeletedUser(name) {
 }
 
 function computeChatterTrend(snapshots, name) {
-  const sorted = [...snapshots].sort((a, b) => a.businessDate.localeCompare(b.businessDate))
-  // Only use days where chatter had 50+ messages
-  const vals = sorted
-    .map(s => s.rows.find(r => r.name === name))
-    .filter(r => r && r.sentMessages >= 50)
-    .map(r => r.revenue)
-  if (vals.length < 2) return 'Seitwärts'
-  const pct = pctChange(vals[vals.length - 1], vals[vals.length - 2])
-  if (pct > 10) return 'Steigend'
-  if (pct < -10) return 'Fallend'
-  return 'Seitwärts'
+  return computeChatterTrendFromSnapshots(snapshots, name)
 }
 
 export default function ChattersView({ selectedDate, chatterSnapshots, onDateChange }) {
