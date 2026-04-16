@@ -517,8 +517,8 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
     }
   }
 
-  // Today's shifts
-  const todayShifts = myShifts.filter(s => s.dayIso === todayIso)
+  // Today's shifts - use next7 schedules (covers week boundary)
+  const todayShifts = myNext7Shifts.filter(s => s.dayIso === todayIso)
 
   // Week stats from snapshots
   const weekSnaps = chatterSnapshots.filter(s => {
@@ -626,7 +626,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
               </div>
               {isOnline && todayShifts.length > 0 && (
                 <div style={{ fontSize: 11, color: '#10b981', marginBottom: 2 }}>
-                  Models: {[...new Set(todayShifts.flatMap(s => s.models))].join(', ')}
+                  Models: {[...new Set(todayShifts.flatMap(s => s.models.map(m => m.modelName || m)))].join(', ')}
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -641,7 +641,7 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
                     <select value={selectedShift} onChange={e => setSelectedShift(e.target.value)}
                       style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}>
                       <option value="">Schicht wählen...</option>
-                      {todayShifts.map(s => <option key={s.shift} value={s.shift}>{s.shift} · {s.models.join(', ')}</option>)}
+                      {todayShifts.map(s => <option key={s.shift} value={s.shift}>{s.shift} · {s.models.map(m => m.modelName || m).join(', ')}</option>)}
                     </select>
                   )}
                   <button onClick={() => checkIn()} disabled={todayShifts.length > 1 && !selectedShift}
