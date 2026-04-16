@@ -629,7 +629,6 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
                   Models: {[...new Set(todayShifts.flatMap(s => s.models))].join(', ')}
                 </div>
               )}
-              </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                 {checkInTime && ` · Eingecheckt: ${checkInTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`}
