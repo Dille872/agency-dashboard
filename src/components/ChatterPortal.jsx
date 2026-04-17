@@ -312,16 +312,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
   }, [isPreview])
 
-  // Reload stats when chatter changes in preview
-  useEffect(() => {
-    if (isPreview && displayName) {
-      loadStats()
-      loadSchedule()
-      loadContentRequests()
-      loadModels()
-    }
-  }, [displayName])
-
   useEffect(() => {
     loadMessages()
     loadSchedule()
@@ -508,6 +498,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     setSendingNote(false)
     alert('✓ Notiz gesendet!')
   }
+
+  // Reload when preview chatter changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (isPreview && displayName) { loadStats(); loadSchedule(); loadContentRequests(); loadModels() } }, [previewChatter])
 
   // Get my shifts this week
   const myShifts = []
