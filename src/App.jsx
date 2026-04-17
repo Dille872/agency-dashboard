@@ -322,6 +322,7 @@ export default function App() {
       displayName={userDisplayName}
       onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
       isSocialMedia={isSocialMedia}
+      isPreview={isAdmin || isManager}
     />
   )
 
@@ -489,7 +490,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.1.8</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.1.9</span>
         </div>
       </div>
 

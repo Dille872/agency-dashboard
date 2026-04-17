@@ -154,9 +154,12 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
   )
 }
 
-export default function ChatterPortal({ session, displayName, onSwitchToAdmin, isSocialMedia }) {
+export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview }) {
   const [theme, setThemeState] = useState(() => getTheme())
   const [showSocialPortal, setShowSocialPortal] = useState(false)
+  const [previewChatter, setPreviewChatter] = useState('')
+  const [allChatters, setAllChatters] = useState([])
+  const displayName = isPreview ? (previewChatter || '') : initialDisplayName
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -305,6 +308,15 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
     setCheckInTime(null)
     await sendHeartbeat(false)
   }
+
+  useEffect(() => {
+    if (isPreview) {
+      supabase.from('chatters_contact').select('name').order('name').then(({ data }) => {
+        setAllChatters(data || [])
+        if (data && data.length > 0) setPreviewChatter(data[0].name)
+      })
+    }
+  }, [isPreview])
 
   useEffect(() => {
     loadMessages()
@@ -634,7 +646,14 @@ export default function ChatterPortal({ session, displayName, onSwitchToAdmin, i
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
+          {isPreview ? (
+            <select value={previewChatter} onChange={e => setPreviewChatter(e.target.value)}
+              style={{ background: 'var(--bg-input)', border: '1px solid rgba(6,182,212,0.4)', color: '#06b6d4', padding: '4px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+              {allChatters.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
+          )}
           {isSocialMedia && (
             <button onClick={() => setShowSocialPortal(!showSocialPortal)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: showSocialPortal ? '#ec4899' : 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.3)', color: showSocialPortal ? '#fff' : '#ec4899', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
               Social
