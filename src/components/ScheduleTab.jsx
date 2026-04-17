@@ -42,20 +42,28 @@ const SHIFTS = ['Früh', 'Spät', 'Nacht']
 const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
+function getBerlinDate(date) {
+  const berlinStr = date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+  return new Date(berlinStr + 'T00:00:00')
+}
 function getWeekStart(date) {
-  const d = new Date(date)
+  const d = getBerlinDate(date)
   const day = d.getDay()
   const diff = day === 0 ? -6 : 1 - day
   d.setDate(d.getDate() + diff)
-  d.setHours(0, 0, 0, 0)
   return d
 }
 function getWeekDays(ws) {
   return Array.from({ length: 7 }, (_, i) => { const d = new Date(ws); d.setDate(d.getDate() + i); return d })
 }
-function isoDate(date) { return date.toISOString().slice(0, 10) }
-function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) }
-function isToday(date) { return isoDate(date) === isoDate(new Date()) }
+function isoDate(date) {
+  // Use Berlin timezone to match stored week_start values
+  return date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+}
+function isToday(date) {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+  return isoDate(date) === today
+}
 function getKW(date) {
   const d = new Date(date)
   const onejan = new Date(d.getFullYear(), 0, 1)
