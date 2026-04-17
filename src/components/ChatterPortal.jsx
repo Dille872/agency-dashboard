@@ -78,10 +78,6 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
   const [sending, setSending] = useState(false)
   const [mySwaps, setMySwaps] = useState([])
 
-  useEffect(() => {
-    loadMySwaps()
-  }, [])
-
   const loadMySwaps = async () => {
     const { data } = await supabase.from('shift_swaps').select('*')
       .eq('requester_name', displayName)
@@ -89,6 +85,10 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
       .limit(10)
     setMySwaps(data || [])
   }
+
+  useEffect(() => {
+    loadMySwaps()
+  }, [])
 
   const submitSwap = async () => {
     if (!swapShift) return
@@ -276,7 +276,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const checkIn = async (shiftName) => {
-    const shiftToLog = shiftName || selectedShift || todayShifts.map(s => s.shift).join(', ') || 'Manuell'
+    const shiftToLog = shiftName || selectedShift || 'Manuell'
     const { data } = await supabase.from('shift_logs').insert({
       display_name: displayName,
       checked_in_at: new Date().toISOString(),
@@ -570,6 +570,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       }
     }
   }
+
+  // Today's shifts - use next7 schedules (covers week boundary)
+  const todayShifts = myNext7Shifts.filter(s => s.dayIso === todayIso)
 
   // Monthly revenue
   const currentMonth = new Date().toISOString().slice(0, 7)
