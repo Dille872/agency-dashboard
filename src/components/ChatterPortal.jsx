@@ -45,7 +45,14 @@ function berlinDate(date) {
   return new Date(str + 'T00:00:00')
 }
 function isoDate(date) {
-  return (date || new Date()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+  const d = date || new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+function todayBerlin() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 }
 function getWeekStart(date) {
   const d = berlinDate(date || new Date())
@@ -63,8 +70,8 @@ function getWeekDays(weekStart) {
     return d
   })
 }
-function isToday(date) { return isoDate(date) === isoDate(new Date()) }
-function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' }) }
+function isToday(date) { return isoDate(date) === todayBerlin() }
+function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) }
 
 function getKW(date) {
   const d = new Date(date)
@@ -185,7 +192,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
-  const todayIso = isoDate(new Date())
+  const todayIso = todayBerlin()
 
   const [contentRequests, setContentRequests] = useState([])
   const [newRequestModel, setNewRequestModel] = useState('')
@@ -344,7 +351,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .is('checked_out_at', null)
       .order('checked_in_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
     if (openLog) {
       setIsOnline(true)
       setCurrentLogId(openLog.id)

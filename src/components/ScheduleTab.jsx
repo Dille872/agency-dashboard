@@ -47,8 +47,16 @@ function berlinDate(date) {
   return new Date(str + 'T00:00:00')
 }
 function isoDate(date) {
-  return (date || new Date()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+  const d = date || new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
+function todayBerlin() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+}
+function isToday(date) { return isoDate(date) === todayBerlin() }
 function getWeekStart(date) {
   const d = berlinDate(date || new Date())
   const day = d.getDay()
@@ -65,8 +73,7 @@ function getWeekDays(ws) {
     return d
   })
 }
-function isToday(date) { return isoDate(date) === isoDate(new Date()) }
-function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' }) }
+function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) }
 function getKW(date) {
   const d = new Date(date)
   const onejan = new Date(d.getFullYear(), 0, 1)
@@ -152,7 +159,7 @@ export default function ScheduleTab({ session }) {
   const checkShiftAlerts = async () => {
     // Check every 5 minutes if a shift started 15 min ago and chatter is not online
     const now = new Date()
-    const todayIso = isoDate(now)
+    const todayIso = todayBerlin()
     const currentHour = now.getHours()
     const currentMin = now.getMinutes()
 
