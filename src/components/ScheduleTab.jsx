@@ -257,7 +257,25 @@ export default function ScheduleTab({ session }) {
       }
       setSchedule(autoSchedule)
       setDayNotes({})
-      setShiftTimes({})
+
+      // Load shift times from most recent previous week
+      const { data: prevWeeks } = await supabase
+        .from('schedule')
+        .select('shift_times, week_start')
+        .lt('week_start', weekKey)
+        .order('week_start', { ascending: false })
+        .limit(1)
+      if (prevWeeks && prevWeeks.length > 0 && prevWeeks[0].shift_times) {
+        const prevTimes = prevWeeks[0].shift_times
+        const cleanTimes = {}
+        for (const [k, v] of Object.entries(prevTimes)) {
+          // Key format: modelId__shift → keep as is since times are per model+shift not per day
+          cleanTimes[k] = String(v).replace(' (DE)', '').replace('(DE)', '')
+        }
+        setShiftTimes(cleanTimes)
+      } else {
+        setShiftTimes({})
+      }
       setHasSavedData(false)
     }
   }
