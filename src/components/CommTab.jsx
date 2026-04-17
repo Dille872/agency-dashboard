@@ -565,6 +565,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
           (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => !a.read).length > 0) ? 1 : 0 },
           section === 'models' && { key: 'modelboards', label: `Boards${modelBoardActivity.filter(a => !a.read).length > 0 ? ` (${modelBoardActivity.filter(a => !a.read).length})` : ''}` },
           section === 'models' && { key: 'content-requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
+          section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
           section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
@@ -577,6 +578,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
             if (s.key === 'models') { /* already loaded */ }
             if (s.key === 'modelboards') { loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
             if (s.key === 'content-requests') loadContentRequests()
+            if (s.key === 'content-verlauf') loadContentRequests()
             if (s.key === 'chatters') { /* already loaded */ }
             if (s.key === 'swaps') loadSwaps()
             if (s.key === 'stats' || s.key === 'shiftlog') loadShiftLogs()
@@ -1026,6 +1028,89 @@ export default function CommTab({ session, section = 'nachrichten' }) {
           )}
         </Card>
       )}
+
+      {/* CUSTOM VERLAUF */}
+      {activeSection === 'content-verlauf' && (() => {
+        const erledigte = contentRequests.filter(r => r.status === 'erledigt')
+        const totalRevenue = erledigte.reduce((s, r) => s + (r.price || 0), 0)
+        const byModel = erledigte.reduce((acc, r) => { acc[r.model_name] = (acc[r.model_name] || 0) + (r.price || 0); return acc }, {})
+        const byChatter = erledigte.reduce((acc, r) => { acc[r.chatter_name] = (acc[r.chatter_name] || 0) + (r.price || 0); return acc }, {})
+        return (
+          <Card title={`Custom Content Verlauf (${erledigte.length})`}>
+            {/* Totals */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 16 }}>
+              <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Gesamt Umsatz</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>${totalRevenue.toFixed(2)}</div>
+              </div>
+              <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Anzahl</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{erledigte.length}</div>
+              </div>
+            </div>
+
+            {/* By Model */}
+            {Object.keys(byModel).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>Nach Model</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {Object.entries(byModel).sort((a, b) => b[1] - a[1]).map(([name, rev]) => (
+                    <div key={name} style={{ padding: '4px 10px', background: 'rgba(167,139,250,0.1)', borderRadius: 6, border: '1px solid rgba(167,139,250,0.25)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>{name}</span>
+                      <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${rev.toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* By Chatter */}
+            {Object.keys(byChatter).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>Nach Chatter</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {Object.entries(byChatter).sort((a, b) => b[1] - a[1]).map(([name, rev]) => (
+                    <div key={name} style={{ padding: '4px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 6, border: '1px solid rgba(6,182,212,0.25)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#06b6d4' }}>{name}</span>
+                      <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${rev.toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Table */}
+            {erledigte.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>Noch keine erledigten Anfragen</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>{['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {erledigte.map(req => {
+                      const remainder = (req.price || 0) - (req.deposit || 0)
+                      return (
+                        <tr key={req.id}>
+                          <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
+                          <td style={{ ...tdS, fontWeight: 600, color: '#06b6d4' }}>{req.chatter_name}</td>
+                          <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
+                          <td style={tdS}>{req.content_type || '—'}</td>
+                          <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
+                          <td style={{ ...tdS, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{req.price ? `$${req.price}` : '—'}</td>
+                          <td style={{ ...tdS, color: req.deposit_paid ? '#10b981' : '#f59e0b', fontFamily: 'monospace' }}>{req.deposit ? `$${req.deposit}${req.deposit_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
+                          <td style={{ ...tdS, color: req.remainder_paid ? '#10b981' : remainder > 0 ? '#ef4444' : 'var(--text-muted)', fontFamily: 'monospace' }}>{req.deposit && remainder > 0 ? `$${remainder}${req.remainder_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        )
+      })()}
 
       {/* SCHICHT-LOG */}
       {activeSection === 'shiftlog' && (
