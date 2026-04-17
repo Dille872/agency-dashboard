@@ -184,7 +184,7 @@ export default function ScheduleTab({ session }) {
     const alerted = new Set()
     for (const [key, val] of Object.entries(assignments)) {
       const parts = key.split('__')
-      if (parts[1] !== todayIso || !val.chatter) continue
+      if (parts[1] !== todayIso || !val.chatter || val.chatter === '__FREI__') continue
       const chatterName = val.chatter
       if (alerted.has(chatterName)) continue
 
