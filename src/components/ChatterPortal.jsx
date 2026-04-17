@@ -318,6 +318,16 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
   }, [isPreview])
 
+  // Reload stats when chatter changes in preview
+  useEffect(() => {
+    if (isPreview && displayName) {
+      loadStats()
+      loadSchedule()
+      loadContentRequests()
+      loadModels()
+    }
+  }, [displayName])
+
   useEffect(() => {
     loadMessages()
     loadSchedule()
@@ -573,8 +583,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
   }
 
-  // Today's shifts - use next7 schedules (covers week boundary)
-  const todayShifts = myNext7Shifts.filter(s => s.dayIso === todayIso)
+  // Monthly revenue
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const monthSnaps = chatterSnapshots.filter(s => s.businessDate.startsWith(currentMonth))
+  const monthRevenue = monthSnaps.reduce((sum, snap) => {
+    const row = snap.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    return sum + (row?.revenue || 0)
+  }, 0)
 
   // Week stats from snapshots
   const weekSnaps = chatterSnapshots.filter(s => {
@@ -1137,7 +1152,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
             {[
-              { label: 'Revenue KW', val: formatMoney(weekRevenue), good: weekRevenue > 500 },
+              { label: `Revenue ${new Date().toLocaleString('de-DE', { month: 'long' })}`, val: formatMoney(monthRevenue), good: monthRevenue > 2000 },
               { label: 'Nachrichten KW', val: weekMessages.toString(), good: weekMessages > 200 },
               { label: 'Sent PPVs KW', val: weekSentPPVs.toString(), good: weekSentPPVs > 50 },
               { label: 'Buy Rate KW', val: `${weekBuyRate.toFixed(1)}%`, good: weekBuyRate >= 25 },
