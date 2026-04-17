@@ -338,6 +338,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }, [isPreview])
 
   useEffect(() => {
+    if (!displayName) return
     loadMessages()
     loadSchedule()
     loadStats()
@@ -353,7 +354,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     return () => {
       clearInterval(interval)
     }
-  }, [])
+  }, [displayName])
 
   // Update heartbeat when online status changes
   useEffect(() => {
@@ -361,8 +362,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }, [isOnline])
 
   const loadOnlineStatus = async () => {
-    // Check if there's an open shift log (checked in but not checked out)
-    const { data: openLog } = await supabase
+    if (!displayName) return
+    const { data: openLog, error } = await supabase
       .from('shift_logs')
       .select('*')
       .eq('display_name', displayName)
@@ -370,6 +371,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .order('checked_in_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+    if (error) console.error('loadOnlineStatus error:', error)
     if (openLog) {
       setIsOnline(true)
       setCurrentLogId(openLog.id)
