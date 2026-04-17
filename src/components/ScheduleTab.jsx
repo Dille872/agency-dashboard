@@ -57,7 +57,13 @@ function getWeekStart(date) {
   return d
 }
 function getWeekDays(ws) {
-  return Array.from({ length: 7 }, (_, i) => { const d = new Date(ws); d.setDate(d.getDate() + i); return d })
+  if (!ws) return []
+  const base = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate())
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(base)
+    d.setDate(d.getDate() + i)
+    return d
+  })
 }
 function isToday(date) { return isoDate(date) === isoDate(new Date()) }
 function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' }) }

@@ -55,8 +55,10 @@ function getWeekStart(date) {
   return d
 }
 function getWeekDays(weekStart) {
+  if (!weekStart) return []
+  const base = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate())
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
+    const d = new Date(base)
     d.setDate(d.getDate() + i)
     return d
   })
