@@ -34,10 +34,10 @@ function formatMoney(v) {
 }
 
 function SocialModelView({ displayName, cardS, itemS }) {
-  const [posts, setPosts] = React.useState([])
-  const [accounts, setAccounts] = React.useState([])
+  const [posts, setPosts] = useState([])
+  const [accounts, setAccounts] = useState([])
 
-  React.useEffect(() => {
+  useEffect(() => {
     const load = async () => {
       const { data: a } = await supabase.from('social_accounts').select('*').eq('model_name', displayName)
       setAccounts(a || [])
@@ -291,7 +291,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           const rowName = r.creator || r.name || ''
           const normRow = normalize(rowName)
           if (noAliases) return normRow.includes(normCsvName) || normCsvName.includes(normRow)
-          return normRow === normCsvName || normRow.includes(normCsvName) || normCsvName.includes(normRow)
+          return normRow === normCsvName
         })
         if (row && row.subs > 0) {
           if (!dailySubsMap[csvName]) dailySubsMap[csvName] = {}

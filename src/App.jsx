@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 import { getTheme, setTheme, initTheme } from './theme'
 import LoginPage from './components/LoginPage'
@@ -38,7 +38,7 @@ export default function App() {
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
   const [theme, setThemeState] = useState(() => initTheme())
-  const lastNoteCheck = React.useRef(null)
+  const lastNoteCheck = useRef(null)
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -490,7 +490,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.2.5</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.2.6</span>
         </div>
       </div>
 
