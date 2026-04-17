@@ -464,8 +464,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const [lastStatDate, setLastStatDate] = useState(null)
+  const [chatterCsvName, setChatterCsvName] = useState(null)
 
   const loadStats = async () => {
+    // Load alias for this chatter
+    const { data: aliasData } = await supabase
+      .from('chatter_aliases')
+      .select('csv_name')
+      .eq('chatter_name', displayName)
+      .maybeSingle()
+    const csvName = aliasData?.csv_name || displayName
+    setChatterCsvName(csvName)
+
     const { data } = await supabase
       .from('chatter_snapshots')
       .select('*')
@@ -476,13 +486,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }))
     setChatterSnapshots(snapshots)
 
-    // Find last day this chatter has data
+    // Find last day this chatter has data - match by csv_name
     const mySnaps = snapshots.filter(s =>
-      s.rows?.some(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+      s.rows?.some(r => r.name?.toLowerCase() === csvName?.toLowerCase())
     )
     if (mySnaps.length === 0) return
     const lastSnap = mySnaps[mySnaps.length - 1]
-    const myRow = lastSnap.rows.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    const myRow = lastSnap.rows.find(r => r.name?.toLowerCase() === csvName?.toLowerCase())
     if (myRow) {
       setChatterStats(myRow)
       setLastStatDate(lastSnap.businessDate)
@@ -585,7 +595,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const currentMonth = new Date().toISOString().slice(0, 7)
   const monthSnaps = chatterSnapshots.filter(s => s.businessDate.startsWith(currentMonth))
   const monthRevenue = monthSnaps.reduce((sum, snap) => {
-    const row = snap.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    const row = snap.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
     return sum + (row?.revenue || 0)
   }, 0)
 
@@ -595,24 +605,24 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     return d >= weekStart && d <= weekDays[6]
   })
   const weekRevenue = weekSnaps.reduce((sum, snap) => {
-    const row = snap.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    const row = snap.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
     return sum + (row?.revenue || 0)
   }, 0)
   const weekMessages = weekSnaps.reduce((sum, snap) => {
-    const row = snap.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    const row = snap.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
     return sum + (row?.sentMessages || 0)
   }, 0)
   const weekSentPPVs = weekSnaps.reduce((sum, snap) => {
-    const row = snap.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    const row = snap.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
     return sum + (row?.sentPPVs || 0)
   }, 0)
   const weekBoughtPPVs = weekSnaps.reduce((sum, snap) => {
-    const row = snap.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    const row = snap.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
     return sum + (row?.boughtPPVs || 0)
   }, 0)
   const weekBuyRate = weekSentPPVs > 0 ? (weekBoughtPPVs / weekSentPPVs * 100) : 0
   const weekActiveMinutes = weekSnaps.reduce((sum, snap) => {
-    const row = snap.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+    const row = snap.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
     return sum + (row?.activeMinutes || 0)
   }, 0)
   const weekRPH = weekActiveMinutes > 0 ? weekRevenue / (weekActiveMinutes / 60) : 0
@@ -620,7 +630,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // Yesterday stats for delta
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
   const yesterdaySnap = chatterSnapshots.find(s => s.businessDate === isoDate(yesterday))
-  const yesterdayRow = yesterdaySnap?.rows?.find(r => r.name?.toLowerCase() === displayName?.toLowerCase())
+  const yesterdayRow = yesterdaySnap?.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
   const revDelta = yesterdayRow ? pctChange(chatterStats?.revenue || 0, yesterdayRow.revenue) : 0
 
   const sR = { padding: '6px 0', borderBottom: '1px solid #1e1e3a', display: 'flex', justifyContent: 'space-between', fontSize: 12 }
