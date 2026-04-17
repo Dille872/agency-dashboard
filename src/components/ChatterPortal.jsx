@@ -86,6 +86,7 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
   const [mySwaps, setMySwaps] = useState([])
 
   const loadMySwaps = async () => {
+    if (!displayName) return
     const { data } = await supabase.from('shift_swaps').select('*')
       .eq('requester_name', displayName)
       .order('created_at', { ascending: false })
@@ -203,6 +204,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newRequestDuration, setNewRequestDuration] = useState('')
   const [newRequestQuantity, setNewRequestQuantity] = useState('1')
   const [newRequestCustomerId, setNewRequestCustomerId] = useState('')
+  const [newRequestImages, setNewRequestImages] = useState([])
   const [sendingRequest, setSendingRequest] = useState(false)
   const [assignedModelBoards, setAssignedModelBoards] = useState({}) // modelName → board map
   const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
@@ -254,6 +256,21 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const submitContentRequest = async () => {
     if (!newRequestModel || !newRequestText.trim() || !newRequestPrice) return
     setSendingRequest(true)
+
+    // Upload images first
+    const uploadedUrls = []
+    for (const file of newRequestImages) {
+      const ext = file.name.split('.').pop()
+      const path = `${displayName}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      const { data: uploadData, error } = await supabase.storage
+        .from('content-requests')
+        .upload(path, file, { contentType: file.type })
+      if (!error && uploadData) {
+        const { data: urlData } = supabase.storage.from('content-requests').getPublicUrl(path)
+        if (urlData?.publicUrl) uploadedUrls.push(urlData.publicUrl)
+      }
+    }
+
     await supabase.from('content_requests').insert({
       chatter_name: displayName,
       model_name: newRequestModel,
@@ -265,10 +282,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       quantity: parseInt(newRequestQuantity) || 1,
       customer_id: newRequestCustomerId.trim() || null,
       status: 'neu',
+      image_urls: uploadedUrls,
     })
     setNewRequestModel(''); setNewRequestText(''); setNewRequestType('video')
     setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
-    setNewRequestQuantity('1'); setNewRequestCustomerId('')
+    setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([])
     await loadContentRequests()
     setSendingRequest(false)
     alert('✓ Anfrage gesendet!')
@@ -1099,11 +1117,37 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 placeholder="Was möchte der Kunde genau?"
                 style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
             </div>
+
+            {/* Image upload */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Referenzbilder (optional · max. 5)</label>
+              <label style={{ display: 'block', border: '1.5px dashed #2e2e5a', borderRadius: 7, padding: '10px', textAlign: 'center', cursor: 'pointer', background: 'var(--bg-input)' }}>
+                <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                  onChange={e => {
+                    const files = Array.from(e.target.files).slice(0, 5)
+                    setNewRequestImages(prev => [...prev, ...files].slice(0, 5))
+                    e.target.value = ''
+                  }} />
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>+ Bilder auswählen</span>
+              </label>
+              {newRequestImages.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  {newRequestImages.map((file, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <img src={URL.createObjectURL(file)} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid #2e2e5a' }} />
+                      <button onClick={() => setNewRequestImages(prev => prev.filter((_, j) => j !== i))}
+                        style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#ef4444', border: 'none', color: '#fff', fontSize: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim() || !newRequestPrice} style={{
               width: '100%', background: (newRequestModel && newRequestText.trim() && newRequestPrice) ? '#06b6d4' : 'var(--border)',
               color: (newRequestModel && newRequestText.trim() && newRequestPrice) ? '#fff' : 'var(--text-muted)',
               border: 'none', borderRadius: 7, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            }}>{sendingRequest ? 'Senden...' : '+ Anfrage senden'}</button>
+            }}>{sendingRequest ? 'Bilder werden hochgeladen...' : '+ Anfrage senden'}</button>
           </div>
 
           {/* Request history */}
@@ -1129,6 +1173,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{req.request_text}</div>
+                    {req.image_urls?.length > 0 && (
+                      <div style={{ display: 'flex', gap: 5, marginBottom: 4, flexWrap: 'wrap' }}>
+                        {req.image_urls.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer">
+                            <img src={url} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {req.price > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981' }}>${req.price}</span>}
                       {req.deposit > 0 && <span style={{ fontSize: 10, color: '#f59e0b' }}>Anzahlung: ${req.deposit}{!req.deposit_paid ? ' (offen)' : ' ✓'}</span>}

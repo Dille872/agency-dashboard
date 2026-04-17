@@ -972,8 +972,15 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>{req.request_text}</div>
-
-                    {/* Price & Payment */}
+                    {req.image_urls?.length > 0 && (
+                      <div style={{ display: 'flex', gap: 5, marginBottom: 6, flexWrap: 'wrap' }}>
+                        {req.image_urls.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer">
+                            <img src={url} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     {req.price > 0 && (
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8, padding: '6px 8px', background: 'var(--bg-card)', borderRadius: 6 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981' }}>Gesamt: ${req.price}</span>
