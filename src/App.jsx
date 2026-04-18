@@ -276,9 +276,9 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (authLoading) return (
+  if (authLoading || (session && userRole === null)) return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-sans)' }}>
-      Laden...
+      Daten werden geladen...
     </div>
   )
 
@@ -490,7 +490,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.3.5</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.3.6</span>
         </div>
       </div>
 
