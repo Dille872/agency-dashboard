@@ -3,6 +3,10 @@ import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
 import { getTheme, setTheme } from '../theme'
+import { sendTelegramMessage } from '../telegram'
+
+const CHRIS_TG = '1538601588'
+const REY_TG = '528328429'
 
 const APP_VERSION = 'v2.2.7'
 
@@ -286,6 +290,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       image_urls: uploadedUrls,
       deadline: newRequestDeadline,
     })
+
+    // Notify admins via Telegram
+    const deadlineText = newRequestDeadline === 'asap' ? '⚡ ASAP' : newRequestDeadline === 'hours' ? '⏰ In den nächsten Stunden' : newRequestDeadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'
+    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}\nTyp: ${newRequestType}\nPreis: $${newRequestPrice}${newRequestDeposit ? ` (Anzahlung: $${newRequestDeposit})` : ''}\nDringlichkeit: ${deadlineText}\n\nWunsch: ${newRequestText.trim()}`
+    await Promise.all([
+      sendTelegramMessage(CHRIS_TG, tgMsg),
+      sendTelegramMessage(REY_TG, tgMsg),
+    ])
     setNewRequestModel(''); setNewRequestText(''); setNewRequestType('video')
     setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
     setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
