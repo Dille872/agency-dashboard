@@ -205,6 +205,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newRequestQuantity, setNewRequestQuantity] = useState('1')
   const [newRequestCustomerId, setNewRequestCustomerId] = useState('')
   const [newRequestImages, setNewRequestImages] = useState([])
+  const [newRequestDeadline, setNewRequestDeadline] = useState('asap')
   const [sendingRequest, setSendingRequest] = useState(false)
   const [assignedModelBoards, setAssignedModelBoards] = useState({}) // modelName → board map
   const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
@@ -283,10 +284,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       customer_id: newRequestCustomerId.trim() || null,
       status: 'neu',
       image_urls: uploadedUrls,
+      deadline: newRequestDeadline,
     })
     setNewRequestModel(''); setNewRequestText(''); setNewRequestType('video')
     setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
-    setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([])
+    setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
     await loadContentRequests()
     setSendingRequest(false)
     alert('✓ Anfrage gesendet!')
@@ -1190,6 +1192,20 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
             </div>
 
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Dringlichkeit</label>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {[['asap','⚡ So schnell wie möglich','#ef4444'],['hours','⏰ In den nächsten Stunden','#f97316'],['days','📅 1-2 Tage','#f59e0b'],['week','🗓 Diese Woche','#10b981']].map(([k,l,c]) => (
+                  <button key={k} onClick={() => setNewRequestDeadline(k)} style={{
+                    padding: '5px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
+                    background: newRequestDeadline === k ? c + '22' : 'transparent',
+                    color: newRequestDeadline === k ? c : 'var(--text-muted)',
+                    border: `1px solid ${newRequestDeadline === k ? c : 'var(--border)'}`,
+                  }}>{l}</button>
+                ))}
+              </div>
+            </div>
+
             {/* Image upload */}
             <div style={{ marginBottom: 8 }}>
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Referenzbilder (optional · max. 5)</label>
@@ -1260,6 +1276,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       {req.deposit > 0 && remainder > 0 && <span style={{ fontSize: 10, color: remainder > 0 && !req.remainder_paid ? '#ef4444' : '#10b981' }}>Rest: ${remainder}{!req.remainder_paid ? ' (offen)' : ' ✓'}</span>}
                       {req.duration && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{req.duration}</span>}
                       {req.quantity > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
+                      {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
+                        {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
+                      </span>}
                     </div>
                   </div>
                 )

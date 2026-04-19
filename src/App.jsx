@@ -138,7 +138,12 @@ export default function App() {
       .from('custom_content').select('*', { count: 'exact', head: true })
       .eq('read_by_admin', false)
 
-    setUnreadModelChanges((modelCount || 0) + (ccCount || 0))
+    // New content requests
+    const { count: reqCount } = await supabase
+      .from('content_requests').select('*', { count: 'exact', head: true })
+      .eq('status', 'neu')
+
+    setUnreadModelChanges((modelCount || 0) + (ccCount || 0) + (reqCount || 0))
 
     // Unread custom content for model portal
     if (userRole === 'model' && userDisplayName) {
@@ -490,7 +495,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.4.3</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.4.4</span>
         </div>
       </div>
 

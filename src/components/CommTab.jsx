@@ -1008,6 +1008,9 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                         )}
                         {req.duration && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{req.duration}</span>}
                         {req.quantity > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
+                        {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
+                          {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
+                        </span>}
                       </div>
                     )}
 
@@ -1093,11 +1096,13 @@ export default function CommTab({ session, section = 'nachrichten' }) {
               <div style={{ overflowX: 'auto' }}>
                 <table>
                   <thead>
-                    <tr>{['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+                    <tr>{['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Wunsch', 'Dringlichkeit', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
                     {erledigte.map(req => {
                       const remainder = (req.price || 0) - (req.deposit || 0)
+                      const deadlineLabel = req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : req.deadline === 'week' ? '🗓 Diese Woche' : '—'
+                      const deadlineColor = req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981'
                       return (
                         <tr key={req.id}>
                           <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
@@ -1105,6 +1110,8 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                           <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
                           <td style={tdS}>{req.content_type || '—'}</td>
                           <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
+                          <td style={{ ...tdS, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.request_text}>{req.request_text || '—'}</td>
+                          <td style={{ ...tdS, color: deadlineColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{deadlineLabel}</td>
                           <td style={{ ...tdS, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{req.price ? `$${req.price}` : '—'}</td>
                           <td style={{ ...tdS, color: req.deposit_paid ? '#10b981' : '#f59e0b', fontFamily: 'monospace' }}>{req.deposit ? `$${req.deposit}${req.deposit_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
                           <td style={{ ...tdS, color: req.remainder_paid ? '#10b981' : remainder > 0 ? '#ef4444' : 'var(--text-muted)', fontFamily: 'monospace' }}>{req.deposit && remainder > 0 ? `$${remainder}${req.remainder_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
