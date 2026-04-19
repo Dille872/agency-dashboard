@@ -174,6 +174,8 @@ export default function CommTab({ session, section = 'nachrichten' }) {
     return 'nachrichten'
   })
   const [initialJumpDone, setInitialJumpDone] = useState(false)
+  const [onlineStatuses, setOnlineStatuses] = useState({})
+  const lastUpdateIdRef = React.useRef(0)
 
   useEffect(() => {
     if (section === 'models' && !initialJumpDone && unreadRequests > 0) {
@@ -181,8 +183,6 @@ export default function CommTab({ session, section = 'nachrichten' }) {
       setInitialJumpDone(true)
     }
   }, [unreadRequests])
-  const [onlineStatuses, setOnlineStatuses] = useState({})
-  const lastUpdateIdRef = React.useRef(0)
 
   useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
