@@ -23,10 +23,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [needsPassword, setNeedsPassword] = useState(false)
 
-  const [activeTab, setActiveTab] = useState(() => {
-    const saved = sessionStorage.getItem('activeTab')
-    return saved || 'models'
-  })
+  const [activeTab, setActiveTab] = useState('models')
   const [businessDate, setBusinessDate] = useState(todayISO())
   const [modelSnapshots, setModelSnapshots] = useState([])
   const [chatterSnapshots, setChatterSnapshots] = useState([])
@@ -101,13 +98,11 @@ export default function App() {
         setUserDisplayName(name)
         // Clear saved tab for portal users - they don't use the admin tabs
         if (data.role === 'chatter' || data.role === 'model') {
-          sessionStorage.removeItem('activeTab')
         }
       } else {
         setUserRole('chatter')
         setUserRoles(['chatter'])
         setUserDisplayName(name)
-        sessionStorage.removeItem('activeTab')
       }
       await supabase.from('online_status').upsert({
         display_name: name,
@@ -406,7 +401,6 @@ export default function App() {
               return (
               <button key={tab.key} onClick={() => {
                 setActiveTab(tab.key)
-                sessionStorage.setItem('activeTab', tab.key)
                 if (tab.key === 'nachrichten') setUnreadMessages(0)
                 if (tab.key === 'models-comm') setUnreadModelChanges(0)
                 if (tab.key === 'chatters-comm') setOpenSwaps(0)
@@ -499,7 +493,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.4.0</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.4.1</span>
         </div>
       </div>
 
