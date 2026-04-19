@@ -178,13 +178,6 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const lastUpdateIdRef = React.useRef(0)
 
   useEffect(() => {
-    if (section === 'models' && !initialJumpDone && unreadRequests > 0) {
-      setActiveSection('content-requests')
-      setInitialJumpDone(true)
-    }
-  }, [unreadRequests])
-
-  useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
     // Load section-specific data
     if (section === 'models') { loadContentRequests(); loadModelBoardActivity() }
@@ -530,6 +523,14 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const [editingPayment, setEditingPayment] = useState(null) // req.id
   const [editPrice, setEditPrice] = useState('')
   const [editDeposit, setEditDeposit] = useState('')
+
+  // Jump to content-requests on first load if there are new ones
+  useEffect(() => {
+    if (section === 'models' && !initialJumpDone && unreadRequests > 0) {
+      setActiveSection('content-requests')
+      setInitialJumpDone(true)
+    }
+  }, [unreadRequests])
 
   const loadContentRequests = async () => {
     const { data } = await supabase.from('content_requests').select('*').order('created_at', { ascending: false })
