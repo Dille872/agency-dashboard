@@ -376,34 +376,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     sendHeartbeat(isOnline)
   }, [isOnline])
 
-  // Auto-checkout when shift end time is passed
-  useEffect(() => {
-    if (!isOnline || !currentLogId) return
-    const timer = setInterval(() => {
-      const now = new Date()
-      const nowMins = now.getHours() * 60 + now.getMinutes()
-      for (const s of todayShifts) {
-        const timeStr = s.models?.[0]?.timeStr || ''
-        const endStr = timeStr.split('-')[1]?.trim()
-        if (!endStr) continue
-        const [endH, endM] = endStr.split(':').map(Number)
-        if (isNaN(endH)) continue
-        const startStr = timeStr.split('-')[0]?.trim()
-        const [startH] = startStr ? startStr.split(':').map(Number) : [0]
-        let endMins = endH * 60 + endM
-        // Overnight shift
-        if (endH < startH) endMins += 24 * 60
-        const nowAdjusted = endH < startH && nowMins < startH * 60 ? nowMins + 24 * 60 : nowMins
-        if (nowAdjusted >= endMins + 1) {
-          checkOut()
-          clearInterval(timer)
-          return
-        }
-      }
-    }, 60000)
-    return () => clearInterval(timer)
-  }, [isOnline, currentLogId, todayShifts])
-
   const loadOnlineStatus = async () => {
     if (!displayName) return
     // Get all open logs
