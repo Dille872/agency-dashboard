@@ -301,6 +301,21 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const checkIn = async (shiftName) => {
+    // Check if already logged in - prevent duplicate logs
+    const { data: existingLog } = await supabase
+      .from('shift_logs')
+      .select('id')
+      .eq('display_name', displayName)
+      .is('checked_out_at', null)
+      .maybeSingle()
+    if (existingLog) {
+      // Already logged in - just set state
+      setCurrentLogId(existingLog.id)
+      setIsOnline(true)
+      await sendHeartbeat(true)
+      return
+    }
+
     const shiftToLog = shiftName || selectedShift || 'Manuell'
     const { data } = await supabase.from('shift_logs').insert({
       display_name: displayName,
@@ -361,23 +376,59 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     sendHeartbeat(isOnline)
   }, [isOnline])
 
+  // Auto-checkout when shift end time is passed
+  useEffect(() => {
+    if (!isOnline || !currentLogId) return
+    const timer = setInterval(() => {
+      const now = new Date()
+      const nowMins = now.getHours() * 60 + now.getMinutes()
+      for (const s of todayShifts) {
+        const timeStr = s.models?.[0]?.timeStr || ''
+        const endStr = timeStr.split('-')[1]?.trim()
+        if (!endStr) continue
+        const [endH, endM] = endStr.split(':').map(Number)
+        if (isNaN(endH)) continue
+        const startStr = timeStr.split('-')[0]?.trim()
+        const [startH] = startStr ? startStr.split(':').map(Number) : [0]
+        let endMins = endH * 60 + endM
+        // Overnight shift
+        if (endH < startH) endMins += 24 * 60
+        const nowAdjusted = endH < startH && nowMins < startH * 60 ? nowMins + 24 * 60 : nowMins
+        if (nowAdjusted >= endMins + 1) {
+          checkOut()
+          clearInterval(timer)
+          return
+        }
+      }
+    }, 60000)
+    return () => clearInterval(timer)
+  }, [isOnline, currentLogId, todayShifts])
+
   const loadOnlineStatus = async () => {
     if (!displayName) return
-    const { data: openLog, error } = await supabase
+    // Get all open logs
+    const { data: openLogs, error } = await supabase
       .from('shift_logs')
       .select('*')
       .eq('display_name', displayName)
       .is('checked_out_at', null)
       .order('checked_in_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
     if (error) console.error('loadOnlineStatus error:', error)
-    if (openLog) {
-      setIsOnline(true)
-      setCurrentLogId(openLog.id)
-      setCheckInTime(new Date(openLog.checked_in_at))
-      await sendHeartbeat(true)
+    if (!openLogs || openLogs.length === 0) return
+
+    // Close all duplicate logs except the most recent
+    if (openLogs.length > 1) {
+      const toClose = openLogs.slice(1).map(l => l.id)
+      await supabase.from('shift_logs')
+        .update({ checked_out_at: new Date().toISOString() })
+        .in('id', toClose)
     }
+
+    const openLog = openLogs[0]
+    setIsOnline(true)
+    setCurrentLogId(openLog.id)
+    setCheckInTime(new Date(openLog.checked_in_at))
+    await sendHeartbeat(true)
   }
 
   const loadMessages = async () => {
