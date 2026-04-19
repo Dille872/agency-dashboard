@@ -23,7 +23,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [needsPassword, setNeedsPassword] = useState(false)
 
-  const [activeTab, setActiveTab] = useState('models')
+  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('activeTab') || 'models')
   const [businessDate, setBusinessDate] = useState(todayISO())
   const [modelSnapshots, setModelSnapshots] = useState([])
   const [chatterSnapshots, setChatterSnapshots] = useState([])
@@ -398,6 +398,7 @@ export default function App() {
               return (
               <button key={tab.key} onClick={() => {
                 setActiveTab(tab.key)
+                sessionStorage.setItem('activeTab', tab.key)
                 if (tab.key === 'nachrichten') setUnreadMessages(0)
                 if (tab.key === 'models-comm') setUnreadModelChanges(0)
                 if (tab.key === 'chatters-comm') setOpenSwaps(0)
@@ -490,7 +491,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.3.8</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.3.9</span>
         </div>
       </div>
 
