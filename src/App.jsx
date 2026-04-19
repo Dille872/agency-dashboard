@@ -96,9 +96,6 @@ export default function App() {
         setUserRole(data.role)
         setUserRoles(roles)
         setUserDisplayName(name)
-        // Clear saved tab for portal users - they don't use the admin tabs
-        if (data.role === 'chatter' || data.role === 'model') {
-        }
       } else {
         setUserRole('chatter')
         setUserRoles(['chatter'])
@@ -493,7 +490,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.4.2</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.4.3</span>
         </div>
       </div>
 

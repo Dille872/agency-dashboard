@@ -352,6 +352,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
   }, [isPreview])
 
+  // Refs to avoid stale closures in intervals
+  const isOnlineRef = React.useRef(isOnline)
+  const currentLogIdRef = React.useRef(currentLogId)
+  const next7SchedulesRef = React.useRef(next7Schedules)
+  useEffect(() => { isOnlineRef.current = isOnline }, [isOnline])
+  useEffect(() => { currentLogIdRef.current = currentLogId }, [currentLogId])
+  useEffect(() => { next7SchedulesRef.current = next7Schedules }, [next7Schedules])
+
   useEffect(() => {
     if (!displayName) return
     loadMessages()
@@ -362,13 +370,52 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     loadMyReminders()
     loadMyAbsences()
     loadOnlineStatus()
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       loadMessages()
-      sendHeartbeat(isOnline)
+      sendHeartbeat(isOnlineRef.current)
+
+      // Auto-checkout check
+      if (!isOnlineRef.current || !currentLogIdRef.current) return
+      const now = new Date()
+      const berlinStr = now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+      const todayIsoStr = berlinStr
+      const nowMins = parseInt(now.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' }).replace(':', ''))
+      const nowH = Math.floor(nowMins / 100)
+      const nowM = nowMins % 100
+      const nowTotal = nowH * 60 + nowM
+
+      for (const sched of next7SchedulesRef.current) {
+        const times = sched.shift_times || {}
+        const assignments = sched.assignments || {}
+        for (const [key, val] of Object.entries(assignments)) {
+          const parts = key.split('__')
+          if (parts[1] !== todayIsoStr || val.chatter !== displayName) continue
+          const modelId = parts[0]
+          const shift = parts[2]
+          const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+          if (!timeStr) continue
+          const endStr = timeStr.split('-')[1]?.trim()
+          if (!endStr) continue
+          const [endH, endM] = endStr.split(':').map(Number)
+          if (isNaN(endH)) continue
+          const startStr = timeStr.split('-')[0]?.trim()
+          const [startH] = startStr ? startStr.split(':').map(Number) : [0]
+          let endTotal = endH * 60 + endM
+          const nowAdj = (endH < startH && nowTotal < startH * 60) ? nowTotal + 1440 : nowTotal
+          if (endH < startH) endTotal += 1440
+          if (nowAdj >= endTotal + 1) {
+            // Auto checkout
+            await supabase.from('shift_logs').update({ checked_out_at: new Date().toISOString() }).eq('id', currentLogIdRef.current)
+            setIsOnline(false)
+            setCurrentLogId(null)
+            setCheckInTime(null)
+            sendHeartbeat(false)
+            return
+          }
+        }
+      }
     }, 30000)
-    return () => {
-      clearInterval(interval)
-    }
+    return () => clearInterval(interval)
   }, [displayName])
 
   // Update heartbeat when online status changes
