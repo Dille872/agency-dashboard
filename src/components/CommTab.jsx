@@ -173,6 +173,14 @@ export default function CommTab({ session, section = 'nachrichten' }) {
     if (section === 'chatters') return 'chatters'
     return 'nachrichten'
   })
+  const [initialJumpDone, setInitialJumpDone] = useState(false)
+
+  useEffect(() => {
+    if (section === 'models' && !initialJumpDone && unreadRequests > 0) {
+      setActiveSection('content-requests')
+      setInitialJumpDone(true)
+    }
+  }, [unreadRequests])
   const [onlineStatuses, setOnlineStatuses] = useState({})
   const lastUpdateIdRef = React.useRef(0)
 
