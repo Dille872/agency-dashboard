@@ -519,6 +519,9 @@ export default function CommTab({ session, section = 'nachrichten' }) {
 
   const [contentRequests, setContentRequests] = useState([])
   const [unreadRequests, setUnreadRequests] = useState(0)
+  const [editingPayment, setEditingPayment] = useState(null) // req.id
+  const [editPrice, setEditPrice] = useState('')
+  const [editDeposit, setEditDeposit] = useState('')
 
   const loadContentRequests = async () => {
     const { data } = await supabase.from('content_requests').select('*').order('created_at', { ascending: false })
@@ -544,7 +547,8 @@ export default function CommTab({ session, section = 'nachrichten' }) {
         // Send Telegram to model
         const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).single()
         if (modelData?.telegram_id) {
-          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\n${req.request_text}${req.content_type ? '\nTyp: ' + req.content_type : ''}${req.price ? '\nPreis: $' + req.price : ''}${req.duration ? '\nLänge: ' + req.duration : ''}\n\n– Thirteen 87`
+          const deadlineText = req.deadline === 'asap' ? 'So schnell wie möglich' : req.deadline === 'hours' ? 'In den nächsten Stunden' : req.deadline === 'days' ? '1-2 Tage' : req.deadline === 'week' ? 'Diese Woche' : ''
+          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\n${req.request_text}${req.content_type ? '\nTyp: ' + req.content_type : ''}${req.price ? '\nPreis: $' + req.price : ''}${req.duration ? '\nLänge: ' + req.duration : ''}${deadlineText ? '\nDringlichkeit: ' + deadlineText : ''}\n\n– Thirteen 87`
           await sendTelegramMessage(modelData.telegram_id, msg)
         }
       }
@@ -982,35 +986,75 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                       </div>
                     )}
                     {req.price > 0 && (
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8, padding: '6px 8px', background: 'var(--bg-card)', borderRadius: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981' }}>Gesamt: ${req.price}</span>
-                        {req.deposit > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 11, color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
-                              Anzahlung: ${req.deposit} {req.deposit_paid ? '✓' : '(offen)'}
-                            </span>
-                            {!req.deposit_paid && (
-                              <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
+                      <div style={{ marginBottom: 8, padding: '6px 8px', background: 'var(--bg-card)', borderRadius: 6 }}>
+                        {editingPayment === req.id ? (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div>
+                              <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Gesamtpreis</label>
+                              <input type="number" value={editPrice} onChange={e => setEditPrice(e.target.value)}
+                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '3px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit' }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Anzahlung</label>
+                              <input type="number" value={editDeposit} onChange={e => setEditDeposit(e.target.value)}
+                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '3px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, marginTop: 12 }}>
+                              <button onClick={async () => {
+                                await supabase.from('content_requests').update({ price: parseFloat(editPrice) || 0, deposit: parseFloat(editDeposit) || 0 }).eq('id', req.id)
+                                setEditingPayment(null); loadContentRequests()
+                              }} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓</button>
+                              <button onClick={() => setEditingPayment(null)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981' }}>Gesamt: ${req.price}</span>
+                            {req.deposit > 0 ? (
+                              <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontSize: 11, color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
+                                    Anzahlung: ${req.deposit} {req.deposit_paid ? '✓' : '(offen)'}
+                                  </span>
+                                  {!req.deposit_paid && (
+                                    <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
+                                      style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
+                                  )}
+                                </div>
+                                {remainder > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ fontSize: 11, color: req.remainder_paid ? '#10b981' : '#ef4444' }}>
+                                      Rest: ${remainder} {req.remainder_paid ? '✓' : '(offen)'}
+                                    </span>
+                                    {!req.remainder_paid && (
+                                      <button onClick={async () => { await supabase.from('content_requests').update({ remainder_paid: true }).eq('id', req.id); loadContentRequests() }}
+                                        style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ fontSize: 11, color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
+                                  Betrag {req.deposit_paid ? '✓ bezahlt' : '(offen)'}
+                                </span>
+                                {!req.deposit_paid && (
+                                  <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
+                                    style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
+                                )}
+                              </div>
                             )}
+                            <button onClick={() => { setEditingPayment(req.id); setEditPrice(String(req.price || '')); setEditDeposit(String(req.deposit || '')) }}
+                              style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' }}>✎ Bearbeiten</button>
                           </div>
                         )}
-                        {req.deposit > 0 && remainder > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 11, color: req.remainder_paid ? '#10b981' : '#ef4444' }}>
-                              Rest: ${remainder} {req.remainder_paid ? '✓' : '(offen)'}
-                            </span>
-                            {!req.remainder_paid && (
-                              <button onClick={async () => { await supabase.from('content_requests').update({ remainder_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
-                            )}
-                          </div>
-                        )}
-                        {req.duration && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{req.duration}</span>}
-                        {req.quantity > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
-                        {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
-                          {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
-                        </span>}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                          {req.duration && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{req.duration}</span>}
+                          {req.quantity > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
+                          {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
+                            {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
+                          </span>}
+                        </div>
                       </div>
                     )}
 
