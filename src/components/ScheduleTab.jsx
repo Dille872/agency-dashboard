@@ -81,7 +81,15 @@ function getKW(date) {
 }
 
 export default function ScheduleTab({ session }) {
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
+  const [weekStart, setWeekStart] = useState(() => {
+    // Restore last viewed week from sessionStorage
+    const saved = sessionStorage.getItem('scheduleWeek')
+    if (saved) {
+      const d = new Date(saved + 'T00:00:00')
+      if (!isNaN(d.getTime())) return d
+    }
+    return getWeekStart(new Date())
+  })
   const [models, setModels] = useState([])
   const [chatters, setChatters] = useState([])
   const [schedule, setSchedule] = useState({})
@@ -112,7 +120,12 @@ export default function ScheduleTab({ session }) {
   const kw = getKW(weekStart)
 
   useEffect(() => { loadModels(); loadChatters(); loadRecurring(); checkShiftAlerts(); loadAbsences(); loadActiveReminders() }, [])
-  useEffect(() => { if (weekKey) loadSchedule() }, [weekKey])
+  useEffect(() => {
+    if (weekKey) {
+      loadSchedule()
+      sessionStorage.setItem('scheduleWeek', weekKey)
+    }
+  }, [weekKey])
 
   // Auto-save after 2 seconds of inactivity
   useEffect(() => {
