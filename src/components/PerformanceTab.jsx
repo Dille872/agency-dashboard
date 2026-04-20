@@ -1,13 +1,13 @@
-import React, { useMemo, useEffect, useRef } from 'react'
+import React, { useMemo, useEffect, useRef, useState } from 'react'
 
 const cardS = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }
 const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 12 }
 
-function BarChart({ labels, data, colors }) {
+function BarChart({ labels, data, colors, ready }) {
   const ref = useRef(null)
   const chartRef = useRef(null)
   useEffect(() => {
-    if (!window.Chart) return
+    if (!window.Chart || !ready) return
     if (chartRef.current) chartRef.current.destroy()
     chartRef.current = new window.Chart(ref.current, {
       type: 'bar',
@@ -30,10 +30,13 @@ function BarChart({ labels, data, colors }) {
 }
 
 export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
+  const [chartReady, setChartReady] = useState(!!window.Chart)
+
   useEffect(() => {
-    if (window.Chart) return
+    if (window.Chart) { setChartReady(true); return }
     const s = document.createElement('script')
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js'
+    s.onload = () => setChartReady(true)
     document.head.appendChild(s)
   }, [])
 
@@ -52,9 +55,10 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
     for (const snap of modelSnapshots) {
       const date = snap.businessDate
       for (const row of (snap.rows || [])) {
-        if (!row.name || !row.revenue) continue
-        if (!modelDailyRevenue[row.name]) modelDailyRevenue[row.name] = {}
-        modelDailyRevenue[row.name][date] = row.revenue
+        const modelName = row.creator || row.name
+        if (!modelName || !row.revenue) continue
+        if (!modelDailyRevenue[modelName]) modelDailyRevenue[modelName] = {}
+        modelDailyRevenue[modelName][date] = row.revenue
       }
     }
     const byWeekday = [[], [], [], [], [], [], []]
