@@ -11,6 +11,7 @@ import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
+import PerformanceTab from './components/PerformanceTab'
 import TodoTab from './components/TodoTab'
 import SocialTab from './components/SocialTab'
 import SetPasswordPage from './components/SetPasswordPage'
@@ -392,6 +393,7 @@ export default function App() {
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
               { key: 'divider2' },
+              { key: 'performance', label: 'Performance' },
               { key: 'schedule', label: 'Dienstplan' },
               { key: 'social', label: 'Social' },
               { key: 'divider3' },
@@ -495,7 +497,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.5.2</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.5.3</span>
         </div>
       </div>
 
@@ -521,6 +523,8 @@ export default function App() {
           <CommTab key="models-comm" session={session} section="models" displayName={userDisplayName} />
         ) : activeTab === 'chatters-comm' ? (
           <CommTab key="chatters-comm" session={session} section="chatters" displayName={userDisplayName} />
+        ) : activeTab === 'performance' ? (
+          <PerformanceTab modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'todos' ? (
           <TodoTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'social' ? (
