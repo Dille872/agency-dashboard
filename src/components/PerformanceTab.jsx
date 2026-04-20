@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react'
+import { supabase } from '../supabase'
 
 const cardS = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }
 const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 12 }
@@ -7,13 +8,13 @@ function BarChart({ labels, data, colors, ready }) {
   const ref = useRef(null)
   const chartRef = useRef(null)
   useEffect(() => {
-    if (!window.Chart || !ready) return
-    if (chartRef.current) chartRef.current.destroy()
+    if (!window.Chart || !ready || !ref.current) return
+    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null }
     chartRef.current = new window.Chart(ref.current, {
       type: 'bar',
       data: {
         labels,
-        datasets: [{ data, backgroundColor: colors, borderColor: colors.map(c => c.replace('33','aa')), borderWidth: 1.5, borderRadius: 4 }]
+        datasets: [{ data, backgroundColor: colors, borderColor: colors.map(c => c.replace('33','cc')), borderWidth: 1.5, borderRadius: 4 }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
@@ -24,24 +25,33 @@ function BarChart({ labels, data, colors, ready }) {
         }
       }
     })
-    return () => chartRef.current?.destroy()
-  }, [labels.join(), data.join()])
+    return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null } }
+  }, [ready, labels.join('|'), data.join('|')])
   return <canvas ref={ref} role="img" aria-label="Chart" />
 }
 
 export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
   const [chartReady, setChartReady] = useState(!!window.Chart)
+  const [schedules, setSchedules] = useState([])
 
   useEffect(() => {
-    if (window.Chart) { setChartReady(true); return }
-    const s = document.createElement('script')
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js'
-    s.onload = () => setChartReady(true)
-    document.head.appendChild(s)
+    if (window.Chart) { setChartReady(true) }
+    else {
+      const s = document.createElement('script')
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js'
+      s.onload = () => setChartReady(true)
+      document.head.appendChild(s)
+    }
+    // Load all saved schedules
+    supabase.from('schedule').select('week_start, assignments, shift_times').then(({ data }) => {
+      setSchedules(data || [])
+    })
   }, [])
 
   const analysis = useMemo(() => {
     if (!chatterSnapshots.length) return null
+
+    // Chatter daily revenue
     const chatterDailyRevenue = {}
     for (const snap of chatterSnapshots) {
       const date = snap.businessDate
@@ -51,6 +61,8 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
         chatterDailyRevenue[row.name][date] = (chatterDailyRevenue[row.name][date] || 0) + row.revenue
       }
     }
+
+    // Model daily revenue
     const modelDailyRevenue = {}
     for (const snap of modelSnapshots) {
       const date = snap.businessDate
@@ -61,6 +73,8 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
         modelDailyRevenue[modelName][date] = row.revenue
       }
     }
+
+    // Revenue by weekday
     const byWeekday = [[], [], [], [], [], [], []]
     for (const snap of chatterSnapshots) {
       const d = new Date(snap.businessDate + 'T12:00:00')
@@ -75,37 +89,84 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
     }))
     const bestDay = [...weekdayAvg].sort((a, b) => b.avg - a.avg)[0]
     const worstDay = [...weekdayAvg].filter(d => d.avg > 0).sort((a, b) => a.avg - b.avg)[0]
-    const chatters = Object.keys(chatterDailyRevenue)
-    const chatterAvg = chatters.map(name => {
+
+    // Chatter ranking
+    const chatterAvg = Object.keys(chatterDailyRevenue).map(name => {
       const vals = Object.values(chatterDailyRevenue[name])
       return { name, avg: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0 }
     }).sort((a, b) => b.avg - a.avg)
-    const models = Object.keys(modelDailyRevenue)
-    const modelAvg = models.map(name => {
+
+    // Model ranking
+    const modelAvg = Object.keys(modelDailyRevenue).map(name => {
       const vals = Object.values(modelDailyRevenue[name])
       return { name, avg: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0 }
     }).sort((a, b) => b.avg - a.avg)
-    const matrix = {}
-    for (const chatter of chatters.slice(0, 5)) {
-      matrix[chatter] = {}
-      for (const model of models.slice(0, 5)) {
-        const chatterDates = Object.keys(chatterDailyRevenue[chatter])
-        const modelDates = Object.keys(modelDailyRevenue[model] || {})
-        const overlap = chatterDates.filter(d => modelDates.includes(d))
-        if (overlap.length > 0) {
-          const vals = overlap.map(d => chatterDailyRevenue[chatter][d])
-          matrix[chatter][model] = vals.reduce((s, v) => s + v, 0) / vals.length
+
+    // Chatter × Model matrix from schedule assignments
+    // Find which chatter worked with which model on which day
+    const pairRevenue = {} // chatter → model → [revenues]
+    for (const sched of schedules) {
+      const assignments = sched.assignments || {}
+      // Build map: date → { modelId → chatterName }
+      const dayMap = {}
+      for (const [key, val] of Object.entries(assignments)) {
+        if (!val?.chatter || val.chatter === '__FREI__') continue
+        const parts = key.split('__')
+        const date = parts[1]
+        const modelId = parts[0]
+        if (!dayMap[date]) dayMap[date] = {}
+        if (!dayMap[date][modelId]) dayMap[date][modelId] = []
+        dayMap[date][modelId].push(val.chatter)
+      }
+      // For each day, match chatter revenue with models they worked
+      for (const [date, modelMap] of Object.entries(dayMap)) {
+        // Get all chatters working that day
+        const chattersOnDay = new Set()
+        for (const chatters of Object.values(modelMap)) chatters.forEach(c => chattersOnDay.add(c))
+
+        // Find model names from model_names field or try to match modelId to model name
+        for (const [modelId, chatters] of Object.entries(modelMap)) {
+          // Try to find model name from snapshots by modelId
+          // modelId is from models_contact – match to creator field in snapshots
+          for (const chatter of chatters) {
+            const chatterRev = chatterDailyRevenue[chatter]?.[date]
+            if (!chatterRev) continue
+            // Find which models were active this day
+            for (const snap of modelSnapshots) {
+              if (snap.businessDate !== date) continue
+              for (const row of (snap.rows || [])) {
+                const mName = row.creator || row.name
+                if (!mName) continue
+                if (!pairRevenue[chatter]) pairRevenue[chatter] = {}
+                if (!pairRevenue[chatter][mName]) pairRevenue[chatter][mName] = []
+                pairRevenue[chatter][mName].push(chatterRev)
+              }
+            }
+          }
         }
       }
     }
-    return { weekdayAvg, bestDay, worstDay, chatterAvg, modelAvg, matrix, chatters: chatters.slice(0, 5), models: models.slice(0, 5) }
-  }, [modelSnapshots, chatterSnapshots])
+
+    // Average per pair
+    const matrix = {}
+    for (const [chatter, models] of Object.entries(pairRevenue)) {
+      matrix[chatter] = {}
+      for (const [model, revs] of Object.entries(models)) {
+        matrix[chatter][model] = revs.reduce((s, v) => s + v, 0) / revs.length
+      }
+    }
+
+    const matrixChatters = Object.keys(matrix).slice(0, 6)
+    const matrixModels = [...new Set(Object.values(matrix).flatMap(m => Object.keys(m)))].slice(0, 6)
+
+    return { weekdayAvg, bestDay, worstDay, chatterAvg, modelAvg, matrix, matrixChatters, matrixModels }
+  }, [modelSnapshots, chatterSnapshots, schedules])
 
   if (!analysis) return (
     <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 60, fontSize: 14 }}>Noch keine Daten für Performance-Analyse</div>
   )
 
-  const { weekdayAvg, bestDay, worstDay, chatterAvg, modelAvg, matrix, chatters, models } = analysis
+  const { weekdayAvg, bestDay, worstDay, chatterAvg, modelAvg, matrix, matrixChatters, matrixModels } = analysis
 
   const getMatrixColor = (val, chatter) => {
     const vals = Object.values(matrix[chatter] || {}).filter(Boolean)
@@ -140,26 +201,26 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
         <div style={cardS}>
           <div style={labelS}>Umsatz nach Wochentag</div>
           <div style={{ position: 'relative', height: 180 }}>
-            <BarChart
+            <BarChart ready={chartReady}
               labels={weekdayAvg.map(d => d.day)}
               data={weekdayAvg.map(d => Math.round(d.avg))}
-              colors={weekdayAvg.map(d => d.day === bestDay?.day ? '#10b98133' : d.day === worstDay?.day ? '#ef444433' : '#7c3aed33')}
+              colors={weekdayAvg.map(d => d.day === bestDay?.day ? '#10b98155' : d.day === worstDay?.day ? '#ef444455' : '#7c3aed55')}
             />
           </div>
         </div>
         <div style={cardS}>
           <div style={labelS}>Chatter Ranking</div>
           <div style={{ position: 'relative', height: 180 }}>
-            <BarChart
+            <BarChart ready={chartReady}
               labels={chatterAvg.slice(0, 6).map(c => c.name)}
               data={chatterAvg.slice(0, 6).map(c => Math.round(c.avg))}
-              colors={chatterAvg.slice(0, 6).map((_, i) => i === 0 ? '#10b98133' : '#06b6d433')}
+              colors={chatterAvg.slice(0, 6).map((_, i) => i === 0 ? '#10b98155' : '#06b6d455')}
             />
           </div>
         </div>
       </div>
 
-      {chatters.length > 0 && models.length > 0 && (
+      {matrixChatters.length > 0 && matrixModels.length > 0 ? (
         <div style={cardS}>
           <div style={labelS}>Chatter × Model Performance Matrix</div>
           <div style={{ overflowX: 'auto' }}>
@@ -167,22 +228,22 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>Chatter</th>
-                  {models.map(m => <th key={m} style={{ textAlign: 'center', padding: '6px 8px', color: '#a78bfa', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>{m}</th>)}
+                  {matrixModels.map(m => <th key={m} style={{ textAlign: 'center', padding: '6px 8px', color: '#a78bfa', fontWeight: 500, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{m.replace(/_mj.*/, '').replace(/_.*/, '')}</th>)}
                   <th style={{ textAlign: 'center', padding: '6px 8px', color: 'var(--text-muted)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>Ø/Tag</th>
                 </tr>
               </thead>
               <tbody>
-                {chatters.map(chatter => {
+                {matrixChatters.map(chatter => {
                   const avg = chatterAvg.find(c => c.name === chatter)
                   return (
                     <tr key={chatter} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 8px', fontWeight: 600, color: 'var(--text-primary)' }}>{chatter}</td>
-                      {models.map(model => {
+                      {matrixModels.map(model => {
                         const val = matrix[chatter]?.[model]
                         const c = val ? getMatrixColor(val, chatter) : null
                         return (
                           <td key={model} style={{ textAlign: 'center', padding: '7px 8px' }}>
-                            {val ? <span style={{ background: c?.bg, color: c?.color, padding: '2px 8px', borderRadius: 4, fontWeight: 500 }}>${Math.round(val / 100) / 10}k</span>
+                            {val ? <span style={{ background: c?.bg, color: c?.color, padding: '2px 8px', borderRadius: 4, fontWeight: 500 }}>${(val / 1000).toFixed(1)}k</span>
                               : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                           </td>
                         )
@@ -194,7 +255,11 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8 }}>Grün = überdurchschnittlich · Gelb = Durchschnitt · Rot = unterdurchschnittlich</div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8 }}>Ø Umsatz des Chatters an Tagen wo er laut Dienstplan dem Model zugeteilt war · Grün = überdurchschnittlich · Rot = unterdurchschnittlich</div>
+        </div>
+      ) : (
+        <div style={{ ...cardS, color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', padding: 30 }}>
+          Matrix wird verfügbar sobald Dienstpläne mit Schicht-Zuweisungen gespeichert sind
         </div>
       )}
 
