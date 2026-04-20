@@ -220,49 +220,6 @@ export default function PerformanceTab({ modelSnapshots, chatterSnapshots }) {
         </div>
       </div>
 
-      {matrixChatters.length > 0 && matrixModels.length > 0 ? (
-        <div style={cardS}>
-          <div style={labelS}>Chatter × Model Performance Matrix</div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>Chatter</th>
-                  {matrixModels.map(m => <th key={m} style={{ textAlign: 'center', padding: '6px 8px', color: '#a78bfa', fontWeight: 500, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{m.replace(/_mj.*/, '').replace(/_.*/, '')}</th>)}
-                  <th style={{ textAlign: 'center', padding: '6px 8px', color: 'var(--text-muted)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>Ø/Tag</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matrixChatters.map(chatter => {
-                  const avg = chatterAvg.find(c => c.name === chatter)
-                  return (
-                    <tr key={chatter} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '7px 8px', fontWeight: 600, color: 'var(--text-primary)' }}>{chatter}</td>
-                      {matrixModels.map(model => {
-                        const val = matrix[chatter]?.[model]
-                        const c = val ? getMatrixColor(val, chatter) : null
-                        return (
-                          <td key={model} style={{ textAlign: 'center', padding: '7px 8px' }}>
-                            {val ? <span style={{ background: c?.bg, color: c?.color, padding: '2px 8px', borderRadius: 4, fontWeight: 500 }}>${(val / 1000).toFixed(1)}k</span>
-                              : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                          </td>
-                        )
-                      })}
-                      <td style={{ textAlign: 'center', padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{avg ? `$${Math.round(avg.avg).toLocaleString()}` : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8 }}>Ø Umsatz des Chatters an Tagen wo er laut Dienstplan dem Model zugeteilt war · Grün = überdurchschnittlich · Rot = unterdurchschnittlich</div>
-        </div>
-      ) : (
-        <div style={{ ...cardS, color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', padding: 30 }}>
-          Matrix wird verfügbar sobald Dienstpläne mit Schicht-Zuweisungen gespeichert sind
-        </div>
-      )}
-
       <div style={cardS}>
         <div style={labelS}>Insights</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
