@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react'
+import { supabase } from '../supabase'
 
 const cardS = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }
 const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 12 }
