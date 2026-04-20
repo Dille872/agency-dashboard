@@ -523,6 +523,8 @@ export default function CommTab({ session, section = 'nachrichten' }) {
   const [editingPayment, setEditingPayment] = useState(null) // req.id
   const [editPrice, setEditPrice] = useState('')
   const [editDeposit, setEditDeposit] = useState('')
+  const [editingText, setEditingText] = useState(null) // req.id
+  const [editTextValue, setEditTextValue] = useState('')
 
   // Jump to content-requests on first load if there are new ones
   useEffect(() => {
@@ -984,7 +986,36 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                         {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>{req.request_text}</div>
+                    {editingText === req.id ? (
+                      <div style={{ marginBottom: 6 }}>
+                        <textarea value={editTextValue} onChange={e => setEditTextValue(e.target.value)} rows={3}
+                          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, resize: 'vertical', fontFamily: 'inherit', outline: 'none' }} />
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                          <button onClick={async () => {
+                            await supabase.from('content_requests').update({
+                              edited_text: editTextValue.trim(),
+                              edited_by: session?.user?.email?.split('@')[0] || 'Admin',
+                              edited_at: new Date().toISOString(),
+                            }).eq('id', req.id)
+                            setEditingText(null); loadContentRequests()
+                          }} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 4, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
+                          <button onClick={() => setEditingText(null)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 2 }}>
+                          {req.edited_text || req.request_text}
+                        </div>
+                        {req.edited_text && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            ✎ Geändert von {req.edited_by} · {new Date(req.edited_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.edited_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        )}
+                        <button onClick={() => { setEditingText(req.id); setEditTextValue(req.edited_text || req.request_text) }}
+                          style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', marginTop: 3 }}>✎ Text bearbeiten</button>
+                      </div>
+                    )}
                     {req.image_urls?.length > 0 && (
                       <div style={{ display: 'flex', gap: 5, marginBottom: 6, flexWrap: 'wrap' }}>
                         {req.image_urls.map((url, i) => (
