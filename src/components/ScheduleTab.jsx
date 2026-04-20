@@ -130,6 +130,7 @@ export default function ScheduleTab({ session }) {
   // Auto-save after 2 seconds of inactivity
   useEffect(() => {
     if (!weekKey) return
+    if (Object.keys(schedule).length === 0 && !hasSavedData) return
     const timer = setTimeout(() => { saveSchedule() }, 2000)
     return () => clearTimeout(timer)
   }, [schedule, dayNotes, shiftTimes])
