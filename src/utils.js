@@ -301,6 +301,8 @@ export function computeChatterStatus(row, trend) {
     return { status: 'Strong', recommendation: 'Läuft stark' }
   if (trend === 'Steigend')
     return { status: 'Strong', recommendation: 'Gute Entwicklung' }
+  if (trend === 'Fallend' && (row.revenue || 0) >= 800)
+    return { status: 'Stabil', recommendation: 'Hoher Umsatz trotz Rückgang' }
   if (trend === 'Fallend' && row.buyRate < 25)
     return { status: 'Quality Issue', recommendation: 'Chat-Strategie prüfen' }
   if (trend === 'Fallend')
@@ -313,7 +315,8 @@ export function computeHeatmapStatus(current, previous) {
   if (!previous) return { label: 'B', color: '#f59e0b' }
   const pct = pctChange(current, previous)
   if (pct > 15) return { label: 'S', color: '#10b981' }
-  if (pct < -15) return { label: 'K', color: '#ef4444' }
+  if (pct < -15 && current < 800) return { label: 'K', color: '#ef4444' }
+  if (pct < -15 && current >= 800) return { label: 'B', color: '#f59e0b' }
   return { label: 'B', color: '#f59e0b' }
 }
 
