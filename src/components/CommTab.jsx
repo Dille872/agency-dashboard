@@ -146,7 +146,7 @@ function ModelAliasManager({ models }) {
   )
 }
 
-export default function CommTab({ session, section = 'nachrichten' }) {
+export default function CommTab({ session, section = 'nachrichten', displayName = '' }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
   const userName = getDisplayName(session?.user?.email)
 
@@ -994,7 +994,7 @@ export default function CommTab({ session, section = 'nachrichten' }) {
                           <button onClick={async () => {
                             await supabase.from('content_requests').update({
                               edited_text: editTextValue.trim(),
-                              edited_by: session?.user?.email?.split('@')[0] || 'Admin',
+                              edited_by: displayName || session?.user?.email?.split('@')[0] || 'Admin',
                               edited_at: new Date().toISOString(),
                             }).eq('id', req.id)
                             setEditingText(null); loadContentRequests()

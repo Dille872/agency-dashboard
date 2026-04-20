@@ -495,7 +495,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.5.0</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.5.1</span>
         </div>
       </div>
 
@@ -516,11 +516,11 @@ export default function App() {
         ) : activeTab === 'notes' ? (
           <NotesTab session={session} />
         ) : activeTab === 'nachrichten' ? (
-          <CommTab key="nachrichten" session={session} section="nachrichten" />
+          <CommTab key="nachrichten" session={session} section="nachrichten" displayName={userDisplayName} />
         ) : activeTab === 'models-comm' ? (
-          <CommTab key="models-comm" session={session} section="models" />
+          <CommTab key="models-comm" session={session} section="models" displayName={userDisplayName} />
         ) : activeTab === 'chatters-comm' ? (
-          <CommTab key="chatters-comm" session={session} section="chatters" />
+          <CommTab key="chatters-comm" session={session} section="chatters" displayName={userDisplayName} />
         ) : activeTab === 'todos' ? (
           <TodoTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'social' ? (
