@@ -439,17 +439,26 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   const loadOnlineStatus = async () => {
     if (!displayName) return
-    // Get all open logs
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const { data: openLogs, error } = await supabase
       .from('shift_logs')
       .select('*')
       .eq('display_name', displayName)
       .is('checked_out_at', null)
+      .gte('checked_in_at', yesterday)
       .order('checked_in_at', { ascending: false })
     if (error) console.error('loadOnlineStatus error:', error)
+
+    // Close all stale logs older than 24h
+    await supabase.from('shift_logs')
+      .update({ checked_out_at: new Date().toISOString() })
+      .eq('display_name', displayName)
+      .is('checked_out_at', null)
+      .lt('checked_in_at', yesterday)
+
     if (!openLogs || openLogs.length === 0) return
 
-    // Close all duplicate logs except the most recent
+    // Close duplicates
     if (openLogs.length > 1) {
       const toClose = openLogs.slice(1).map(l => l.id)
       await supabase.from('shift_logs')
