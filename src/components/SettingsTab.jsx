@@ -69,7 +69,7 @@ export default function SettingsTab() {
   const [chatterAliases, setChatterAliases] = useState([])
   const [models, setModels] = useState([])
   const [chatters, setChatters] = useState([])
-  const [newMA, setNewMA] = useState({ model_name: '', csv_name: '', alias_label: '' })
+  const [newMA, setNewMA] = useState({ model_name: '', csv_name: '', alias_label: '', telegram_id: '' })
   const [newCA, setNewCA] = useState({ chatter_name: '', csv_name: '', telegram_id: '' })
 
   // Surveys
@@ -89,9 +89,10 @@ export default function SettingsTab() {
   }, [])
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
-  const loadModels = async () => { const { data } = await supabase.from('models_contact').select('name').order('name'); setModels(data || []) }
+  const loadModels = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id').order('name'); setModels(data || []) }
   const loadChatters = async () => { const { data } = await supabase.from('chatters_contact').select('name').order('name'); setChatters(data || []) }
   const loadModelAliases = async () => { const { data } = await supabase.from('model_aliases').select('*').order('model_name'); setModelAliases(data || []) }
+  const loadModelTelegramIds = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id'); return data || [] }
   const loadChatterAliases = async () => { const { data } = await supabase.from('chatter_aliases').select('*').order('chatter_name'); setChatterAliases(data || []) }
 
   const loadSurveys = async () => {
@@ -382,8 +383,9 @@ export default function SettingsTab() {
 
   const addModelAlias = async () => {
     if (!newMA.model_name || !newMA.csv_name.trim()) return
-    await supabase.from('model_aliases').insert(newMA)
-    setNewMA({ model_name: '', csv_name: '', alias_label: '' }); loadModelAliases()
+    await supabase.from('model_aliases').insert({ model_name: newMA.model_name, csv_name: newMA.csv_name, alias_label: newMA.alias_label })
+    if (newMA.telegram_id) await supabase.from('models_contact').update({ telegram_id: newMA.telegram_id }).eq('name', newMA.model_name)
+    setNewMA({ model_name: '', csv_name: '', alias_label: '', telegram_id: '' }); loadModelAliases()
   }
 
   const addChatterAlias = async () => {
@@ -746,6 +748,10 @@ export default function SettingsTab() {
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Label</label>
                 <input value={newMA.alias_label} onChange={e => setNewMA(p => ({ ...p, alias_label: e.target.value }))} placeholder="MAIN" style={inputS} />
               </div>
+              <div style={{ flex: 1, minWidth: 100 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Telegram ID</label>
+                <input value={newMA.telegram_id} onChange={e => setNewMA(p => ({ ...p, telegram_id: e.target.value }))} placeholder="123456789" style={inputS} />
+              </div>
               <button onClick={addModelAlias} disabled={!newMA.model_name || !newMA.csv_name}
                 style={{ padding: '7px 14px', borderRadius: 7, background: newMA.model_name && newMA.csv_name ? '#f59e0b' : 'var(--border)', color: newMA.model_name && newMA.csv_name ? '#000' : 'var(--text-muted)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                 + Hinzufügen
@@ -756,7 +762,14 @@ export default function SettingsTab() {
             <div style={labelS}>Bestehende Zuordnungen</div>
             {models.filter(m => modelAliases.some(a => a.model_name === m.name)).map(m => (
               <div key={m.name} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>{m.name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>{m.name}</span>
+                  {m.telegram_id && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>· TG: {m.telegram_id}</span>}
+                  <button onClick={async () => {
+                    const id = prompt(`Telegram ID für ${m.name}:`, m.telegram_id || '')
+                    if (id !== null) { await supabase.from('models_contact').update({ telegram_id: id || null }).eq('name', m.name); loadModels() }
+                  }} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ TG</button>
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {modelAliases.filter(a => a.model_name === m.name).map(a => (
                     <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
