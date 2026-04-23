@@ -181,6 +181,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [noteText, setNoteText] = useState('')
   const [noteModel, setNoteModel] = useState('')
   const [noteShift, setNoteShift] = useState('')
+  const [hasShiftNote, setHasShiftNote] = useState(false)
+  const noteRef = React.useRef(null)
   const [sendingNote, setSendingNote] = useState(false)
   const [scheduleData, setScheduleData] = useState({})
   const [shiftTimes, setShiftTimes] = useState({})
@@ -384,6 +386,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     loadMyReminders()
     loadMyAbsences()
     loadOnlineStatus()
+    checkTodayNote()
     const interval = setInterval(async () => {
       loadMessages()
       sendHeartbeat(isOnlineRef.current)
@@ -481,6 +484,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .order('created_at', { ascending: false })
       .limit(10)
     setMessages(data || [])
+  }
+
+  const checkTodayNote = async () => {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+    const { data } = await supabase
+      .from('notes')
+      .select('id')
+      .ilike('text', `Schichtnotiz von ${displayName}%`)
+      .gte('created_at', today + 'T00:00:00')
+      .limit(1)
+    setHasShiftNote((data || []).length > 0)
   }
 
   const loadModels = async () => {
@@ -626,6 +640,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     setNoteModel('')
     setNoteShift('')
     setSendingNote(false)
+    setHasShiftNote(true)
     alert('✓ Notiz gesendet!')
   }
 
@@ -857,6 +872,29 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         )}
 
+        )}
+
+        {/* Schichtnotiz Reminder */}
+        {isOnline && !hasShiftNote && (
+          <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10, padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{ fontSize: 16, flexShrink: 0 }}>📝</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309', marginBottom: 3 }}>Schichtnotiz ausstehend</div>
+              <div style={{ fontSize: 11, color: '#b45309', marginBottom: 8 }}>Vergiss nicht deine Notiz für heute zu schreiben!</div>
+              <button onClick={() => { noteRef.current?.scrollIntoView({ behavior: 'smooth' }); setTimeout(() => noteRef.current?.querySelector('textarea')?.focus(), 400) }}
+                style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: '#f59e0b', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
+                Jetzt schreiben
+              </button>
+            </div>
+          </div>
+        )}
+        {isOnline && hasShiftNote && (
+          <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 10, padding: '8px 14px', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 14 }}>✅</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#065f46' }}>Schichtnotiz erledigt</span>
+          </div>
+        )}
+
         {/* KPIs */}
         {/* Last day label */}
         {lastStatDate && (
@@ -984,7 +1022,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 </div>
               ))}
             </div>
-            <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12 }}>
+            <div ref={noteRef} style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12 }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Schichtnotiz hinterlassen</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 120 }}>
