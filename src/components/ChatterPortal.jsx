@@ -872,8 +872,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         )}
 
-        )}
-
         {/* Schichtnotiz Reminder */}
         {isOnline && !hasShiftNote && (
           <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10, padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
