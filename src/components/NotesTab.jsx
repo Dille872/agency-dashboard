@@ -1,266 +1,214 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 
-function Card({ title, children }) {
-  return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-      {title && <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 14 }}>{title}</div>}
-      {children}
-    </div>
-  )
+const cardS = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }
+const badgeS = (bg, color) => ({ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: bg, color, display: 'inline-block' })
+
+function initials(name) {
+  if (!name) return '?'
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
+
+function parseNote(text) {
+  // Format: "Schichtnotiz von NAME · [MODEL] [SHIFT]: TEXT"
+  // or just free text
+  const match = text?.match(/^Schichtnotiz von ([^·:]+?)(?:\s*·\s*\[([^\]]*)\])?(?:\s*\[([^\]]*)\])?:\s*(.+)$/s)
+  if (match) {
+    return {
+      author: match[1]?.trim(),
+      model: match[2]?.trim() || null,
+      shift: match[3]?.trim() || null,
+      text: match[4]?.trim(),
+      isShiftNote: true,
+    }
+  }
+  // Try "Schichtnotiz von NAME: TEXT"
+  const simple = text?.match(/^Schichtnotiz von ([^:]+):\s*(.+)$/s)
+  if (simple) {
+    return { author: simple[1]?.trim(), model: null, shift: null, text: simple[2]?.trim(), isShiftNote: true }
+  }
+  return { author: null, model: null, shift: null, text, isShiftNote: false }
+}
+
+function formatTime(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
+}
+
+function formatDayLabel(dateStr) {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+  const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+  if (dateStr === today) return 'Heute'
+  if (dateStr === yesterday) return 'Gestern'
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+const AVATAR_COLORS = [
+  ['rgba(6,182,212,0.15)', '#0e7490'],
+  ['rgba(167,139,250,0.15)', '#6d28d9'],
+  ['rgba(16,185,129,0.15)', '#065f46'],
+  ['rgba(245,158,11,0.15)', '#92400e'],
+  ['rgba(239,68,68,0.15)', '#991b1b'],
+  ['rgba(99,102,241,0.15)', '#3730a3'],
+]
+const authorColors = {}
+let colorIdx = 0
+function getAuthorColor(name) {
+  if (!name) return AVATAR_COLORS[0]
+  if (!authorColors[name]) {
+    authorColors[name] = AVATAR_COLORS[colorIdx % AVATAR_COLORS.length]
+    colorIdx++
+  }
+  return authorColors[name]
 }
 
 export default function NotesTab({ session }) {
   const [notes, setNotes] = useState([])
-  const [text, setText] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [openModels, setOpenModels] = useState({})
-  const [openMonths, setOpenMonths] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [filterAuthor, setFilterAuthor] = useState('')
+  const [filterModel, setFilterModel] = useState('')
   const [openDays, setOpenDays] = useState({})
-  const author = session?.user?.email?.split('@')[0] || 'Admin'
+  const [newNote, setNewNote] = useState('')
+  const [sending, setSending] = useState(false)
+  const displayName = session?.user?.email?.split('@')[0] || 'Admin'
 
-  useEffect(() => {
-    loadNotes()
-    const channel = supabase.channel('notes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, () => loadNotes())
-      .subscribe()
-    return () => supabase.removeChannel(channel)
-  }, [])
+  useEffect(() => { loadNotes() }, [])
 
   const loadNotes = async () => {
-    const { data } = await supabase.from('notes').select('*').order('created_at', { ascending: false })
-    setNotes(data || [])
-  }
-
-  const addNote = async () => {
-    if (!text.trim()) return
     setLoading(true)
-    await supabase.from('notes').insert({ text: text.trim(), author, read: true })
-    setText('')
+    const { data } = await supabase.from('notes').select('*').order('created_at', { ascending: false }).limit(300)
+    setNotes(data || [])
     setLoading(false)
+    // Auto-open today
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+    setOpenDays(prev => ({ ...prev, [today]: true }))
   }
 
-  const deleteNote = async (id) => {
-    await supabase.from('notes').delete().eq('id', id)
+  const sendNote = async () => {
+    if (!newNote.trim()) return
+    setSending(true)
+    await supabase.from('notes').insert({ text: newNote.trim(), author: displayName })
+    setNewNote('')
+    setSending(false)
     loadNotes()
   }
 
-  const markDayRead = async (dayNoteIds) => {
-    await supabase.from('notes').update({ read: true }).in('id', dayNoteIds)
-    setNotes(prev => prev.map(n => dayNoteIds.includes(n.id) ? { ...n, read: true } : n))
-  }
+  const parsed = useMemo(() => notes.map(n => ({ ...n, parsed: parseNote(n.text) })), [notes])
 
-  const formatTime = (ts) => {
-    const d = new Date(ts)
-    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-  }
+  const authors = useMemo(() => [...new Set(parsed.map(n => n.parsed.author).filter(Boolean))].sort(), [parsed])
+  const models = useMemo(() => [...new Set(parsed.map(n => n.parsed.model).filter(Boolean))].sort(), [parsed])
 
-  const formatDate = (dateStr) => {
-    const d = new Date(dateStr + 'T00:00:00')
-    return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
-  }
+  const filtered = useMemo(() => parsed.filter(n => {
+    if (filterAuthor && n.parsed.author !== filterAuthor) return false
+    if (filterModel && n.parsed.model !== filterModel) return false
+    return true
+  }), [parsed, filterAuthor, filterModel])
 
-  const formatMonth = (monthStr) => {
-    const [y, m] = monthStr.split('-')
-    return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-  }
-
-  const parseShiftNote = (note) => {
-    const t = note.text
-    const authorMatch = t.match(/Schichtnotiz von ([^·]+)/)
-    const shiftMatch = t.match(/\[([^\]]+)\]\s*\[([^\]]+)\]/)
-    const contentMatch = t.match(/:\s*(.+)$/s)
-    return {
-      model: shiftMatch ? shiftMatch[1] : 'Unbekannt',
-      shift: shiftMatch ? shiftMatch[2] : '',
-      author: authorMatch ? authorMatch[1].trim() : note.author,
-      content: contentMatch ? contentMatch[1].trim() : t,
+  // Group by date
+  const grouped = useMemo(() => {
+    const groups = {}
+    for (const note of filtered) {
+      const date = new Date(note.created_at).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+      if (!groups[date]) groups[date] = []
+      groups[date].push(note)
     }
-  }
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]))
+  }, [filtered])
 
-  const shiftNotes = notes.filter(n => n.text?.startsWith('Schichtnotiz von '))
-  const regularNotes = notes.filter(n => !n.text?.startsWith('Schichtnotiz von '))
-
-  // Build model → month → day → notes structure
-  const tree = {}
-  for (const note of shiftNotes) {
-    const parsed = parseShiftNote(note)
-    const model = parsed.model
-    const dateStr = note.created_at.slice(0, 10)
-    const monthStr = dateStr.slice(0, 7)
-    if (!tree[model]) tree[model] = {}
-    if (!tree[model][monthStr]) tree[model][monthStr] = {}
-    if (!tree[model][monthStr][dateStr]) tree[model][monthStr][dateStr] = []
-    tree[model][monthStr][dateStr].push({ ...note, parsed })
-  }
-
-  const modelNames = Object.keys(tree).sort()
-
-  const toggleModel = (model) => {
-    setOpenModels(p => ({ ...p, [model]: !p[model] }))
-  }
-  const toggleMonth = (key) => {
-    setOpenMonths(p => ({ ...p, [key]: !p[key] }))
-  }
-  const toggleDay = async (key, noteIds, hasUnread) => {
-    setOpenDays(p => ({ ...p, [key]: !p[key] }))
-    if (!openDays[key] && hasUnread) {
-      await markDayRead(noteIds)
-    }
-  }
-
-  const modelColors = ['#f59e0b', '#10b981', '#a78bfa', '#ef4444', '#06b6d4', '#f97316']
-  const getModelColor = (i) => modelColors[i % modelColors.length]
+  const toggleDay = (date) => setOpenDays(prev => ({ ...prev, [date]: !prev[date] }))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 900 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       {/* New note */}
-      <Card title="Neue Notiz">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <textarea value={text} onChange={e => setText(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) addNote() }}
-            placeholder="Notiz schreiben... (Cmd+Enter zum Speichern)"
-            rows={3}
-            style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none' }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={addNote} disabled={loading || !text.trim()} style={{
-              background: text.trim() ? '#7c3aed' : 'var(--border)', color: text.trim() ? '#fff' : 'var(--text-muted)',
-              border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 13, fontWeight: 700,
-              cursor: text.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
-            }}>{loading ? 'Speichern...' : '+ Notiz speichern'}</button>
-          </div>
-        </div>
-      </Card>
+      <div style={{ ...cardS, padding: '12px 14px' }}>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>Neue Notiz</div>
+        <textarea
+          value={newNote}
+          onChange={e => setNewNote(e.target.value)}
+          placeholder="Notiz schreiben..."
+          rows={2}
+          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
+          onKeyDown={e => e.key === 'Enter' && e.ctrlKey && sendNote()}
+        />
+        <button onClick={sendNote} disabled={sending || !newNote.trim()}
+          style={{ background: newNote.trim() ? '#7c3aed' : 'var(--border)', color: newNote.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {sending ? 'Senden...' : '+ Notiz senden'}
+        </button>
+      </div>
 
-      {/* Shift notes archive */}
-      {modelNames.length > 0 && (
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid #1e1e3a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-              Schichtnotizen · {shiftNotes.length} Einträge
-            </div>
-            {shiftNotes.filter(n => !n.read).length > 0 && (
-              <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>
-                {shiftNotes.filter(n => !n.read).length} ungelesen
-              </div>
-            )}
-          </div>
-
-          {modelNames.map((model, mi) => {
-            const color = getModelColor(mi)
-            const allModelNotes = shiftNotes.filter(n => parseShiftNote(n).model === model)
-            const unreadCount = allModelNotes.filter(n => !n.read).length
-            const isOpen = openModels[model]
-            const months = Object.keys(tree[model]).sort().reverse()
-
-            return (
-              <div key={model} style={{ borderBottom: '1px solid #1e1e3a' }}>
-                {/* Model row */}
-                <div onClick={() => toggleModel(model)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', cursor: 'pointer', background: isOpen ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)', transition: 'transform .2s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0)' }}>▶</span>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color, flexShrink: 0 }}>{model[0]}</div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>{model}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color, background: color + '22', padding: '2px 8px', borderRadius: 4 }}>{allModelNotes.length}</span>
-                  {unreadCount > 0 && (
-                    <span style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: 4 }}>{unreadCount} neu</span>
-                  )}
-                </div>
-
-                {isOpen && (
-                  <div style={{ paddingLeft: 18, paddingBottom: 8 }}>
-                    {months.map(month => {
-                      const monthKey = model + '-' + month
-                      const isMonthOpen = openMonths[monthKey]
-                      const days = Object.keys(tree[model][month]).sort().reverse()
-                      const monthUnread = days.reduce((s, d) => s + tree[model][month][d].filter(n => !n.read).length, 0)
-                      const monthTotal = days.reduce((s, d) => s + tree[model][month][d].length, 0)
-
-                      return (
-                        <div key={month} style={{ borderLeft: '2px solid ' + color + '33', paddingLeft: 12, marginBottom: 4 }}>
-                          {/* Month row */}
-                          <div onClick={() => toggleMonth(monthKey)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', borderRadius: 7 }}>
-                            <span style={{ fontSize: 9, color: 'var(--text-muted)', transition: 'transform .2s', display: 'inline-block', transform: isMonthOpen ? 'rotate(90deg)' : 'rotate(0)' }}>▶</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>{formatMonth(month)}</span>
-                            <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-card2)', padding: '1px 7px', borderRadius: 4 }}>{monthTotal}</span>
-                            {monthUnread > 0 && <span style={{ fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.12)', padding: '1px 7px', borderRadius: 4 }}>{monthUnread} neu</span>}
-                          </div>
-
-                          {isMonthOpen && days.map(day => {
-                            const dayKey = model + '-' + day
-                            const isDayOpen = openDays[dayKey]
-                            const dayNotes = tree[model][month][day]
-                            const dayUnread = dayNotes.filter(n => !n.read).length
-                            const dayNoteIds = dayNotes.map(n => n.id)
-
-                            return (
-                              <div key={day} style={{ paddingLeft: 12 }}>
-                                {/* Day row */}
-                                <div onClick={() => toggleDay(dayKey, dayNoteIds, dayUnread > 0)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: 'pointer', borderRadius: 6 }}>
-                                  <span style={{ fontSize: 9, color: 'var(--text-muted)', transition: 'transform .2s', display: 'inline-block', transform: isDayOpen ? 'rotate(90deg)' : 'rotate(0)' }}>▶</span>
-                                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', flex: 1 }}>{formatDate(day)}</span>
-                                  <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-card2)', padding: '1px 6px', borderRadius: 4 }}>{dayNotes.length}</span>
-                                  {dayUnread > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block', flexShrink: 0 }} />}
-                                </div>
-
-                                {isDayOpen && (
-                                  <div style={{ padding: '4px 8px 8px' }}>
-                                    {dayNotes.map(note => (
-                                      <div key={note.id} style={{ background: note.read ? 'var(--bg-card2)' : 'rgba(245,158,11,0.05)', border: '1px solid ' + (note.read ? '#1e1e3a' : 'rgba(245,158,11,0.2)'), borderLeft: '3px solid #06b6d4', borderRadius: 8, padding: '10px 12px', marginBottom: 6 }}>
-                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 5, flexWrap: 'wrap' }}>
-                                          <span style={{ fontSize: 12, fontWeight: 700, color: '#06b6d4' }}>{note.parsed.author}</span>
-                                          {note.parsed.shift && <span style={{ fontSize: 10, background: 'rgba(124,58,237,0.15)', color: '#a78bfa', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>{note.parsed.shift}</span>}
-                                          {!note.read && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />}
-                                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', marginLeft: 'auto' }}>{formatTime(note.created_at)}</span>
-                                          <button onClick={() => deleteNote(note.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0 }}
-                                            onMouseEnter={e => e.target.style.color = '#ef4444'}
-                                            onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
-                                        </div>
-                                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{note.parsed.content}</div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+      {/* Filters */}
+      {(authors.length > 0 || models.length > 0) && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          {authors.length > 0 && (
+            <select value={filterAuthor} onChange={e => setFilterAuthor(e.target.value)}
+              style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}>
+              <option value="">Alle Chatter</option>
+              {authors.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          )}
+          {models.length > 0 && (
+            <select value={filterModel} onChange={e => setFilterModel(e.target.value)}
+              style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}>
+              <option value="">Alle Models</option>
+              {models.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          )}
         </div>
       )}
 
-      {/* Regular notes */}
-      <Card title={'Notizen (' + regularNotes.length + ')'}>
-        {regularNotes.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Notizen vorhanden</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {regularNotes.map(note => (
-              <div key={note.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: '3px solid #7c3aed', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', gap: 10, marginBottom: 5, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>{note.author}</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                      {new Date(note.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(note.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{note.text}</div>
-                </div>
-                <button onClick={() => deleteNote(note.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px', flexShrink: 0 }}
-                  onMouseEnter={e => e.target.style.color = '#ef4444'}
-                  onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
+      {loading && <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 30, fontSize: 13 }}>Laden...</div>}
+
+      {!loading && grouped.length === 0 && (
+        <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 30, fontSize: 13 }}>Noch keine Notizen</div>
+      )}
+
+      {grouped.map(([date, dayNotes]) => {
+        const isOpen = openDays[date]
+        const label = formatDayLabel(date)
+        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+        const isToday = date === today
+
+        return (
+          <div key={date} style={cardS}>
+            {/* Day header */}
+            <div onClick={() => toggleDay(date)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: isOpen ? 'var(--bg-card)' : 'var(--bg-card2)', cursor: 'pointer', borderBottom: isOpen ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{label}</span>
+                <span style={{ ...badgeS(isToday ? 'rgba(124,58,237,0.12)' : 'var(--bg-card2)', isToday ? '#7c3aed' : 'var(--text-muted)') }}>
+                  {dayNotes.length} {dayNotes.length === 1 ? 'Notiz' : 'Notizen'}
+                </span>
               </div>
-            ))}
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{isOpen ? '▲' : '▼'}</span>
+            </div>
+
+            {/* Notes */}
+            {isOpen && dayNotes.map((note, i) => {
+              const p = note.parsed
+              const [avatarBg, avatarColor] = getAuthorColor(p.author || note.author)
+              const name = p.author || note.author || 'Admin'
+              return (
+                <div key={note.id} style={{ display: 'flex', gap: 10, padding: '10px 14px', borderBottom: i < dayNotes.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start' }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: avatarBg, color: avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>
+                    {initials(name)}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{name}</span>
+                      {p.shift && <span style={badgeS('rgba(6,182,212,0.12)', '#0e7490')}>{p.shift}</span>}
+                      {p.model && <span style={badgeS('rgba(167,139,250,0.12)', '#6d28d9')}>{p.model}</span>}
+                      {!p.isShiftNote && <span style={badgeS('rgba(245,158,11,0.12)', '#92400e')}>Allgemein</span>}
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>{formatTime(note.created_at)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{p.text}</div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        )}
-      </Card>
+        )
+      })}
     </div>
   )
 }
