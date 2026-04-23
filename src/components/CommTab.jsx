@@ -168,6 +168,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [replyingTo, setReplyingTo] = useState(null) // msg.id
+  const [replyText, setReplyText] = useState('')
+  const [sendingReply, setSendingReply] = useState(false)
   const [activeSection, setActiveSection] = useState(() => {
     if (section === 'models') return 'models'
     if (section === 'chatters') return 'chatters'
@@ -423,6 +426,25 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   }
 
   useEffect(() => { loadAvailabilities() }, [])
+
+  const sendReply = async (msg) => {
+    if (!replyText.trim() || !msg.model_telegram_id) return
+    setSendingReply(true)
+    await sendTelegramMessage(msg.model_telegram_id, replyText.trim())
+    await supabase.from('messages').insert({
+      model_name: msg.model_name,
+      model_telegram_id: msg.model_telegram_id,
+      direction: 'out',
+      contact_type: msg.contact_type,
+      text: replyText.trim(),
+      status: 'sent',
+      read: true,
+    })
+    setReplyText('')
+    setReplyingTo(null)
+    setSendingReply(false)
+    loadMessages()
+  }
 
   const markAllRead = async () => {
     await supabase.from('messages').update({ read: true }).eq('direction', 'in').eq('read', false)
@@ -913,7 +935,32 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     </div>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{msg.text}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{msg.text}</div>
+                  {msg.model_telegram_id && (
+                    replyingTo === msg.id ? (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        <input
+                          autoFocus
+                          value={replyText}
+                          onChange={e => setReplyText(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendReply(msg)}
+                          placeholder={`Antwort an ${msg.model_name}...`}
+                          style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                        />
+                        <button onClick={() => sendReply(msg)} disabled={sendingReply || !replyText.trim()}
+                          style={{ padding: '6px 12px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                          {sendingReply ? '...' : '↑ Senden'}
+                        </button>
+                        <button onClick={() => { setReplyingTo(null); setReplyText('') }}
+                          style={{ padding: '6px 10px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setReplyingTo(msg.id); setReplyText('') }}
+                        style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'transparent', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        ↩ Antworten
+                      </button>
+                    )
+                  )}
                 </div>
               ))}
             </div>
