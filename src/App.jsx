@@ -144,7 +144,18 @@ export default function App() {
       .from('content_requests').select('*', { count: 'exact', head: true })
       .eq('status', 'neu')
 
-    setUnreadModelChanges((modelCount || 0) + (ccCount || 0) + (reqCount || 0))
+    // Unread model messages
+    const { count: modelMsgCount } = await supabase
+      .from('messages').select('*', { count: 'exact', head: true })
+      .eq('direction', 'in').eq('read', false).eq('contact_type', 'model')
+
+    // Unread chatter messages
+    const { count: chatterMsgCount } = await supabase
+      .from('messages').select('*', { count: 'exact', head: true })
+      .eq('direction', 'in').eq('read', false).eq('contact_type', 'chatter')
+
+    setUnreadModelChanges((modelCount || 0) + (ccCount || 0) + (reqCount || 0) + (modelMsgCount || 0))
+    setOpenSwaps(prev => prev) // keep existing swap count, add chatter msgs to crew badge below
 
     // Unread custom content for model portal
     if (userRole === 'model' && userDisplayName) {
@@ -161,9 +172,10 @@ export default function App() {
       .from('todos').select('*', { count: 'exact', head: true })
       .eq('completed', false)
     setOpenTodos(todoCount || 0)
+    const { count: swapCount } = await supabase
       .from('shift_swaps').select('*', { count: 'exact', head: true })
       .eq('status', 'offen')
-    setOpenSwaps(swapCount || 0)
+    setOpenSwaps((swapCount || 0) + (chatterMsgCount || 0))
   }
 
   const loadAllData = async () => {
@@ -388,7 +400,6 @@ export default function App() {
               { key: 'chatters', label: 'Chatters' },
               { key: 'divider1' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
-              { key: 'nachrichten', label: 'Nachrichten', badge: unreadMessages },
               { key: 'todos', label: 'ToDos', badge: openTodos },
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
@@ -497,7 +508,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.6.3</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.6.4</span>
         </div>
       </div>
 

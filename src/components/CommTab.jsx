@@ -590,7 +590,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadContentRequests()
   }
 
-  const inboxMessages = messages.filter(m => m.direction === 'in')
+  const inboxMessages = messages.filter(m => {
+    if (m.direction !== 'in') return false
+    if (section === 'models') return m.contact_type === 'model'
+    if (section === 'chatters') return m.contact_type === 'chatter'
+    return true
+  })
+  const historyMessages = messages.filter(m => {
+    if (section === 'models') return m.contact_type === 'model'
+    if (section === 'chatters') return m.contact_type === 'chatter'
+    return true
+  })
   const tdS = { padding: '10px 10px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-secondary)', fontSize: 12 }
   const thS = { padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #2e2e5a', whiteSpace: 'nowrap' }
 
@@ -603,12 +613,14 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'modelboards', label: `Boards${modelBoardActivity.filter(a => !a.read).length > 0 ? ` (${modelBoardActivity.filter(a => !a.read).length})` : ''}` },
           section === 'models' && { key: 'content-requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
+          section === 'models' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model').length },
+          section === 'models' && { key: 'history', label: 'Verlauf' },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
           section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
           section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
-          (section === 'nachrichten' || !section) && { key: 'nachrichten', label: 'Posteingang', badge: unreadCount },
-          (section === 'nachrichten' || !section) && { key: 'history', label: 'Verlauf' },
+          section === 'chatters' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter').length },
+          section === 'chatters' && { key: 'history', label: 'Verlauf' },
         ].filter(Boolean).map(s => (
           <button key={s.key} onClick={() => {
             setActiveSection(s.key)
@@ -907,7 +919,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
       {/* POSTEINGANG */}
       {activeSection === 'nachrichten' && (
-        <Card title={`Posteingang – Antworten (${inboxMessages.length})`}>
+        <Card title={`Nachrichten (${inboxMessages.length})`}>
           {unreadCount > 0 && (
             <div style={{ marginBottom: 12 }}>
               <button onClick={markAllRead} style={{ background: 'transparent', border: '1px solid #2e2e5a', color: 'var(--text-secondary)', borderRadius: 7, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -980,7 +992,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   <tr>{['Zeit', 'Name', 'Typ', 'Richtung', 'Von', 'Nachricht'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {messages.map(msg => (
+                  {historyMessages.map(msg => (
                     <tr key={msg.id}>
                       <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatTime(msg.created_at)}</td>
                       <td style={{ ...tdS, fontWeight: 600 }}>{msg.model_name}</td>
