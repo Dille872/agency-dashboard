@@ -439,6 +439,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       text: replyText.trim(),
       status: 'sent',
       read: true,
+      sent_by: displayName,
     })
     setReplyText('')
     setReplyingTo(null)
@@ -945,7 +946,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       </span>
                       {!msg.read && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>NEU</span>}
                     </div>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
+                      {!msg.read && (
+                        <button onClick={async () => { await supabase.from('messages').update({ read: true }).eq('id', msg.id); loadMessages() }}
+                          style={{ fontSize: 9, padding: '1px 7px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                          ✓ gelesen
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{msg.text}</div>
                   {msg.model_telegram_id && (
