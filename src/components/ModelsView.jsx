@@ -183,7 +183,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
 
       {/* ── Heatmap ── */}
       <Card title="Status-Heatmap – letzte Tage">
-        <Heatmap snapshots={modelSnapshots} nameKey="creator" topNames={heatmapNames} title="" />
+        <Heatmap snapshots={modelSnapshots} mode="model" topNames={heatmapNames} title="" />
       </Card>
 
       {/* ── Big Table ── */}

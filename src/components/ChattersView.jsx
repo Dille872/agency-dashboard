@@ -114,7 +114,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
           <DeltaList items={deltaItems} nameKey="name" />
         </Card>
         <Card title="Chatter-Heatmap – letzte Tage">
-          <Heatmap snapshots={chatterSnapshots} nameKey="name" topNames={heatmapNames} title="" />
+          <Heatmap snapshots={chatterSnapshots} mode="chatter" topNames={heatmapNames} title="" />
         </Card>
       </div>
 

@@ -80,6 +80,13 @@ export function formatMoney(value) {
   return `$${value.toFixed(2)}`
 }
 
+export function formatMoneyShort(value) {
+  if (value === undefined || value === null) return '$0'
+  const abs = Math.abs(value)
+  if (abs >= 1000) return `$${(value / 1000).toFixed(1)}k`
+  return `$${Math.round(value)}`
+}
+
 export function formatDeltaPct(value) {
   if (!value || value === 0) return '—'
   const sign = value > 0 ? '+' : ''
@@ -104,6 +111,13 @@ export function getWeekNumber(dateStr) {
 
 export function getMonthStr(dateStr) {
   return dateStr ? dateStr.slice(0, 7) : ''
+}
+
+// Get weekday (0=Mon, 6=Sun) for an ISO date string, in Berlin timezone.
+// Uses noon to avoid DST edge cases.
+export function getWeekdayIdx(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00')
+  return d.getDay() === 0 ? 6 : d.getDay() - 1
 }
 
 // ─── ROW PARSERS ─────────────────────────────────────────────────────────────
@@ -195,18 +209,15 @@ export function computeModelTrend(snapshots, creatorName) {
     if (row && row.revenue > 0) vals.push(row.revenue)
   }
   if (vals.length < 4) {
-    // Fallback: simple last vs prev
     if (vals.length < 2) return 'Seitwärts'
     const pct = pctChange(vals[vals.length - 1], vals[vals.length - 2])
     if (pct > 10) return 'Steigend'
     if (pct < -10) return 'Fallend'
     return 'Seitwärts'
   }
-  // Rolling 7-day average: last 7 vs previous 7
   const recent = vals.slice(-7)
   const previous = vals.slice(-14, -7)
   if (previous.length === 0) {
-    // Not enough data for 14 days - use halves
     const half = Math.floor(vals.length / 2)
     const recentHalf = vals.slice(half)
     const prevHalf = vals.slice(0, half)
@@ -215,7 +226,6 @@ export function computeModelTrend(snapshots, creatorName) {
     const pct = pctChange(avgRecent, avgPrev)
     if (pct > 8) return 'Steigend'
     if (pct < -8) return 'Fallend'
-    // Check instability
     const diffs = vals.slice(-5).map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
     if (diffs.filter(d => d > 20).length >= 2) return 'Instabil'
     return 'Seitwärts'
@@ -223,7 +233,6 @@ export function computeModelTrend(snapshots, creatorName) {
   const avgRecent = recent.reduce((s, v) => s + v, 0) / recent.length
   const avgPrev = previous.reduce((s, v) => s + v, 0) / previous.length
   const pct = pctChange(avgRecent, avgPrev)
-  // Check instability across recent period - only flag if very erratic
   const diffs = recent.map((v, i, a) => i > 0 ? Math.abs(pctChange(v, a[i - 1])) : 0).slice(1)
   if (diffs.filter(d => d > 40).length >= 3) return 'Instabil'
   if (pct > 8) return 'Steigend'
@@ -233,7 +242,6 @@ export function computeModelTrend(snapshots, creatorName) {
 
 export function computeChatterTrendFromSnapshots(snapshots, chatterName) {
   const sorted = [...snapshots].sort((a, b) => a.businessDate.localeCompare(b.businessDate))
-  // Only active days (50+ messages)
   const activeDays = []
   for (const snap of sorted) {
     const row = snap.rows.find(r => r.name === chatterName)
@@ -246,7 +254,6 @@ export function computeChatterTrendFromSnapshots(snapshots, chatterName) {
     if (pct < -10) return 'Fallend'
     return 'Seitwärts'
   }
-  // Last 5 active days vs previous 5 active days
   const recent = activeDays.slice(-5)
   const previous = activeDays.slice(-10, -5)
   const avgRecent = recent.reduce((s, v) => s + v, 0) / recent.length
@@ -310,6 +317,186 @@ export function computeChatterStatus(row, trend) {
   return { status: 'Stabil', recommendation: 'Weiter beobachten' }
 }
 
+// ─── HEATMAP — NEW LOGIC (v2) ────────────────────────────────────────────────
+//
+// Vergleicht jeden Tag mit dem Median der letzten 4 *gleichen* Wochentage
+// (Sonntag vs. Sonntage). Fallback auf Median der letzten 14 aktiven Tage,
+// wenn nicht genug gleiche Wochentage in der Historie sind.
+//
+// Zellen-Status:
+//   active=false       → '−'  (Off-Day, neutral grau)
+//   no data            → '?'  (Snapshot-Lücke, neutral grau)
+//   no baseline yet    → revenue ohne Farbe (zu wenig Historie)
+//   pct > +50%         → 'stark' grün
+//   pct > +15%         → 'gut' hellgrün
+//   −15% bis +15%      → 'normal' neutral
+//   pct < −15%         → 'schwach' gelb
+//   pct < −40%         → 'kritisch' rot
+
+export const HEATMAP_THRESHOLDS = {
+  STRONG_POS: 50,
+  POS: 15,
+  NEG: -15,
+  STRONG_NEG: -40,
+}
+
+// Off-Day-Definition.
+// Chatter: 'gearbeitet' wenn ≥50 Messages UND ≥60 Min Active Time.
+// Models: kein Off-Day-Konzept (Recurring läuft eh) — alles mit Revenue zählt.
+export function isActiveDay(row, mode = 'chatter') {
+  if (!row) return false
+  if (mode === 'model') {
+    return (row.revenue || 0) > 0
+  }
+  // chatter
+  return (row.sentMessages || 0) >= 50 && (row.activeMinutes || 0) >= 60
+}
+
+function median(arr) {
+  if (!arr.length) return null
+  const sorted = [...arr].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid]
+}
+
+// Liefert Median der Revenues der letzten N gleichen Wochentage,
+// oder fällt auf die letzten N aktiven Tage zurück wenn nicht genug
+// gleiche Wochentage da sind.
+//
+// Returns: { value: number, source: 'weekday' | 'recent' | null }
+export function getHeatmapBaseline(snapshots, name, beforeDate, mode = 'chatter') {
+  const targetWeekday = getWeekdayIdx(beforeDate)
+  const isModel = mode === 'model'
+
+  const sorted = [...snapshots]
+    .filter(s => s.businessDate < beforeDate)
+    .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
+
+  // Sammle pro Tag die row, falls Chatter aktiv war
+  const activeRowsForName = []
+  for (const snap of sorted) {
+    const row = snap.rows.find(r => (isModel ? r.creator : r.name) === name)
+    if (!row) continue
+    if (!isActiveDay(row, mode)) continue
+    activeRowsForName.push({ date: snap.businessDate, revenue: row.revenue || 0 })
+  }
+
+  if (activeRowsForName.length === 0) return { value: null, source: null }
+
+  // Versuch 1: gleiche Wochentage
+  const sameWeekday = activeRowsForName
+    .filter(r => getWeekdayIdx(r.date) === targetWeekday)
+    .slice(0, 4)
+    .map(r => r.revenue)
+
+  if (sameWeekday.length >= 3) {
+    return { value: median(sameWeekday), source: 'weekday' }
+  }
+
+  // Fallback: letzte aktive Tage (egal welcher Wochentag)
+  const recentActive = activeRowsForName.slice(0, 14).map(r => r.revenue)
+  if (recentActive.length >= 3) {
+    return { value: median(recentActive), source: 'recent' }
+  }
+
+  return { value: null, source: null }
+}
+
+// Berechnet Zell-Daten für die Heatmap.
+//
+// Returns: {
+//   kind: 'off' | 'missing' | 'no-baseline' | 'normal',
+//   tier: 'strong-pos' | 'pos' | 'neutral' | 'neg' | 'strong-neg' | null,
+//   color: string,
+//   bg: string,
+//   label: string,            // Hauptanzeige (Revenue oder Symbol)
+//   sublabel: string | null,  // ±% wenn baseline vorhanden
+//   pct: number | null,
+//   baseline: number | null,
+//   baselineSource: 'weekday' | 'recent' | null,
+// }
+export function computeHeatmapCell(row, baseline, isActive, mode = 'chatter') {
+  // Off-Day: Chatter hat nicht gearbeitet
+  if (mode === 'chatter' && !isActive) {
+    return {
+      kind: 'off',
+      tier: null,
+      color: 'var(--text-muted)',
+      bg: 'transparent',
+      label: '−',
+      sublabel: null,
+      pct: null,
+      baseline: baseline?.value ?? null,
+      baselineSource: baseline?.source ?? null,
+    }
+  }
+
+  // Daten fehlen komplett (kein row obwohl Snapshot da)
+  if (!row) {
+    return {
+      kind: 'missing',
+      tier: null,
+      color: 'var(--text-muted)',
+      bg: 'transparent',
+      label: '?',
+      sublabel: null,
+      pct: null,
+      baseline: baseline?.value ?? null,
+      baselineSource: baseline?.source ?? null,
+    }
+  }
+
+  const revenue = row.revenue || 0
+  const labelMain = formatMoneyShort(revenue)
+
+  // Keine Baseline (zu wenig Historie) — zeige Revenue ohne Farbe
+  if (!baseline || baseline.value === null) {
+    return {
+      kind: 'no-baseline',
+      tier: null,
+      color: 'var(--text-secondary)',
+      bg: 'var(--bg-card2)',
+      label: labelMain,
+      sublabel: null,
+      pct: null,
+      baseline: null,
+      baselineSource: null,
+    }
+  }
+
+  const pct = ((revenue - baseline.value) / baseline.value) * 100
+  let tier, color
+  if (pct > HEATMAP_THRESHOLDS.STRONG_POS) {
+    tier = 'strong-pos'; color = '#10b981'
+  } else if (pct > HEATMAP_THRESHOLDS.POS) {
+    tier = 'pos'; color = '#34d399'
+  } else if (pct >= HEATMAP_THRESHOLDS.NEG) {
+    tier = 'neutral'; color = 'var(--text-secondary)'
+  } else if (pct >= HEATMAP_THRESHOLDS.STRONG_NEG) {
+    tier = 'neg'; color = '#f59e0b'
+  } else {
+    tier = 'strong-neg'; color = '#ef4444'
+  }
+
+  const sign = pct > 0 ? '+' : ''
+  return {
+    kind: 'normal',
+    tier,
+    color,
+    bg: tier === 'neutral' ? 'var(--bg-card2)' : `${color}1a`,
+    label: labelMain,
+    sublabel: `${sign}${pct.toFixed(0)}%`,
+    pct,
+    baseline: baseline.value,
+    baselineSource: baseline.source,
+  }
+}
+
+// ─── LEGACY (DEPRECATED) ─────────────────────────────────────────────────────
+// Bleibt für Backward-Compat. Nicht mehr verwenden — nutze computeHeatmapCell.
+
 export function computeHeatmapStatus(current, previous) {
   if (current === null || current === undefined) return { label: '·', color: '#2e2e5a' }
   if (!previous) return { label: 'B', color: '#f59e0b' }
@@ -319,6 +506,8 @@ export function computeHeatmapStatus(current, previous) {
   if (pct < -15 && current >= 800) return { label: 'B', color: '#f59e0b' }
   return { label: 'B', color: '#f59e0b' }
 }
+
+// ─── SNAPSHOT HELPERS ────────────────────────────────────────────────────────
 
 export function getLast7Snapshots(snapshots, currentDate) {
   return [...snapshots]
