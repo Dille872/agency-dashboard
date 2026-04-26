@@ -1,4 +1,4 @@
-const BOT_TOKEN = '8396910457:AAEeZdCISpbNDfS00uy-EI-SBy1MsY0ztZ8'
+const BOT_TOKEN = '8396910457:AAEFFuyYVpmj58tW-hSYI9DW3yNilEmfBI8'
 const OWNER_ID = '1538601588'
 const API = `https://api.telegram.org/bot${BOT_TOKEN}`
 
