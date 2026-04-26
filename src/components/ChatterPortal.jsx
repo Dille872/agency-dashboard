@@ -440,6 +440,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     sendHeartbeat(isOnline)
   }, [isOnline])
 
+  // Sofort-Heartbeat wenn Tab wieder sichtbar wird (Backup gegen Browser-Throttling)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && isOnlineRef.current) {
+        sendHeartbeat(true)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   const loadOnlineStatus = async () => {
     if (!displayName) return
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
