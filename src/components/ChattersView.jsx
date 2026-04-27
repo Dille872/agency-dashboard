@@ -9,10 +9,15 @@ import { formatMoney, pctChange, safeDivide, getLast7Snapshots, getPreviousSnaps
 
 const statusColors = {
   'Strong': 'var(--green)',
+  'Stabil': 'var(--cyan)',
+  'Unter Minimum': 'var(--yellow)',
+  'Schwach': 'var(--red)',
   'Price Drop': 'var(--yellow)',
   'Activity Issue': 'var(--orange)',
   'Quality Issue': 'var(--red)',
-  'Stabil': 'var(--cyan)',
+  'Kurze Schicht': 'var(--text-muted)',
+  'Inaktiv': 'var(--text-muted)',
+  'Instabil': 'var(--orange)',
 }
 const trendColors = {
   'Steigend': 'var(--green)',
@@ -70,8 +75,8 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
   // Big table
   const tableRows = rows.map(r => {
-    // Δ Rev: vergleiche mit Median der letzten 4 gleichen Wochentage (nur aktive)
-    // Konsistent zur Heatmap-Logik. Off-Days zählen nicht.
+    // Δ vs. Wochentag: vergleicht jetzt $/Std (Volumen-unabhängig)
+    // Vorher: Revenue → schlecht für kurze Schichten mit hoher Effizienz
     const targetWeekday = (() => {
       const d = new Date(selectedDate + 'T12:00:00')
       return d.getDay() === 0 ? 6 : d.getDay() - 1
@@ -89,14 +94,14 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
       })
       .filter(Boolean)
       .slice(0, 4)
-    const baselineRev = sameWeekdayActive.length >= 3
+    const baselineRph = sameWeekdayActive.length >= 3
       ? (() => {
-          const sorted = [...sameWeekdayActive].map(rr => rr.revenue).sort((a, b) => a - b)
+          const sorted = [...sameWeekdayActive].map(rr => rr.revenuePerHour || 0).sort((a, b) => a - b)
           return sorted[Math.floor(sorted.length / 2)]
         })()
       : null
-    const revDelta = (baselineRev && baselineRev > 0)
-      ? pctChange(r.revenue, baselineRev)
+    const rphDelta = (baselineRph && baselineRph > 0)
+      ? pctChange(r.revenuePerHour || 0, baselineRph)
       : null
 
     // PPV-Deltas weiterhin gegen letzten aktiven Tag (kurzfristig sinnvoller)
@@ -108,8 +113,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
     const boughtPPVsDelta = prev ? r.boughtPPVs - prev.boughtPPVs : 0
     const buyRateDelta = prev ? r.buyRate - prev.buyRate : 0
 
-    // 7T Rev / 7T $/Std: nur aktive Tage (>=50 msg AND >=60 min) berücksichtigen
-    // Vorher: alle Tage mit irgendeiner Nachricht — verzerrt durch Off-Days
+    // 7T Rev / 7T $/Std: nur aktive Tage berücksichtigen
     const activeSnapsLast7 = last7.filter(s => {
       const rr = s.rows.find(x => x.name === r.name)
       return rr && rr.sentMessages >= 50 && rr.activeMinutes >= 60
@@ -122,7 +126,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
       : 0
     const trend = computeChatterTrend(chatterSnapshots, r.name)
     const { status, recommendation } = computeChatterStatus(r, trend)
-    return { ...r, revDelta, sentPPVsDelta, boughtPPVsDelta, buyRateDelta, rev7, rph7, trend, status, recommendation, activeDays7: activeSnapsLast7.length }
+    return { ...r, revDelta: rphDelta, sentPPVsDelta, boughtPPVsDelta, buyRateDelta, rev7, rph7, trend, status, recommendation, activeDays7: activeSnapsLast7.length }
   }).sort((a, b) => b.revenue - a.revenue)
 
   const tdStyle = { padding: '10px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12 }
@@ -179,7 +183,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             <table>
               <thead>
                 <tr>
-                  {['Name','Revenue','Δ vs. Wochentag','Aktiv (Min)','$/Std','7T Rev (aktiv)','7T $/Std (aktiv)','Trend','Antwortzeit','Sent PPVs Δ','Bought PPVs Δ','Buy Rate','Δ Buy Rate','Avg Rev/PPV','Status','Empfehlung'].map(h => (
+                  {['Name','Revenue','Δ $/Std vs. Wochentag','Aktiv (Min)','$/Std','7T Rev (aktiv)','7T $/Std (aktiv)','Trend','Antwortzeit','Sent PPVs Δ','Bought PPVs Δ','Buy Rate','Δ Buy Rate','Avg Rev/PPV','Status','Empfehlung'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>

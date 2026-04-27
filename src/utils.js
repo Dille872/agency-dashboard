@@ -274,16 +274,34 @@ export function computeChatterTrendFromSnapshots(snapshots, chatterName) {
   return 'Seitwärts'
 }
 
-export function computeModelStatus(row, trend) {
-  // Models mit komplett 0 Revenue sind nicht "instabil" sondern inaktiv
+export function computeModelStatus(row, trend, dailyTarget = null) {
+  // Models mit komplett 0 Revenue sind inaktiv
   if (!row.revenue || row.revenue < 5) {
     return { status: 'Inaktiv', recommendation: 'Kein Umsatz' }
   }
 
+  // Tagesziel-basierte Logik (nur Messages + Tips, ohne Subs)
+  // Subs zählen nicht weil die monatlich reinkommen, kein Tageserfolg
+  if (dailyTarget && dailyTarget > 0) {
+    const dailyRev = (row.messageRevenue || 0) + (row.tipsRevenue || 0)
+    const ratio = dailyRev / dailyTarget
+
+    if (ratio >= 1.4) {
+      return { status: 'Stark', recommendation: `Soll übertroffen ($${Math.round(dailyRev)} / Ziel $${Math.round(dailyTarget)})` }
+    }
+    if (ratio >= 1.0) {
+      return { status: 'Stabil', recommendation: `Soll erreicht ($${Math.round(dailyRev)} / Ziel $${Math.round(dailyTarget)})` }
+    }
+    if (ratio >= 0.7) {
+      return { status: 'OK', recommendation: `Knapp unter Soll ($${Math.round(dailyRev)} / Ziel $${Math.round(dailyTarget)})` }
+    }
+    return { status: 'Unterm Soll', recommendation: `Klar unter Ziel ($${Math.round(dailyRev)} / Ziel $${Math.round(dailyTarget)})` }
+  }
+
+  // Fallback: keine Tagesziel gesetzt — Trend-basierte Logik wie vorher
   const total = row.revenue || 1
   const msgPct = (row.messageRevenue / total) * 100
 
-  // Konkrete Probleme zuerst — actionable
   if (trend === 'Fallend' && row.avgChatValue > 0 && row.avgChatValue < 5)
     return { status: 'Preisproblem', recommendation: 'PPV-Preise erhöhen' }
   if (trend === 'Fallend' && msgPct < 50)
@@ -295,51 +313,52 @@ export function computeModelStatus(row, trend) {
   if (trend === 'Steigend')
     return { status: 'Skalieren', recommendation: 'Weiter so' }
 
-  // Preisproblem auch ohne Fallend, wenn Daten klar
   if (row.avgChatValue > 0 && row.avgChatValue < 5 && row.sellingChats > 10)
     return { status: 'Preisproblem', recommendation: 'PPV-Preise erhöhen' }
 
-  // Instabil ist letzter Fallback — nur bei echtem Volumen
   if (trend === 'Instabil' && row.revenue >= 200)
     return { status: 'Instabil', recommendation: 'Konsistenz verbessern' }
 
-  // Niedriges Volumen + seitwärts = Stabil, nicht Instabil
   if (row.revenue < 200)
-    return { status: 'Stabil', recommendation: 'Niedriges Volumen' }
+    return { status: 'Stabil', recommendation: 'Tagesziel setzen für klare Bewertung' }
 
-  return { status: 'Stabil', recommendation: 'Weiter beobachten' }
+  return { status: 'Stabil', recommendation: 'Tagesziel setzen für klare Bewertung' }
 }
 
 export function computeChatterStatus(row, trend) {
-  // Konkrete Probleme zuerst — die haben Vorrang vor Trend-Klassifizierung,
-  // weil sie konkrete actionable Empfehlungen geben.
-  if (row.activeMinutes > 60 && row.sentMessages < 20)
+  const rph = row.revenuePerHour || 0
+  const activeMin = row.activeMinutes || 0
+
+  // Kurze Schicht (< 90 min aktiv) → kein Urteil, Daten zu unsicher
+  if (activeMin > 0 && activeMin < 90) {
+    return { status: 'Kurze Schicht', recommendation: 'Zu wenig Daten für Urteil' }
+  }
+
+  // Komplett inaktiv (kein Output)
+  if (activeMin === 0 && (row.revenue || 0) < 5) {
+    return { status: 'Inaktiv', recommendation: 'Heute nicht gearbeitet' }
+  }
+
+  // Konkrete Probleme zuerst — actionable
+  if (activeMin > 60 && row.sentMessages < 20)
     return { status: 'Activity Issue', recommendation: 'Zu wenig Output' }
   if (row.buyRate < 20 && row.sentPPVs > 5)
     return { status: 'Quality Issue', recommendation: 'PPV-Qualität verbessern' }
   if (row.avgRevenuePerBoughtPPV < 8 && row.boughtPPVs > 3)
     return { status: 'Price Drop', recommendation: 'PPV-Preise erhöhen' }
 
-  // Steigender Trend dominiert, auch wenn schwankend
-  if (trend === 'Steigend' && row.revenuePerHour > 15)
+  // Effizienz-Bewertung über $/Std (Volumen-unabhängig)
+  // $100/Std = Minimum laut User. $150/Std = stark. $60/Std = klar unter Minimum.
+  if (rph >= 150)
     return { status: 'Strong', recommendation: 'Läuft stark' }
-  if (trend === 'Steigend')
-    return { status: 'Strong', recommendation: 'Gute Entwicklung' }
+  if (rph >= 100)
+    return { status: 'Stabil', recommendation: 'Solide Performance' }
+  if (rph >= 60)
+    return { status: 'Unter Minimum', recommendation: 'Effizienz erhöhen' }
+  if (rph > 0)
+    return { status: 'Schwach', recommendation: 'Stundenleistung kritisch' }
 
-  // Fallender Trend mit konkreten Problemen
-  if (trend === 'Fallend' && (row.revenue || 0) >= 800)
-    return { status: 'Stabil', recommendation: 'Hoher Umsatz trotz Rückgang' }
-  if (trend === 'Fallend' && row.buyRate < 25 && row.sentPPVs > 5)
-    return { status: 'Quality Issue', recommendation: 'Chat-Strategie prüfen' }
-  if (trend === 'Fallend')
-    return { status: 'Price Drop', recommendation: 'Upselling verbessern' }
-
-  // Instabil ist jetzt der LETZTE Fallback, nicht der erste —
-  // und nur wenn auch tatsächlich erratisch UND nennenswertes Volumen.
-  // Sonst Stabil (wenig Aktivität ist nicht automatisch instabil).
-  if (trend === 'Instabil' && (row.revenue || 0) >= 200)
-    return { status: 'Instabil', recommendation: 'Unregelmäßige Performance' }
-
+  // Fallback: kein revenue, aber aktiv
   return { status: 'Stabil', recommendation: 'Weiter beobachten' }
 }
 

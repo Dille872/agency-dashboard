@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
+import { supabase } from '../supabase'
 import Card from './Card'
 import KpiCard from './KpiCard'
 import RevenueTrendChart from './RevenueTrendChart'
@@ -15,9 +16,14 @@ import {
 
 const statusColors = {
   'Skalieren': 'var(--green)',
+  'Stark': 'var(--green)',
+  'Stabil': 'var(--cyan)',
+  'OK': 'var(--yellow)',
+  'Unterm Soll': 'var(--red)',
   'Preisproblem': 'var(--red)',
   'Beobachten': 'var(--yellow)',
   'Instabil': 'var(--orange)',
+  'Inaktiv': 'var(--text-muted)',
   'Gemischt': 'var(--cyan)',
 }
 const trendColors = {
@@ -28,6 +34,38 @@ const trendColors = {
 }
 
 export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapshots, onDateChange }) {
+  const [modelsContact, setModelsContact] = useState([])
+  const [editingTarget, setEditingTarget] = useState(null) // creator-name being edited
+  const [targetInput, setTargetInput] = useState('')
+
+  useEffect(() => {
+    loadModelsContact()
+  }, [])
+
+  const loadModelsContact = async () => {
+    const { data } = await supabase.from('models_contact').select('id, name, daily_revenue_target')
+    setModelsContact(data || [])
+  }
+
+  const getModelTarget = (creator) => {
+    // Match per Name (case-insensitive, ohne Emoji-Sonderzeichen)
+    const normalized = (s) => (s || '').toLowerCase().replace(/[^\w\s]/g, '').trim()
+    const target = normalized(creator)
+    const m = modelsContact.find(mc => normalized(mc.name) === target)
+    return m?.daily_revenue_target || null
+  }
+
+  const saveTarget = async (creator, value) => {
+    const normalized = (s) => (s || '').toLowerCase().replace(/[^\w\s]/g, '').trim()
+    const target = normalized(creator)
+    const m = modelsContact.find(mc => normalized(mc.name) === target)
+    if (!m) return
+    const num = parseFloat(value) || null
+    await supabase.from('models_contact').update({ daily_revenue_target: num }).eq('id', m.id)
+    setModelsContact(prev => prev.map(x => x.id === m.id ? { ...x, daily_revenue_target: num } : x))
+    setEditingTarget(null)
+  }
+
   const currentSnap = modelSnapshots.find(s => s.businessDate === selectedDate)
   const rows = currentSnap?.rows || []
   const prevSnap = getPreviousSnapshot(modelSnapshots, selectedDate)
@@ -109,8 +147,11 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
     const chats7 = safeDivide(snapsWith.reduce((s, snap) => s + (snap.rows.find(rr => rr.creator === r.creator)?.sellingChats || 0), 0), snapsWith.length)
     const avgChat7 = safeDivide(snapsWith.reduce((s, snap) => s + (snap.rows.find(rr => rr.creator === r.creator)?.avgChatValue || 0), 0), snapsWith.length)
     const trend = computeModelTrend(modelSnapshots, r.creator)
-    const { status, recommendation } = computeModelStatus(r, trend)
-    return { ...r, revDeltaRow, subsDelta, chatsDelta, avgChatDelta, rev7, subs7, chats7, avgChat7, trend, status, recommendation }
+    const dailyTarget = getModelTarget(r.creator)
+    const dailyRev = (r.messageRevenue || 0) + (r.tipsRevenue || 0)
+    const targetRatio = dailyTarget > 0 ? dailyRev / dailyTarget : null
+    const { status, recommendation } = computeModelStatus(r, trend, dailyTarget)
+    return { ...r, revDeltaRow, subsDelta, chatsDelta, avgChatDelta, rev7, subs7, chats7, avgChat7, trend, status, recommendation, dailyTarget, dailyRev, targetRatio }
   }).sort((a, b) => b.revenue - a.revenue)
 
   const tdStyle = { padding: '10px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12 }
@@ -183,7 +224,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
 
       {/* ── Heatmap ── */}
       <Card title="Status-Heatmap – letzte Tage">
-        <Heatmap snapshots={modelSnapshots} mode="model" topNames={heatmapNames} title="" />
+        <Heatmap snapshots={modelSnapshots} nameKey="creator" topNames={heatmapNames} title="" />
       </Card>
 
       {/* ── Big Table ── */}
@@ -208,7 +249,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
             <table>
               <thead>
                 <tr>
-                  {['Model','Revenue','Δ Rev','7T Rev','Δ Subs','7T Subs','Δ Chats','7T Chats','Δ AvgChat','7T AvgChat','Trend','Status','Empfehlung'].map(h => (
+                  {['Model','Revenue','Δ Rev','7T Rev','Δ Subs','7T Subs','Δ Chats','7T Chats','Δ AvgChat','7T AvgChat','Trend','Tagesziel','Heute (Msg+Tips)','Status','Empfehlung'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -227,6 +268,34 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                     <td style={tdStyle}><span style={deltaStyle(r.avgChatDelta)}>{r.avgChatDelta ? (r.avgChatDelta > 0 ? '+' : '') + r.avgChatDelta.toFixed(1) + '%' : '—'}</span></td>
                     <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(r.avgChat7)}</td>
                     <td style={tdStyle}><span style={{ color: trendColors[r.trend] || 'var(--text-secondary)', fontWeight: 600, fontSize: 11 }}>{r.trend}</span></td>
+                    <td style={tdStyle}>
+                      {editingTarget === r.creator ? (
+                        <input
+                          type="number"
+                          value={targetInput}
+                          autoFocus
+                          onChange={e => setTargetInput(e.target.value)}
+                          onBlur={() => saveTarget(r.creator, targetInput)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveTarget(r.creator, targetInput)
+                            if (e.key === 'Escape') setEditingTarget(null)
+                          }}
+                          style={{ width: 70, padding: '3px 6px', background: 'var(--bg-input)', border: '1px solid var(--border-bright)', borderRadius: 4, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => { setEditingTarget(r.creator); setTargetInput(r.dailyTarget || '') }}
+                          style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: r.dailyTarget ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                          title="Klicken um Tagesziel zu setzen"
+                        >
+                          {r.dailyTarget ? formatMoney(r.dailyTarget) : '— setzen'}
+                        </button>
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: r.targetRatio === null ? 'var(--text-muted)' : r.targetRatio >= 1 ? 'var(--green)' : r.targetRatio >= 0.7 ? 'var(--yellow)' : 'var(--red)' }}>
+                      {formatMoney(r.dailyRev)}
+                      {r.targetRatio !== null && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>{(r.targetRatio * 100).toFixed(0)}%</span>}
+                    </td>
                     <td style={tdStyle}><span style={{ background: `${statusColors[r.status]}22`, color: statusColors[r.status] || 'var(--text-secondary)', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.status}</span></td>
                     <td style={{ ...tdStyle, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{r.recommendation}</td>
                   </tr>
