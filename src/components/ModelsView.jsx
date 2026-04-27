@@ -233,21 +233,51 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       </Card>
 
       {/* ── Tagesziel-Übersicht (gruppiert nach echtem Model) ── */}
-      <Card title="🎯 Tagesziele heute">
+      <Card title="🎯 Tagesziele heute · Monatsfortschritt">
         {(() => {
-          // Gruppieren nach model_name (aus model_aliases)
+          // Aktueller Monat des selectedDate
+          const selDateObj = new Date(selectedDate + 'T12:00:00')
+          const monthYear = selDateObj.getFullYear()
+          const monthNum = selDateObj.getMonth() // 0-indexed
+          const dayOfMonth = selDateObj.getDate()
+          const daysInMonth = new Date(monthYear, monthNum + 1, 0).getDate()
+          const monthIso = `${monthYear}-${String(monthNum + 1).padStart(2, '0')}`
+
+          // Alle Snapshots dieses Monats bis einschließlich selectedDate
+          const monthSnapshots = modelSnapshots.filter(s =>
+            s.businessDate.startsWith(monthIso) && s.businessDate <= selectedDate
+          )
+
+          // Gruppieren nach model_name (aus model_aliases) für heute
           const groups = {}
           for (const r of rows) {
             const groupName = getModelGroup(r.creator)
             if (!groups[groupName]) {
-              groups[groupName] = { modelName: groupName, dailyRev: 0, totalRev: 0, variants: [] }
+              groups[groupName] = {
+                modelName: groupName,
+                dailyRev: 0, // heute Msg+Tips
+                totalRev: 0, // heute Total
+                monthMsgTips: 0, // Monat kumuliert Msg+Tips
+                monthTotal: 0, // Monat kumuliert Total
+                variants: []
+              }
             }
             groups[groupName].dailyRev += (r.messageRevenue || 0) + (r.tipsRevenue || 0)
             groups[groupName].totalRev += r.revenue || 0
             groups[groupName].variants.push(r.creator)
           }
+
+          // Monats-Werte aufaddieren
+          for (const snap of monthSnapshots) {
+            for (const r of snap.rows) {
+              const groupName = getModelGroup(r.creator)
+              if (!groups[groupName]) continue // Nur Models die heute auch da sind
+              groups[groupName].monthMsgTips += (r.messageRevenue || 0) + (r.tipsRevenue || 0)
+              groups[groupName].monthTotal += r.revenue || 0
+            }
+          }
+
           const groupRows = Object.values(groups).sort((a, b) => {
-            // Erst Models mit Ziel (sortiert nach Total Revenue), dann Models ohne Ziel ans Ende
             const aHasTarget = targets[a.modelName] > 0
             const bHasTarget = targets[b.modelName] > 0
             if (aHasTarget && !bHasTarget) return -1
@@ -264,7 +294,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
               <table>
                 <thead>
                   <tr>
-                    {['Model', 'Heute (Msg+Tips)', 'Total Revenue', 'Tagesziel', 'Erreicht', 'Status', 'Varianten'].map(h => (
+                    {['Model', 'Heute Msg+Tips', 'Heute Total', 'Tagesziel', 'Heute %', 'Monat Msg+Tips', 'Monat Total', 'Monatsziel', 'Soll bis heute', 'Monat %', 'Status', 'Varianten'].map(h => (
                       <th key={h} style={thStyle}>{h}</th>
                     ))}
                   </tr>
@@ -272,23 +302,34 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                 <tbody>
                   {groupRows.map((g, i) => {
                     const target = targets[g.modelName]
-                    const ratio = target > 0 ? g.dailyRev / target : null
+                    const dailyRatio = target > 0 ? g.dailyRev / target : null
+                    const monthlyTarget = target > 0 ? target * daysInMonth : null
+                    const sollBisHeute = target > 0 ? target * dayOfMonth : null
+                    const monthRatio = sollBisHeute > 0 ? g.monthMsgTips / sollBisHeute : null
+
                     let status = '—'
                     let statusColor = 'var(--text-muted)'
-                    if (ratio !== null) {
-                      if (ratio >= 1.4) { status = 'Stark'; statusColor = 'var(--green)' }
-                      else if (ratio >= 1.0) { status = 'Soll erreicht'; statusColor = 'var(--green)' }
-                      else if (ratio >= 0.7) { status = 'OK'; statusColor = 'var(--yellow)' }
-                      else { status = 'Unterm Soll'; statusColor = 'var(--red)' }
+                    // Status basiert auf MONATs-Fortschritt (Soll bis heute), nicht nur Tag
+                    // Damit ein einzelner schwacher Tag nicht alarmierend wirkt
+                    if (monthRatio !== null) {
+                      if (monthRatio >= 1.2) { status = 'Über Plan'; statusColor = 'var(--green)' }
+                      else if (monthRatio >= 1.0) { status = 'Auf Kurs'; statusColor = 'var(--green)' }
+                      else if (monthRatio >= 0.85) { status = 'Knapp unter Plan'; statusColor = 'var(--yellow)' }
+                      else if (monthRatio >= 0.6) { status = 'Hinterher'; statusColor = 'var(--orange)' }
+                      else { status = 'Stark hinterher'; statusColor = 'var(--red)' }
                     } else if (g.totalRev < 5) {
                       status = 'Inaktiv'
                     } else {
                       status = 'Kein Ziel definiert'
                     }
+
+                    // Progress-Bar Style für Monat-%
+                    const barWidth = monthRatio !== null ? Math.min(monthRatio * 100, 150) : 0
+
                     return (
                       <tr key={g.modelName} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
                         <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{g.modelName}</td>
-                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600, color: ratio === null ? 'var(--text-muted)' : ratio >= 1 ? 'var(--green)' : ratio >= 0.7 ? 'var(--yellow)' : 'var(--red)' }}>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600, color: dailyRatio === null ? 'var(--text-muted)' : dailyRatio >= 1 ? 'var(--green)' : dailyRatio >= 0.7 ? 'var(--yellow)' : 'var(--red)' }}>
                           {formatMoney(g.dailyRev)}
                         </td>
                         <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(g.totalRev)}</td>
@@ -316,8 +357,28 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                             </button>
                           )}
                         </td>
-                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600, color: statusColor }}>
-                          {ratio !== null ? `${(ratio * 100).toFixed(0)}%` : '—'}
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600, color: dailyRatio === null ? 'var(--text-muted)' : dailyRatio >= 1 ? 'var(--green)' : dailyRatio >= 0.7 ? 'var(--yellow)' : 'var(--red)' }}>
+                          {dailyRatio !== null ? `${(dailyRatio * 100).toFixed(0)}%` : '—'}
+                        </td>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{formatMoney(g.monthMsgTips)}</td>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(g.monthTotal)}</td>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                          {monthlyTarget ? formatMoney(monthlyTarget) : '—'}
+                        </td>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                          {sollBisHeute ? formatMoney(sollBisHeute) : '—'}
+                        </td>
+                        <td style={tdStyle}>
+                          {monthRatio !== null ? (
+                            <div style={{ minWidth: 100 }}>
+                              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600, color: statusColor, marginBottom: 3 }}>
+                                {(monthRatio * 100).toFixed(0)}%
+                              </div>
+                              <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(barWidth, 100)}%`, height: '100%', background: statusColor, transition: 'width 0.3s' }} />
+                              </div>
+                            </div>
+                          ) : '—'}
                         </td>
                         <td style={tdStyle}>
                           <span style={{ background: `${statusColor}22`, color: statusColor, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{status}</span>
@@ -331,7 +392,9 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                 </tbody>
               </table>
               <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
-                Tagesziel = Soll für Messages + Tips Revenue. Subs zählen nicht (kommen monatlich rein).
+                Tagesziel = Soll für Messages + Tips Revenue. Subs zählen nicht (kommen monatlich rein).<br />
+                Monatsziel = Tagesziel × {daysInMonth} Tage im Monat. Soll bis heute = Tagesziel × Tag {dayOfMonth}.<br />
+                Status basiert auf Monatsfortschritt vs. Soll bis heute (einzelne schwache Tage werden nicht überbewertet).
               </div>
             </div>
           )
