@@ -275,9 +275,15 @@ export function computeChatterTrendFromSnapshots(snapshots, chatterName) {
 }
 
 export function computeModelStatus(row, trend) {
+  // Models mit komplett 0 Revenue sind nicht "instabil" sondern inaktiv
+  if (!row.revenue || row.revenue < 5) {
+    return { status: 'Inaktiv', recommendation: 'Kein Umsatz' }
+  }
+
   const total = row.revenue || 1
   const msgPct = (row.messageRevenue / total) * 100
 
+  // Konkrete Probleme zuerst — actionable
   if (trend === 'Fallend' && row.avgChatValue > 0 && row.avgChatValue < 5)
     return { status: 'Preisproblem', recommendation: 'PPV-Preise erhöhen' }
   if (trend === 'Fallend' && msgPct < 50)
@@ -288,11 +294,20 @@ export function computeModelStatus(row, trend) {
     return { status: 'Skalieren', recommendation: 'Chatter-Zeit ausbauen' }
   if (trend === 'Steigend')
     return { status: 'Skalieren', recommendation: 'Weiter so' }
-  if (trend === 'Instabil')
-    return { status: 'Instabil', recommendation: 'Konsistenz verbessern' }
+
+  // Preisproblem auch ohne Fallend, wenn Daten klar
   if (row.avgChatValue > 0 && row.avgChatValue < 5 && row.sellingChats > 10)
     return { status: 'Preisproblem', recommendation: 'PPV-Preise erhöhen' }
-  return { status: 'Gemischt', recommendation: 'Weiter beobachten' }
+
+  // Instabil ist letzter Fallback — nur bei echtem Volumen
+  if (trend === 'Instabil' && row.revenue >= 200)
+    return { status: 'Instabil', recommendation: 'Konsistenz verbessern' }
+
+  // Niedriges Volumen + seitwärts = Stabil, nicht Instabil
+  if (row.revenue < 200)
+    return { status: 'Stabil', recommendation: 'Niedriges Volumen' }
+
+  return { status: 'Stabil', recommendation: 'Weiter beobachten' }
 }
 
 export function computeChatterStatus(row, trend) {
