@@ -272,23 +272,39 @@ export default function ScheduleTab({ session }) {
       setSchedule(autoSchedule)
       setDayNotes({})
 
-      // Load shift times from most recent previous week
-      const { data: prevWeeks } = await supabase
-        .from('schedule')
-        .select('shift_times, week_start')
-        .lt('week_start', weekKey)
-        .order('week_start', { ascending: false })
-        .limit(1)
-      if (prevWeeks && prevWeeks.length > 0 && prevWeeks[0].shift_times) {
-        const prevTimes = prevWeeks[0].shift_times
-        const cleanTimes = {}
-        for (const [k, v] of Object.entries(prevTimes)) {
-          // Key format: modelId__shift → keep as is since times are per model+shift not per day
-          cleanTimes[k] = String(v).replace(' (DE)', '').replace('(DE)', '')
+      // Schichtzeiten laden: zuerst aus models_contact.default_shift_times, dann Fallback auf letzte Woche
+      const { data: modelsWithDefaults } = await supabase
+        .from('models_contact')
+        .select('id, default_shift_times')
+      const defaultTimes = {}
+      for (const m of modelsWithDefaults || []) {
+        if (m.default_shift_times && typeof m.default_shift_times === 'object') {
+          for (const [shift, time] of Object.entries(m.default_shift_times)) {
+            defaultTimes[`${m.id}__${shift}`] = String(time).replace(' (DE)', '').replace('(DE)', '')
+          }
         }
-        setShiftTimes(cleanTimes)
+      }
+
+      if (Object.keys(defaultTimes).length > 0) {
+        setShiftTimes(defaultTimes)
       } else {
-        setShiftTimes({})
+        // Fallback: letzte Woche kopieren falls noch keine Defaults gesetzt sind
+        const { data: prevWeeks } = await supabase
+          .from('schedule')
+          .select('shift_times, week_start')
+          .lt('week_start', weekKey)
+          .order('week_start', { ascending: false })
+          .limit(1)
+        if (prevWeeks && prevWeeks.length > 0 && prevWeeks[0].shift_times) {
+          const prevTimes = prevWeeks[0].shift_times
+          const cleanTimes = {}
+          for (const [k, v] of Object.entries(prevTimes)) {
+            cleanTimes[k] = String(v).replace(' (DE)', '').replace('(DE)', '')
+          }
+          setShiftTimes(cleanTimes)
+        } else {
+          setShiftTimes({})
+        }
       }
       setHasSavedData(false)
     }
@@ -302,6 +318,24 @@ export default function ScheduleTab({ session }) {
     } else {
       await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, status: 'draft' })
     }
+
+    // Defaults in models_contact aktualisieren — pro Model die aktuellen Schichtzeiten als Default speichern
+    // Damit werden sie automatisch in zukünftige neue Wochen übernommen
+    const defaultsByModel = {}
+    for (const [key, val] of Object.entries(shiftTimes)) {
+      // Key-Format: modelId__shift
+      const parts = key.split('__')
+      if (parts.length !== 2) continue
+      const [modelIdStr, shift] = parts
+      const modelId = parseInt(modelIdStr)
+      if (!modelId || !val) continue
+      if (!defaultsByModel[modelId]) defaultsByModel[modelId] = {}
+      defaultsByModel[modelId][shift] = val
+    }
+    for (const [modelId, times] of Object.entries(defaultsByModel)) {
+      await supabase.from('models_contact').update({ default_shift_times: times }).eq('id', parseInt(modelId))
+    }
+
     setHasSavedData(true)
     setSaving(false)
   }
@@ -585,7 +619,6 @@ export default function ScheduleTab({ session }) {
           </button>
           <button onClick={saveSchedule} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {saving ? '↻ Speichert...' : '✓ Speichern'}
-            {saving ? 'Speichern...' : 'Speichern'}
           </button>
         </div>
       </div>
