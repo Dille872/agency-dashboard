@@ -89,7 +89,7 @@ export default function SettingsTab() {
   }, [])
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
-  const loadModels = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id').order('name'); setModels(data || []) }
+  const loadModels = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id, in_schedule').order('name'); setModels(data || []) }
   const loadChatters = async () => { const { data } = await supabase.from('chatters_contact').select('name').order('name'); setChatters(data || []) }
   const loadModelAliases = async () => { const { data } = await supabase.from('model_aliases').select('*').order('model_name'); setModelAliases(data || []) }
   const loadModelTelegramIds = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id'); return data || [] }
@@ -386,6 +386,24 @@ export default function SettingsTab() {
     await supabase.from('model_aliases').insert({ model_name: newMA.model_name, csv_name: newMA.csv_name, alias_label: newMA.alias_label })
     if (newMA.telegram_id) await supabase.from('models_contact').update({ telegram_id: newMA.telegram_id }).eq('name', newMA.model_name)
     setNewMA({ model_name: '', csv_name: '', alias_label: '', telegram_id: '' }); loadModelAliases()
+  }
+
+  const createNewModel = async () => {
+    const name = prompt('Name des neuen Models (so wie er in models_contact stehen soll, z.B. "Sophi"):')
+    if (!name || !name.trim()) return
+    const trimmed = name.trim()
+    const { error } = await supabase.from('models_contact').upsert({ name: trimmed, in_schedule: true }, { onConflict: 'name' })
+    if (error) {
+      alert('Fehler beim Anlegen: ' + error.message)
+      return
+    }
+    await loadModels()
+    alert(`Model "${trimmed}" wurde angelegt. Du kannst jetzt CSV-Aliases zuordnen.`)
+  }
+
+  const toggleInSchedule = async (modelName, current) => {
+    await supabase.from('models_contact').update({ in_schedule: !current }).eq('name', modelName)
+    await loadModels()
   }
 
   const addChatterAlias = async () => {
@@ -731,6 +749,17 @@ export default function SettingsTab() {
       {activeSection === 'model-aliases' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 700 }}>
           <div style={cardS}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={labelS}>Models verwalten</div>
+              <button onClick={createNewModel} style={{ padding: '6px 14px', borderRadius: 7, background: '#10b981', color: '#fff', border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                + Neues Model anlegen
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              Lege ein neues Model an bevor du CSV-Aliases zuordnest. Mit dem 📋-Toggle steuerst du ob es im Dienstplan auftaucht.
+            </div>
+          </div>
+          <div style={cardS}>
             <div style={labelS}>Neue Zuordnung</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div style={{ flex: 1, minWidth: 120 }}>
@@ -760,15 +789,26 @@ export default function SettingsTab() {
           </div>
           <div style={cardS}>
             <div style={labelS}>Bestehende Zuordnungen</div>
-            {models.filter(m => modelAliases.some(a => a.model_name === m.name)).map(m => (
-              <div key={m.name} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            {models.map(m => (
+              <div key={m.name} style={{ marginBottom: 12, opacity: m.in_schedule === false ? 0.55 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>{m.name}</span>
                   {m.telegram_id && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>· TG: {m.telegram_id}</span>}
                   <button onClick={async () => {
                     const id = prompt(`Telegram ID für ${m.name}:`, m.telegram_id || '')
                     if (id !== null) { await supabase.from('models_contact').update({ telegram_id: id || null }).eq('name', m.name); loadModels() }
                   }} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ TG</button>
+                  <button onClick={() => toggleInSchedule(m.name, m.in_schedule !== false)}
+                    title={m.in_schedule === false ? 'Aktivieren: Model wird wieder im Dienstplan angezeigt' : 'Deaktivieren: Model verschwindet aus dem Dienstplan'}
+                    style={{
+                      fontSize: 9, padding: '2px 8px', borderRadius: 3,
+                      background: m.in_schedule === false ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)',
+                      color: m.in_schedule === false ? 'var(--red)' : 'var(--green)',
+                      border: `1px solid ${m.in_schedule === false ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+                      cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700
+                    }}>
+                    {m.in_schedule === false ? '📋 Nicht im Plan' : '📋 Im Plan'}
+                  </button>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {modelAliases.filter(a => a.model_name === m.name).map(a => (
@@ -778,10 +818,13 @@ export default function SettingsTab() {
                       <button onClick={() => { supabase.from('model_aliases').delete().eq('id', a.id).then(loadModelAliases) }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 0 }}>✕</button>
                     </div>
                   ))}
+                  {modelAliases.filter(a => a.model_name === m.name).length === 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Keine CSV-Zuordnungen</span>
+                  )}
                 </div>
               </div>
             ))}
-            {modelAliases.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>Noch keine Zuordnungen</div>}
+            {models.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>Noch keine Models</div>}
           </div>
         </div>
       )}
