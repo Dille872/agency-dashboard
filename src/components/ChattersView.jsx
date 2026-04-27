@@ -70,20 +70,59 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
   // Big table
   const tableRows = rows.map(r => {
+    // Δ Rev: vergleiche mit Median der letzten 4 gleichen Wochentage (nur aktive)
+    // Konsistent zur Heatmap-Logik. Off-Days zählen nicht.
+    const targetWeekday = (() => {
+      const d = new Date(selectedDate + 'T12:00:00')
+      return d.getDay() === 0 ? 6 : d.getDay() - 1
+    })()
+    const sameWeekdayActive = [...chatterSnapshots]
+      .filter(s => s.businessDate < selectedDate)
+      .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
+      .map(s => {
+        const sd = new Date(s.businessDate + 'T12:00:00')
+        const wd = sd.getDay() === 0 ? 6 : sd.getDay() - 1
+        if (wd !== targetWeekday) return null
+        const row = s.rows.find(rr => rr.name === r.name)
+        if (!row || row.sentMessages < 50 || row.activeMinutes < 60) return null
+        return row
+      })
+      .filter(Boolean)
+      .slice(0, 4)
+    const baselineRev = sameWeekdayActive.length >= 3
+      ? (() => {
+          const sorted = [...sameWeekdayActive].map(rr => rr.revenue).sort((a, b) => a - b)
+          return sorted[Math.floor(sorted.length / 2)]
+        })()
+      : null
+    const revDelta = (baselineRev && baselineRev > 0)
+      ? pctChange(r.revenue, baselineRev)
+      : null
+
+    // PPV-Deltas weiterhin gegen letzten aktiven Tag (kurzfristig sinnvoller)
     const lastActivePrev = [...chatterSnapshots]
       .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
       .find(s => s.businessDate < selectedDate && s.rows.find(rr => rr.name === r.name && rr.sentMessages >= 50))
     const prev = lastActivePrev?.rows.find(p => p.name === r.name)
-    const revDelta = (prev && prev.revenue > 0) ? pctChange(r.revenue, prev.revenue) : null
     const sentPPVsDelta = prev ? r.sentPPVs - prev.sentPPVs : 0
     const boughtPPVsDelta = prev ? r.boughtPPVs - prev.boughtPPVs : 0
     const buyRateDelta = prev ? r.buyRate - prev.buyRate : 0
-    const snapsWith = last7.filter(s => s.rows.find(rr => rr.name === r.name && rr.sentMessages > 0))
-    const rev7 = safeDivide(snapsWith.reduce((s, snap) => s + (snap.rows.find(rr => rr.name === r.name)?.revenue || 0), 0), snapsWith.length)
-    const rph7 = safeDivide(snapsWith.reduce((s, snap) => s + (snap.rows.find(rr => rr.name === r.name)?.revenuePerHour || 0), 0), snapsWith.length)
+
+    // 7T Rev / 7T $/Std: nur aktive Tage (>=50 msg AND >=60 min) berücksichtigen
+    // Vorher: alle Tage mit irgendeiner Nachricht — verzerrt durch Off-Days
+    const activeSnapsLast7 = last7.filter(s => {
+      const rr = s.rows.find(x => x.name === r.name)
+      return rr && rr.sentMessages >= 50 && rr.activeMinutes >= 60
+    })
+    const rev7 = activeSnapsLast7.length > 0
+      ? activeSnapsLast7.reduce((s, snap) => s + (snap.rows.find(rr => rr.name === r.name)?.revenue || 0), 0) / activeSnapsLast7.length
+      : 0
+    const rph7 = activeSnapsLast7.length > 0
+      ? activeSnapsLast7.reduce((s, snap) => s + (snap.rows.find(rr => rr.name === r.name)?.revenuePerHour || 0), 0) / activeSnapsLast7.length
+      : 0
     const trend = computeChatterTrend(chatterSnapshots, r.name)
     const { status, recommendation } = computeChatterStatus(r, trend)
-    return { ...r, revDelta, sentPPVsDelta, boughtPPVsDelta, buyRateDelta, rev7, rph7, trend, status, recommendation }
+    return { ...r, revDelta, sentPPVsDelta, boughtPPVsDelta, buyRateDelta, rev7, rph7, trend, status, recommendation, activeDays7: activeSnapsLast7.length }
   }).sort((a, b) => b.revenue - a.revenue)
 
   const tdStyle = { padding: '10px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12 }
@@ -140,7 +179,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             <table>
               <thead>
                 <tr>
-                  {['Name','Revenue','Δ Rev','Aktiv (Min)','$/Std','7T Rev','7T $/Std','Trend','Antwortzeit','Sent PPVs Δ','Bought PPVs Δ','Buy Rate','Δ Buy Rate','Avg Rev/PPV','Status','Empfehlung'].map(h => (
+                  {['Name','Revenue','Δ vs. Wochentag','Aktiv (Min)','$/Std','7T Rev (aktiv)','7T $/Std (aktiv)','Trend','Antwortzeit','Sent PPVs Δ','Bought PPVs Δ','Buy Rate','Δ Buy Rate','Avg Rev/PPV','Status','Empfehlung'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>

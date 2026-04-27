@@ -296,24 +296,35 @@ export function computeModelStatus(row, trend) {
 }
 
 export function computeChatterStatus(row, trend) {
-  if (trend === 'Instabil')
-    return { status: 'Instabil', recommendation: 'Unregelmäßige Performance' }
+  // Konkrete Probleme zuerst — die haben Vorrang vor Trend-Klassifizierung,
+  // weil sie konkrete actionable Empfehlungen geben.
   if (row.activeMinutes > 60 && row.sentMessages < 20)
     return { status: 'Activity Issue', recommendation: 'Zu wenig Output' }
   if (row.buyRate < 20 && row.sentPPVs > 5)
     return { status: 'Quality Issue', recommendation: 'PPV-Qualität verbessern' }
   if (row.avgRevenuePerBoughtPPV < 8 && row.boughtPPVs > 3)
     return { status: 'Price Drop', recommendation: 'PPV-Preise erhöhen' }
+
+  // Steigender Trend dominiert, auch wenn schwankend
   if (trend === 'Steigend' && row.revenuePerHour > 15)
     return { status: 'Strong', recommendation: 'Läuft stark' }
   if (trend === 'Steigend')
     return { status: 'Strong', recommendation: 'Gute Entwicklung' }
+
+  // Fallender Trend mit konkreten Problemen
   if (trend === 'Fallend' && (row.revenue || 0) >= 800)
     return { status: 'Stabil', recommendation: 'Hoher Umsatz trotz Rückgang' }
-  if (trend === 'Fallend' && row.buyRate < 25)
+  if (trend === 'Fallend' && row.buyRate < 25 && row.sentPPVs > 5)
     return { status: 'Quality Issue', recommendation: 'Chat-Strategie prüfen' }
   if (trend === 'Fallend')
     return { status: 'Price Drop', recommendation: 'Upselling verbessern' }
+
+  // Instabil ist jetzt der LETZTE Fallback, nicht der erste —
+  // und nur wenn auch tatsächlich erratisch UND nennenswertes Volumen.
+  // Sonst Stabil (wenig Aktivität ist nicht automatisch instabil).
+  if (trend === 'Instabil' && (row.revenue || 0) >= 200)
+    return { status: 'Instabil', recommendation: 'Unregelmäßige Performance' }
+
   return { status: 'Stabil', recommendation: 'Weiter beobachten' }
 }
 
