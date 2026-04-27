@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const BOT_TOKEN = '8396910457:AAEeZdCISpbNDfS00uy-EI-SBy1MsY0ztZ8'
+const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
 
@@ -48,17 +48,19 @@ serve(async (_req) => {
       return new Response(JSON.stringify({ message: 'No live schedule found' }), { status: 200 })
     }
 
-    // Load online statuses - chatter is online if shift_online and last_seen < 2 min ago
+    // Load online statuses - chatter is online if shift_online and last_seen < 5 min ago
     const { data: onlineData } = await supabase.from('online_status').select('*')
     const shiftOnlineMap: Record<string, boolean> = {}
-    const cutoff = new Date(Date.now() - 120000)
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000)
     for (const s of onlineData || []) {
-      if (new Date(s.last_seen) > cutoff && s.shift_online) {
+      // Skip alert markers in online_status (legacy)
+      if (s.display_name?.startsWith('ALERTED_')) continue
+      if (s.shift_online && s.last_seen && new Date(s.last_seen) > cutoff) {
         shiftOnlineMap[s.display_name] = true
       }
     }
 
-    // Load already alerted today
+    // Load already alerted today from online_status (legacy ALERTED_ markers)
     const { data: alertedData } = await supabase
       .from('online_status')
       .select('display_name')
@@ -70,6 +72,7 @@ serve(async (_req) => {
     const assignments = schedData.assignments || {}
     const shiftTimes = schedData.shift_times || {}
     const alerted: string[] = []
+    const skippedAlreadyOnline: string[] = []
 
     for (const [key, val] of Object.entries(assignments) as [string, any][]) {
       const parts = key.split('__')
@@ -97,24 +100,44 @@ serve(async (_req) => {
 
       // Alert between 15-25 minutes after shift start
       if (nowMins >= shiftStartMins + 15 && nowMins <= shiftStartMins + 25) {
-        if (!shiftOnlineMap[chatterName]) {
-          alerted.push(alertKey)
-          const msg = `⚠️ <b>${chatterName}</b> hat ${shift}schicht aber ist noch nicht eingecheckt!\n\nSchichtbeginn: ${startTime} Uhr (DE-Zeit)`
-          await sendTelegram(CHRIS_TG, msg)
-          await sendTelegram(REY_TG, msg)
+        // FIX 1: Check online status BEFORE doing anything else
+        if (shiftOnlineMap[chatterName]) {
+          skippedAlreadyOnline.push(alertKey)
+          continue
+        }
 
-          // Mark as alerted
-          await supabase.from('online_status').upsert({
-            display_name: `ALERTED_${todayIso}_${alertKey}`,
+        // FIX 2: Write marker FIRST (atomic-ish), then send alert
+        // If marker already exists (concurrent run), skip
+        const markerKey = `ALERTED_${todayIso}_${alertKey}`
+        const { error: markerErr } = await supabase
+          .from('online_status')
+          .insert({
+            display_name: markerKey,
             last_seen: new Date().toISOString(),
             shift_online: false,
-          }, { onConflict: 'display_name' })
+          })
+
+        if (markerErr) {
+          // Marker already exists or other error - skip
+          console.log(`Skipping ${alertKey}: marker likely exists`, markerErr.message)
+          continue
         }
+
+        alerted.push(alertKey)
+        const msg = `⚠️ <b>${chatterName}</b> hat ${shift}schicht aber ist noch nicht eingecheckt!\n\nSchichtbeginn: ${startTime} Uhr (DE-Zeit)`
+        await sendTelegram(CHRIS_TG, msg)
+        await sendTelegram(REY_TG, msg)
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, checked: todayIso, alerted }), { status: 200 })
+    return new Response(JSON.stringify({
+      ok: true,
+      checked: todayIso,
+      alerted,
+      skipped_already_online: skippedAlreadyOnline,
+    }), { status: 200 })
   } catch (err) {
+    console.error('shift-alert error:', err)
     return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
   }
 })
