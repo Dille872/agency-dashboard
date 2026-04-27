@@ -254,7 +254,25 @@ export default function ScheduleTab({ session }) {
       }
       setSchedule(row.assignments || {})
       setDayNotes(row.day_notes || {})
-      setShiftTimes(cleanTimes)
+
+      // Falls die Zeiten leer sind (z.B. weil ein leerer Eintrag mal angelegt wurde),
+      // trotzdem aus models_contact.default_shift_times nachladen
+      if (Object.keys(cleanTimes).length === 0) {
+        const { data: modelsWithDefaults } = await supabase
+          .from('models_contact')
+          .select('id, default_shift_times')
+        const defaultTimes = {}
+        for (const m of modelsWithDefaults || []) {
+          if (m.default_shift_times && typeof m.default_shift_times === 'object') {
+            for (const [shift, time] of Object.entries(m.default_shift_times)) {
+              defaultTimes[`${m.id}__${shift}`] = String(time).replace(' (DE)', '').replace('(DE)', '')
+            }
+          }
+        }
+        setShiftTimes(defaultTimes)
+      } else {
+        setShiftTimes(cleanTimes)
+      }
       setScheduleStatus(row.status || 'draft')
       setHasSavedData(true)
     } else {
