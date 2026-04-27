@@ -229,7 +229,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
 
       {/* ── Heatmap ── */}
       <Card title="Status-Heatmap – letzte Tage">
-        <Heatmap snapshots={modelSnapshots} nameKey="creator" topNames={heatmapNames} title="" />
+        <Heatmap snapshots={modelSnapshots} mode="model" topNames={heatmapNames} title="" />
       </Card>
 
       {/* ── Tagesziel-Übersicht (gruppiert nach echtem Model) ── */}
@@ -246,7 +246,14 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
             groups[groupName].totalRev += r.revenue || 0
             groups[groupName].variants.push(r.creator)
           }
-          const groupRows = Object.values(groups).sort((a, b) => b.totalRev - a.totalRev)
+          const groupRows = Object.values(groups).sort((a, b) => {
+            // Erst Models mit Ziel (sortiert nach Total Revenue), dann Models ohne Ziel ans Ende
+            const aHasTarget = targets[a.modelName] > 0
+            const bHasTarget = targets[b.modelName] > 0
+            if (aHasTarget && !bHasTarget) return -1
+            if (!aHasTarget && bHasTarget) return 1
+            return b.totalRev - a.totalRev
+          })
 
           if (groupRows.length === 0) {
             return <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0' }}>Keine Daten für diesen Tag</div>
@@ -276,7 +283,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                     } else if (g.totalRev < 5) {
                       status = 'Inaktiv'
                     } else {
-                      status = 'Kein Ziel'
+                      status = 'Kein Ziel definiert'
                     }
                     return (
                       <tr key={g.modelName} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
