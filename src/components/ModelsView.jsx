@@ -34,35 +34,43 @@ const trendColors = {
 }
 
 export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapshots, onDateChange }) {
-  const [modelsContact, setModelsContact] = useState([])
-  const [editingTarget, setEditingTarget] = useState(null) // creator-name being edited
+  const [aliases, setAliases] = useState([])
+  const [targets, setTargets] = useState({}) // { model_name: daily_target }
+  const [editingTarget, setEditingTarget] = useState(null)
   const [targetInput, setTargetInput] = useState('')
 
   useEffect(() => {
-    loadModelsContact()
+    loadAliasesAndTargets()
   }, [])
 
-  const loadModelsContact = async () => {
-    const { data } = await supabase.from('models_contact').select('id, name, daily_revenue_target')
-    setModelsContact(data || [])
+  const loadAliasesAndTargets = async () => {
+    const [{ data: aliasData }, { data: targetData }] = await Promise.all([
+      supabase.from('model_aliases').select('*'),
+      supabase.from('model_revenue_targets').select('*'),
+    ])
+    setAliases(aliasData || [])
+    const tMap = {}
+    for (const t of targetData || []) tMap[t.model_name] = t.daily_target
+    setTargets(tMap)
   }
 
-  const getModelTarget = (creator) => {
-    // Match per Name (case-insensitive, ohne Emoji-Sonderzeichen)
-    const normalized = (s) => (s || '').toLowerCase().replace(/[^\w\s]/g, '').trim()
-    const target = normalized(creator)
-    const m = modelsContact.find(mc => normalized(mc.name) === target)
-    return m?.daily_revenue_target || null
+  // Mapping: csv_name → model_name (Fallback: csv_name selbst)
+  const getModelGroup = (csvName) => {
+    const a = aliases.find(x => x.csv_name === csvName)
+    return a?.model_name || csvName
   }
 
-  const saveTarget = async (creator, value) => {
-    const normalized = (s) => (s || '').toLowerCase().replace(/[^\w\s]/g, '').trim()
-    const target = normalized(creator)
-    const m = modelsContact.find(mc => normalized(mc.name) === target)
-    if (!m) return
-    const num = parseFloat(value) || null
-    await supabase.from('models_contact').update({ daily_revenue_target: num }).eq('id', m.id)
-    setModelsContact(prev => prev.map(x => x.id === m.id ? { ...x, daily_revenue_target: num } : x))
+  const saveTarget = async (modelName, value) => {
+    const num = parseFloat(value)
+    if (!modelName) return
+    if (isNaN(num) || num <= 0) {
+      // Leer / ungültig → Eintrag löschen
+      await supabase.from('model_revenue_targets').delete().eq('model_name', modelName)
+      setTargets(prev => { const n = { ...prev }; delete n[modelName]; return n })
+    } else {
+      await supabase.from('model_revenue_targets').upsert({ model_name: modelName, daily_target: num, updated_at: new Date().toISOString() })
+      setTargets(prev => ({ ...prev, [modelName]: num }))
+    }
     setEditingTarget(null)
   }
 
@@ -147,11 +155,8 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
     const chats7 = safeDivide(snapsWith.reduce((s, snap) => s + (snap.rows.find(rr => rr.creator === r.creator)?.sellingChats || 0), 0), snapsWith.length)
     const avgChat7 = safeDivide(snapsWith.reduce((s, snap) => s + (snap.rows.find(rr => rr.creator === r.creator)?.avgChatValue || 0), 0), snapsWith.length)
     const trend = computeModelTrend(modelSnapshots, r.creator)
-    const dailyTarget = getModelTarget(r.creator)
-    const dailyRev = (r.messageRevenue || 0) + (r.tipsRevenue || 0)
-    const targetRatio = dailyTarget > 0 ? dailyRev / dailyTarget : null
-    const { status, recommendation } = computeModelStatus(r, trend, dailyTarget)
-    return { ...r, revDeltaRow, subsDelta, chatsDelta, avgChatDelta, rev7, subs7, chats7, avgChat7, trend, status, recommendation, dailyTarget, dailyRev, targetRatio }
+    const { status, recommendation } = computeModelStatus(r, trend)
+    return { ...r, revDeltaRow, subsDelta, chatsDelta, avgChatDelta, rev7, subs7, chats7, avgChat7, trend, status, recommendation }
   }).sort((a, b) => b.revenue - a.revenue)
 
   const tdStyle = { padding: '10px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12 }
@@ -227,6 +232,105 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
         <Heatmap snapshots={modelSnapshots} nameKey="creator" topNames={heatmapNames} title="" />
       </Card>
 
+      {/* ── Tagesziel-Übersicht (gruppiert nach echtem Model) ── */}
+      <Card title="🎯 Tagesziele heute">
+        {(() => {
+          // Gruppieren nach model_name (aus model_aliases)
+          const groups = {}
+          for (const r of rows) {
+            const groupName = getModelGroup(r.creator)
+            if (!groups[groupName]) {
+              groups[groupName] = { modelName: groupName, dailyRev: 0, totalRev: 0, variants: [] }
+            }
+            groups[groupName].dailyRev += (r.messageRevenue || 0) + (r.tipsRevenue || 0)
+            groups[groupName].totalRev += r.revenue || 0
+            groups[groupName].variants.push(r.creator)
+          }
+          const groupRows = Object.values(groups).sort((a, b) => b.totalRev - a.totalRev)
+
+          if (groupRows.length === 0) {
+            return <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0' }}>Keine Daten für diesen Tag</div>
+          }
+
+          return (
+            <div style={{ overflowX: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    {['Model', 'Heute (Msg+Tips)', 'Total Revenue', 'Tagesziel', 'Erreicht', 'Status', 'Varianten'].map(h => (
+                      <th key={h} style={thStyle}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupRows.map((g, i) => {
+                    const target = targets[g.modelName]
+                    const ratio = target > 0 ? g.dailyRev / target : null
+                    let status = '—'
+                    let statusColor = 'var(--text-muted)'
+                    if (ratio !== null) {
+                      if (ratio >= 1.4) { status = 'Stark'; statusColor = 'var(--green)' }
+                      else if (ratio >= 1.0) { status = 'Soll erreicht'; statusColor = 'var(--green)' }
+                      else if (ratio >= 0.7) { status = 'OK'; statusColor = 'var(--yellow)' }
+                      else { status = 'Unterm Soll'; statusColor = 'var(--red)' }
+                    } else if (g.totalRev < 5) {
+                      status = 'Inaktiv'
+                    } else {
+                      status = 'Kein Ziel'
+                    }
+                    return (
+                      <tr key={g.modelName} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
+                        <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{g.modelName}</td>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600, color: ratio === null ? 'var(--text-muted)' : ratio >= 1 ? 'var(--green)' : ratio >= 0.7 ? 'var(--yellow)' : 'var(--red)' }}>
+                          {formatMoney(g.dailyRev)}
+                        </td>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(g.totalRev)}</td>
+                        <td style={tdStyle}>
+                          {editingTarget === g.modelName ? (
+                            <input
+                              type="number"
+                              value={targetInput}
+                              autoFocus
+                              onChange={e => setTargetInput(e.target.value)}
+                              onBlur={() => saveTarget(g.modelName, targetInput)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') saveTarget(g.modelName, targetInput)
+                                if (e.key === 'Escape') setEditingTarget(null)
+                              }}
+                              style={{ width: 80, padding: '3px 6px', background: 'var(--bg-input)', border: '1px solid var(--border-bright)', borderRadius: 4, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => { setEditingTarget(g.modelName); setTargetInput(target || '') }}
+                              style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 12, color: target ? 'var(--text-primary)' : 'var(--text-muted)', minWidth: 80 }}
+                              title="Klicken um Tagesziel zu setzen oder zu ändern"
+                            >
+                              {target ? formatMoney(target) : '— setzen'}
+                            </button>
+                          )}
+                        </td>
+                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600, color: statusColor }}>
+                          {ratio !== null ? `${(ratio * 100).toFixed(0)}%` : '—'}
+                        </td>
+                        <td style={tdStyle}>
+                          <span style={{ background: `${statusColor}22`, color: statusColor, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{status}</span>
+                        </td>
+                        <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: 11 }}>
+                          {g.variants.length > 1 ? g.variants.join(' + ') : g.variants[0]}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+                Tagesziel = Soll für Messages + Tips Revenue. Subs zählen nicht (kommen monatlich rein).
+              </div>
+            </div>
+          )
+        })()}
+      </Card>
+
       {/* ── Big Table ── */}
       <Card title="Model-Übersicht heute">
         {/* Date switcher */}
@@ -249,7 +353,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
             <table>
               <thead>
                 <tr>
-                  {['Model','Revenue','Δ Rev','7T Rev','Δ Subs','7T Subs','Δ Chats','7T Chats','Δ AvgChat','7T AvgChat','Trend','Tagesziel','Heute (Msg+Tips)','Status','Empfehlung'].map(h => (
+                  {['Model','Revenue','Δ Rev','7T Rev','Δ Subs','7T Subs','Δ Chats','7T Chats','Δ AvgChat','7T AvgChat','Trend','Status','Empfehlung'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -268,34 +372,6 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                     <td style={tdStyle}><span style={deltaStyle(r.avgChatDelta)}>{r.avgChatDelta ? (r.avgChatDelta > 0 ? '+' : '') + r.avgChatDelta.toFixed(1) + '%' : '—'}</span></td>
                     <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(r.avgChat7)}</td>
                     <td style={tdStyle}><span style={{ color: trendColors[r.trend] || 'var(--text-secondary)', fontWeight: 600, fontSize: 11 }}>{r.trend}</span></td>
-                    <td style={tdStyle}>
-                      {editingTarget === r.creator ? (
-                        <input
-                          type="number"
-                          value={targetInput}
-                          autoFocus
-                          onChange={e => setTargetInput(e.target.value)}
-                          onBlur={() => saveTarget(r.creator, targetInput)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') saveTarget(r.creator, targetInput)
-                            if (e.key === 'Escape') setEditingTarget(null)
-                          }}
-                          style={{ width: 70, padding: '3px 6px', background: 'var(--bg-input)', border: '1px solid var(--border-bright)', borderRadius: 4, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}
-                        />
-                      ) : (
-                        <button
-                          onClick={() => { setEditingTarget(r.creator); setTargetInput(r.dailyTarget || '') }}
-                          style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: r.dailyTarget ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                          title="Klicken um Tagesziel zu setzen"
-                        >
-                          {r.dailyTarget ? formatMoney(r.dailyTarget) : '— setzen'}
-                        </button>
-                      )}
-                    </td>
-                    <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: r.targetRatio === null ? 'var(--text-muted)' : r.targetRatio >= 1 ? 'var(--green)' : r.targetRatio >= 0.7 ? 'var(--yellow)' : 'var(--red)' }}>
-                      {formatMoney(r.dailyRev)}
-                      {r.targetRatio !== null && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>{(r.targetRatio * 100).toFixed(0)}%</span>}
-                    </td>
                     <td style={tdStyle}><span style={{ background: `${statusColors[r.status]}22`, color: statusColors[r.status] || 'var(--text-secondary)', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.status}</span></td>
                     <td style={{ ...tdStyle, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{r.recommendation}</td>
                   </tr>
