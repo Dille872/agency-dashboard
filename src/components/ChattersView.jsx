@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import Card from './Card'
 import RevenueTrendChart from './RevenueTrendChart'
 import RankingBar from './RankingBar'
@@ -133,36 +133,200 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
   const thStyle = { padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border-bright)', whiteSpace: 'nowrap' }
   const deltaStyle = (v) => ({ fontFamily: 'var(--font-mono)', fontSize: 11, color: v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text-muted)' })
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+  // ── Unified Alerts: kombiniert Trend-Probleme + $/Std unter Minimum ──
+  // Berechne pro Chatter: wieviele Tage in Folge unter $100/Std bei min 90 Min Aktivität
+  const chatterAlerts = (() => {
+    const alerts = []
+    // Sortierte Snapshots ab heute zurück
+    const sortedDesc = [...chatterSnapshots].sort((a, b) => b.businessDate.localeCompare(a.businessDate))
+    const cutoffIdx = sortedDesc.findIndex(s => s.businessDate === selectedDate)
+    if (cutoffIdx === -1) return []
+    const lastSnaps = sortedDesc.slice(cutoffIdx, cutoffIdx + 14) // letzte 14 Tage Backwindow
 
-      {/* ── Falling Alert ── */}
-      <Card title="⚠ Trend-Alerts – Chatters">
-        <FallingAlert snapshots={chatterSnapshots} nameKey="name" label="Chatters" minMessages={50} />
+    // Alle Chatter-Namen die heute aktiv sind
+    const todayNames = (rows || []).filter(r => (r.activeMinutes || 0) >= 90).map(r => r.name)
+
+    for (const name of todayNames) {
+      // Streak: wieviele Tage am Stück (von heute zurück) unter $100/Std bei ≥90min?
+      let streak = 0
+      let totalActiveDays = 0
+      let lastRph = null
+      for (const snap of lastSnaps) {
+        const r = snap.rows.find(rr => rr.name === name)
+        if (!r || (r.activeMinutes || 0) < 90) {
+          // Inaktiv-Tag bricht Streak nicht zwingend, aber wir zählen nur aktive Tage
+          if (totalActiveDays === 0) continue // führende Off-Days vor dem ersten aktiven Tag → skip
+          break
+        }
+        totalActiveDays++
+        if (lastRph === null) lastRph = r.revenuePerHour || 0
+        if ((r.revenuePerHour || 0) < 100) streak++
+        else break
+      }
+
+      // Heute überhaupt aktiv?
+      const todayRow = (rows || []).find(r => r.name === name)
+      if (!todayRow) continue
+      const rph = todayRow.revenuePerHour || 0
+      const activeMin = todayRow.activeMinutes || 0
+
+      if (streak >= 3) {
+        alerts.push({
+          severity: 'critical',
+          name,
+          headline: `$${rph.toFixed(0)}/Std · ${(activeMin / 60).toFixed(1)}h aktiv · weit unter Minimum`,
+          tag: `Tag ${streak} in Folge < $100/Std`,
+        })
+      } else if (streak >= 2) {
+        alerts.push({
+          severity: 'warning',
+          name,
+          headline: `$${rph.toFixed(0)}/Std · ${(activeMin / 60).toFixed(1)}h aktiv · unter Minimum`,
+          tag: `Tag ${streak} in Folge < $100/Std`,
+        })
+      } else if (rph > 0 && rph < 60 && activeMin >= 90) {
+        // Heute alleine schon kritisch schwach (aber kein Streak)
+        alerts.push({
+          severity: 'warning',
+          name,
+          headline: `$${rph.toFixed(0)}/Std · ${(activeMin / 60).toFixed(1)}h aktiv · stark unter Minimum`,
+          tag: 'Schwacher Tag',
+        })
+      }
+    }
+
+    // Trend-basierte Alerts: 3-Tage-Abwärtstrend
+    for (const r of (rows || [])) {
+      if (alerts.find(a => a.name === r.name)) continue // schon drin
+      const trend = computeChatterTrend(chatterSnapshots, r.name)
+      if (trend === 'Fallend' && (r.revenue || 0) >= 100) {
+        alerts.push({
+          severity: 'warning',
+          name: r.name,
+          headline: `Revenue $${(r.revenue || 0).toFixed(0)} · $${(r.revenuePerHour || 0).toFixed(0)}/Std`,
+          tag: '3-Tage-Abwärtstrend',
+        })
+      }
+    }
+
+    // Sortierung: kritisch zuerst
+    alerts.sort((a, b) => {
+      if (a.severity === b.severity) return 0
+      return a.severity === 'critical' ? -1 : 1
+    })
+
+    return alerts
+  })()
+
+  const criticalCount = chatterAlerts.filter(a => a.severity === 'critical').length
+  const warningCount = chatterAlerts.filter(a => a.severity === 'warning').length
+
+  // Inline Collapsible
+  const Collapsible = ({ title, defaultOpen = false, children }) => {
+    const [open, setOpen] = useState(defaultOpen)
+    return (
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <button onClick={() => setOpen(o => !o)} style={{
+          width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
+          padding: '12px 16px', cursor: 'pointer', color: 'var(--text-muted)',
+          fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          fontFamily: 'inherit'
+        }}>
+          <span>{title}</span>
+          <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>{open ? '▼' : '▶'}</span>
+        </button>
+        {open && <div style={{ padding: '0 16px 16px 16px' }}>{children}</div>}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* ═══════════════ OBEN: Unified Alerts ═══════════════ */}
+      <Card title={chatterAlerts.length > 0
+        ? `🚨 Aufmerksamkeit nötig (${chatterAlerts.length})`
+        : '✓ Alle Chatter auf Kurs'}>
+        {chatterAlerts.length === 0 ? (
+          <div style={{ color: 'var(--green)', fontSize: 13, padding: '4px 0' }}>
+            Keine Chatter mit kritisch niedriger Effizienz oder Abwärtstrend.
+          </div>
+        ) : (
+          <>
+            {(criticalCount > 0 || warningCount > 0) && (
+              <div style={{ display: 'flex', gap: 6, fontSize: 11, marginBottom: 10 }}>
+                {criticalCount > 0 && (
+                  <span style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.12)', color: 'var(--red)', borderRadius: 4, fontWeight: 600 }}>
+                    Kritisch {criticalCount}
+                  </span>
+                )}
+                {warningCount > 0 && (
+                  <span style={{ padding: '2px 8px', background: 'rgba(245,158,11,0.12)', color: 'var(--yellow)', borderRadius: 4, fontWeight: 600 }}>
+                    Achtung {warningCount}
+                  </span>
+                )}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {chatterAlerts.map(a => {
+                const isCrit = a.severity === 'critical'
+                const bg = isCrit ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)'
+                const border = isCrit ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'
+                const borderLeft = isCrit ? 'var(--red)' : 'var(--yellow)'
+                return (
+                  <div key={a.name} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '8px 12px', background: bg,
+                    border: `1px solid ${border}`, borderLeft: `3px solid ${borderLeft}`,
+                    borderRadius: 6,
+                  }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90 }}>
+                      {a.name}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
+                      {a.headline}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                      {a.tag}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
       </Card>
 
-      {/* ── ROW 1: Trend + Ranking ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
-        <Card title="Revenue-Trend – Chatters">
-          <RevenueTrendChart allSnapshots={chatterSnapshots} allNames={allChatterNames} />
-        </Card>
-        <Card title="Revenue-Ranking heute">
-          <RankingBar items={tableRows} nameKey="name" valueKey="revenue" />
-        </Card>
-      </div>
+      {/* ═══════════════ UNTEN: Kollabierbar ═══════════════ */}
 
-      {/* ── ROW 2: Delta + Heatmap ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
-        <Card title="Revenue heute vs. Vortag">
-          <DeltaList items={deltaItems} nameKey="name" />
-        </Card>
-        <Card title="Chatter-Heatmap – letzte Tage">
-          <Heatmap snapshots={chatterSnapshots} mode="chatter" topNames={heatmapNames} title="" />
-        </Card>
-      </div>
+      <Collapsible title="📈 Revenue-Trend & Ranking">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Revenue-Trend</div>
+            <RevenueTrendChart allSnapshots={chatterSnapshots} allNames={allChatterNames} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Revenue-Ranking heute</div>
+            <RankingBar items={tableRows} nameKey="name" valueKey="revenue" />
+          </div>
+        </div>
+      </Collapsible>
 
-      {/* ── Big Table ── */}
-      <Card title="Chatter-Übersicht heute">
+      <Collapsible title="💰 Revenue heute vs. Vortag & Heatmap">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Revenue heute vs. Vortag</div>
+            <DeltaList items={deltaItems} nameKey="name" />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Chatter-Heatmap – letzte Tage</div>
+            <Heatmap snapshots={chatterSnapshots} mode="chatter" topNames={heatmapNames} title="" />
+          </div>
+        </div>
+      </Collapsible>
+
+      <Collapsible title="📋 Chatter-Übersicht heute (Detail-Tabelle)">
         {/* Date switcher */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tag:</span>
@@ -231,7 +395,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             </table>
           </div>
         )}
-      </Card>
+      </Collapsible>
     </div>
   )
 }

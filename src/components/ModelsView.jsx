@@ -226,10 +226,55 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
     return { groupRows: enriched, dayOfMonth, daysInMonth }
   })()
 
-  // Models die Aufmerksamkeit brauchen: Ziel gesetzt + Monat < 60% Soll bis heute + nicht inaktiv
-  const attentionModels = targetData.groupRows.filter(g =>
-    g.monthRatio !== null && g.monthRatio < 0.6 && g.totalRev >= 5
-  )
+  // ── Unified Model-Alerts: Monatsfortschritt + Trend-Probleme ──
+  // Kritisch: < 40% Monatssoll bei aktiven Models
+  // Achtung: 40-60% Monatssoll
+  // Achtung: 3-Tage-Abwärtstrend bei aktiven Models (computeModelTrend)
+  const modelAlerts = (() => {
+    const alerts = []
+    for (const g of targetData.groupRows) {
+      if (g.totalRev < 5) continue // inaktiv überspringen
+      if (g.monthRatio !== null) {
+        if (g.monthRatio < 0.4) {
+          alerts.push({
+            severity: 'critical',
+            name: g.modelName,
+            headline: `${(g.monthRatio * 100).toFixed(0)}% vom Monatssoll · Aufholbedarf ${formatMoney((g.sollBisHeute || 0) - g.monthMsgTips)}`,
+            tag: 'Stark hinterher',
+          })
+          continue
+        } else if (g.monthRatio < 0.6) {
+          alerts.push({
+            severity: 'warning',
+            name: g.modelName,
+            headline: `${(g.monthRatio * 100).toFixed(0)}% vom Monatssoll · Aufholbedarf ${formatMoney((g.sollBisHeute || 0) - g.monthMsgTips)}`,
+            tag: 'Hinterher',
+          })
+          continue
+        }
+      }
+      // Trend-basierter Alert (nur wenn nicht schon wegen Monatssoll alarmiert)
+      // Wir schauen auf den ersten Variant-Namen für Trend-Berechnung
+      const variant = g.variants[0]
+      const trend = computeModelTrend(modelSnapshots, variant)
+      if (trend === 'Fallend' && (g.totalRev || 0) >= 200) {
+        alerts.push({
+          severity: 'warning',
+          name: g.modelName,
+          headline: `Heute Total ${formatMoney(g.totalRev)} · Msg+Tips ${formatMoney(g.dailyRev)}`,
+          tag: '3-Tage-Abwärtstrend',
+        })
+      }
+    }
+    alerts.sort((a, b) => {
+      if (a.severity === b.severity) return 0
+      return a.severity === 'critical' ? -1 : 1
+    })
+    return alerts
+  })()
+
+  const modelCriticalCount = modelAlerts.filter(a => a.severity === 'critical').length
+  const modelWarningCount = modelAlerts.filter(a => a.severity === 'warning').length
 
   // Inline Collapsible-Komponente
   const Collapsible = ({ title, defaultOpen = false, children }) => {
@@ -268,38 +313,57 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
         <KpiCard label="Worst Chatter" value={worstChatter?.name || '—'} sub={worstChatter ? formatMoney(worstChatter.revenue) : ''} />
       </div>
 
-      {/* Aufmerksamkeit-Alert: Models mit < 60% Monatssoll */}
-      <Card title={attentionModels.length > 0 ? `🚨 Aufmerksamkeit nötig (${attentionModels.length})` : '✓ Alle Models auf Kurs'}>
-        {attentionModels.length === 0 ? (
+      {/* Aufmerksamkeit-Alert: Models mit Monatssoll-Problem oder Abwärtstrend */}
+      <Card title={modelAlerts.length > 0
+        ? `🚨 Aufmerksamkeit nötig (${modelAlerts.length})`
+        : '✓ Alle Models auf Kurs'}>
+        {modelAlerts.length === 0 ? (
           <div style={{ color: 'var(--green)', fontSize: 13, padding: '4px 0' }}>
-            Alle Models mit Tagesziel liegen über 60% des Monats-Solls bis heute.
+            Keine Models mit kritischem Monatsrückstand oder Abwärtstrend.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {attentionModels.map(m => {
-              const fehlt = (m.sollBisHeute || 0) - m.monthMsgTips
-              return (
-                <div key={m.modelName} style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
-                  background: 'rgba(239, 68, 68, 0.06)', border: '1px solid rgba(239, 68, 68, 0.2)',
-                  borderRadius: 7,
-                }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90 }}>
-                    {m.modelName}
+          <>
+            {(modelCriticalCount > 0 || modelWarningCount > 0) && (
+              <div style={{ display: 'flex', gap: 6, fontSize: 11, marginBottom: 10 }}>
+                {modelCriticalCount > 0 && (
+                  <span style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.12)', color: 'var(--red)', borderRadius: 4, fontWeight: 600 }}>
+                    Kritisch {modelCriticalCount}
                   </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: m.statusColor }}>
-                    {(m.monthRatio * 100).toFixed(0)}%
+                )}
+                {modelWarningCount > 0 && (
+                  <span style={{ padding: '2px 8px', background: 'rgba(245,158,11,0.12)', color: 'var(--yellow)', borderRadius: 4, fontWeight: 600 }}>
+                    Achtung {modelWarningCount}
                   </span>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
-                    Soll bis heute {formatMoney(m.sollBisHeute)} · Ist {formatMoney(m.monthMsgTips)}
-                  </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>
-                    Aufholbedarf {formatMoney(fehlt)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+                )}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {modelAlerts.map(a => {
+                const isCrit = a.severity === 'critical'
+                const bg = isCrit ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)'
+                const border = isCrit ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'
+                const borderLeft = isCrit ? 'var(--red)' : 'var(--yellow)'
+                return (
+                  <div key={a.name} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '8px 12px', background: bg,
+                    border: `1px solid ${border}`, borderLeft: `3px solid ${borderLeft}`,
+                    borderRadius: 6,
+                  }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90 }}>
+                      {a.name}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
+                      {a.headline}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                      {a.tag}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </>
         )}
       </Card>
 
@@ -395,10 +459,6 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       </Card>
 
       {/* ═══════════════ UNTEN: alle kollabierbar ═══════════════ */}
-
-      <Collapsible title="⚠ Trend-Alerts – Models">
-        <FallingAlert snapshots={modelSnapshots} nameKey="creator" label="Models" />
-      </Collapsible>
 
       <Collapsible title="📈 Revenue-Trend & Ranking">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
