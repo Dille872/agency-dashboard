@@ -160,6 +160,54 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
   )
 }
 
+// Helper: kollabierbare Sektion - außerhalb der Component definiert
+// damit es nicht bei jedem Render neu erstellt wird (was Focus-Loss in Inputs verursacht)
+function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = 'var(--text-muted)', children }) {
+  return (
+    <div style={{
+      marginBottom: 12,
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border)',
+      borderRadius: 10,
+      overflow: 'hidden'
+    }}>
+      <button
+        onClick={onToggle}
+        style={{
+          width: '100%',
+          padding: '12px 16px',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontFamily: 'inherit',
+          color: 'var(--text-primary)',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 600 }}>
+          <span style={{ fontSize: 16 }}>{icon}</span>
+          <span>{title}</span>
+          {badge != null && badge !== 0 && badge !== '' && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+              background: badgeColor === 'var(--text-muted)' ? 'rgba(124,58,237,0.15)' : badgeColor + '22',
+              color: badgeColor === 'var(--text-muted)' ? '#a78bfa' : badgeColor,
+            }}>{badge}</span>
+          )}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{isCollapsed ? '▶' : '▼'}</span>
+      </button>
+      {!isCollapsed && (
+        <div style={{ padding: '0 16px 16px' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview }) {
   const [theme, setThemeState] = useState(() => getTheme())
   const [showSocialPortal, setShowSocialPortal] = useState(false)
@@ -917,54 +965,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
   }
 
-  // Helper: kollabierbare Sektion
-  const Collapsible = ({ k, icon, title, badge, children, badgeColor = 'var(--text-muted)' }) => {
-    const isCollapsed = collapsed[k]
-    return (
-      <div style={{
-        marginBottom: 12,
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: 10,
-        overflow: 'hidden'
-      }}>
-        <button
-          onClick={() => toggleCollapse(k)}
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontFamily: 'inherit',
-            color: 'var(--text-primary)',
-          }}
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 600 }}>
-            <span style={{ fontSize: 16 }}>{icon}</span>
-            <span>{title}</span>
-            {badge != null && badge !== 0 && badge !== '' && (
-              <span style={{
-                fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
-                background: badgeColor === 'var(--text-muted)' ? 'rgba(124,58,237,0.15)' : badgeColor + '22',
-                color: badgeColor === 'var(--text-muted)' ? '#a78bfa' : badgeColor,
-              }}>{badge}</span>
-            )}
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{isCollapsed ? '▶' : '▼'}</span>
-        </button>
-        {!isCollapsed && (
-          <div style={{ padding: '0 16px 16px' }}>
-            {children}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       {/* Header */}
@@ -1153,7 +1153,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           ))}
         </div>
 
-        <Collapsible k="shifts" icon="📅" title="Meine Schichten – nächste 7 Tage" badge={myNext7Shifts.filter(s => s.dayIso === todayIso).length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
+        <Collapsible isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={myNext7Shifts.filter(s => s.dayIso === todayIso).length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
           {/* My Shifts – next 7 days */}
           <div>
             {myNext7Shifts.length === 0 ? (
@@ -1236,7 +1236,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         </Collapsible>
 
-        <Collapsible k="messages" icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read_at && m.direction === 'out').length || null} badgeColor="#7c3aed">
+        <Collapsible isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read_at && m.direction === 'out').length || null} badgeColor="#7c3aed">
           {/* Messages + Note */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1341,7 +1341,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
-          <Collapsible k="models" icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
+          <Collapsible isCollapsed={collapsed.models} onToggle={() => toggleCollapse('models')} icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
           <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {Object.keys(assignedModelBoards).map(name => (
@@ -1447,7 +1447,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         )}
 
         {/* Content Requests */}
-        <Collapsible k="content" icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
+        <Collapsible isCollapsed={collapsed.content} onToggle={() => toggleCollapse('content')} icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
         <div>
             {!showNewRequestForm ? (
               <button onClick={() => setShowNewRequestForm(true)} style={{
@@ -1622,7 +1622,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Content-Ideen */}
-        <Collapsible k="ideas" icon="💡" title="Content-Ideen" badge={contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length || null} badgeColor="#a78bfa">
+        <Collapsible isCollapsed={collapsed.ideas} onToggle={() => toggleCollapse('ideas')} icon="💡" title="Content-Ideen" badge={contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length || null} badgeColor="#a78bfa">
           <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
             Wünsche & Ideen für Content der demnächst gemacht werden sollte. Wird vom Admin reviewed und ggf. ans Model weitergeleitet.
           </div>
@@ -1754,12 +1754,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Schicht-Tausch */}
-        <Collapsible k="swap" icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
+        <Collapsible isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
           <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
         </Collapsible>
 
         {/* Week Stats */}
-        <Collapsible k="stats" icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
+        <Collapsible isCollapsed={collapsed.stats} onToggle={() => toggleCollapse('stats')} icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
             {[
               { label: `Revenue ${new Date().toLocaleString('de-DE', { month: 'long' })}`, val: formatMoney(monthRevenue), good: monthRevenue > 2000 },
@@ -1777,7 +1777,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Bot Commands */}
-        <Collapsible k="bot" icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
+        <Collapsible isCollapsed={collapsed.bot} onToggle={() => toggleCollapse('bot')} icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
               { cmd: '/on', desc: 'Schicht starten', color: '#10b981' },
