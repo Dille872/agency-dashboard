@@ -195,6 +195,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newAbsenceReason, setNewAbsenceReason] = useState('')
   const [next7Schedules, setNext7Schedules] = useState([])
   const [absentLoading, setAbsentLoading] = useState(false)
+  const [announcements, setAnnouncements] = useState([])
+  const [showAnnArchive, setShowAnnArchive] = useState(false)
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -316,6 +318,37 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }, { onConflict: 'display_name' })
   }
 
+  const loadAnnouncements = async () => {
+    const { data } = await supabase
+      .from('announcements')
+      .select('*')
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: false })
+    setAnnouncements(data || [])
+  }
+
+  const archiveAnnouncement = async (annId) => {
+    if (!displayName) return
+    const ann = announcements.find(a => a.id === annId)
+    if (!ann) return
+    const archivedFor = Array.isArray(ann.archived_for) ? ann.archived_for : []
+    if (archivedFor.includes(displayName)) return
+    const newArchived = [...archivedFor, displayName]
+    await supabase.from('announcements').update({ archived_for: newArchived }).eq('id', annId)
+    setAnnouncements(prev => prev.map(a => a.id === annId ? { ...a, archived_for: newArchived } : a))
+  }
+
+  const markMyMessagesRead = async () => {
+    if (!displayName) return
+    // Markiere alle Out-Messages an mich als gelesen
+    await supabase.from('messages')
+      .update({ read_at: new Date().toISOString(), read_by: displayName })
+      .eq('model_name', displayName)
+      .eq('contact_type', 'chatter')
+      .eq('direction', 'out')
+      .is('read_at', null)
+  }
+
   const checkIn = async (shiftName) => {
     // Check if already logged in - prevent duplicate logs
     const { data: existingLog } = await supabase
@@ -386,9 +419,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     loadMyReminders()
     loadMyAbsences()
     loadOnlineStatus()
+    loadAnnouncements()
+    markMyMessagesRead()
     checkTodayNote()
     const interval = setInterval(async () => {
       loadMessages()
+      loadAnnouncements()
       sendHeartbeat(isOnlineRef.current)
 
       // Auto-checkout check
@@ -838,6 +874,59 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           <SocialTab session={session} userDisplayName={displayName} userRole="social_media" />
         ) : (
         <div>
+
+        {/* PINNWAND - Aktive Ankündigungen oben */}
+        {(() => {
+          const now = new Date()
+          const activeAnnouncements = announcements
+            .filter(a => {
+              if (a.expires_at && new Date(a.expires_at) < now) return false
+              const archivedFor = Array.isArray(a.archived_for) ? a.archived_for : []
+              if (archivedFor.includes(displayName)) return false
+              return true
+            })
+            .slice(0, 2)
+          if (activeAnnouncements.length === 0) return null
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+              {activeAnnouncements.map(ann => (
+                <div key={ann.id} style={{
+                  background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(6,182,212,0.08))',
+                  border: '1px solid rgba(124,58,237,0.35)',
+                  borderRadius: 12, padding: '14px 18px',
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                  gap: 12, flexWrap: 'wrap'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 24, lineHeight: 1, flexShrink: 0,
+                      width: 38, height: 38, borderRadius: 10,
+                      background: 'rgba(124,58,237,0.2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>{ann.emoji || '📌'}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {ann.text}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, fontFamily: 'monospace' }}>
+                        Von {ann.created_by} · {new Date(ann.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        {ann.expires_at && ` · läuft ab ${new Date(ann.expires_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
+                      </div>
+                    </div>
+                  </div>
+                  {!isPreview && (
+                    <button onClick={() => archiveAnnouncement(ann.id)} title="Archivieren - bleibt im Verlauf" style={{
+                      fontSize: 11, padding: '5px 10px', borderRadius: 6,
+                      background: 'transparent', border: '1px solid rgba(124,58,237,0.3)',
+                      color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                      flexShrink: 0
+                    }}>✓ Gelesen</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        })()}
 
         {/* Today Banner */}
         {todayShifts.length > 0 && (
@@ -1403,6 +1492,55 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             ))}
           </div>
         </div>
+
+        {/* PINNWAND VERLAUF - kollabierbar */}
+        {announcements.length > 0 && (
+          <div style={{ marginTop: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+            <button
+              onClick={() => setShowAnnArchive(!showAnnArchive)}
+              style={{
+                width: '100%', padding: '12px 16px', background: 'transparent', border: 'none',
+                color: 'var(--text-secondary)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '0.08em'
+              }}
+            >
+              <span>📋 Pinnwand-Verlauf ({announcements.length})</span>
+              <span style={{ fontSize: 14 }}>{showAnnArchive ? '▼' : '▶'}</span>
+            </button>
+            {showAnnArchive && (
+              <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {announcements.map(ann => {
+                  const archivedFor = Array.isArray(ann.archived_for) ? ann.archived_for : []
+                  const isArchived = archivedFor.includes(displayName)
+                  const isExpired = ann.expires_at && new Date(ann.expires_at) < new Date()
+                  return (
+                    <div key={ann.id} style={{
+                      padding: '10px 14px',
+                      background: 'var(--bg-card2)',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      opacity: isExpired ? 0.5 : 1
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                        <span style={{ fontSize: 16 }}>{ann.emoji || '📌'}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{ann.text}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'monospace' }}>
+                            Von {ann.created_by} · {new Date(ann.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            {isExpired && ' · ABGELAUFEN'}
+                            {isArchived && !isExpired && ' · gelesen'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         </div>
         )}
       </main>

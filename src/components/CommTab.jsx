@@ -184,9 +184,24 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [contentFilter, setContentFilter] = useState('offen')
   const [boardsModelFilter, setBoardsModelFilter] = useState('all')
   const [historySearch, setHistorySearch] = useState('')
+  // Pinnwand
+  const [announcements, setAnnouncements] = useState([])
+  const [newAnnText, setNewAnnText] = useState('')
+  const [newAnnEmoji, setNewAnnEmoji] = useState('📌')
+  const [newAnnExpiresAt, setNewAnnExpiresAt] = useState('')
+  const [showAnnForm, setShowAnnForm] = useState(false)
+  // Crew-Tab Collapse
+  const [crewCollapse, setCrewCollapse] = useState({
+    chatters: false,    // sichtbar by default
+    swaps: true,        // collapsed by default
+    stats: true,
+    shiftlog: true,
+    pinnwand: false,    // sichtbar by default
+  })
 
   useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
+    loadAnnouncements()
     // Load section-specific data
     if (section === 'models') { loadContentRequests(); loadModelBoardActivity() }
     if (section === 'chatters') { loadShiftLogs(); loadSwaps() }
@@ -219,6 +234,42 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       }
     }
     setOnlineStatuses(map)
+  }
+
+  const loadAnnouncements = async () => {
+    const { data } = await supabase
+      .from('announcements')
+      .select('*')
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: false })
+    setAnnouncements(data || [])
+  }
+
+  const postAnnouncement = async () => {
+    if (!newAnnText.trim()) return
+    const payload = {
+      text: newAnnText.trim(),
+      emoji: newAnnEmoji || '📌',
+      created_by: displayName || 'Admin',
+      expires_at: newAnnExpiresAt ? new Date(newAnnExpiresAt).toISOString() : null,
+      archived_for: [],
+    }
+    const { error } = await supabase.from('announcements').insert(payload)
+    if (error) {
+      alert('Fehler: ' + error.message)
+      return
+    }
+    setNewAnnText('')
+    setNewAnnEmoji('📌')
+    setNewAnnExpiresAt('')
+    setShowAnnForm(false)
+    loadAnnouncements()
+  }
+
+  const deleteAnnouncement = async (id) => {
+    if (!confirm('Ankündigung wirklich löschen?')) return
+    await supabase.from('announcements').delete().eq('id', id)
+    loadAnnouncements()
   }
 
   const loadModels = async () => {
@@ -554,6 +605,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model').length },
           section === 'models' && { key: 'history', label: 'Verlauf' },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
+          section === 'chatters' && { key: 'pinnwand', label: `📌 Pinnwand${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length > 0 ? ` (${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length})` : ''}` },
           section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
           section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
@@ -569,6 +621,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             if (s.key === 'chatters') { /* already loaded */ }
             if (s.key === 'swaps') loadSwaps()
             if (s.key === 'stats' || s.key === 'shiftlog') loadShiftLogs()
+            if (s.key === 'pinnwand') loadAnnouncements()
             if (s.key === 'nachrichten') setUnreadCount(0)
           }} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
@@ -672,7 +725,61 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       )}
 
       {/* CHATTERS */}
-      {activeSection === 'chatters' && (
+      {activeSection === 'chatters' && (() => {
+        // Aufmerksamkeits-Items berechnen
+        const now = new Date()
+        const activeAnnCount = announcements.filter(a => !a.expires_at || new Date(a.expires_at) > now).length
+        const openSwapsCount = swaps.filter(s => s.status === 'offen').length
+        const unreadOutMsgs = messages.filter(m => m.direction === 'out' && m.contact_type === 'chatter' && !m.read_at)
+        // Out-Messages älter als 24h ungelesen = möglicherweise problematisch
+        const oldUnreadOut = unreadOutMsgs.filter(m => new Date(m.created_at) < new Date(Date.now() - 24*60*60*1000))
+        const attentionItems = []
+        if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Anfragen`, color: '#f59e0b', action: 'swaps' })
+        if (oldUnreadOut.length > 0) attentionItems.push({ icon: '⏳', text: `${oldUnreadOut.length} Nachrichten >24h ungelesen`, color: '#ef4444', action: 'history' })
+
+        return (
+        <div>
+          {/* Aufmerksamkeits-Banner */}
+          {attentionItems.length > 0 && (
+            <div style={{ marginBottom: 16, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: '10px 14px' }}>
+              <div style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 6 }}>
+                🚨 Aufmerksamkeit
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {attentionItems.map((item, i) => (
+                  <button key={i} onClick={() => setActiveSection(item.action)} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    background: 'transparent', border: '1px solid transparent',
+                    borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+                    transition: 'background 0.1s'
+                  }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,158,11,0.08)'}
+                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <span style={{ fontSize: 14 }}>{item.icon}</span>
+                    <span style={{ fontSize: 13, color: item.color, fontWeight: 600, flex: 1, textAlign: 'left' }}>{item.text}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quick-Info Pinnwand */}
+          {activeAnnCount > 0 && (
+            <div style={{ marginBottom: 16, background: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.2)', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 16 }}>📌</span>
+                <span style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>
+                  {activeAnnCount} aktive Ankündigung{activeAnnCount !== 1 ? 'en' : ''} an alle Chatter
+                </span>
+              </div>
+              <button onClick={() => setActiveSection('pinnwand')} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                background: 'transparent', border: '1px solid rgba(124,58,237,0.3)',
+                color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600
+              }}>Verwalten →</button>
+            </div>
+          )}
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
           <Card title="Chatters">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -853,7 +960,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             </div>
           </Card>
         </div>
-      )}
+        </div>
+        )
+      })()}
 
       {/* POSTEINGANG */}
       {activeSection === 'nachrichten' && (() => {
@@ -1053,7 +1162,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 <div style={{ overflowX: 'auto' }}>
                   <table>
                     <thead>
-                      <tr>{['Zeit', 'Name', 'Typ', 'Richtung', 'Von', 'Nachricht'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+                      <tr>{['Zeit', 'Name', 'Typ', 'Richtung', 'Von', 'Nachricht', 'Status'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
                     </thead>
                     <tbody>
                       {filteredHistory.map(msg => (
@@ -1074,6 +1183,21 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             {msg.direction === 'out' ? (msg.sent_by || '—') : msg.model_name}
                           </td>
                           <td style={{ ...tdS, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.text}</td>
+                          <td style={{ ...tdS, whiteSpace: 'nowrap' }}>
+                            {msg.direction === 'out' ? (
+                              msg.read_at ? (
+                                <span title={`Gelesen ${new Date(msg.read_at).toLocaleString('de-DE')}`} style={{ fontSize: 10, color: '#10b981', fontWeight: 600 }}>
+                                  ✓ {new Date(msg.read_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>
+                                  ⏳ ungelesen
+                                </span>
+                              )
+                            ) : (
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>—</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1437,6 +1561,135 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               })}
             </div>
           )}
+        </Card>
+      )}
+
+      {/* PINNWAND ADMIN */}
+      {activeSection === 'pinnwand' && (
+        <Card title="📌 Pinnwand für alle Chatter">
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+              Ankündigungen für alle Chatter — werden im ChatterPortal oben angezeigt.
+              Maximal 2 aktive Posts gleichzeitig oben sichtbar (sortiert nach Priorität, dann Datum).
+              Chatter können einzelne Posts archivieren — sie verschwinden dann von oben aber bleiben im Verlauf.
+            </div>
+            {!showAnnForm ? (
+              <button onClick={() => setShowAnnForm(true)} style={{
+                fontSize: 13, padding: '8px 16px', borderRadius: 8,
+                background: '#7c3aed', border: 'none', color: '#fff',
+                cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600
+              }}>
+                + Neue Ankündigung
+              </button>
+            ) : (
+              <div style={{ background: 'var(--bg-card2)', border: '1px solid #7c3aed', borderRadius: 10, padding: 14 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Emoji:</label>
+                  <input type="text" value={newAnnEmoji} onChange={e => setNewAnnEmoji(e.target.value)} maxLength={2}
+                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '5px 10px', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: 50, textAlign: 'center' }} />
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {['📌', '⚽', '📢', '🎯', '⚡', '🎬', '🚨', '🎉', '📋'].map(e => (
+                      <button key={e} type="button" onClick={() => setNewAnnEmoji(e)} style={{
+                        fontSize: 16, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
+                        background: newAnnEmoji === e ? 'rgba(124,58,237,0.2)' : 'transparent',
+                        border: `1px solid ${newAnnEmoji === e ? '#7c3aed' : 'var(--border)'}`,
+                      }}>{e}</button>
+                    ))}
+                  </div>
+                </div>
+                <textarea
+                  value={newAnnText}
+                  onChange={e => setNewAnnText(e.target.value)}
+                  placeholder="Was wollt ihr mitteilen? z.B. 'Heute 20:30 Zoom Call - Thema Q3 Goals' oder 'Fußball heute Abend nicht vergessen 😄'"
+                  style={{
+                    width: '100%', minHeight: 80, background: 'var(--bg-input)', border: '1px solid var(--border)',
+                    color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 7, fontSize: 13,
+                    fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box'
+                  }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Läuft ab:</label>
+                  <input type="datetime-local" value={newAnnExpiresAt} onChange={e => setNewAnnExpiresAt(e.target.value)}
+                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '5px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(optional - leer = kein Ablauf)</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button onClick={postAnnouncement} disabled={!newAnnText.trim()} style={{
+                    fontSize: 13, padding: '8px 16px', borderRadius: 8,
+                    background: newAnnText.trim() ? '#7c3aed' : 'var(--border)',
+                    border: 'none', color: '#fff', cursor: newAnnText.trim() ? 'pointer' : 'not-allowed',
+                    fontFamily: 'inherit', fontWeight: 600
+                  }}>
+                    Posten
+                  </button>
+                  <button onClick={() => { setShowAnnForm(false); setNewAnnText(''); setNewAnnEmoji('📌'); setNewAnnExpiresAt('') }} style={{
+                    fontSize: 13, padding: '8px 16px', borderRadius: 8,
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit'
+                  }}>
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 10 }}>
+              Alle Ankündigungen ({announcements.length})
+            </div>
+            {announcements.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Ankündigungen</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {announcements.map(ann => {
+                  const isExpired = ann.expires_at && new Date(ann.expires_at) < new Date()
+                  const archivedFor = Array.isArray(ann.archived_for) ? ann.archived_for : []
+                  return (
+                    <div key={ann.id} style={{
+                      padding: '12px 14px',
+                      background: 'var(--bg-card2)',
+                      borderRadius: 8,
+                      border: `1px solid ${isExpired ? 'var(--border)' : 'rgba(124,58,237,0.3)'}`,
+                      opacity: isExpired ? 0.5 : 1,
+                      display: 'flex', alignItems: 'flex-start', gap: 12
+                    }}>
+                      <span style={{ fontSize: 20 }}>{ann.emoji}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{ann.text}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, fontFamily: 'monospace', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          <span>Von {ann.created_by}</span>
+                          <span>·</span>
+                          <span>{new Date(ann.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                          {ann.expires_at && (
+                            <>
+                              <span>·</span>
+                              <span style={{ color: isExpired ? '#ef4444' : 'var(--text-muted)' }}>
+                                {isExpired ? 'Abgelaufen' : 'Läuft ab'}: {new Date(ann.expires_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </>
+                          )}
+                          {archivedFor.length > 0 && (
+                            <>
+                              <span>·</span>
+                              <span title={archivedFor.join(', ')} style={{ color: '#10b981', cursor: 'help' }}>
+                                ✓ Gelesen von {archivedFor.length}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <button onClick={() => deleteAnnouncement(ann.id)} title="Löschen" style={{
+                        fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                        color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0
+                      }}>✕ Löschen</button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </Card>
       )}
 
