@@ -46,14 +46,16 @@ serve(async (_req) => {
       return new Response(JSON.stringify({ message: 'No live schedule found' }), { status: 200 })
     }
 
-    // 5 Min Cutoff statt 2 Min - Frontend pingt nicht jede Minute
+    // Online-Map case-insensitive aufbauen
     const { data: onlineData } = await supabase.from('online_status').select('*')
     const shiftOnlineMap: Record<string, boolean> = {}
     const cutoff = new Date(Date.now() - 5 * 60 * 1000)
     for (const s of onlineData || []) {
       if (s.display_name?.startsWith('ALERTED_')) continue
+      if (!s.display_name) continue
       if (s.shift_online && s.last_seen && new Date(s.last_seen) > cutoff) {
-        shiftOnlineMap[s.display_name] = true
+        // KEY: lowercase damit Mario/mario gleich behandelt werden
+        shiftOnlineMap[s.display_name.toLowerCase().trim()] = true
       }
     }
 
@@ -94,13 +96,14 @@ serve(async (_req) => {
       const nowMins = currentHour * 60 + currentMin
 
       if (nowMins >= shiftStartMins + 15 && nowMins <= shiftStartMins + 25) {
-        // FIX 1: Online check FIRST
-        if (shiftOnlineMap[chatterName]) {
+        // FIX: case-insensitive lookup
+        const chatterKey = chatterName.toLowerCase().trim()
+        if (shiftOnlineMap[chatterKey]) {
           skippedAlreadyOnline.push(alertKey)
           continue
         }
 
-        // FIX 2: Insert marker FIRST (insert, not upsert!) - bei concurrent run failed der zweite
+        // Marker zuerst
         const markerKey = `ALERTED_${todayIso}_${alertKey}`
         const { error: markerErr } = await supabase
           .from('online_status')
