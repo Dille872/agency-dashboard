@@ -250,8 +250,40 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }
 
   const loadMessages = async () => {
-    const { data } = await supabase.from('messages').select('*').eq('direction', 'out').order('created_at', { ascending: false }).limit(8)
+    if (!displayName) return
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('direction', 'out')
+      .eq('contact_type', 'model')
+      .eq('model_name', displayName)
+      .order('created_at', { ascending: false })
+      .limit(10)
     setMessages(data || [])
+  }
+
+  const markSingleMessageRead = async (msgId) => {
+    if (!displayName) return
+    await supabase.from('messages')
+      .update({ read_at: new Date().toISOString(), read_by: displayName })
+      .eq('id', msgId)
+      .is('read_at', null)
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, read_at: new Date().toISOString(), read_by: displayName } : m))
+  }
+
+  const markAllMessagesRead = async () => {
+    if (!displayName) return
+    await supabase.from('messages')
+      .update({ read_at: new Date().toISOString(), read_by: displayName })
+      .eq('model_name', displayName)
+      .eq('contact_type', 'model')
+      .eq('direction', 'out')
+      .is('read_at', null)
+    setMessages(prev => prev.map(m =>
+      m.contact_type === 'model' && m.direction === 'out' && m.model_name === displayName && !m.read_at
+        ? { ...m, read_at: new Date().toISOString(), read_by: displayName }
+        : m
+    ))
   }
 
   const loadAliasesAndRevenue = async () => {
@@ -767,20 +799,53 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
               {/* Nachrichten */}
               <div style={cardS}>
-                <div style={labelS}><span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />Nachrichten vom Team</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ ...labelS, marginBottom: 0 }}><span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />Nachrichten vom Team</div>
+                  {messages.filter(m => !m.read_at).length > 0 && (
+                    <button onClick={markAllMessagesRead} style={{
+                      fontSize: 10, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+                      background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)',
+                      color: '#a78bfa', fontFamily: 'inherit', fontWeight: 600
+                    }}>✓ Alle gelesen</button>
+                  )}
+                </div>
                 {messages.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Keine Nachrichten</div>
-                ) : messages.slice(0, 4).map(msg => (
-                  <div key={msg.id} style={itemS}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa' }}>{msg.sent_by || 'Team'}</span>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                ) : messages.slice(0, 4).map(msg => {
+                  const isUnread = !msg.read_at
+                  return (
+                  <div key={msg.id} style={{
+                    ...itemS,
+                    background: isUnread ? 'rgba(245,158,11,0.06)' : itemS.background,
+                    border: `1px solid ${isUnread ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3, gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa' }}>{msg.sent_by || 'Team'}</span>
+                        {isUnread && (
+                          <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>NEU</span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
                         {new Date(msg.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{msg.text}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: isUnread ? 8 : 0 }}>{msg.text}</div>
+                    {isUnread && (
+                      <button onClick={() => markSingleMessageRead(msg.id)} style={{
+                        fontSize: 10, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
+                        background: 'transparent', border: '1px solid rgba(245,158,11,0.4)',
+                        color: '#f59e0b', fontFamily: 'inherit', fontWeight: 600
+                      }}>✓ Gelesen</button>
+                    )}
+                    {!isUnread && msg.read_at && (
+                      <div style={{ fontSize: 9, color: '#10b981', fontFamily: 'monospace', marginTop: 4 }}>
+                        ✓ gelesen {new Date(msg.read_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* Board Übersicht */}
