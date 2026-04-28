@@ -74,9 +74,11 @@ export default function App() {
     const interval = setInterval(() => {
       loadBadgeCounts()
       // Send heartbeat so admin shows as online in chatter list
-      if (session?.user) {
+      // Wichtig: nur wenn userDisplayName gesetzt ist — sonst kein Heartbeat
+      // (verhindert dass Email-Usernames in online_status landen)
+      if (session?.user && userDisplayName) {
         supabase.from('online_status').upsert({
-          display_name: userDisplayName || session.user.email?.split('@')[0],
+          display_name: userDisplayName,
           last_seen: new Date().toISOString(),
           shift_online: false,
         }, { onConflict: 'display_name' }).then(() => {})
@@ -90,27 +92,33 @@ export default function App() {
   const loadUserRole = async () => {
     try {
       const { data } = await supabase
-        .from('user_roles').select('*').eq('user_id', session.user.id).single()
-      const name = data?.display_name || session.user.email?.split('@')[0]
-      if (data) {
+        .from('user_roles').select('*').eq('user_id', session.user.id).maybeSingle()
+      // Wichtig: KEIN Email-Fallback mehr — der erzeugt Doubletten in online_status
+      // (mario.stegmeir vs Mario). Wenn kein display_name in user_roles → Eintrag fehlt.
+      const name = data?.display_name
+      if (data && name) {
         const roles = data.roles && data.roles.length > 0 ? data.roles : [data.role]
         setUserRole(data.role)
         setUserRoles(roles)
         setUserDisplayName(name)
+        await supabase.from('online_status').upsert({
+          display_name: name,
+          last_seen: new Date().toISOString(),
+          shift_online: false,
+        }, { onConflict: 'display_name' })
       } else {
+        // Kein user_roles Eintrag → User ist nicht angelegt
+        // Setze auf 'Unbekannt' damit kein Email-Username in online_status landet
+        console.warn('No user_roles entry for', session.user.id)
         setUserRole('chatter')
         setUserRoles(['chatter'])
-        setUserDisplayName(name)
+        setUserDisplayName(null) // explizit null statt Email-Fallback
       }
-      await supabase.from('online_status').upsert({
-        display_name: name,
-        last_seen: new Date().toISOString(),
-        shift_online: false,
-      }, { onConflict: 'display_name' })
-    } catch {
+    } catch (err) {
+      console.error('loadUserRole error:', err)
       setUserRole('chatter')
       setUserRoles(['chatter'])
-      setUserDisplayName(session.user.email?.split('@')[0] || 'Chatter')
+      setUserDisplayName(null)
     }
   }
 
@@ -508,7 +516,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.7.6</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.6.6</span>
         </div>
       </div>
 
