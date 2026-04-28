@@ -197,6 +197,34 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [absentLoading, setAbsentLoading] = useState(false)
   const [announcements, setAnnouncements] = useState([])
   const [showAnnArchive, setShowAnnArchive] = useState(false)
+  const [showNewRequestForm, setShowNewRequestForm] = useState(false)
+  // Collapse-State pro Sektion mit Localstorage-Memory
+  const COLLAPSE_KEY = `chatterportal_collapse_${displayName || 'default'}`
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const stored = localStorage.getItem(COLLAPSE_KEY)
+      if (stored) return JSON.parse(stored)
+    } catch {}
+    // Default: alles zu außer KPIs
+    return {
+      shifts: true,
+      absence: true,
+      messages: true,
+      note: true,
+      models: true,
+      content: true,
+      swap: true,
+      stats: true,
+      bot: true,
+    }
+  })
+  const toggleCollapse = (key) => {
+    setCollapsed(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -825,6 +853,54 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
   }
 
+  // Helper: kollabierbare Sektion
+  const Collapsible = ({ k, icon, title, badge, children, badgeColor = 'var(--text-muted)' }) => {
+    const isCollapsed = collapsed[k]
+    return (
+      <div style={{
+        marginBottom: 12,
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        overflow: 'hidden'
+      }}>
+        <button
+          onClick={() => toggleCollapse(k)}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontFamily: 'inherit',
+            color: 'var(--text-primary)',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 600 }}>
+            <span style={{ fontSize: 16 }}>{icon}</span>
+            <span>{title}</span>
+            {badge != null && badge !== 0 && badge !== '' && (
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                background: badgeColor === 'var(--text-muted)' ? 'rgba(124,58,237,0.15)' : badgeColor + '22',
+                color: badgeColor === 'var(--text-muted)' ? '#a78bfa' : badgeColor,
+              }}>{badge}</span>
+            )}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{isCollapsed ? '▶' : '▼'}</span>
+        </button>
+        {!isCollapsed && (
+          <div style={{ padding: '0 16px 16px' }}>
+            {children}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       {/* Header */}
@@ -914,7 +990,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       </div>
                     </div>
                   </div>
-                  {!isPreview && (
+                  {displayName && (
                     <button onClick={() => archiveAnnouncement(ann.id)} title="Archivieren - bleibt im Verlauf" style={{
                       fontSize: 11, padding: '5px 10px', borderRadius: 6,
                       background: 'transparent', border: '1px solid rgba(124,58,237,0.3)',
@@ -993,35 +1069,29 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         )}
 
-        {/* KPIs */}
-        {/* Last day label */}
+        {/* KPIs - kompakt in einer Zeile */}
         {lastStatDate && (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'monospace' }}>
-            Letzter Tag mit Daten: <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, fontFamily: 'monospace' }}>
+            Stats vom {new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
           {[
-            { label: 'Revenue', val: formatMoney(chatterStats?.revenue || 0), sub: revDelta !== 0 ? `${revDelta > 0 ? '▲' : '▼'} ${Math.abs(revDelta).toFixed(1)}% vs Vortag` : lastStatDate ? new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : 'Noch keine Daten', good: revDelta >= 0 },
-            { label: 'PPV Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(1)}%` : '—', sub: lastStatDate ? new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : 'Keine Daten', good: (chatterStats?.buyRate || 0) >= 25 },
-            { label: 'Ø Antwortzeit', val: formatResponseTime(chatterStats?.avgResponseSeconds), sub: (chatterStats?.avgResponseSeconds || 0) <= 120 ? 'Gut ✓' : (chatterStats?.avgResponseSeconds || 0) <= 210 ? 'Ok' : 'Zu langsam', good: (chatterStats?.avgResponseSeconds || 0) <= 120 },
-            { label: 'Nachrichten', val: (chatterStats?.sentMessages || 0).toString(), sub: lastStatDate ? new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : 'Keine Daten', good: (chatterStats?.sentMessages || 0) > 50 },
+            { label: 'Revenue', val: formatMoney(chatterStats?.revenue || 0), good: revDelta >= 0, accent: '#10b981' },
+            { label: 'Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(0)}%` : '—', good: (chatterStats?.buyRate || 0) >= 25, accent: '#06b6d4' },
+            { label: 'Ø Antw.', val: formatResponseTime(chatterStats?.avgResponseSeconds), good: (chatterStats?.avgResponseSeconds || 0) <= 120, accent: '#f59e0b' },
+            { label: 'Msgs', val: (chatterStats?.sentMessages || 0).toString(), good: (chatterStats?.sentMessages || 0) > 50, accent: '#a78bfa' },
           ].map(kpi => (
-            <div key={kpi.label} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '12px 14px' }}>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 4 }}>{kpi.label}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)', lineHeight: 1.2 }}>{kpi.val}</div>
-              <div style={{ fontSize: 11, color: kpi.good ? '#10b981' : '#ef4444', marginTop: 2 }}>{kpi.sub}</div>
+            <div key={kpi.label} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
+              <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>{kpi.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: kpi.good ? kpi.accent : 'var(--text-primary)', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{kpi.val}</div>
             </div>
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 16 }}>
+        <Collapsible k="shifts" icon="📅" title="Meine Schichten – nächste 7 Tage" badge={myNext7Shifts.filter(s => s.dayIso === todayIso).length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
           {/* My Shifts – next 7 days */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 3, height: 11, background: '#06b6d4', borderRadius: 2, display: 'inline-block' }} />
-              Meine Schichten – nächste 7 Tage
-            </div>
+          <div>
             {myNext7Shifts.length === 0 ? (
               <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Kein veröffentlichter Plan für die nächsten 7 Tage</div>
             ) : (
@@ -1100,9 +1170,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               )}
             </div>
           </div>
+        </Collapsible>
 
+        <Collapsible k="messages" icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read).length || null} badgeColor="#7c3aed">
           {/* Messages + Note */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
+          <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
               Nachrichten vom Team
@@ -1166,16 +1238,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               }}>{sendingNote ? 'Senden...' : 'Notiz senden'}</button>
             </div>
           </div>
-        </div>
+        </Collapsible>
 
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
-          <div style={{ background: 'rgba(245,158,11,0.06)', border: '1.5px solid rgba(245,158,11,0.25)', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-              <span style={{ width: 3, height: 13, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
-              <span style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Meine Models</span>
-            </div>
-
+          <Collapsible k="models" icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
+          <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {Object.keys(assignedModelBoards).map(name => (
                 <button key={name} onClick={() => setSelectedModelInfo(selectedModelInfo === name ? null : name)}
@@ -1276,20 +1344,28 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               </div>
             )}
           </div>
+          </Collapsible>
         )}
 
-
-
         {/* Content Requests */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 3, height: 11, background: '#06b6d4', borderRadius: 2, display: 'inline-block' }} />
-            Content-Anfragen
-          </div>
-
-          {/* New request form */}
-          <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10, fontWeight: 600 }}>Neue Anfrage</div>
+        <Collapsible k="content" icon="🎬" title="Content-Anfragen" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
+        <div>
+            {!showNewRequestForm ? (
+              <button onClick={() => setShowNewRequestForm(true)} style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8,
+                background: 'rgba(124,58,237,0.1)', border: '1px dashed rgba(124,58,237,0.3)',
+                color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit',
+                fontWeight: 600, fontSize: 13, marginBottom: 12
+              }}>+ Neue Content-Anfrage erstellen</button>
+            ) : (
+            <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Neue Anfrage</div>
+              <button onClick={() => setShowNewRequestForm(false)} style={{
+                background: 'transparent', border: 'none', color: 'var(--text-muted)',
+                cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', padding: 0
+              }}>✕</button>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Model *</label>
@@ -1394,6 +1470,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               border: 'none', borderRadius: 7, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}>{sendingRequest ? 'Bilder werden hochgeladen...' : '+ Anfrage senden'}</button>
           </div>
+          )}
 
           {/* Request history */}
           {contentRequests.length === 0 ? (
@@ -1443,22 +1520,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             </div>
           )}
         </div>
+        </Collapsible>
 
         {/* Schicht-Tausch */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
-            Schicht-Tausch anfragen
-          </div>
+        <Collapsible k="swap" icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
           <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
-        </div>
+        </Collapsible>
 
         {/* Week Stats */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 3, height: 11, background: '#f59e0b', borderRadius: 2, display: 'inline-block' }} />
-            Meine Stats – KW {kw}
-          </div>
+        <Collapsible k="stats" icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
             {[
               { label: `Revenue ${new Date().toLocaleString('de-DE', { month: 'long' })}`, val: formatMoney(monthRevenue), good: monthRevenue > 2000 },
@@ -1473,12 +1543,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               </div>
             ))}
           </div>
-        </div>
-
+        </Collapsible>
 
         {/* Bot Commands */}
-        <div style={{ margin: '0 0 16px 0', background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 18px' }}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12 }}>Bot-Befehle · @thirteen87agency_bot</div>
+        <Collapsible k="bot" icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
               { cmd: '/on', desc: 'Schicht starten', color: '#10b981' },
@@ -1491,7 +1559,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               </div>
             ))}
           </div>
-        </div>
+        </Collapsible>
 
         {/* PINNWAND VERLAUF - kollabierbar */}
         {announcements.length > 0 && (
