@@ -179,6 +179,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [initialJumpDone, setInitialJumpDone] = useState(false)
   const [onlineStatuses, setOnlineStatuses] = useState({})
   const [inboxFilter, setInboxFilter] = useState('all')
+  const [inboxUnreadOnly, setInboxUnreadOnly] = useState(false)
+  const [inboxPersonFilter, setInboxPersonFilter] = useState('all')
+  const [contentFilter, setContentFilter] = useState('offen')
+  const [boardsModelFilter, setBoardsModelFilter] = useState('all')
+  const [historySearch, setHistorySearch] = useState('')
 
   useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
@@ -858,10 +863,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           if (msg.text?.startsWith('[STATUS_')) return 'status'
           return 'freitext'
         }
-        // Filter-State (lokaler State über IIFE)
+        // Multi-Filter
         const filtered = inboxMessages.filter(m => {
-          if (inboxFilter === 'all') return true
-          return getMsgType(m) === inboxFilter
+          if (inboxFilter !== 'all' && getMsgType(m) !== inboxFilter) return false
+          if (inboxUnreadOnly && m.read) return false
+          if (inboxPersonFilter !== 'all' && m.model_name !== inboxPersonFilter) return false
+          return true
         })
         const counts = {
           all: inboxMessages.length,
@@ -869,6 +876,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           status: inboxMessages.filter(m => getMsgType(m) === 'status').length,
           freitext: inboxMessages.filter(m => getMsgType(m) === 'freitext').length,
         }
+        const uniquePersons = [...new Set(inboxMessages.map(m => m.model_name))].filter(Boolean).sort()
+        const unreadCnt = inboxMessages.filter(m => !m.read).length
         const renderMsgText = (msg) => {
           const type = getMsgType(msg)
           if (type === 'content') return `📸 Hat neuen Content im OF-Tresor hochgeladen`
@@ -884,9 +893,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           return { label: 'FREITEXT', bg: 'rgba(124,58,237,0.15)', color: '#a78bfa' }
         }
         return (
-        <Card title={`Nachrichten (${counts.all})`}>
-          {/* Filter-Buttons */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        <Card title={`Nachrichten (${filtered.length}${filtered.length !== counts.all ? ` von ${counts.all}` : ''})`}>
+          {/* Type-Filter */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {[
               { key: 'all', label: `Alle (${counts.all})` },
               { key: 'content', label: `📸 Content (${counts.content})` },
@@ -912,9 +921,34 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             )}
           </div>
 
+          {/* Person-Filter + Ungelesen-Toggle */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
+            <button onClick={() => setInboxUnreadOnly(!inboxUnreadOnly)} style={{
+              fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+              background: inboxUnreadOnly ? 'rgba(239,68,68,0.15)' : 'transparent',
+              border: `1px solid ${inboxUnreadOnly ? '#ef4444' : 'var(--border)'}`,
+              color: inboxUnreadOnly ? '#ef4444' : 'var(--text-secondary)',
+              fontWeight: 600, fontFamily: 'inherit'
+            }}>
+              {inboxUnreadOnly ? '● Nur ungelesen' : `○ Nur ungelesen (${unreadCnt})`}
+            </button>
+            {uniquePersons.length > 1 && (
+              <select value={inboxPersonFilter} onChange={e => setInboxPersonFilter(e.target.value)} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                background: inboxPersonFilter !== 'all' ? 'rgba(124,58,237,0.15)' : 'var(--bg-input)',
+                border: `1px solid ${inboxPersonFilter !== 'all' ? '#7c3aed' : 'var(--border)'}`,
+                color: inboxPersonFilter !== 'all' ? '#a78bfa' : 'var(--text-secondary)',
+                fontWeight: 600, fontFamily: 'inherit', outline: 'none'
+              }}>
+                <option value="all">Alle Personen</option>
+                {uniquePersons.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            )}
+          </div>
+
           {filtered.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
-              {inboxFilter === 'all' ? 'Noch keine Nachrichten' : 'Keine Nachrichten in dieser Kategorie'}
+              {inboxFilter === 'all' && !inboxUnreadOnly && inboxPersonFilter === 'all' ? 'Noch keine Nachrichten' : 'Keine Nachrichten passen zum Filter'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -975,52 +1009,115 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       })()}
 
       {/* VERLAUF */}
-      {activeSection === 'history' && (
-        <Card title="Nachrichtenverlauf">
+      {activeSection === 'history' && (() => {
+        const searchLower = historySearch.toLowerCase().trim()
+        const filteredHistory = searchLower
+          ? historyMessages.filter(m =>
+              (m.text || '').toLowerCase().includes(searchLower) ||
+              (m.model_name || '').toLowerCase().includes(searchLower) ||
+              (m.sent_by || '').toLowerCase().includes(searchLower)
+            )
+          : historyMessages
+        return (
+        <Card title={`Nachrichtenverlauf${searchLower ? ` (${filteredHistory.length} von ${historyMessages.length})` : ''}`}>
           {messages.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Nachrichten</div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>{['Zeit', 'Name', 'Typ', 'Richtung', 'Von', 'Nachricht'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {historyMessages.map(msg => (
-                    <tr key={msg.id}>
-                      <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatTime(msg.created_at)}</td>
-                      <td style={{ ...tdS, fontWeight: 600 }}>{msg.model_name}</td>
-                      <td style={tdS}>
-                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 600, background: msg.contact_type === 'chatter' ? 'rgba(6,182,212,0.15)' : 'rgba(124,58,237,0.15)', color: msg.contact_type === 'chatter' ? '#06b6d4' : '#a78bfa' }}>
-                          {msg.contact_type === 'chatter' ? 'Chatter' : 'Model'}
-                        </span>
-                      </td>
-                      <td style={tdS}>
-                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 600, background: msg.direction === 'out' ? 'rgba(124,58,237,0.15)' : 'rgba(16,185,129,0.15)', color: msg.direction === 'out' ? '#a78bfa' : '#10b981' }}>
-                          {msg.direction === 'out' ? '→ Gesendet' : '← Empfangen'}
-                        </span>
-                      </td>
-                      <td style={{ ...tdS, fontWeight: 600, color: msg.direction === 'out' ? (msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4') : '#10b981' }}>
-                        {msg.direction === 'out' ? (msg.sent_by || '—') : msg.model_name}
-                      </td>
-                      <td style={{ ...tdS, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.text}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Such-Feld */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={e => setHistorySearch(e.target.value)}
+                  placeholder="🔍 Suche im Verlauf (Text, Name, Absender)..."
+                  style={{
+                    flex: 1, background: 'var(--bg-input)', border: '1px solid var(--border)',
+                    color: 'var(--text-primary)', padding: '7px 12px', borderRadius: 7,
+                    fontSize: 12, fontFamily: 'inherit', outline: 'none'
+                  }}
+                />
+                {historySearch && (
+                  <button onClick={() => setHistorySearch('')} style={{
+                    fontSize: 11, padding: '6px 12px', borderRadius: 7, cursor: 'pointer',
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', fontFamily: 'inherit'
+                  }}>✕ Löschen</button>
+                )}
+              </div>
+              {filteredHistory.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+                  Keine Treffer für "{historySearch}"
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>{['Zeit', 'Name', 'Typ', 'Richtung', 'Von', 'Nachricht'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {filteredHistory.map(msg => (
+                        <tr key={msg.id}>
+                          <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatTime(msg.created_at)}</td>
+                          <td style={{ ...tdS, fontWeight: 600 }}>{msg.model_name}</td>
+                          <td style={tdS}>
+                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 600, background: msg.contact_type === 'chatter' ? 'rgba(6,182,212,0.15)' : 'rgba(124,58,237,0.15)', color: msg.contact_type === 'chatter' ? '#06b6d4' : '#a78bfa' }}>
+                              {msg.contact_type === 'chatter' ? 'Chatter' : 'Model'}
+                            </span>
+                          </td>
+                          <td style={tdS}>
+                            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 600, background: msg.direction === 'out' ? 'rgba(124,58,237,0.15)' : 'rgba(16,185,129,0.15)', color: msg.direction === 'out' ? '#a78bfa' : '#10b981' }}>
+                              {msg.direction === 'out' ? '→ Gesendet' : '← Empfangen'}
+                            </span>
+                          </td>
+                          <td style={{ ...tdS, fontWeight: 600, color: msg.direction === 'out' ? (msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4') : '#10b981' }}>
+                            {msg.direction === 'out' ? (msg.sent_by || '—') : msg.model_name}
+                          </td>
+                          <td style={{ ...tdS, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.text}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </Card>
-      )}
+        )
+      })()}
 
       {/* CONTENT-ANFRAGEN */}
-      {activeSection === 'content-requests' && (
-        <Card title={`Content-Anfragen (${contentRequests.length})`}>
-          {contentRequests.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Anfragen</div>
+      {activeSection === 'content-requests' && (() => {
+        const offeneRequests = contentRequests.filter(r => r.status !== 'erledigt' && r.status !== 'abgelehnt')
+        const erledigteRequests = contentRequests.filter(r => r.status === 'erledigt' || r.status === 'abgelehnt')
+        const filteredRequests = contentFilter === 'offen' ? offeneRequests
+          : contentFilter === 'erledigt' ? erledigteRequests
+          : contentRequests
+        return (
+        <Card title={`Content-Anfragen (${filteredRequests.length})`}>
+          {/* Filter-Buttons */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {[
+              { key: 'offen', label: `⏳ Offen (${offeneRequests.length})` },
+              { key: 'erledigt', label: `✓ Erledigt (${erledigteRequests.length})` },
+              { key: 'all', label: `Alle (${contentRequests.length})` },
+            ].map(f => (
+              <button key={f.key} onClick={() => setContentFilter(f.key)} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                background: contentFilter === f.key ? 'rgba(124,58,237,0.2)' : 'transparent',
+                border: `1px solid ${contentFilter === f.key ? '#7c3aed' : 'var(--border)'}`,
+                color: contentFilter === f.key ? '#a78bfa' : 'var(--text-secondary)',
+                fontWeight: 600, fontFamily: 'inherit'
+              }}>{f.label}</button>
+            ))}
+          </div>
+          {filteredRequests.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+              {contentFilter === 'offen' ? 'Keine offenen Anfragen 🎉' : contentFilter === 'erledigt' ? 'Noch keine erledigten Anfragen' : 'Noch keine Anfragen'}
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {contentRequests.map(req => {
+              {filteredRequests.map(req => {
                 const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
                 const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
                 const remainder = (req.price || 0) - (req.deposit || 0)
@@ -1174,7 +1271,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             </div>
           )}
         </Card>
-      )}
+        )
+      })()}
 
       {/* CUSTOM VERLAUF */}
       {activeSection === 'content-verlauf' && (() => {
@@ -1409,9 +1507,35 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           <Card title="Letzte Änderungen">
             {modelBoardActivity.length === 0 ? (
               <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Noch keine Änderungen</div>
-            ) : (
+            ) : (() => {
+              const uniqueModels = [...new Set(modelBoardActivity.map(a => a.model_name))].sort()
+              const filtered = boardsModelFilter === 'all'
+                ? modelBoardActivity
+                : modelBoardActivity.filter(a => a.model_name === boardsModelFilter)
+              return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button onClick={() => setBoardsModelFilter('all')} style={{
+                      fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                      background: boardsModelFilter === 'all' ? 'rgba(245,158,11,0.2)' : 'transparent',
+                      border: `1px solid ${boardsModelFilter === 'all' ? '#f59e0b' : 'var(--border)'}`,
+                      color: boardsModelFilter === 'all' ? '#f59e0b' : 'var(--text-secondary)',
+                      fontWeight: 600, fontFamily: 'inherit'
+                    }}>Alle ({modelBoardActivity.length})</button>
+                    {uniqueModels.map(m => {
+                      const cnt = modelBoardActivity.filter(a => a.model_name === m).length
+                      return (
+                        <button key={m} onClick={() => setBoardsModelFilter(m)} style={{
+                          fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                          background: boardsModelFilter === m ? 'rgba(245,158,11,0.2)' : 'transparent',
+                          border: `1px solid ${boardsModelFilter === m ? '#f59e0b' : 'var(--border)'}`,
+                          color: boardsModelFilter === m ? '#f59e0b' : 'var(--text-secondary)',
+                          fontWeight: 600, fontFamily: 'inherit'
+                        }}>{m} ({cnt})</button>
+                      )
+                    })}
+                  </div>
                   <button onClick={async () => {
                     await supabase.from('model_board_activity').update({ read: true }).eq('read', false)
                     setModelBoardActivity(prev => prev.map(a => ({ ...a, read: true })))
@@ -1419,7 +1543,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     Alle als gelesen markieren
                   </button>
                 </div>
-                {modelBoardActivity.slice(0, 20).map(a => (
+                {filtered.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Keine Änderungen für {boardsModelFilter}</div>
+                ) : filtered.slice(0, 20).map(a => (
                   <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: a.read ? 'var(--bg-card2)' : 'rgba(245,158,11,0.06)', borderRadius: 8, border: `1px solid ${a.read ? 'var(--border)' : 'rgba(245,158,11,0.2)'}` }}>
                     <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#f59e0b', flexShrink: 0 }}>
                       {a.model_name[0]}
@@ -1438,7 +1564,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   </div>
                 ))}
               </div>
-            )}
+              )
+            })()}
           </Card>
 
           {/* Model buttons */}
