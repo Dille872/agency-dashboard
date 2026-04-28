@@ -27,7 +27,6 @@ serve(async (_req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    // Get Berlin time
     const now = new Date()
     const berlinStr = now.toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' })
     const berlinDate = new Date(berlinStr)
@@ -36,7 +35,6 @@ serve(async (_req) => {
     const todayIso = berlinStr.slice(0, 10)
     const weekStartIso = getWeekStart(berlinDate)
 
-    // Load schedule - only if LIVE
     const { data: schedData } = await supabase
       .from('schedule')
       .select('*')
@@ -48,19 +46,17 @@ serve(async (_req) => {
       return new Response(JSON.stringify({ message: 'No live schedule found' }), { status: 200 })
     }
 
-    // Load online statuses - chatter is online if shift_online and last_seen < 5 min ago
+    // 5 Min Cutoff statt 2 Min - Frontend pingt nicht jede Minute
     const { data: onlineData } = await supabase.from('online_status').select('*')
     const shiftOnlineMap: Record<string, boolean> = {}
     const cutoff = new Date(Date.now() - 5 * 60 * 1000)
     for (const s of onlineData || []) {
-      // Skip alert markers in online_status (legacy)
       if (s.display_name?.startsWith('ALERTED_')) continue
       if (s.shift_online && s.last_seen && new Date(s.last_seen) > cutoff) {
         shiftOnlineMap[s.display_name] = true
       }
     }
 
-    // Load already alerted today from online_status (legacy ALERTED_ markers)
     const { data: alertedData } = await supabase
       .from('online_status')
       .select('display_name')
@@ -86,7 +82,6 @@ serve(async (_req) => {
       const alertKey = `${chatterName}_${shift}`
       if (alreadyAlerted.has(alertKey)) continue
 
-      // Get shift start time
       const modelId = parts[0]
       const timeStr = (shiftTimes[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '').trim()
       if (!timeStr) continue
@@ -98,16 +93,14 @@ serve(async (_req) => {
       const shiftStartMins = timeParts[0] * 60 + timeParts[1]
       const nowMins = currentHour * 60 + currentMin
 
-      // Alert between 15-25 minutes after shift start
       if (nowMins >= shiftStartMins + 15 && nowMins <= shiftStartMins + 25) {
-        // FIX 1: Check online status BEFORE doing anything else
+        // FIX 1: Online check FIRST
         if (shiftOnlineMap[chatterName]) {
           skippedAlreadyOnline.push(alertKey)
           continue
         }
 
-        // FIX 2: Write marker FIRST (atomic-ish), then send alert
-        // If marker already exists (concurrent run), skip
+        // FIX 2: Insert marker FIRST (insert, not upsert!) - bei concurrent run failed der zweite
         const markerKey = `ALERTED_${todayIso}_${alertKey}`
         const { error: markerErr } = await supabase
           .from('online_status')
@@ -118,8 +111,7 @@ serve(async (_req) => {
           })
 
         if (markerErr) {
-          // Marker already exists or other error - skip
-          console.log(`Skipping ${alertKey}: marker likely exists`, markerErr.message)
+          console.log(`Skipping ${alertKey}: marker exists`, markerErr.message)
           continue
         }
 
