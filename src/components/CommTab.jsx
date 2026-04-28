@@ -513,6 +513,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadMessages()
   }
 
+  const markSingleInboxRead = async (msgId) => {
+    await supabase.from('messages').update({ read: true }).eq('id', msgId)
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, read: true } : m))
+  }
+
+  const markFilteredInboxRead = async (msgIds) => {
+    if (!msgIds || msgIds.length === 0) return
+    await supabase.from('messages').update({ read: true }).in('id', msgIds)
+    setMessages(prev => prev.map(m => msgIds.includes(m.id) ? { ...m, read: true } : m))
+  }
+
   const toggleChatter = (id) => {
     setSelectedChatters(prev => {
       const next = new Set(prev)
@@ -1128,6 +1139,20 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 {uniquePersons.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             )}
+            {(() => {
+              const filteredUnreadIds = filtered.filter(m => !m.read).map(m => m.id)
+              const isFilterActive = inboxFilter !== 'all' || inboxPersonFilter !== 'all' || inboxUnreadOnly
+              if (isFilterActive && filteredUnreadIds.length > 0) {
+                return (
+                  <button onClick={() => markFilteredInboxRead(filteredUnreadIds)} style={{
+                    marginLeft: 'auto', fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                    background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)',
+                    color: '#10b981', fontFamily: 'inherit', fontWeight: 600
+                  }}>✓ Gefilterte als gelesen ({filteredUnreadIds.length})</button>
+                )
+              }
+              return null
+            })()}
           </div>
 
           {filtered.length === 0 ? (
@@ -1158,9 +1183,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{renderMsgText(msg)}</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   {msg.model_telegram_id && (
                     replyingTo === msg.id ? (
-                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4, flex: 1 }}>
                         <input
                           autoFocus
                           value={replyText}
@@ -1183,6 +1209,14 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       </button>
                     )
                   )}
+                  {!msg.read && replyingTo !== msg.id && (
+                    <button onClick={() => markSingleInboxRead(msg.id)} style={{
+                      fontSize: 10, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
+                      background: 'transparent', border: '1px solid rgba(16,185,129,0.3)',
+                      color: '#10b981', fontFamily: 'inherit', fontWeight: 600
+                    }}>✓ Gelesen</button>
+                  )}
+                  </div>
                 </div>
                 )
               })}
