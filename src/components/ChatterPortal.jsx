@@ -4,11 +4,10 @@ import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage } from '../telegram'
+import { APP_VERSION } from '../version'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
-
-const APP_VERSION = 'v2.2.7'
 
 const ADMIN_TZ = 'Europe/Berlin'
 

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { getTheme, setTheme } from '../theme'
-
-const APP_VERSION = 'v2.0.1'
+import { APP_VERSION } from '../version'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },

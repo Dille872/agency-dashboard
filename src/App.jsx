@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 import { getTheme, setTheme, initTheme } from './theme'
+import { APP_VERSION } from './version'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
@@ -24,31 +25,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [needsPassword, setNeedsPassword] = useState(false)
 
-  const [activeTab, setActiveTab] = useState(() => {
-    // Initialer Tab aus URL-Hash, sonst 'models'
-    const hash = window.location.hash.replace('#', '')
-    return hash || 'models'
-  })
-
-  // URL-Hash bei Tab-Wechsel aktualisieren (für Refresh-Persistenz)
-  useEffect(() => {
-    if (activeTab && activeTab !== 'models') {
-      window.history.replaceState(null, '', `#${activeTab}`)
-    } else {
-      window.history.replaceState(null, '', window.location.pathname)
-    }
-  }, [activeTab])
-
-  // Browser Back/Forward Button: auf URL-Hash reagieren
-  useEffect(() => {
-    const onHashChange = () => {
-      const hash = window.location.hash.replace('#', '')
-      setActiveTab(hash || 'models')
-    }
-    window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
-  }, [])
-
+  const [activeTab, setActiveTab] = useState('models')
   const [businessDate, setBusinessDate] = useState(todayISO())
   const [modelSnapshots, setModelSnapshots] = useState([])
   const [chatterSnapshots, setChatterSnapshots] = useState([])
@@ -540,7 +517,7 @@ export default function App() {
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>v2.6.6</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
         </div>
       </div>
 
