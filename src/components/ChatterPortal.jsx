@@ -568,10 +568,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const loadMessages = async () => {
+    if (!displayName) return
     const { data } = await supabase
       .from('messages')
       .select('*')
       .eq('direction', 'out')
+      .eq('contact_type', 'chatter')
+      .eq('model_name', displayName)
       .order('created_at', { ascending: false })
       .limit(10)
     setMessages(data || [])
@@ -1196,7 +1199,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
                 Nachrichten vom Team
               </div>
-              {messages.filter(m => !m.read_at && m.direction === 'out').length > 0 && !isPreview && (
+              {messages.filter(m => !m.read_at && m.direction === 'out').length > 0 && (
                 <button onClick={markAllMessagesRead} style={{
                   fontSize: 10, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
                   background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)',
@@ -1227,7 +1230,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>{formatTime(msg.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: isUnread ? 8 : 0 }}>{msg.text}</div>
-                  {isUnread && !isPreview && (
+                  {isUnread && (
                     <button onClick={() => markSingleMessageRead(msg.id)} style={{
                       fontSize: 10, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
                       background: 'transparent', border: '1px solid rgba(245,158,11,0.4)',
