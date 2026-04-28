@@ -198,6 +198,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [announcements, setAnnouncements] = useState([])
   const [showAnnArchive, setShowAnnArchive] = useState(false)
   const [showNewRequestForm, setShowNewRequestForm] = useState(false)
+  // Content-Ideen
+  const [contentIdeas, setContentIdeas] = useState([])
+  const [showNewIdeaForm, setShowNewIdeaForm] = useState(false)
+  const [newIdeaModel, setNewIdeaModel] = useState('')
+  const [newIdeaText, setNewIdeaText] = useState('')
+  const [newIdeaCategory, setNewIdeaCategory] = useState('bilder')
+  const [newIdeaPriority, setNewIdeaPriority] = useState('normal')
+  const [sendingIdea, setSendingIdea] = useState(false)
   // Collapse-State pro Sektion mit Localstorage-Memory
   const COLLAPSE_KEY = `chatterportal_collapse_${displayName || 'default'}`
   const [collapsed, setCollapsed] = useState(() => {
@@ -213,6 +221,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       note: true,
       models: true,
       content: true,
+      ideas: true,
       swap: true,
       stats: true,
       bot: true,
@@ -288,6 +297,41 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .gte('created_at', twoWeeksAgo.toISOString())
       .order('created_at', { ascending: false })
     setContentRequests(data || [])
+  }
+
+  const loadContentIdeas = async () => {
+    const fourWeeksAgo = new Date()
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
+    const { data } = await supabase.from('content_ideas')
+      .select('*')
+      .eq('created_by', displayName)
+      .gte('created_at', fourWeeksAgo.toISOString())
+      .order('created_at', { ascending: false })
+    setContentIdeas(data || [])
+  }
+
+  const submitContentIdea = async () => {
+    if (!newIdeaModel || !newIdeaText.trim()) return
+    setSendingIdea(true)
+    const { error } = await supabase.from('content_ideas').insert({
+      model_name: newIdeaModel,
+      idea_text: newIdeaText.trim(),
+      category: newIdeaCategory,
+      priority: newIdeaPriority,
+      status: 'offen',
+      created_by: displayName,
+    })
+    setSendingIdea(false)
+    if (error) {
+      alert('Fehler: ' + error.message)
+      return
+    }
+    setNewIdeaText('')
+    setNewIdeaModel('')
+    setNewIdeaCategory('bilder')
+    setNewIdeaPriority('normal')
+    setShowNewIdeaForm(false)
+    loadContentIdeas()
   }
 
   const submitContentRequest = async () => {
@@ -461,6 +505,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     loadStats()
     loadModels()
     loadContentRequests()
+    loadContentIdeas()
     loadMyReminders()
     loadMyAbsences()
     loadOnlineStatus()
@@ -1402,7 +1447,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         )}
 
         {/* Content Requests */}
-        <Collapsible k="content" icon="🎬" title="Content-Anfragen" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
+        <Collapsible k="content" icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
         <div>
             {!showNewRequestForm ? (
               <button onClick={() => setShowNewRequestForm(true)} style={{
@@ -1574,6 +1619,138 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             </div>
           )}
         </div>
+        </Collapsible>
+
+        {/* Content-Ideen */}
+        <Collapsible k="ideas" icon="💡" title="Content-Ideen" badge={contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length || null} badgeColor="#a78bfa">
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+            Wünsche & Ideen für Content der demnächst gemacht werden sollte. Wird vom Admin reviewed und ggf. ans Model weitergeleitet.
+          </div>
+
+          {!showNewIdeaForm ? (
+            <button onClick={() => setShowNewIdeaForm(true)} style={{
+              width: '100%', padding: '10px 14px', borderRadius: 8,
+              background: 'rgba(167,139,250,0.1)', border: '1px dashed rgba(167,139,250,0.3)',
+              color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit',
+              fontWeight: 600, fontSize: 13, marginBottom: 12
+            }}>+ Neue Content-Idee</button>
+          ) : (
+            <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: 12, marginBottom: 12, border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Neue Idee</div>
+                <button onClick={() => setShowNewIdeaForm(false)} style={{
+                  background: 'transparent', border: 'none', color: 'var(--text-muted)',
+                  cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', padding: 0
+                }}>✕</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Für Model *</label>
+                  <select value={newIdeaModel} onChange={e => setNewIdeaModel(e.target.value)}
+                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+                    <option value="">— wählen —</option>
+                    {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Kategorie</label>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[['bilder','📸 Bilder'],['videos','🎬 Videos'],['audio','🎙 Audio'],['sonstiges','💭 Sonst']].map(([k,l]) => (
+                      <button key={k} type="button" onClick={() => setNewIdeaCategory(k)} style={{
+                        flex: 1, fontSize: 11, padding: '6px 4px', borderRadius: 6, cursor: 'pointer',
+                        background: newIdeaCategory === k ? 'rgba(167,139,250,0.2)' : 'var(--bg-input)',
+                        border: `1px solid ${newIdeaCategory === k ? '#a78bfa' : '#2e2e5a'}`,
+                        color: newIdeaCategory === k ? '#a78bfa' : 'var(--text-secondary)',
+                        fontFamily: 'inherit', fontWeight: 600
+                      }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Was fehlt / Idee *</label>
+                <textarea value={newIdeaText} onChange={e => setNewIdeaText(e.target.value)} rows={3}
+                  placeholder="z.B. Brauchen neue Bikini-Bilder für Promo / Fehlt Heels-Content / Neue Talking-Videos zum Kennenlernen wären gut"
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>Priorität</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[
+                    ['urgent','🔥 Dringend','#ef4444'],
+                    ['normal','📅 Normal','#f59e0b'],
+                    ['nice','💭 Wenn Zeit','#06b6d4']
+                  ].map(([k,l,c]) => (
+                    <button key={k} type="button" onClick={() => setNewIdeaPriority(k)} style={{
+                      flex: 1, fontSize: 11, padding: '7px 4px', borderRadius: 6, cursor: 'pointer',
+                      background: newIdeaPriority === k ? c + '22' : 'var(--bg-input)',
+                      border: `1px solid ${newIdeaPriority === k ? c : '#2e2e5a'}`,
+                      color: newIdeaPriority === k ? c : 'var(--text-secondary)',
+                      fontFamily: 'inherit', fontWeight: 600
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={submitContentIdea} disabled={sendingIdea || !newIdeaModel || !newIdeaText.trim()} style={{
+                  flex: 1, fontSize: 13, padding: '8px 16px', borderRadius: 7,
+                  background: (newIdeaModel && newIdeaText.trim()) ? '#a78bfa' : 'var(--border)',
+                  color: (newIdeaModel && newIdeaText.trim()) ? '#fff' : 'var(--text-muted)',
+                  border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700
+                }}>{sendingIdea ? 'Speichern...' : '+ Idee einreichen'}</button>
+              </div>
+            </div>
+          )}
+
+          {/* Eigene Ideen Liste */}
+          {contentIdeas.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0', textAlign: 'center' }}>Noch keine Ideen eingereicht</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {contentIdeas.map(idea => {
+                const statusColor = idea.status === 'erledigt' ? '#10b981' : idea.status === 'in_arbeit' ? '#06b6d4' : idea.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
+                const statusLabel = idea.status === 'erledigt' ? '✓ Erledigt' : idea.status === 'in_arbeit' ? '⚙ In Arbeit' : idea.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Offen'
+                const prioIcon = idea.priority === 'urgent' ? '🔥' : idea.priority === 'nice' ? '💭' : '📅'
+                const catIcon = idea.category === 'videos' ? '🎬' : idea.category === 'audio' ? '🎙' : idea.category === 'sonstiges' ? '💭' : '📸'
+                return (
+                  <div key={idea.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13 }}>{catIcon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{idea.model_name}</span>
+                        <span style={{ fontSize: 10 }}>{prioIcon}</span>
+                        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
+                      </div>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
+                        {new Date(idea.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      {idea.edited_text || idea.idea_text}
+                    </div>
+                    {idea.edited_text && idea.edited_text !== idea.idea_text && (
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>
+                        ↳ vom Admin editiert
+                      </div>
+                    )}
+                    {idea.admin_note && (
+                      <div style={{ fontSize: 11, color: '#06b6d4', marginTop: 6, padding: '4px 8px', background: 'rgba(6,182,212,0.08)', borderRadius: 5 }}>
+                        💬 Admin: {idea.admin_note}
+                      </div>
+                    )}
+                    {idea.sent_to_model_at && (
+                      <div style={{ fontSize: 10, color: '#10b981', marginTop: 4 }}>
+                        ✓ An Model gesendet {new Date(idea.sent_to_model_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit' })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </Collapsible>
 
         {/* Schicht-Tausch */}

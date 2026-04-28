@@ -190,6 +190,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [newAnnEmoji, setNewAnnEmoji] = useState('📌')
   const [newAnnExpiresAt, setNewAnnExpiresAt] = useState('')
   const [showAnnForm, setShowAnnForm] = useState(false)
+  // Content-Ideen Admin
+  const [contentIdeas, setContentIdeas] = useState([])
+  const [editingIdeaId, setEditingIdeaId] = useState(null)
+  const [editingIdeaText, setEditingIdeaText] = useState('')
+  const [editingAdminNote, setEditingAdminNote] = useState('')
+  const [ideasFilter, setIdeasFilter] = useState('open')
   // Crew-Tab Collapse
   const [crewCollapse, setCrewCollapse] = useState({
     chatters: false,    // sichtbar by default
@@ -203,7 +209,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
     loadAnnouncements()
     // Load section-specific data
-    if (section === 'models') { loadContentRequests(); loadModelBoardActivity() }
+    if (section === 'models') { loadContentRequests(); loadModelBoardActivity(); loadContentIdeas() }
     if (section === 'chatters') { loadShiftLogs(); loadSwaps() }
     setTimeout(loadOnlineStatuses, 3000) // reload after heartbeat sent
     const interval = setInterval(() => {
@@ -243,6 +249,73 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       .order('priority', { ascending: false })
       .order('created_at', { ascending: false })
     setAnnouncements(data || [])
+  }
+
+  const loadContentIdeas = async () => {
+    const { data } = await supabase
+      .from('content_ideas')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setContentIdeas(data || [])
+  }
+
+  const updateIdeaStatus = async (id, newStatus) => {
+    const updates = { status: newStatus, reviewed_by: displayName, reviewed_at: new Date().toISOString() }
+    await supabase.from('content_ideas').update(updates).eq('id', id)
+    loadContentIdeas()
+  }
+
+  const saveIdeaEdit = async (id) => {
+    const updates = {
+      edited_text: editingIdeaText.trim() || null,
+      admin_note: editingAdminNote.trim() || null,
+      reviewed_by: displayName,
+      reviewed_at: new Date().toISOString(),
+    }
+    await supabase.from('content_ideas').update(updates).eq('id', id)
+    setEditingIdeaId(null)
+    setEditingIdeaText('')
+    setEditingAdminNote('')
+    loadContentIdeas()
+  }
+
+  const sendIdeaToModel = async (idea) => {
+    const text = idea.edited_text || idea.idea_text
+    const prioMap = { urgent: '🔥 DRINGEND', normal: '📅 Normal', nice: '💭 Wenn Zeit' }
+    const catMap = { bilder: '📸 Bilder', videos: '🎬 Videos', audio: '🎙 Audio', sonstiges: '💭 Sonstiges' }
+    const tgMsg = `<b>💡 Content-Idee vom Team</b>\n\n${catMap[idea.category] || ''} · ${prioMap[idea.priority] || ''}\n\n${text}${idea.admin_note ? '\n\n💬 Hinweis: ' + idea.admin_note : ''}\n\n– Thirteen 87`
+    // Telegram an Model
+    const { data: modelData } = await supabase.from('models_contact').select('telegram_id').eq('name', idea.model_name).maybeSingle()
+    if (modelData?.telegram_id) {
+      try {
+        await sendTelegramMessage(modelData.telegram_id, tgMsg)
+      } catch (err) {
+        alert('Telegram-Fehler: ' + err.message)
+        return
+      }
+    }
+    // Auch in messages-Tabelle speichern
+    await supabase.from('messages').insert({
+      model_name: idea.model_name,
+      contact_type: 'model',
+      direction: 'out',
+      text: text,
+      sent_by: displayName,
+      type: 'content_idea',
+    })
+    // Status updaten
+    await supabase.from('content_ideas').update({
+      sent_to_model_at: new Date().toISOString(),
+      status: idea.status === 'offen' ? 'in_arbeit' : idea.status,
+    }).eq('id', idea.id)
+    loadContentIdeas()
+  }
+
+  const deleteIdea = async (id) => {
+    if (!confirm('Idee wirklich löschen?')) return
+    await supabase.from('content_ideas').delete().eq('id', id)
+    loadContentIdeas()
   }
 
   const postAnnouncement = async () => {
@@ -600,8 +673,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         {[
           (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => !a.read).length > 0) ? 1 : 0 },
           section === 'models' && { key: 'modelboards', label: `Boards${modelBoardActivity.filter(a => !a.read).length > 0 ? ` (${modelBoardActivity.filter(a => !a.read).length})` : ''}` },
-          section === 'models' && { key: 'content-requests', label: `Content-Anfragen${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
+          section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
+          section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
           section === 'models' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model').length },
           section === 'models' && { key: 'history', label: 'Verlauf' },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
@@ -618,6 +692,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             if (s.key === 'modelboards') { loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
             if (s.key === 'content-requests') loadContentRequests()
             if (s.key === 'content-verlauf') loadContentRequests()
+            if (s.key === 'content-ideas') loadContentIdeas()
             if (s.key === 'chatters') { /* already loaded */ }
             if (s.key === 'swaps') loadSwaps()
             if (s.key === 'stats' || s.key === 'shiftlog') loadShiftLogs()
@@ -1210,7 +1285,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         )
       })()}
 
-      {/* CONTENT-ANFRAGEN */}
+      {/* CUSTOM CONTENT */}
       {activeSection === 'content-requests' && (() => {
         const offeneRequests = contentRequests.filter(r => r.status !== 'erledigt' && r.status !== 'abgelehnt')
         const erledigteRequests = contentRequests.filter(r => r.status === 'erledigt' || r.status === 'abgelehnt')
@@ -1218,7 +1293,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           : contentFilter === 'erledigt' ? erledigteRequests
           : contentRequests
         return (
-        <Card title={`Content-Anfragen (${filteredRequests.length})`}>
+        <Card title={`Custom Content (${filteredRequests.length})`}>
           {/* Filter-Buttons */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             {[
@@ -1388,6 +1463,160 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
                         )}
                       </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Card>
+        )
+      })()}
+
+      {/* CONTENT-IDEEN ADMIN */}
+      {activeSection === 'content-ideas' && (() => {
+        const filteredIdeas = ideasFilter === 'all' ? contentIdeas
+          : ideasFilter === 'open' ? contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit')
+          : ideasFilter === 'done' ? contentIdeas.filter(i => i.status === 'erledigt' || i.status === 'abgelehnt')
+          : contentIdeas
+        return (
+        <Card title={`💡 Content-Ideen (${filteredIdeas.length})`}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+            Wünsche & Ideen die Chatter eingereicht haben. Du kannst editieren, an Model schicken, Status ändern.
+          </div>
+
+          {/* Filter */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {[
+              { key: 'open', label: `⏳ Offen (${contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length})` },
+              { key: 'done', label: `✓ Erledigt (${contentIdeas.filter(i => i.status === 'erledigt' || i.status === 'abgelehnt').length})` },
+              { key: 'all', label: `Alle (${contentIdeas.length})` },
+            ].map(f => (
+              <button key={f.key} onClick={() => setIdeasFilter(f.key)} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                background: ideasFilter === f.key ? 'rgba(167,139,250,0.2)' : 'transparent',
+                border: `1px solid ${ideasFilter === f.key ? '#a78bfa' : 'var(--border)'}`,
+                color: ideasFilter === f.key ? '#a78bfa' : 'var(--text-secondary)',
+                fontWeight: 600, fontFamily: 'inherit'
+              }}>{f.label}</button>
+            ))}
+          </div>
+
+          {filteredIdeas.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+              Keine Ideen in dieser Kategorie
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {filteredIdeas.map(idea => {
+                const statusColor = idea.status === 'erledigt' ? '#10b981' : idea.status === 'in_arbeit' ? '#06b6d4' : idea.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
+                const statusLabel = idea.status === 'erledigt' ? '✓ Erledigt' : idea.status === 'in_arbeit' ? '⚙ In Arbeit' : idea.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Offen'
+                const prioIcon = idea.priority === 'urgent' ? '🔥' : idea.priority === 'nice' ? '💭' : '📅'
+                const prioColor = idea.priority === 'urgent' ? '#ef4444' : idea.priority === 'nice' ? '#06b6d4' : '#f59e0b'
+                const catIcon = idea.category === 'videos' ? '🎬' : idea.category === 'audio' ? '🎙' : idea.category === 'sonstiges' ? '💭' : '📸'
+                const isEditing = editingIdeaId === idea.id
+                const displayText = idea.edited_text || idea.idea_text
+                return (
+                  <div key={idea.id} style={{
+                    padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8,
+                    borderLeft: `3px solid ${statusColor}`, border: `1px solid ${idea.status === 'offen' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}`
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 16 }}>{catIcon}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>{idea.model_name}</span>
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: prioColor + '22', color: prioColor, fontWeight: 600 }}>
+                          {prioIcon} {idea.priority === 'urgent' ? 'Dringend' : idea.priority === 'nice' ? 'Wenn Zeit' : 'Normal'}
+                        </span>
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: statusColor + '22', color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', textAlign: 'right' }}>
+                        Von {idea.created_by}<br/>
+                        {new Date(idea.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+
+                    {!isEditing ? (
+                      <>
+                        <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 8, whiteSpace: 'pre-wrap' }}>
+                          {displayText}
+                        </div>
+                        {idea.edited_text && idea.edited_text !== idea.idea_text && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, padding: '4px 8px', background: 'rgba(124,58,237,0.05)', borderRadius: 5 }}>
+                            <strong>Original:</strong> {idea.idea_text}
+                          </div>
+                        )}
+                        {idea.admin_note && (
+                          <div style={{ fontSize: 11, color: '#06b6d4', marginBottom: 8, padding: '4px 8px', background: 'rgba(6,182,212,0.08)', borderRadius: 5 }}>
+                            💬 Admin-Hinweis: {idea.admin_note}
+                          </div>
+                        )}
+                        {idea.sent_to_model_at && (
+                          <div style={{ fontSize: 10, color: '#10b981', marginBottom: 8 }}>
+                            ✓ An {idea.model_name} gesendet am {new Date(idea.sent_to_model_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Idee (editieren)</label>
+                        <textarea value={editingIdeaText} onChange={e => setEditingIdeaText(e.target.value)} rows={3}
+                          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 6 }} />
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Admin-Hinweis (optional)</label>
+                        <textarea value={editingAdminNote} onChange={e => setEditingAdminNote(e.target.value)} rows={2}
+                          placeholder="z.B. 'Bitte mit Outdoor-Setting' oder 'Eilig wegen Promo'"
+                          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {!isEditing ? (
+                        <>
+                          <button onClick={() => { setEditingIdeaId(idea.id); setEditingIdeaText(idea.edited_text || idea.idea_text); setEditingAdminNote(idea.admin_note || '') }} style={{
+                            fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                            background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontFamily: 'inherit', fontWeight: 600
+                          }}>✎ Bearbeiten</button>
+                          {!idea.sent_to_model_at && (
+                            <button onClick={() => sendIdeaToModel(idea)} style={{
+                              fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                              background: '#06b6d4', border: 'none', color: '#fff', fontFamily: 'inherit', fontWeight: 700
+                            }}>📤 An {idea.model_name} schicken</button>
+                          )}
+                          {idea.sent_to_model_at && (
+                            <button onClick={() => sendIdeaToModel(idea)} style={{
+                              fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                              background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)', color: '#06b6d4', fontFamily: 'inherit', fontWeight: 600
+                            }}>📤 Nochmal schicken</button>
+                          )}
+                          {idea.status !== 'erledigt' && (
+                            <button onClick={() => updateIdeaStatus(idea.id, 'erledigt')} style={{
+                              fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                              background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontFamily: 'inherit', fontWeight: 600
+                            }}>✓ Erledigt</button>
+                          )}
+                          {idea.status !== 'abgelehnt' && (
+                            <button onClick={() => updateIdeaStatus(idea.id, 'abgelehnt')} style={{
+                              fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', fontFamily: 'inherit', fontWeight: 600
+                            }}>✕ Ablehnen</button>
+                          )}
+                          <button onClick={() => deleteIdea(idea.id)} style={{
+                            marginLeft: 'auto', fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                            background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit'
+                          }}>🗑 Löschen</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => saveIdeaEdit(idea.id)} style={{
+                            fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                            background: '#7c3aed', border: 'none', color: '#fff', fontFamily: 'inherit', fontWeight: 700
+                          }}>💾 Speichern</button>
+                          <button onClick={() => { setEditingIdeaId(null); setEditingIdeaText(''); setEditingAdminNote('') }} style={{
+                            fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                            background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit'
+                          }}>Abbrechen</button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )
