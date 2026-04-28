@@ -366,16 +366,33 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     setAnnouncements(prev => prev.map(a => a.id === annId ? { ...a, archived_for: newArchived } : a))
   }
 
-  const markMyMessagesRead = async () => {
+  const markSingleMessageRead = async (msgId) => {
     if (!displayName) return
-    // Markiere alle Out-Messages an mich als gelesen
+    await supabase.from('messages')
+      .update({ read_at: new Date().toISOString(), read_by: displayName })
+      .eq('id', msgId)
+      .is('read_at', null)
+    // Lokal updaten
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, read_at: new Date().toISOString(), read_by: displayName } : m))
+  }
+
+  const markAllMessagesRead = async () => {
+    if (!displayName) return
     await supabase.from('messages')
       .update({ read_at: new Date().toISOString(), read_by: displayName })
       .eq('model_name', displayName)
       .eq('contact_type', 'chatter')
       .eq('direction', 'out')
       .is('read_at', null)
+    setMessages(prev => prev.map(m =>
+      m.contact_type === 'chatter' && m.direction === 'out' && m.model_name === displayName && !m.read_at
+        ? { ...m, read_at: new Date().toISOString(), read_by: displayName }
+        : m
+    ))
   }
+
+  // Backward-compat: alter Name wird beim Initial-Load referenziert
+  const markMyMessagesRead = markAllMessagesRead
 
   const checkIn = async (shiftName) => {
     // Check if already logged in - prevent duplicate logs
@@ -448,7 +465,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     loadMyAbsences()
     loadOnlineStatus()
     loadAnnouncements()
-    markMyMessagesRead()
     checkTodayNote()
     const interval = setInterval(async () => {
       loadMessages()
@@ -1172,25 +1188,60 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         </Collapsible>
 
-        <Collapsible k="messages" icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read).length || null} badgeColor="#7c3aed">
+        <Collapsible k="messages" icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read_at && m.direction === 'out').length || null} badgeColor="#7c3aed">
           {/* Messages + Note */}
           <div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
-              Nachrichten vom Team
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
+                Nachrichten vom Team
+              </div>
+              {messages.filter(m => !m.read_at && m.direction === 'out').length > 0 && !isPreview && (
+                <button onClick={markAllMessagesRead} style={{
+                  fontSize: 10, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
+                  background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)',
+                  color: '#a78bfa', fontFamily: 'inherit', fontWeight: 600
+                }}>✓ Alle gelesen</button>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
               {messages.length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Nachrichten</div>
-              ) : messages.slice(0, 4).map(msg => (
-                <div key={msg.id} style={{ padding: '9px 12px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid rgba(124,58,237,0.2)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4' }}>{msg.sent_by || 'Team'}</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
+              ) : messages.slice(0, 4).map(msg => {
+                const isUnread = msg.direction === 'out' && !msg.read_at
+                return (
+                <div key={msg.id} style={{
+                  padding: '9px 12px',
+                  background: isUnread ? 'rgba(245,158,11,0.06)' : 'var(--bg-card2)',
+                  borderRadius: 8,
+                  border: `1px solid ${isUnread ? 'rgba(245,158,11,0.3)' : 'rgba(124,58,237,0.2)'}`,
+                  position: 'relative'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3, gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4' }}>{msg.sent_by || 'Team'}</span>
+                      {isUnread && (
+                        <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>NEU</span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>{formatTime(msg.created_at)}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{msg.text}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: isUnread ? 8 : 0 }}>{msg.text}</div>
+                  {isUnread && !isPreview && (
+                    <button onClick={() => markSingleMessageRead(msg.id)} style={{
+                      fontSize: 10, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
+                      background: 'transparent', border: '1px solid rgba(245,158,11,0.4)',
+                      color: '#f59e0b', fontFamily: 'inherit', fontWeight: 600
+                    }}>✓ Gelesen</button>
+                  )}
+                  {!isUnread && msg.read_at && msg.direction === 'out' && (
+                    <div style={{ fontSize: 9, color: '#10b981', fontFamily: 'monospace', marginTop: 4 }}>
+                      ✓ gelesen {new Date(msg.read_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
                 </div>
-              ))}
+                )
+              })}
             </div>
             <div ref={noteRef} style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12 }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Schichtnotiz hinterlassen</div>
