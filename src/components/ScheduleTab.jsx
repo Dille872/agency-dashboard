@@ -103,6 +103,35 @@ export default function ScheduleTab({ session }) {
   const [sending, setSending] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
+  // Collapse pro Model — persistiert in Localstorage
+  const [collapsedModels, setCollapsedModels] = useState(() => {
+    try {
+      const saved = localStorage.getItem('schedule_collapsed_models')
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch { return new Set() }
+  })
+
+  const toggleModelCollapse = (modelId) => {
+    setCollapsedModels(prev => {
+      const next = new Set(prev)
+      if (next.has(modelId)) next.delete(modelId)
+      else next.add(modelId)
+      try { localStorage.setItem('schedule_collapsed_models', JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
+  const collapseAllModels = () => {
+    const all = new Set(models.map(m => m.id))
+    setCollapsedModels(all)
+    try { localStorage.setItem('schedule_collapsed_models', JSON.stringify([...all])) } catch {}
+  }
+
+  const expandAllModels = () => {
+    setCollapsedModels(new Set())
+    try { localStorage.setItem('schedule_collapsed_models', JSON.stringify([])) } catch {}
+  }
+
   const [reminderCell, setReminderCell] = useState(null)
   const [sendingReminder, setSendingReminder] = useState(false)
   const [activeReminders, setActiveReminders] = useState({}) // cellKey → true
@@ -631,20 +660,71 @@ export default function ScheduleTab({ session }) {
           })}
         </div>
 
+        {/* Collapse Controls + Models Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, padding: '0 4px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
+            {models.length} Models · {collapsedModels.size > 0 ? `${collapsedModels.size} eingeklappt` : 'alle ausgeklappt'}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={collapseAllModels} style={{
+              fontSize: 10, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--text-secondary)', fontFamily: 'inherit', fontWeight: 600
+            }}>▶ Alle einklappen</button>
+            <button onClick={expandAllModels} style={{
+              fontSize: 10, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--text-secondary)', fontFamily: 'inherit', fontWeight: 600
+            }}>▼ Alle ausklappen</button>
+          </div>
+        </div>
+
         {/* Models */}
         {models.map((model, mi) => {
           const modelColors = ['#f59e0b', '#10b981', '#a78bfa', '#06b6d4', '#ef4444', '#f97316', '#ec4899', '#14b8a6']
           const modelColor = modelColors[mi % modelColors.length]
+          const isCollapsed = collapsedModels.has(model.id)
+
+          // Mini-Stats für collapsed-Anzeige: wieviele Cells sind besetzt diese Woche
+          let totalCells = 0
+          let filledCells = 0
+          let frei = 0
+          let pending = 0
+          for (const day of weekDays) {
+            const dayIso = isoDate(day)
+            for (const shift of SHIFTS) {
+              totalCells++
+              const c = getCell(model.id, dayIso, shift)
+              if (c.chatter === '__FREI__') frei++
+              else if (c.chatter) {
+                if (c.confirmed === false) pending++
+                else filledCells++
+              }
+            }
+          }
+
           return (
             <div key={model.id} style={{ background: modelColor + '08', border: `1px solid ${modelColor}30`, borderRadius: 12, padding: 10, marginBottom: 10 }}>
-              {/* Model header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              {/* Model header — klickbar zum kollabieren */}
+              <div
+                onClick={() => toggleModelCollapse(model.id)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isCollapsed ? 0 : 10, cursor: 'pointer', userSelect: 'none' }}
+              >
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, width: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
                 <div style={{ width: 26, height: 26, borderRadius: '50%', background: modelColor + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: modelColor, flexShrink: 0 }}>{model.name[0]}</div>
                 <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{model.name}</span>
+                {isCollapsed && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', fontSize: 10, fontFamily: 'monospace' }}>
+                    <span style={{ color: '#10b981' }}>✓ {filledCells}</span>
+                    {pending > 0 && <span style={{ color: '#f59e0b' }}>⏳ {pending}</span>}
+                    {frei > 0 && <span style={{ color: '#06b6d4' }}>frei {frei}</span>}
+                    <span style={{ color: 'var(--text-muted)' }}>· {totalCells - filledCells - frei - pending} offen</span>
+                  </div>
+                )}
               </div>
 
-              {/* Shifts */}
-              {SHIFTS.map(shift => (
+              {/* Shifts — nur wenn nicht collapsed */}
+              {!isCollapsed && SHIFTS.map(shift => (
                 <div key={shift} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 2, background: SHIFT_COLORS[shift], flexShrink: 0 }} />
