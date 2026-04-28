@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { sendTelegramMessage, notifyOwner, getUpdates } from '../telegram'
+import { sendTelegramMessage, notifyOwner } from '../telegram'
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
 
@@ -178,7 +178,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   })
   const [initialJumpDone, setInitialJumpDone] = useState(false)
   const [onlineStatuses, setOnlineStatuses] = useState({})
-  const lastUpdateIdRef = React.useRef(0)
+  const [inboxFilter, setInboxFilter] = useState('all')
 
   useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
@@ -187,9 +187,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (section === 'chatters') { loadShiftLogs(); loadSwaps() }
     setTimeout(loadOnlineStatuses, 3000) // reload after heartbeat sent
     const interval = setInterval(() => {
-      pollTelegram()
+      loadMessages()
       loadOnlineStatuses()
-    }, 15000)
+    }, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -230,73 +230,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     setUnreadCount((data || []).filter(m => m.direction === 'in' && !m.read).length)
   }
 
-  const pollTelegram = async () => {
-    try {
-      const data = await getUpdates(lastUpdateIdRef.current + 1)
-      if (!data.result?.length) return
-      for (const update of data.result) {
-        lastUpdateIdRef.current = update.update_id
-        const msg = update.message
-        if (!msg) continue
-        const fromId = String(msg.from.id)
-        const text = msg.text || ''
-        if (!text || text === '/start') continue
-
-        const { data: modelData } = await supabase.from('models_contact').select('*').eq('telegram_id', fromId).single()
-        if (modelData) {
-          const lower = text.toLowerCase()
-          let statusUpdate = {}
-
-          // Parse status commands
-          if (lower.includes('nicht verfügbar') || lower.includes('not available') || lower.includes('busy') || lower.includes('nicht da') || lower.includes('/ab') || lower.includes('beschäftigt')) {
-            // Check for "bis HH:MM" or "bis HH uhr"
-            const untilMatch = lower.match(/bis\s+(\d{1,2})(?::(\d{2}))?\s*(uhr)?/)
-            const statusUntil = untilMatch ? (() => {
-              const d = new Date()
-              d.setHours(parseInt(untilMatch[1]), parseInt(untilMatch[2] || '0'), 0, 0)
-              return d.toISOString()
-            })() : null
-            statusUpdate = { status: 'unavailable', status_until: statusUntil, status_note: text, availability: 'unavailable' }
-          } else if (lower.includes('pause')) {
-            const untilMatch = lower.match(/bis\s+(\d{1,2})(?::(\d{2}))?\s*(uhr)?/)
-            const statusUntil = untilMatch ? (() => {
-              const d = new Date()
-              d.setHours(parseInt(untilMatch[1]), parseInt(untilMatch[2] || '0'), 0, 0)
-              return d.toISOString()
-            })() : new Date(Date.now() + 3600000).toISOString()
-            statusUpdate = { status: 'pause', status_until: statusUntil, status_note: text, availability: 'unavailable' }
-          } else if (lower.includes('verfügbar') || lower.includes('available') || lower.includes('/an') || lower.includes('bin da') || lower.includes('zurück') || lower.includes('back')) {
-            statusUpdate = { status: 'available', status_until: null, status_note: null, availability: 'available' }
-          } else {
-            statusUpdate = { availability: modelData.availability, status_note: text }
-          }
-
-          await supabase.from('models_contact').update(statusUpdate).eq('id', modelData.id)
-          await supabase.from('messages').insert({ model_name: modelData.name, model_telegram_id: fromId, direction: 'in', contact_type: 'model', text, status: 'received', read: false })
-
-          // Confirm to model
-          const confirmMsg = statusUpdate.status === 'available' ? `✓ Status auf <b>Verfügbar</b> gesetzt` :
-            statusUpdate.status === 'unavailable' ? `✓ Status auf <b>Nicht verfügbar</b> gesetzt${statusUpdate.status_until ? ` bis ${new Date(statusUpdate.status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : ''}` :
-            statusUpdate.status === 'pause' ? `✓ <b>Pause</b> bis ${new Date(statusUpdate.status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : null
-          if (confirmMsg) {
-            const { sendTelegramMessage } = await import('../telegram.js')
-            await sendTelegramMessage(fromId, confirmMsg)
-          }
-          await notifyOwner(`📨 Antwort von Model <b>${modelData.name}</b>:\n${text}`)
-          loadMessages(); loadModels()
-          continue
-        }
-        const { data: chatterData } = await supabase.from('chatters_contact').select('*').eq('telegram_id', fromId).single()
-        if (chatterData) {
-          await supabase.from('messages').insert({ model_name: chatterData.name, model_telegram_id: fromId, direction: 'in', contact_type: 'chatter', text, status: 'received', read: false })
-          await notifyOwner(`📨 Antwort von Chatter <b>${chatterData.name}</b>:\n${text}`)
-          loadMessages()
-          continue
-        }
-        await notifyOwner(`❓ Unbekannte Nachricht von ID ${fromId} (@${msg.from.username || '?'}):\n${text}`)
-      }
-    } catch (e) { console.error('Telegram poll error:', e) }
-  }
 
   const sendModelMessage = async () => {
     if (!selectedModel || !modelMsgText.trim() || !selectedModel.telegram_id) return
@@ -439,7 +372,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       text: replyText.trim(),
       status: 'sent',
       read: true,
-      sent_by: displayName,
     })
     setReplyText('')
     setReplyingTo(null)
@@ -919,20 +851,76 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       )}
 
       {/* POSTEINGANG */}
-      {activeSection === 'nachrichten' && (
-        <Card title={`Nachrichten (${inboxMessages.length})`}>
-          {unreadCount > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <button onClick={markAllRead} style={{ background: 'transparent', border: '1px solid #2e2e5a', color: 'var(--text-secondary)', borderRadius: 7, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+      {activeSection === 'nachrichten' && (() => {
+        // Type-Erkennung pro Message
+        const getMsgType = (msg) => {
+          if (msg.text === '[CONTENT_NOTIFY]') return 'content'
+          if (msg.text?.startsWith('[STATUS_')) return 'status'
+          return 'freitext'
+        }
+        // Filter-State (lokaler State über IIFE)
+        const filtered = inboxMessages.filter(m => {
+          if (inboxFilter === 'all') return true
+          return getMsgType(m) === inboxFilter
+        })
+        const counts = {
+          all: inboxMessages.length,
+          content: inboxMessages.filter(m => getMsgType(m) === 'content').length,
+          status: inboxMessages.filter(m => getMsgType(m) === 'status').length,
+          freitext: inboxMessages.filter(m => getMsgType(m) === 'freitext').length,
+        }
+        const renderMsgText = (msg) => {
+          const type = getMsgType(msg)
+          if (type === 'content') return `📸 Hat neuen Content im OF-Tresor hochgeladen`
+          if (type === 'status') {
+            const inner = msg.text.replace(/^\[STATUS_/, '').replace(/\]$/, '').toLowerCase()
+            return `🟡 Status: ${inner.replace(/_/g, ' ')}`
+          }
+          return msg.text
+        }
+        const typeBadge = (type) => {
+          if (type === 'content') return { label: 'CONTENT', bg: 'rgba(34,197,94,0.15)', color: '#22c55e' }
+          if (type === 'status') return { label: 'STATUS', bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' }
+          return { label: 'FREITEXT', bg: 'rgba(124,58,237,0.15)', color: '#a78bfa' }
+        }
+        return (
+        <Card title={`Nachrichten (${counts.all})`}>
+          {/* Filter-Buttons */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {[
+              { key: 'all', label: `Alle (${counts.all})` },
+              { key: 'content', label: `📸 Content (${counts.content})` },
+              { key: 'status', label: `🟡 Status (${counts.status})` },
+              { key: 'freitext', label: `💬 Freitext (${counts.freitext})` },
+            ].map(f => (
+              <button key={f.key} onClick={() => setInboxFilter(f.key)} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                background: inboxFilter === f.key ? 'rgba(124,58,237,0.2)' : 'transparent',
+                border: `1px solid ${inboxFilter === f.key ? '#7c3aed' : 'var(--border)'}`,
+                color: inboxFilter === f.key ? '#a78bfa' : 'var(--text-secondary)',
+                fontWeight: 600, fontFamily: 'inherit'
+              }}>{f.label}</button>
+            ))}
+            {unreadCount > 0 && (
+              <button onClick={markAllRead} style={{
+                marginLeft: 'auto', background: 'transparent', border: '1px solid #2e2e5a',
+                color: 'var(--text-secondary)', borderRadius: 6, padding: '4px 10px',
+                fontSize: 11, cursor: 'pointer', fontFamily: 'inherit'
+              }}>
                 Alle als gelesen markieren
               </button>
+            )}
+          </div>
+
+          {filtered.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+              {inboxFilter === 'all' ? 'Noch keine Nachrichten' : 'Keine Nachrichten in dieser Kategorie'}
             </div>
-          )}
-          {inboxMessages.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Noch keine Antworten</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {inboxMessages.map(msg => (
+              {filtered.map(msg => {
+                const tBadge = typeBadge(getMsgType(msg))
+                return (
                 <div key={msg.id} style={{
                   padding: '12px 14px', borderRadius: 8,
                   background: msg.read ? 'var(--bg-input)' : 'rgba(124,58,237,0.06)',
@@ -944,19 +932,14 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: msg.contact_type === 'chatter' ? 'rgba(6,182,212,0.15)' : 'rgba(124,58,237,0.15)', color: msg.contact_type === 'chatter' ? '#06b6d4' : '#a78bfa', fontWeight: 600 }}>
                         {msg.contact_type === 'chatter' ? 'Chatter' : 'Model'}
                       </span>
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: tBadge.bg, color: tBadge.color, fontWeight: 600 }}>
+                        {tBadge.label}
+                      </span>
                       {!msg.read && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>NEU</span>}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
-                      {!msg.read && (
-                        <button onClick={async () => { await supabase.from('messages').update({ read: true }).eq('id', msg.id); loadMessages() }}
-                          style={{ fontSize: 9, padding: '1px 7px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          ✓ gelesen
-                        </button>
-                      )}
-                    </div>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatTime(msg.created_at)}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{msg.text}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{renderMsgText(msg)}</div>
                   {msg.model_telegram_id && (
                     replyingTo === msg.id ? (
                       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
@@ -983,11 +966,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     )
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </Card>
-      )}
+        )
+      })()}
 
       {/* VERLAUF */}
       {activeSection === 'history' && (

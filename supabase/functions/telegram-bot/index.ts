@@ -187,6 +187,11 @@ serve(async (req) => {
 
     // ── /start: rolle erkennen + welcome ──
     if (!text || text === '/start') {
+      // Admin → Admin Help (zuerst, falls Admin auch in chatters/models ist)
+      if (ADMIN_IDS.includes(fromId)) {
+        await tg(fromId, ADMIN_HELP)
+        return new Response('ok')
+      }
       const modelArr = await q('models_contact', `?telegram_id=eq.${fromId}&limit=1`)
       const modelData = Array.isArray(modelArr) ? modelArr[0] : null
       if (modelData) {
@@ -197,11 +202,6 @@ serve(async (req) => {
       const chatterData = Array.isArray(chatterArr) ? chatterArr[0] : null
       if (chatterData) {
         await tg(fromId, WELCOME_CHATTER)
-        return new Response('ok')
-      }
-      // Admin → Admin Help
-      if (ADMIN_IDS.includes(fromId)) {
-        await tg(fromId, ADMIN_HELP)
         return new Response('ok')
       }
       // Unbekannt → Welcome + Forward
@@ -390,6 +390,20 @@ serve(async (req) => {
       }
       if (Object.keys(update).length > 0) {
         await upd('models_contact', `?id=eq.${modelData.id}`, update)
+        // Status-Update auch in messages speichern für Dashboard-Inbox
+        const statusLabel = (update as any).status as string
+        const statusUntilStr = (update as any).status_until
+          ? ` bis ${new Date((update as any).status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`
+          : ''
+        await ins('messages', {
+          model_name: modelData.name,
+          model_telegram_id: fromId,
+          direction: 'in',
+          contact_type: 'model',
+          text: `[STATUS_${statusLabel.toUpperCase()}${statusUntilStr}]`,
+          status: 'received',
+          read: false,
+        })
         await tg(fromId, confirmMsg)
         for (const adminId of ADMIN_IDS) await tg(adminId, `📊 <b>${modelData.name}</b> → ${confirmMsg.replace('✓ Status: ', '')}`)
       } else {
