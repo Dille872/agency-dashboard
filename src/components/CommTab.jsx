@@ -1498,7 +1498,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                     </span>
                                     {!req.deposit_paid && (
                                       <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt markieren</button>
+                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Anzahlung erhalten</button>
                                     )}
                                   </div>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1507,7 +1507,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                     </span>
                                     {!req.remainder_paid && (
                                       <button onClick={async () => { await supabase.from('content_requests').update({ remainder_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt markieren</button>
+                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Rest erhalten</button>
                                     )}
                                   </div>
                                 </>
@@ -1518,7 +1518,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                   </span>
                                   {!req.deposit_paid && (
                                     <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                      style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt markieren</button>
+                                      style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Bezahlt</button>
                                   )}
                                 </div>
                               )}
