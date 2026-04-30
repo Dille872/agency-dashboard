@@ -744,17 +744,25 @@ export default function ScheduleTab({ session }) {
                   const isPending = cell.chatter && !isFrei && !confirmed
                   const isChatterAbsent = cell.chatter && !isFrei ? isAbsent(cell.chatter, dayIso) : false
                   const isSearchMatch = cellMatchesSearch(cell)
+                  const isTrainee = !!cell.trainee && !isFrei
                   const timeStr = shiftTimes[`${model.id}__${shift}`]
                   const shiftIcon = shift === 'Früh' ? '🌅' : shift === 'Spät' ? '🌃' : shift === 'Nacht' ? '🌙' : '•'
                   const shiftColor = SHIFT_COLORS[shift] || 'var(--text-muted)'
 
-                  const bg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.06)' : isPending ? 'rgba(245,158,11,0.06)' : cell.chatter ? 'rgba(16,185,129,0.04)' : 'var(--bg-card2)'
-                  const border = isChatterAbsent ? 'rgba(239,68,68,0.4)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.3)' : 'var(--border)'
-                  const boxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' : 'none'
+                  const bgBase = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.06)' : isPending ? 'rgba(245,158,11,0.06)' : cell.chatter ? 'rgba(16,185,129,0.04)' : 'var(--bg-card2)'
+                  const borderBase = isChatterAbsent ? 'rgba(239,68,68,0.4)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.3)' : 'var(--border)'
+                  const bg = isTrainee ? 'rgba(6,182,212,0.10)' : bgBase
+                  const border = isTrainee ? '#06b6d4' : borderBase
+                  const borderWidth = isTrainee ? 2 : 1
+                  const boxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
+                                    isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
 
                   return (
                     <div key={shift} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
-                      style={{ marginBottom: 6, padding: '10px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow }}>
+                      style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: bg, border: `${borderWidth}px solid ${border}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow }}>
+                      {isTrainee && (
+                        <div style={{ position: 'absolute', top: -8, left: 10, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, background: '#06b6d4', color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>🎓 ANLERNEN</div>
+                      )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 11, color: shiftColor, fontWeight: 700 }}>{shiftIcon} {shift}{timeStr ? ` · ${timeStr}` : ''}</div>
                         {isFrei ? (
@@ -763,7 +771,7 @@ export default function ScheduleTab({ session }) {
                           <div>
                             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
                             {cell.trainee && (
-                              <div style={{ fontSize: 11, color: '#06b6d4', fontStyle: 'italic' }}>🎓 mit {cell.trainee}</div>
+                              <div style={{ fontSize: 12, color: '#06b6d4', fontWeight: 600 }}>🎓 mit {cell.trainee}</div>
                             )}
                             {cell.note && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>{cell.note}</div>}
                           </div>
@@ -928,12 +936,21 @@ export default function ScheduleTab({ session }) {
                       const cellBorder = isChatterAbsent ? 'rgba(239,68,68,0.5)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.35)' : isToday(day) ? 'rgba(56,130,246,0.3)' : '#1e1e3a'
                       // Search-Highlight: gelb glühend wenn cell matched
                       const isSearchMatch = cellMatchesSearch(cell)
-                      const searchBoxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' : 'none'
                       const isTrainee = !!cell.trainee && !isFrei
+                      // Trainee-Style: cyan Background überlagert + cyan Border + cyan Glow
+                      // Search hat Vorrang (gelb), aber wenn beides → kombinieren wir mit Border-cyan + Schatten-gelb
+                      const finalBg = isTrainee ? 'rgba(6,182,212,0.10)' : cellBg
+                      const finalBorder = isTrainee ? '#06b6d4' : cellBorder
+                      const finalBorderWidth = isTrainee ? 2 : 1
+                      const searchBoxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
+                                              isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
 
                       return (
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
-                          style={{ background: cellBg, border: `1px solid ${cellBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: searchBoxShadow, transition: 'box-shadow 0.2s' }}>
+                          style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: searchBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
+                          {isTrainee && (
+                            <div style={{ position: 'absolute', top: -8, left: 6, fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#06b6d4', color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>🎓 ANLERNEN</div>
+                          )}
                           {isEditing ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onClick={e => e.stopPropagation()}>
                               <select autoFocus value={cell.chatter || ''}
