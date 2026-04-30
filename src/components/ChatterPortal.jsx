@@ -1579,22 +1579,38 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
                 const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
                 const remainder = (req.price || 0) - (req.deposit || 0)
+                const totalPaid = (req.deposit_paid ? (req.deposit || 0) : 0) + (req.remainder_paid ? remainder : 0)
+                const fullyPaid = req.price > 0 && totalPaid >= req.price
+                const nothingPaid = req.price > 0 && totalPaid === 0
+                const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
+                const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
                 return (
-                  <div key={req.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
-                        {req.content_type && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
-                        {req.customer_id && <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{req.customer_id}</span>}
+                  <div key={req.id} style={{ padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
+                    {/* Header: Model groß + Kunde + Preis rechts */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                          {req.content_type && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: statusColor + '22', color: statusColor }}>{statusLabel}</span>
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#ec4899', marginBottom: 2 }}>{req.model_name}</div>
+                        {req.customer_id && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                            Kunde: <span style={{ color: 'var(--text-secondary)' }}>{req.customer_id}</span>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        {req.price > 0 && <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>${req.price}</div>}
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</div>
                       </div>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{req.request_text}</div>
+
+                    {/* Beschreibung */}
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.4 }}>{req.edited_text || req.request_text}</div>
+
                     {req.image_urls?.length > 0 && (
-                      <div style={{ display: 'flex', gap: 5, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 5, marginBottom: 8, flexWrap: 'wrap' }}>
                         {req.image_urls.map((url, i) => (
                           <a key={i} href={url} target="_blank" rel="noreferrer">
                             <img src={url} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
@@ -1602,13 +1618,33 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                         ))}
                       </div>
                     )}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {req.price > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981' }}>${req.price}</span>}
-                      {req.deposit > 0 && <span style={{ fontSize: 10, color: '#f59e0b' }}>Anzahlung: ${req.deposit}{!req.deposit_paid ? ' (offen)' : ' ✓'}</span>}
-                      {req.deposit > 0 && remainder > 0 && <span style={{ fontSize: 10, color: remainder > 0 && !req.remainder_paid ? '#ef4444' : '#10b981' }}>Rest: ${remainder}{!req.remainder_paid ? ' (offen)' : ' ✓'}</span>}
-                      {req.duration && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{req.duration}</span>}
+
+                    {/* Bezahl-Block */}
+                    {req.price > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ display: 'flex', height: 4, background: barTrackColor, borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
+                          <div style={{ width: `${paidPct}%`, background: '#10b981' }} />
+                        </div>
+                        <div style={{ fontSize: 10, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                          {req.deposit > 0 && remainder > 0 ? (
+                            <>
+                              <span style={{ color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>{req.deposit_paid ? '✓' : '⏳'} Anzahlung ${req.deposit}</span>
+                              <span style={{ color: req.remainder_paid ? '#10b981' : '#ef4444' }}>{req.remainder_paid ? '✓' : '⏳'} Rest ${remainder}</span>
+                            </>
+                          ) : (
+                            <span style={{ color: fullyPaid ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                              {fullyPaid ? '✓ Vollständig bezahlt' : `⊗ Nichts bezahlt — $${req.price} offen`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Meta */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {req.duration && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>⏱ {req.duration}</span>}
                       {req.quantity > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
-                      {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
+                      {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
                         {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
                       </span>}
                     </div>

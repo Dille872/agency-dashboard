@@ -1,4 +1,3 @@
-// Zentrale Versions-Konstante für die ganze App
-// Wird in App.jsx, ChatterPortal.jsx, ModelPortal.jsx importiert.
+// Zentrale Versions-Konstante
 // Bei jeder Code-Änderung HIER hochziehen.
-export const APP_VERSION = 'v2.7.12'
+export const APP_VERSION = 'v2.7.13'

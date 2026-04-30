@@ -650,11 +650,28 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           created_date: new Date().toISOString().slice(0, 10),
         })
 
-        // Send Telegram to model
+        // Send Telegram to model — neues Format mit Kunde, Bezahlung klar
         const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).single()
         if (modelData?.telegram_id) {
           const deadlineText = req.deadline === 'asap' ? 'So schnell wie möglich' : req.deadline === 'hours' ? 'In den nächsten Stunden' : req.deadline === 'days' ? '1-2 Tage' : req.deadline === 'week' ? 'Diese Woche' : ''
-          const msg = `<b>Neuer Custom Content Auftrag!</b>\n\n${req.request_text}${req.content_type ? '\nTyp: ' + req.content_type : ''}${req.price ? '\nPreis: $' + req.price : ''}${req.duration ? '\nLänge: ' + req.duration : ''}${deadlineText ? '\nDringlichkeit: ' + deadlineText : ''}\n\n– Thirteen 87`
+          const remainder = (req.price || 0) - (req.deposit || 0)
+          // Bezahl-Status zusammenstellen
+          let payLine = ''
+          if (req.price > 0) {
+            if (req.deposit > 0 && remainder > 0) {
+              // Anzahlung + Rest
+              const depTxt = req.deposit_paid ? `${req.deposit}$ ✓` : `${req.deposit}$ (offen)`
+              const restTxt = req.remainder_paid ? `${remainder}$ ✓` : `${remainder}$ nach Lieferung`
+              payLine = `\n💰 Gesamt: ${req.price}$ — Anzahlung ${depTxt} · Rest ${restTxt}`
+            } else if (req.deposit_paid || req.remainder_paid) {
+              payLine = `\n💰 ${req.price}$ ✓ vollständig bezahlt`
+            } else {
+              payLine = `\n💰 ${req.price}$ — offen`
+            }
+          }
+          const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
+          const text = req.edited_text || req.request_text
+          const msg = `<b>📸 Custom Content — Auftrag</b>\n\n${text}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
           await sendTelegramMessage(modelData.telegram_id, msg)
         }
       }
@@ -1354,25 +1371,50 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
                 const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
                 const remainder = (req.price || 0) - (req.deposit || 0)
+                // Bezahl-Status berechnen
+                const totalPaid = (req.deposit_paid ? (req.deposit || 0) : 0) + (req.remainder_paid ? remainder : 0)
+                const fullyPaid = req.price > 0 && totalPaid >= req.price
+                const partiallyPaid = totalPaid > 0 && !fullyPaid
+                const nothingPaid = req.price > 0 && totalPaid === 0
+                const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
+                const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
                 return (
-                  <div key={req.id} style={{ padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#06b6d4' }}>{req.chatter_name}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>→</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>{req.model_name}</span>
-                        {req.content_type && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
-                        {req.customer_id && <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{req.customer_id}</span>}
-                        {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>NEU</span>}
+                  <div key={req.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
+                    {/* Header: Model + Kunde + Chatter | Preis + Datum */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* Badges */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
+                          {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor }}>{statusLabel}</span>
+                          {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>NEU</span>}
+                        </div>
+                        {/* Model groß + pink */}
+                        <div style={{ fontSize: 17, fontWeight: 700, color: '#ec4899', marginBottom: 3 }}>{req.model_name}</div>
+                        {/* Kunde */}
+                        {req.customer_id && (
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', marginBottom: 2 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Kunde: </span>{req.customer_id}
+                          </div>
+                        )}
+                        {/* Chatter */}
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span>
+                        </div>
                       </div>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
-                        {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        {req.price > 0 && <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>${req.price}</div>}
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                          {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Beschreibung */}
                     {editingText === req.id ? (
-                      <div style={{ marginBottom: 6 }}>
+                      <div style={{ marginBottom: 10 }}>
                         <textarea value={editTextValue} onChange={e => setEditTextValue(e.target.value)} rows={3}
-                          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, resize: 'vertical', fontFamily: 'inherit', outline: 'none' }} />
+                          style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6, fontSize: 12, resize: 'vertical', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
                         <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                           <button onClick={async () => {
                             await supabase.from('content_requests').update({
@@ -1386,21 +1428,29 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         </div>
                       </div>
                     ) : (
-                      <div style={{ marginBottom: 6 }}>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 2 }}>
+                      <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--bg-card)', borderRadius: 6 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                           {req.edited_text || req.request_text}
                         </div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {req.duration && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>⏱ {req.duration}</span>}
+                          {req.quantity > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
+                          {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
+                            {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
+                          </span>}
+                          <button onClick={() => { setEditingText(req.id); setEditTextValue(req.edited_text || req.request_text) }}
+                            style={{ marginLeft: 'auto', fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ Text bearbeiten</button>
+                        </div>
                         {req.edited_text && (
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                            ✎ Geändert von {req.edited_by} · {new Date(req.edited_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.edited_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 4 }}>
+                            ✎ Geändert von {req.edited_by}
                           </div>
                         )}
-                        <button onClick={() => { setEditingText(req.id); setEditTextValue(req.edited_text || req.request_text) }}
-                          style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', marginTop: 3 }}>✎ Text bearbeiten</button>
                       </div>
                     )}
+
                     {req.image_urls?.length > 0 && (
-                      <div style={{ display: 'flex', gap: 5, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
                         {req.image_urls.map((url, i) => (
                           <a key={i} href={url} target="_blank" rel="noreferrer">
                             <img src={url} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
@@ -1408,95 +1458,92 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         ))}
                       </div>
                     )}
+
+                    {/* Bezahl-Block */}
                     {req.price > 0 && (
-                      <div style={{ marginBottom: 8, padding: '6px 8px', background: 'var(--bg-card)', borderRadius: 6 }}>
+                      <div style={{ marginBottom: 10 }}>
                         {editingPayment === req.id ? (
-                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', padding: '8px 10px', background: 'var(--bg-card)', borderRadius: 6 }}>
                             <div>
-                              <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Gesamtpreis</label>
+                              <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Gesamt</label>
                               <input type="number" value={editPrice} onChange={e => setEditPrice(e.target.value)}
-                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '3px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit' }} />
+                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '4px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit' }} />
                             </div>
                             <div>
                               <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Anzahlung</label>
                               <input type="number" value={editDeposit} onChange={e => setEditDeposit(e.target.value)}
-                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '3px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit' }} />
+                                style={{ width: 80, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '4px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit' }} />
                             </div>
-                            <div style={{ display: 'flex', gap: 4, marginTop: 12 }}>
+                            <div style={{ display: 'flex', gap: 4 }}>
                               <button onClick={async () => {
                                 await supabase.from('content_requests').update({ price: parseFloat(editPrice) || 0, deposit: parseFloat(editDeposit) || 0 }).eq('id', req.id)
                                 setEditingPayment(null); loadContentRequests()
-                              }} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓</button>
-                              <button onClick={() => setEditingPayment(null)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                              }} style={{ fontSize: 10, padding: '4px 10px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓</button>
+                              <button onClick={() => setEditingPayment(null)} style={{ fontSize: 10, padding: '4px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
                             </div>
                           </div>
                         ) : (
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981' }}>Gesamt: ${req.price}</span>
-                            {req.deposit > 0 ? (
-                              <>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <span style={{ fontSize: 11, color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
-                                    Anzahlung: ${req.deposit} {req.deposit_paid ? '✓' : '(offen)'}
-                                  </span>
-                                  {!req.deposit_paid && (
-                                    <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                      style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
-                                  )}
-                                </div>
-                                {remainder > 0 && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <span style={{ fontSize: 11, color: req.remainder_paid ? '#10b981' : '#ef4444' }}>
-                                      Rest: ${remainder} {req.remainder_paid ? '✓' : '(offen)'}
+                          <>
+                            {/* Fortschrittsbalken */}
+                            <div style={{ display: 'flex', height: 5, background: barTrackColor, borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                              <div style={{ width: `${paidPct}%`, background: '#10b981', transition: 'width 0.3s' }} />
+                            </div>
+                            {/* Bezahl-Status Zeilen */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
+                              {req.deposit > 0 && remainder > 0 ? (
+                                <>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
+                                      {req.deposit_paid ? '✓' : '⏳'} Anzahlung ${req.deposit}
+                                    </span>
+                                    {!req.deposit_paid && (
+                                      <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
+                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt markieren</button>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ color: req.remainder_paid ? '#10b981' : '#ef4444' }}>
+                                      {req.remainder_paid ? '✓' : '⏳'} Rest ${remainder}
                                     </span>
                                     {!req.remainder_paid && (
                                       <button onClick={async () => { await supabase.from('content_requests').update({ remainder_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                        style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
+                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt markieren</button>
                                     )}
                                   </div>
-                                )}
-                              </>
-                            ) : (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <span style={{ fontSize: 11, color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
-                                  Betrag {req.deposit_paid ? '✓ bezahlt' : '(offen)'}
-                                </span>
-                                {!req.deposit_paid && (
-                                  <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                    style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt</button>
-                                )}
-                              </div>
-                            )}
+                                </>
+                              ) : (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ color: req.deposit_paid ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                                    {req.deposit_paid ? `✓ Vollständig bezahlt $${req.price}` : `⊗ Nichts bezahlt — $${req.price} offen`}
+                                  </span>
+                                  {!req.deposit_paid && (
+                                    <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
+                                      style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gezahlt markieren</button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                             <button onClick={() => { setEditingPayment(req.id); setEditPrice(String(req.price || '')); setEditDeposit(String(req.deposit || '')) }}
-                              style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' }}>✎ Bearbeiten</button>
-                          </div>
+                              style={{ marginTop: 4, fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ Beträge bearbeiten</button>
+                          </>
                         )}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                          {req.duration && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{req.duration}</span>}
-                          {req.quantity > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
-                          {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
-                            {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
-                          </span>}
-                        </div>
                       </div>
                     )}
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {req.status !== 'angefragt' && req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
-                          <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt</button>
-                        )}
-                        {req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
-                          <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Bestätigen + TG</button>
-                        )}
-                        {req.status !== 'erledigt' && req.status !== 'abgelehnt' && (
-                          <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
-                        )}
-                        {req.status !== 'abgelehnt' && req.status !== 'erledigt' && (
-                          <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
-                        )}
-                      </div>
+                    {/* Action-Buttons */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
+                      {req.status !== 'angefragt' && req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
+                        <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt</button>
+                      )}
+                      {req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
+                        <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 11, padding: '5px 14px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Bestätigen + TG</button>
+                      )}
+                      {req.status !== 'erledigt' && req.status !== 'abgelehnt' && (
+                        <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
+                      )}
+                      {req.status !== 'abgelehnt' && req.status !== 'erledigt' && (
+                        <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
+                      )}
                     </div>
                   </div>
                 )
