@@ -947,15 +947,11 @@ export default function ScheduleTab({ session }) {
                                 })}
                               </select>
                               {cell.chatter && !isFrei && (
-                                <select value={cell.trainee || ''}
+                                <input value={cell.trainee || ''}
                                   onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
-                                  style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
-                                  <option value="">🎓 Einarbeitung (optional) — niemand</option>
-                                  {chatters.filter(c => c.name !== cell.chatter).map(c => {
-                                    const absent = isAbsent(c.name, dayIso)
-                                    return <option key={c.id} value={c.name} disabled={absent}>🎓 {c.name}{absent ? ' (abw.)' : ''}</option>
-                                  })}
-                                </select>
+                                  placeholder="🎓 Einarbeitung (optional) — Name eintragen"
+                                  style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}
+                                />
                               )}
                               <input value={cell.note || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
@@ -1102,15 +1098,11 @@ export default function ScheduleTab({ session }) {
               {cell.chatter && !isFrei && (
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🎓 Einarbeitung (optional)</label>
-                  <select value={cell.trainee || ''}
+                  <input value={cell.trainee || ''}
                     onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
-                    style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
-                    <option value="">— niemand wird eingearbeitet —</option>
-                    {chatters.filter(c => c.name !== cell.chatter).map(c => {
-                      const absent = isAbsent(c.name, editSheet.dayIso)
-                      return <option key={c.id} value={c.name} disabled={absent}>🎓 {c.name}{absent ? ' (abw.)' : ''}</option>
-                    })}
-                  </select>
+                    placeholder="Name eintragen — auch neue Chatter ohne Portal-Zugang"
+                    style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4', padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }}
+                  />
                 </div>
               )}
 
