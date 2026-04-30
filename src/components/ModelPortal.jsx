@@ -1240,23 +1240,113 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             {contentRequests.length === 0 ? (
               <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>Keine Anfragen</div>
             ) : contentRequests.map(req => {
-              const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'abgelehnt' ? '#ef4444' : '#f59e0b'
+              const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
+              const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+              const remainder = (req.price || 0) - (req.deposit || 0)
+              const totalPaid = (req.deposit_paid ? (req.deposit || 0) : 0) + (req.remainder_paid ? remainder : 0)
+              const fullyPaid = req.price > 0 && totalPaid >= req.price
+              const nothingPaid = req.price > 0 && totalPaid === 0
+              const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
+              const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
+              const todayStr = new Date().toISOString().slice(0, 10)
+              const overdue = !req.remainder_paid && req.remainder_due_at && new Date(req.remainder_due_at) < new Date(todayStr)
+              const daysOverdue = overdue ? Math.floor((new Date(todayStr) - new Date(req.remainder_due_at)) / (86400 * 1000)) : 0
               return (
-                <div key={req.id} style={{ ...cardS, borderLeft: `4px solid ${statusColor}`, borderRadius: '0 10px 10px 0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{req.chatter_name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{req.request_text}</div>
+                <div key={req.id} style={{ ...cardS, borderLeft: `4px solid ${statusColor}`, borderRadius: '0 10px 10px 0', padding: '14px 16px' }}>
+                  {/* Header: Kunde + Typ + Preis */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
+                        {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: `${statusColor}22`, color: statusColor }}>{statusLabel}</span>
+                      </div>
+                      {req.customer_id && (
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', marginBottom: 3 }}>
+                          {req.customer_id}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Von Chatter <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span>
+                      </div>
                     </div>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}20`, padding: '2px 8px', borderRadius: 4, flexShrink: 0, marginLeft: 10 }}>
-                      {req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '⏳ Offen'}
-                    </span>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      {req.price > 0 && <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>${req.price}</div>}
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                        {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: (req.status === 'neu' || req.status === 'angefragt') ? 10 : 0 }}>
-                    {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+
+                  {/* Beschreibung */}
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5, padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 6 }}>
+                    {req.edited_text || req.request_text}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                      {req.duration && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>⏱ {req.duration}</span>}
+                      {req.quantity > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
+                      {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
+                        {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
+                      </span>}
+                    </div>
                   </div>
-                  {(req.status === 'neu' || req.status === 'angefragt') && (
-                    <div style={{ display: 'flex', gap: 8 }}>
+
+                  {req.image_urls?.length > 0 && (
+                    <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
+                      {req.image_urls.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noreferrer">
+                          <img src={url} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Bezahl-Block */}
+                  {req.price > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', height: 5, background: barTrackColor, borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                        <div style={{ width: `${paidPct}%`, background: '#10b981' }} />
+                      </div>
+                      <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {req.deposit > 0 && remainder > 0 ? (
+                          <>
+                            <div style={{ color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
+                              {req.deposit_paid ? '✓' : '⏳'} Anzahlung ${req.deposit}
+                              {req.deposit_paid && req.deposit_paid_at && (
+                                <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 10 }}>
+                                  am {new Date(req.deposit_paid_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ color: req.remainder_paid ? '#10b981' : overdue ? '#ef4444' : '#f59e0b' }}>
+                              {req.remainder_paid ? '✓' : overdue ? '⚠' : '⏳'} Rest ${remainder}
+                              {req.remainder_paid && req.remainder_paid_at && (
+                                <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 10 }}>
+                                  am {new Date(req.remainder_paid_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                </span>
+                              )}
+                              {!req.remainder_paid && req.remainder_due_at && (
+                                <span style={{ color: overdue ? '#ef4444' : 'var(--text-muted)', marginLeft: 6, fontSize: 10, fontWeight: overdue ? 700 : 400 }}>
+                                  {overdue ? `· überfällig seit ${daysOverdue} Tag${daysOverdue !== 1 ? 'en' : ''}` : `· fällig bis ${new Date(req.remainder_due_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}`}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ color: req.deposit_paid ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                            {req.deposit_paid ? `✓ Vollständig bezahlt $${req.price}` : `⊗ Nichts bezahlt — $${req.price} offen`}
+                            {req.deposit_paid && req.deposit_paid_at && (
+                              <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 10, fontWeight: 400 }}>
+                                am {new Date(req.deposit_paid_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Aktion: nur Erledigt / Ablehnen für Models */}
+                  {(req.status === 'neu' || req.status === 'angefragt' || req.status === 'bestaetigt') && (
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                       <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 12, padding: '5px 14px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
                       <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 12, padding: '5px 14px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
                     </div>
