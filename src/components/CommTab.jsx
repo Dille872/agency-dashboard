@@ -182,6 +182,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [inboxUnreadOnly, setInboxUnreadOnly] = useState(false)
   const [inboxPersonFilter, setInboxPersonFilter] = useState('all')
   const [contentFilter, setContentFilter] = useState('offen')
+  const [contentModelFilter, setContentModelFilter] = useState('all')
+  const [contentChatterFilter, setContentChatterFilter] = useState('all')
+  const [contentSearch, setContentSearch] = useState('')
   const [boardsModelFilter, setBoardsModelFilter] = useState('all')
   const [historySearch, setHistorySearch] = useState('')
   // Pinnwand
@@ -1358,15 +1361,43 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
       {/* CUSTOM CONTENT */}
       {activeSection === 'content-requests' && (() => {
+        // Unique Models und Chatter aus allen Requests
+        const uniqueModels = [...new Set(contentRequests.map(r => r.model_name).filter(Boolean))].sort()
+        const uniqueChatters = [...new Set(contentRequests.map(r => r.chatter_name).filter(Boolean))].sort()
+
+        // Status-basierte Listen für Counts
         const offeneRequests = contentRequests.filter(r => r.status !== 'erledigt' && r.status !== 'abgelehnt')
         const erledigteRequests = contentRequests.filter(r => r.status === 'erledigt' || r.status === 'abgelehnt')
-        const filteredRequests = contentFilter === 'offen' ? offeneRequests
-          : contentFilter === 'erledigt' ? erledigteRequests
-          : contentRequests
+
+        // Combined Filter
+        const filteredRequests = contentRequests.filter(r => {
+          // Status-Filter
+          if (contentFilter === 'offen' && (r.status === 'erledigt' || r.status === 'abgelehnt')) return false
+          if (contentFilter === 'erledigt' && r.status !== 'erledigt' && r.status !== 'abgelehnt') return false
+          // Model
+          if (contentModelFilter !== 'all' && r.model_name !== contentModelFilter) return false
+          // Chatter
+          if (contentChatterFilter !== 'all' && r.chatter_name !== contentChatterFilter) return false
+          // Search (Kunde, Beschreibung)
+          if (contentSearch.trim()) {
+            const q = contentSearch.trim().toLowerCase()
+            const haystack = [
+              r.customer_id || '',
+              r.request_text || '',
+              r.edited_text || '',
+              r.model_name || '',
+              r.chatter_name || ''
+            ].join(' ').toLowerCase()
+            if (!haystack.includes(q)) return false
+          }
+          return true
+        })
+
+        const isFiltered = contentModelFilter !== 'all' || contentChatterFilter !== 'all' || contentSearch.trim() !== ''
         return (
-        <Card title={`Custom Content (${filteredRequests.length})`}>
-          {/* Filter-Buttons */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        <Card title={`Custom Content (${filteredRequests.length}${isFiltered ? ` von ${contentRequests.length}` : ''})`}>
+          {/* Status-Filter Buttons */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {[
               { key: 'offen', label: `⏳ Offen (${offeneRequests.length})` },
               { key: 'erledigt', label: `✓ Erledigt (${erledigteRequests.length})` },
@@ -1381,9 +1412,54 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               }}>{f.label}</button>
             ))}
           </div>
+
+          {/* Model + Chatter + Search Filter */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
+            <select value={contentModelFilter} onChange={e => setContentModelFilter(e.target.value)} style={{
+              fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+              background: contentModelFilter !== 'all' ? 'rgba(236,72,153,0.15)' : 'var(--bg-input)',
+              border: `1px solid ${contentModelFilter !== 'all' ? '#ec4899' : 'var(--border)'}`,
+              color: contentModelFilter !== 'all' ? '#ec4899' : 'var(--text-secondary)',
+              fontWeight: 600, fontFamily: 'inherit', outline: 'none'
+            }}>
+              <option value="all">Alle Models</option>
+              {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+
+            <select value={contentChatterFilter} onChange={e => setContentChatterFilter(e.target.value)} style={{
+              fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+              background: contentChatterFilter !== 'all' ? 'rgba(6,182,212,0.15)' : 'var(--bg-input)',
+              border: `1px solid ${contentChatterFilter !== 'all' ? '#06b6d4' : 'var(--border)'}`,
+              color: contentChatterFilter !== 'all' ? '#06b6d4' : 'var(--text-secondary)',
+              fontWeight: 600, fontFamily: 'inherit', outline: 'none'
+            }}>
+              <option value="all">Alle Chatter</option>
+              {uniqueChatters.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+
+            <input
+              type="text"
+              value={contentSearch}
+              onChange={e => setContentSearch(e.target.value)}
+              placeholder="Suche Kunde / Text..."
+              style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                background: contentSearch ? 'rgba(245,158,11,0.1)' : 'var(--bg-input)',
+                border: `1px solid ${contentSearch ? '#f59e0b' : 'var(--border)'}`,
+                color: 'var(--text-primary)',
+                fontFamily: 'inherit', outline: 'none', flex: 1, minWidth: 140
+              }}
+            />
+
+            {isFiltered && (
+              <button onClick={() => { setContentModelFilter('all'); setContentChatterFilter('all'); setContentSearch('') }}
+                style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit' }}>✕ Filter zurücksetzen</button>
+            )}
+          </div>
+
           {filteredRequests.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
-              {contentFilter === 'offen' ? 'Keine offenen Anfragen 🎉' : contentFilter === 'erledigt' ? 'Noch keine erledigten Anfragen' : 'Noch keine Anfragen'}
+              {isFiltered ? 'Keine Treffer mit diesen Filtern' : contentFilter === 'offen' ? 'Keine offenen Anfragen 🎉' : contentFilter === 'erledigt' ? 'Noch keine erledigten Anfragen' : 'Noch keine Anfragen'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
