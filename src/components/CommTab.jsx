@@ -618,6 +618,26 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [editingPayment, setEditingPayment] = useState(null) // req.id
   const [editPrice, setEditPrice] = useState('')
   const [editDeposit, setEditDeposit] = useState('')
+  // Datums-Picker für Mark-Paid + Rest-Fälligkeit
+  const [showDatePicker, setShowDatePicker] = useState(null) // { reqId, type: 'deposit'|'remainder'|'due' }
+  const [pickerDate, setPickerDate] = useState('')
+
+  const todayIso = () => new Date().toISOString().slice(0, 10)
+
+  const markPaymentPaid = async (req, type, dateStr) => {
+    const date = dateStr || new Date().toISOString()
+    if (type === 'deposit') {
+      await supabase.from('content_requests').update({ deposit_paid: true, deposit_paid_at: date }).eq('id', req.id)
+    } else if (type === 'remainder') {
+      await supabase.from('content_requests').update({ remainder_paid: true, remainder_paid_at: date }).eq('id', req.id)
+    }
+    loadContentRequests()
+  }
+
+  const setRemainderDueDate = async (reqId, dateStr) => {
+    await supabase.from('content_requests').update({ remainder_due_at: dateStr || null }).eq('id', reqId)
+    loadContentRequests()
+  }
   const [editingText, setEditingText] = useState(null) // req.id
   const [editTextValue, setEditTextValue] = useState('')
 
@@ -1489,36 +1509,130 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                               <div style={{ width: `${paidPct}%`, background: '#10b981', transition: 'width 0.3s' }} />
                             </div>
                             {/* Bezahl-Status Zeilen */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11 }}>
                               {req.deposit > 0 && remainder > 0 ? (
                                 <>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
-                                      {req.deposit_paid ? '✓' : '⏳'} Anzahlung ${req.deposit}
-                                    </span>
-                                    {!req.deposit_paid && (
-                                      <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Anzahlung erhalten</button>
+                                  {/* Anzahlung-Zeile */}
+                                  <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                      <span style={{ color: req.deposit_paid ? '#10b981' : '#f59e0b' }}>
+                                        {req.deposit_paid ? '✓' : '⏳'} Anzahlung ${req.deposit}
+                                        {req.deposit_paid && req.deposit_paid_at && (
+                                          <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 10 }}>
+                                            am {new Date(req.deposit_paid_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                          </span>
+                                        )}
+                                      </span>
+                                      {!req.deposit_paid && (
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                          <button onClick={() => markPaymentPaid(req, 'deposit')}
+                                            style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Anzahlung heute</button>
+                                          <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'deposit' }); setPickerDate(todayIso()) }}
+                                            style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }} title="Anderes Datum">📅</button>
+                                        </div>
+                                      )}
+                                    </div>
+                                    {showDatePicker?.reqId === req.id && showDatePicker?.type === 'deposit' && (
+                                      <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+                                        <input type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)}
+                                          style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', fontFamily: 'inherit' }} />
+                                        <button onClick={() => { markPaymentPaid(req, 'deposit', pickerDate); setShowDatePicker(null) }}
+                                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
+                                        <button onClick={() => setShowDatePicker(null)}
+                                          style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                                      </div>
                                     )}
                                   </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ color: req.remainder_paid ? '#10b981' : '#ef4444' }}>
-                                      {req.remainder_paid ? '✓' : '⏳'} Rest ${remainder}
-                                    </span>
-                                    {!req.remainder_paid && (
-                                      <button onClick={async () => { await supabase.from('content_requests').update({ remainder_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                        style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Rest erhalten</button>
+
+                                  {/* Rest-Zeile mit Fälligkeitsdatum */}
+                                  <div>
+                                    {(() => {
+                                      const overdue = !req.remainder_paid && req.remainder_due_at && new Date(req.remainder_due_at) < new Date(todayIso())
+                                      const daysOverdue = overdue ? Math.floor((new Date(todayIso()) - new Date(req.remainder_due_at)) / (86400 * 1000)) : 0
+                                      return (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                          <span style={{ color: req.remainder_paid ? '#10b981' : overdue ? '#ef4444' : '#f59e0b' }}>
+                                            {req.remainder_paid ? '✓' : overdue ? '⚠' : '⏳'} Rest ${remainder}
+                                            {req.remainder_paid && req.remainder_paid_at && (
+                                              <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 10 }}>
+                                                am {new Date(req.remainder_paid_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                              </span>
+                                            )}
+                                            {!req.remainder_paid && req.remainder_due_at && (
+                                              <span style={{ color: overdue ? '#ef4444' : 'var(--text-muted)', marginLeft: 6, fontSize: 10, fontWeight: overdue ? 700 : 400 }}>
+                                                {overdue ? `· überfällig seit ${daysOverdue} Tag${daysOverdue !== 1 ? 'en' : ''}` : `· fällig bis ${new Date(req.remainder_due_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}`}
+                                              </span>
+                                            )}
+                                          </span>
+                                          {!req.remainder_paid && (
+                                            <div style={{ display: 'flex', gap: 4 }}>
+                                              <button onClick={() => markPaymentPaid(req, 'remainder')}
+                                                style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Rest heute</button>
+                                              <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'remainder' }); setPickerDate(todayIso()) }}
+                                                style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }} title="Anderes Datum">📅</button>
+                                              <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'due' }); setPickerDate(req.remainder_due_at || todayIso()) }}
+                                                style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: req.remainder_due_at ? 'rgba(245,158,11,0.1)' : 'transparent', color: req.remainder_due_at ? '#f59e0b' : 'var(--text-muted)', border: `1px solid ${req.remainder_due_at ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`, cursor: 'pointer', fontFamily: 'inherit' }} title="Fälligkeitsdatum setzen">⏰</button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
+                                    {showDatePicker?.reqId === req.id && showDatePicker?.type === 'remainder' && (
+                                      <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+                                        <input type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)}
+                                          style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', fontFamily: 'inherit' }} />
+                                        <button onClick={() => { markPaymentPaid(req, 'remainder', pickerDate); setShowDatePicker(null) }}
+                                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Rest erhalten</button>
+                                        <button onClick={() => setShowDatePicker(null)}
+                                          style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                                      </div>
+                                    )}
+                                    {showDatePicker?.reqId === req.id && showDatePicker?.type === 'due' && (
+                                      <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+                                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Rest fällig bis:</span>
+                                        <input type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)}
+                                          style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', fontFamily: 'inherit' }} />
+                                        <button onClick={() => { setRemainderDueDate(req.id, pickerDate); setShowDatePicker(null) }}
+                                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#f59e0b', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>⏰ Setzen</button>
+                                        {req.remainder_due_at && (
+                                          <button onClick={() => { setRemainderDueDate(req.id, null); setShowDatePicker(null) }}
+                                            style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✕ Entfernen</button>
+                                        )}
+                                        <button onClick={() => setShowDatePicker(null)}
+                                          style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                                      </div>
                                     )}
                                   </div>
                                 </>
                               ) : (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ color: req.deposit_paid ? '#10b981' : '#ef4444', fontWeight: 600 }}>
-                                    {req.deposit_paid ? `✓ Vollständig bezahlt $${req.price}` : `⊗ Nichts bezahlt — $${req.price} offen`}
-                                  </span>
-                                  {!req.deposit_paid && (
-                                    <button onClick={async () => { await supabase.from('content_requests').update({ deposit_paid: true }).eq('id', req.id); loadContentRequests() }}
-                                      style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Bezahlt</button>
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ color: req.deposit_paid ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                                      {req.deposit_paid ? `✓ Vollständig bezahlt $${req.price}` : `⊗ Nichts bezahlt — $${req.price} offen`}
+                                      {req.deposit_paid && req.deposit_paid_at && (
+                                        <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 10, fontWeight: 400 }}>
+                                          am {new Date(req.deposit_paid_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                        </span>
+                                      )}
+                                    </span>
+                                    {!req.deposit_paid && (
+                                      <div style={{ display: 'flex', gap: 4 }}>
+                                        <button onClick={() => markPaymentPaid(req, 'deposit')}
+                                          style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Bezahlt heute</button>
+                                        <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'deposit' }); setPickerDate(todayIso()) }}
+                                          style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }} title="Anderes Datum">📅</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {showDatePicker?.reqId === req.id && showDatePicker?.type === 'deposit' && (
+                                    <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+                                      <input type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)}
+                                        style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', fontFamily: 'inherit' }} />
+                                      <button onClick={() => { markPaymentPaid(req, 'deposit', pickerDate); setShowDatePicker(null) }}
+                                        style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
+                                      <button onClick={() => setShowDatePicker(null)}
+                                        style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                                    </div>
                                   )}
                                 </div>
                               )}
