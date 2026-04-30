@@ -141,6 +141,20 @@ export default function ScheduleTab({ session }) {
   const [newAbsenceFrom, setNewAbsenceFrom] = useState('')
   const [newAbsenceTo, setNewAbsenceTo] = useState('')
   const [newAbsenceReason, setNewAbsenceReason] = useState('')
+
+  // Mobile + Suche + Bottom-Sheet
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  const [chatterSearch, setChatterSearch] = useState('')
+  const [mobileDay, setMobileDay] = useState(() => todayBerlin())
+  const [editSheet, setEditSheet] = useState(null) // { modelId, dayIso, shift } or null
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   const [scheduleStatus, setScheduleStatus] = useState('draft')
   const [publishing, setPublishing] = useState(false)
 
@@ -441,6 +455,15 @@ export default function ScheduleTab({ session }) {
   const getCellKey = (modelId, dayIso, shift) => `${modelId}__${dayIso}__${shift}`
   const getRecurringKey = (modelId, dayOfWeek, shift) => `${modelId}__${dayOfWeek}__${shift}`
 
+  // Sucht nach Chatter in Hauptchatter ODER Trainee — case-insensitive partial match
+  const cellMatchesSearch = (cell) => {
+    if (!chatterSearch.trim()) return false
+    const q = chatterSearch.trim().toLowerCase()
+    const main = (cell.chatter || '').toLowerCase()
+    const trainee = (cell.trainee || '').toLowerCase()
+    return main.includes(q) || trainee.includes(q)
+  }
+
   const setCell = (modelId, dayIso, shift, value) => {
     const key = getCellKey(modelId, dayIso, shift)
     setSchedule(prev => ({ ...prev, [key]: value }))
@@ -616,11 +639,149 @@ export default function ScheduleTab({ session }) {
           </button>
           <button onClick={saveSchedule} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {saving ? '↻ Speichert...' : '✓ Speichern'}
-            {saving ? 'Speichern...' : 'Speichern'}
           </button>
         </div>
       </div>
 
+      {/* Chatter-Suche */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          value={chatterSearch}
+          onChange={e => setChatterSearch(e.target.value)}
+          placeholder="🔍 Chatter suchen — markiert alle Schichten gelb..."
+          style={{
+            fontSize: 12,
+            padding: '6px 12px',
+            borderRadius: 7,
+            background: chatterSearch ? 'rgba(245,158,11,0.1)' : 'var(--bg-input)',
+            border: `1px solid ${chatterSearch ? '#f59e0b' : '#1e1e3a'}`,
+            color: 'var(--text-primary)',
+            fontFamily: 'inherit',
+            outline: 'none',
+            flex: '1 1 220px',
+            minWidth: 0,
+          }}
+        />
+        {chatterSearch && (
+          <button onClick={() => setChatterSearch('')} style={{
+            fontSize: 11, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+            background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit'
+          }}>✕ Suche</button>
+        )}
+      </div>
+
+      {/* ───────── MOBILE VIEW ───────── */}
+      {isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Tag-Switcher */}
+          <div style={{ display: 'flex', gap: 5, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+            {weekDays.map((day, di) => {
+              const dayIso = isoDate(day)
+              const isSelected = mobileDay === dayIso
+              const today = isToday(day)
+              return (
+                <button key={di} onClick={() => setMobileDay(dayIso)} style={{
+                  flexShrink: 0,
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  background: isSelected ? '#7c3aed' : today ? 'rgba(56,130,246,0.1)' : 'var(--bg-card)',
+                  border: `1px solid ${isSelected ? '#7c3aed' : today ? 'rgba(56,130,246,0.4)' : 'var(--border)'}`,
+                  color: isSelected ? '#fff' : today ? '#378add' : 'var(--text-secondary)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  minWidth: 56,
+                  gap: 2,
+                }}>
+                  <span style={{ fontSize: 10, opacity: 0.85 }}>{DAYS[di]}</span>
+                  <span style={{ fontSize: 14 }}>{day.getDate()}.{String(day.getMonth() + 1).padStart(2, '0')}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Tages-Notiz */}
+          <div onClick={() => setEditingNote(editingNote === mobileDay ? null : mobileDay)}
+            style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 8, padding: '8px 12px', cursor: 'text' }}>
+            {editingNote === mobileDay ? (
+              <input autoFocus value={dayNotes[mobileDay] || ''}
+                onChange={e => setDayNotes(prev => ({ ...prev, [mobileDay]: e.target.value }))}
+                onBlur={() => setEditingNote(null)}
+                onKeyDown={e => e.key === 'Enter' && setEditingNote(null)}
+                placeholder="Tages-Notiz..."
+                style={{ width: '100%', background: 'transparent', border: 'none', color: '#f59e0b', fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+              />
+            ) : (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                <span style={{ fontWeight: 700, marginRight: 6 }}>Tages-Notiz:</span>
+                <span style={{ color: dayNotes[mobileDay] ? '#f59e0b' : 'var(--text-muted)' }}>
+                  {dayNotes[mobileDay] || '+ tippen zum Hinzufügen'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Pro Model eine Karte */}
+          {models.map(model => {
+            const dayIso = mobileDay
+            return (
+              <div key={model.id} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, background: model.avatar_url ? `url(${model.avatar_url}) center/cover` : 'rgba(167,139,250,0.15)', border: '1px solid var(--border)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{model.name}</span>
+                </div>
+
+                {SHIFTS.map(shift => {
+                  const cell = getCell(model.id, dayIso, shift)
+                  const cellId = getCellKey(model.id, dayIso, shift)
+                  const isFrei = cell.chatter === '__FREI__'
+                  const confirmed = cell.confirmed !== false
+                  const isPending = cell.chatter && !isFrei && !confirmed
+                  const isChatterAbsent = cell.chatter && !isFrei ? isAbsent(cell.chatter, dayIso) : false
+                  const isSearchMatch = cellMatchesSearch(cell)
+                  const timeStr = shiftTimes[`${model.id}__${shift}`]
+                  const shiftIcon = shift === 'Früh' ? '🌅' : shift === 'Spät' ? '🌃' : shift === 'Nacht' ? '🌙' : '•'
+                  const shiftColor = SHIFT_COLORS[shift] || 'var(--text-muted)'
+
+                  const bg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.06)' : isPending ? 'rgba(245,158,11,0.06)' : cell.chatter ? 'rgba(16,185,129,0.04)' : 'var(--bg-card2)'
+                  const border = isChatterAbsent ? 'rgba(239,68,68,0.4)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.3)' : 'var(--border)'
+                  const boxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' : 'none'
+
+                  return (
+                    <div key={shift} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
+                      style={{ marginBottom: 6, padding: '10px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, color: shiftColor, fontWeight: 700 }}>{shiftIcon} {shift}{timeStr ? ` · ${timeStr}` : ''}</div>
+                        {isFrei ? (
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#10b981' }}>✓ Freischicht</div>
+                        ) : cell.chatter ? (
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
+                            {cell.trainee && (
+                              <div style={{ fontSize: 11, color: '#06b6d4', fontStyle: 'italic' }}>🎓 mit {cell.trainee}</div>
+                            )}
+                            {cell.note && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>{cell.note}</div>}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>– offen –</div>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 18, color: 'var(--text-muted)', marginLeft: 8 }}>›</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+      /* ───────── DESKTOP VIEW ───────── */
+      <>
       {/* Schedule - Card Layout */}
       <div style={{ overflowX: 'auto' }}>
         {/* Day headers */}
@@ -765,10 +926,14 @@ export default function ScheduleTab({ session }) {
 
                       const cellBg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.05)' : isPending ? 'rgba(245,158,11,0.05)' : cell.chatter ? 'rgba(16,185,129,0.04)' : isToday(day) ? 'rgba(56,130,246,0.04)' : 'var(--bg-card)'
                       const cellBorder = isChatterAbsent ? 'rgba(239,68,68,0.5)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.35)' : isToday(day) ? 'rgba(56,130,246,0.3)' : '#1e1e3a'
+                      // Search-Highlight: gelb glühend wenn cell matched
+                      const isSearchMatch = cellMatchesSearch(cell)
+                      const searchBoxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' : 'none'
+                      const isTrainee = !!cell.trainee && !isFrei
 
                       return (
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
-                          style={{ background: cellBg, border: `1px solid ${cellBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          style={{ background: cellBg, border: `1px solid ${cellBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: searchBoxShadow, transition: 'box-shadow 0.2s' }}>
                           {isEditing ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onClick={e => e.stopPropagation()}>
                               <select autoFocus value={cell.chatter || ''}
@@ -781,6 +946,17 @@ export default function ScheduleTab({ session }) {
                                   return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
                                 })}
                               </select>
+                              {cell.chatter && !isFrei && (
+                                <select value={cell.trainee || ''}
+                                  onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
+                                  style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
+                                  <option value="">🎓 Einarbeitung (optional) — niemand</option>
+                                  {chatters.filter(c => c.name !== cell.chatter).map(c => {
+                                    const absent = isAbsent(c.name, dayIso)
+                                    return <option key={c.id} value={c.name} disabled={absent}>🎓 {c.name}{absent ? ' (abw.)' : ''}</option>
+                                  })}
+                                </select>
+                              )}
                               <input value={cell.note || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
                                 placeholder="Notiz (optional)"
@@ -817,7 +993,14 @@ export default function ScheduleTab({ session }) {
                                 </div>
                               ) : (
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</span>
+                                  {isTrainee && (
+                                    <span style={{ fontSize: 10, color: '#06b6d4', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                      <span style={{ fontSize: 9 }}>🎓</span>{cell.trainee}
+                                    </span>
+                                  )}
+                                </div>
                                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
                                   background: isPending ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)',
                                   color: isPending ? '#f59e0b' : '#10b981' }}>
@@ -866,6 +1049,118 @@ export default function ScheduleTab({ session }) {
           )
         })}
       </div>
+      </>
+      )}
+
+      {/* Mobile Edit Bottom-Sheet */}
+      {editSheet && (() => {
+        const cell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
+        const day = new Date(editSheet.dayIso + 'T00:00:00')
+        const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1
+        const recurringKey = getRecurringKey(editSheet.modelId, dayOfWeek, editSheet.shift)
+        const isRecurring = !!recurring[recurringKey]
+        const isFrei = cell.chatter === '__FREI__'
+        const model = models.find(m => m.id === editSheet.modelId)
+        const shiftLabel = editSheet.shift === 'Früh' ? '🌅 Frühschicht' : editSheet.shift === 'Spät' ? '🌃 Spätschicht' : editSheet.shift === 'Nacht' ? '🌙 Nachtschicht' : editSheet.shift
+        return (
+          <div onClick={() => setEditSheet(null)} style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+          }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              width: '100%', maxWidth: 540, background: 'var(--bg-card)', borderRadius: '14px 14px 0 0',
+              padding: 18, maxHeight: '85vh', overflowY: 'auto',
+              border: '1px solid var(--border)', borderBottom: 'none'
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{model?.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {shiftLabel} · {new Date(editSheet.dayIso + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })}
+                  </div>
+                </div>
+                <button onClick={() => setEditSheet(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 22, cursor: 'pointer', padding: 4 }}>✕</button>
+              </div>
+
+              {/* Chatter-Auswahl */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter</label>
+                <select value={cell.chatter || ''}
+                  onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, chatter: e.target.value, confirmed: true })}
+                  style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
+                  <option value="">— leer —</option>
+                  <option value="__FREI__">✓ Freischicht</option>
+                  {chatters.map(c => {
+                    const absent = isAbsent(c.name, editSheet.dayIso)
+                    return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
+                  })}
+                </select>
+              </div>
+
+              {/* Trainee */}
+              {cell.chatter && !isFrei && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🎓 Einarbeitung (optional)</label>
+                  <select value={cell.trainee || ''}
+                    onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
+                    style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
+                    <option value="">— niemand wird eingearbeitet —</option>
+                    {chatters.filter(c => c.name !== cell.chatter).map(c => {
+                      const absent = isAbsent(c.name, editSheet.dayIso)
+                      return <option key={c.id} value={c.name} disabled={absent}>🎓 {c.name}{absent ? ' (abw.)' : ''}</option>
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {/* Notiz */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Notiz</label>
+                <input value={cell.note || ''}
+                  onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, note: e.target.value })}
+                  placeholder="z.B. spezielle Anweisung..."
+                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: '#f59e0b', padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {/* Bestätigt-Toggle */}
+              {cell.chatter && !isFrei && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={cell.confirmed !== false}
+                    onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, confirmed: e.target.checked })}
+                    style={{ accentColor: '#10b981', width: 18, height: 18 }} />
+                  <span style={{ fontSize: 13, color: cell.confirmed !== false ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                    {cell.confirmed !== false ? '✓ Bestätigt' : '! Klärung nötig'}
+                  </span>
+                </label>
+              )}
+
+              {/* Wöchentlich-Toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
+                <input type="checkbox" checked={isRecurring}
+                  onChange={async e => {
+                    if (e.target.checked && cell.chatter) { await saveRecurring(editSheet.modelId, dayOfWeek, editSheet.shift, cell) }
+                    else { await saveRecurring(editSheet.modelId, dayOfWeek, editSheet.shift, { chatter: '' }) }
+                  }}
+                  style={{ accentColor: '#7c3aed', width: 18, height: 18 }} />
+                <span style={{ fontSize: 13, color: isRecurring ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600 }}>
+                  ↻ Wöchentlich {isRecurring ? '(aktiv)' : ''}
+                </span>
+              </label>
+
+              {/* Aktion */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                <button onClick={() => {
+                  setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { chatter: '', note: '', confirmed: true })
+                  setEditSheet(null)
+                }} style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', borderRadius: 8, padding: '12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Leeren</button>
+                <button onClick={() => setEditSheet(null)} style={{ flex: 2, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '12px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Fertig</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Conflicts below – einklappbar */}
       {hasSavedData && conflicts.length > 0 && (
