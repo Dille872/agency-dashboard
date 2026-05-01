@@ -175,6 +175,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const until = statusUntil ? (() => {
       const [h, m] = statusUntil.split(':')
       const d = new Date(); d.setHours(parseInt(h), parseInt(m), 0, 0)
+      // Wenn die Zeit heute schon vorbei ist, nimm morgen — sonst läuft Status sofort ab
+      if (d <= new Date()) d.setDate(d.getDate() + 1)
       return d.toISOString()
     })() : null
     await supabase.from('models_contact').update({
@@ -462,7 +464,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       description: newCustomContent.description.trim() || null,
       requested_by: displayName,
       due_date: newCustomContent.due_date || null,
-      reminder_days: newCustomContent.reminder_days ? parseInt(newContent.reminder_days) : null,
+      reminder_days: newCustomContent.reminder_days ? parseInt(newCustomContent.reminder_days) : null,
     }).select().single()
     // Also add to calendar if due date set
     if (inserted && newCustomContent.due_date) {
@@ -989,7 +991,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={addCustomContent} disabled={savingContent || !newCustomContent.title.trim()} style={{ flex: 1, padding: '7px', borderRadius: 7, background: newCustomContent.title ? '#7c3aed' : 'var(--border)', color: newContent.title ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <button onClick={addCustomContent} disabled={savingContent || !newCustomContent.title.trim()} style={{ flex: 1, padding: '7px', borderRadius: 7, background: newCustomContent.title ? '#7c3aed' : 'var(--border)', color: newCustomContent.title ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                         {savingContent ? '...' : '+ Speichern'}
                       </button>
                       <button onClick={() => setShowAddContent(false)} style={{ padding: '7px 12px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
