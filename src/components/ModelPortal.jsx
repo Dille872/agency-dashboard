@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { getTheme, setTheme } from '../theme'
 import { APP_VERSION } from '../version'
+import { sendTelegramMessage } from '../telegram'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -404,7 +405,32 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }
 
   const updateRequestStatus = async (id, status) => {
+    const req = contentRequests.find(r => r.id === id)
     await supabase.from('content_requests').update({ status }).eq('id', id)
+
+    // Chatter benachrichtigen wenn Model den Status ändert (erledigt / abgelehnt)
+    if (req?.chatter_name && (status === 'erledigt' || status === 'abgelehnt')) {
+      try {
+        const { data: chatterData } = await supabase.from('chatters_contact').select('telegram_id').eq('name', req.chatter_name).maybeSingle()
+        if (chatterData?.telegram_id) {
+          const customer = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
+          const price = req.price ? `\n💰 $${req.price}` : ''
+          const header = `${req.model_name} · Custom Content`
+          let body = ''
+          if (status === 'erledigt') {
+            const remainder = (req.price || 0) - (req.deposit || 0)
+            const restLine = (remainder > 0 && !req.remainder_paid) ? `\n⚠ Rest noch offen: $${remainder}` : ''
+            body = `✅ <b>${req.model_name} hat fertig</b>\n\nDu kannst raussenden.\n\n${header}${customer}${price}${restLine}\n\n– Thirteen 87`
+          } else {
+            body = `❌ <b>${req.model_name} hat abgelehnt</b>\n\n${header}${customer}${price}`
+          }
+          await sendTelegramMessage(chatterData.telegram_id, body)
+        }
+      } catch (e) {
+        console.error('Chatter-Notification fehlgeschlagen:', e)
+      }
+    }
+
     loadContentRequests()
   }
 

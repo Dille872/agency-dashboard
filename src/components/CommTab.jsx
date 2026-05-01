@@ -658,45 +658,69 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     setUnreadRequests((data || []).filter(r => r.status === 'neu').length)
   }
 
+  // Helper: TG-Notification an Chatter über Status-Wechsel seiner Custom-Content-Anfrage
+  const notifyChatterStatusChange = async (req, newStatus) => {
+    if (!req?.chatter_name) return
+    try {
+      // Telegram-ID des Chatters holen
+      const { data: chatterData } = await supabase.from('chatters_contact').select('telegram_id').eq('name', req.chatter_name).maybeSingle()
+      if (!chatterData?.telegram_id) return
+
+      const customer = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
+      const price = req.price ? `\n💰 $${req.price}` : ''
+      const header = `${req.model_name} · Custom Content`
+
+      let body = ''
+      if (newStatus === 'angefragt') {
+        body = `📥 <b>Deine Anfrage ist beim Model eingereicht</b>\n\nWir warten auf Antwort.\n\n${header}${customer}${price}`
+      } else if (newStatus === 'bestaetigt') {
+        body = `✓ <b>${req.model_name} hat Anfrage angenommen</b>\n\n${header}${customer}${price}\n\n– Thirteen 87`
+      } else if (newStatus === 'erledigt') {
+        const remainder = (req.price || 0) - (req.deposit || 0)
+        const restLine = (remainder > 0 && !req.remainder_paid) ? `\n⚠ Rest noch offen: $${remainder}` : ''
+        body = `✅ <b>${req.model_name} hat fertig</b>\n\nDu kannst raussenden.\n\n${header}${customer}${price}${restLine}\n\n– Thirteen 87`
+      } else if (newStatus === 'abgelehnt') {
+        body = `❌ <b>${req.model_name} hat abgelehnt</b>\n\n${header}${customer}${price}`
+      } else {
+        return
+      }
+      await sendTelegramMessage(chatterData.telegram_id, body)
+    } catch (e) {
+      console.error('notifyChatterStatusChange failed:', e)
+    }
+  }
+
   const updateRequestStatus = async (id, status) => {
+    const req = contentRequests.find(r => r.id === id)
     await supabase.from('content_requests').update({ status }).eq('id', id)
 
-    if (status === 'bestaetigt') {
-      const req = contentRequests.find(r => r.id === id)
-      if (req) {
-        // Auto-create custom_content entry for the model
-        await supabase.from('custom_content').insert({
-          model_name: req.model_name,
-          title: req.request_text,
-          description: null,
-          requested_by: req.chatter_name,
-          created_date: new Date().toISOString().slice(0, 10),
-        })
+    // Telegram an Chatter über Status-Wechsel (egal welcher Status)
+    if (req && (status === 'angefragt' || status === 'bestaetigt' || status === 'erledigt' || status === 'abgelehnt')) {
+      await notifyChatterStatusChange(req, status)
+    }
 
-        // Send Telegram to model — neues Format mit Kunde, Bezahlung klar
-        const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).single()
-        if (modelData?.telegram_id) {
-          const deadlineText = req.deadline === 'asap' ? 'So schnell wie möglich' : req.deadline === 'hours' ? 'In den nächsten Stunden' : req.deadline === 'days' ? '1-2 Tage' : req.deadline === 'week' ? 'Diese Woche' : ''
-          const remainder = (req.price || 0) - (req.deposit || 0)
-          // Bezahl-Status zusammenstellen
-          let payLine = ''
-          if (req.price > 0) {
-            if (req.deposit > 0 && remainder > 0) {
-              // Anzahlung + Rest
-              const depTxt = req.deposit_paid ? `${req.deposit}$ ✓` : `${req.deposit}$ (offen)`
-              const restTxt = req.remainder_paid ? `${remainder}$ ✓` : `${remainder}$ nach Lieferung`
-              payLine = `\n💰 Gesamt: ${req.price}$ — Anzahlung ${depTxt} · Rest ${restTxt}`
-            } else if (req.deposit_paid || req.remainder_paid) {
-              payLine = `\n💰 ${req.price}$ ✓ vollständig bezahlt`
-            } else {
-              payLine = `\n💰 ${req.price}$ — offen`
-            }
+    if (status === 'bestaetigt' && req) {
+      // Telegram ans Model schicken (KEIN doppel-Insert in custom_content mehr — content_requests ist die source of truth)
+      const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).maybeSingle()
+      if (modelData?.telegram_id) {
+        const deadlineText = req.deadline === 'asap' ? 'So schnell wie möglich' : req.deadline === 'hours' ? 'In den nächsten Stunden' : req.deadline === 'days' ? '1-2 Tage' : req.deadline === 'week' ? 'Diese Woche' : ''
+        const remainder = (req.price || 0) - (req.deposit || 0)
+        let payLine = ''
+        if (req.price > 0) {
+          if (req.deposit > 0 && remainder > 0) {
+            const depTxt = req.deposit_paid ? `${req.deposit}$ ✓` : `${req.deposit}$ (offen)`
+            const restTxt = req.remainder_paid ? `${remainder}$ ✓` : `${remainder}$ nach Lieferung`
+            payLine = `\n💰 Gesamt: ${req.price}$ — Anzahlung ${depTxt} · Rest ${restTxt}`
+          } else if (req.deposit_paid || req.remainder_paid) {
+            payLine = `\n💰 ${req.price}$ ✓ vollständig bezahlt`
+          } else {
+            payLine = `\n💰 ${req.price}$ — offen`
           }
-          const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
-          const text = req.edited_text || req.request_text
-          const msg = `<b>📸 Custom Content — Auftrag</b>\n\n${text}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
-          await sendTelegramMessage(modelData.telegram_id, msg)
         }
+        const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
+        const text = req.edited_text || req.request_text
+        const msg = `<b>📸 Custom Content — Auftrag</b>\n\n${text}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
+        await sendTelegramMessage(modelData.telegram_id, msg)
       }
     }
 
