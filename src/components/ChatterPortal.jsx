@@ -293,6 +293,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newRequestType, setNewRequestType] = useState('video')
   const [newRequestPrice, setNewRequestPrice] = useState('')
   const [newRequestDeposit, setNewRequestDeposit] = useState('')
+  const [newRequestPaidAlready, setNewRequestPaidAlready] = useState(false) // ganzer Betrag schon da
+  const [newRequestDepositPaid, setNewRequestDepositPaid] = useState(false) // Anzahlung schon da
   const [newRequestDuration, setNewRequestDuration] = useState('')
   const [newRequestQuantity, setNewRequestQuantity] = useState('1')
   const [newRequestCustomerId, setNewRequestCustomerId] = useState('')
@@ -382,7 +384,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const submitContentRequest = async () => {
-    if (!newRequestModel || !newRequestText.trim() || !newRequestPrice) return
+    if (!newRequestModel || !newRequestText.trim()) return
     setSendingRequest(true)
 
     // Upload images first
@@ -399,13 +401,40 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       }
     }
 
+    // Bezahl-Status berechnen
+    const priceVal = parseFloat(newRequestPrice) || 0
+    const depositVal = parseFloat(newRequestDeposit) || 0
+    const remainderVal = priceVal - depositVal
+    const nowIso = new Date().toISOString()
+
+    // Logik: wenn "ganzer Betrag schon bezahlt" angekreuzt → deposit_paid + remainder_paid beide true
+    // wenn nur "Anzahlung erhalten" angekreuzt → deposit_paid true, Rest noch offen
+    let depositPaidNow = false
+    let remainderPaidNow = false
+    let depositPaidAt = null
+    let remainderPaidAt = null
+
+    if (newRequestPaidAlready) {
+      depositPaidNow = true
+      remainderPaidNow = true
+      depositPaidAt = nowIso
+      remainderPaidAt = nowIso
+    } else if (newRequestDepositPaid && depositVal > 0) {
+      depositPaidNow = true
+      depositPaidAt = nowIso
+    }
+
     await supabase.from('content_requests').insert({
       chatter_name: displayName,
       model_name: newRequestModel,
       request_text: newRequestText.trim(),
       content_type: newRequestType,
-      price: parseFloat(newRequestPrice) || 0,
-      deposit: parseFloat(newRequestDeposit) || 0,
+      price: priceVal,
+      deposit: depositVal,
+      deposit_paid: depositPaidNow,
+      deposit_paid_at: depositPaidAt,
+      remainder_paid: remainderPaidNow,
+      remainder_paid_at: remainderPaidAt,
       duration: newRequestDuration.trim() || null,
       quantity: parseInt(newRequestQuantity) || 1,
       customer_id: newRequestCustomerId.trim() || null,
@@ -416,13 +445,23 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
     // Notify admins via Telegram
     const deadlineText = newRequestDeadline === 'asap' ? '⚡ ASAP' : newRequestDeadline === 'hours' ? '⏰ In den nächsten Stunden' : newRequestDeadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'
-    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}\nTyp: ${newRequestType}\nPreis: $${newRequestPrice}${newRequestDeposit ? ` (Anzahlung: $${newRequestDeposit})` : ''}\nDringlichkeit: ${deadlineText}\n\nWunsch: ${newRequestText.trim()}`
+    // Bezahl-Zeile im TG
+    let payInfoTg = ''
+    if (newRequestPaidAlready) {
+      payInfoTg = ` ✓ vollständig bezahlt`
+    } else if (newRequestDepositPaid && depositVal > 0) {
+      payInfoTg = ` (Anzahlung $${depositVal} ✓ erhalten · Rest $${remainderVal} offen)`
+    } else if (depositVal > 0) {
+      payInfoTg = ` (Anzahlung: $${depositVal})`
+    }
+    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}\nTyp: ${newRequestType}\nPreis: $${newRequestPrice}${payInfoTg}\nDringlichkeit: ${deadlineText}\n\nWunsch: ${newRequestText.trim()}`
     await Promise.all([
       sendTelegramMessage(CHRIS_TG, tgMsg),
       sendTelegramMessage(REY_TG, tgMsg),
     ])
     setNewRequestModel(''); setNewRequestText(''); setNewRequestType('video')
     setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
+    setNewRequestPaidAlready(false); setNewRequestDepositPaid(false)
     setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
     await loadContentRequests()
     setSendingRequest(false)
@@ -1493,16 +1532,39 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   placeholder="#FAN-xxxx" />
               </div>
               <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Gesamtpreis *</label>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Gesamtpreis</label>
                 <input type="number" value={newRequestPrice} onChange={e => setNewRequestPrice(e.target.value)}
                   style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   placeholder="$0" />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, cursor: 'pointer', fontSize: 11 }}>
+                  <input type="checkbox" checked={newRequestPaidAlready}
+                    onChange={e => {
+                      setNewRequestPaidAlready(e.target.checked)
+                      if (e.target.checked) setNewRequestDepositPaid(false)
+                    }}
+                    style={{ accentColor: '#10b981' }} />
+                  <span style={{ color: newRequestPaidAlready ? '#10b981' : 'var(--text-muted)' }}>
+                    ✓ Komplett schon bezahlt
+                  </span>
+                </label>
               </div>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Anzahlung</label>
                 <input type="number" value={newRequestDeposit} onChange={e => setNewRequestDeposit(e.target.value)}
                   style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  disabled={newRequestPaidAlready}
                   placeholder="$0 (optional)" />
+                {!newRequestPaidAlready && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, cursor: parseFloat(newRequestDeposit) > 0 ? 'pointer' : 'not-allowed', fontSize: 11, opacity: parseFloat(newRequestDeposit) > 0 ? 1 : 0.5 }}>
+                    <input type="checkbox" checked={newRequestDepositPaid}
+                      disabled={!parseFloat(newRequestDeposit)}
+                      onChange={e => setNewRequestDepositPaid(e.target.checked)}
+                      style={{ accentColor: '#f59e0b' }} />
+                    <span style={{ color: newRequestDepositPaid ? '#f59e0b' : 'var(--text-muted)' }}>
+                      ✓ Anzahlung erhalten
+                    </span>
+                  </label>
+                )}
               </div>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Länge / Anzahl</label>
@@ -1562,9 +1624,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               )}
             </div>
 
-            <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim() || !newRequestPrice} style={{
-              width: '100%', background: (newRequestModel && newRequestText.trim() && newRequestPrice) ? '#06b6d4' : 'var(--border)',
-              color: (newRequestModel && newRequestText.trim() && newRequestPrice) ? '#fff' : 'var(--text-muted)',
+            <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim()} style={{
+              width: '100%', background: (newRequestModel && newRequestText.trim()) ? '#06b6d4' : 'var(--border)',
+              color: (newRequestModel && newRequestText.trim()) ? '#fff' : 'var(--text-muted)',
               border: 'none', borderRadius: 7, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}>{sendingRequest ? 'Bilder werden hochgeladen...' : '+ Anfrage senden'}</button>
           </div>
