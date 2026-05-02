@@ -15,7 +15,35 @@ const selectS = {
   cursor: 'pointer',
 }
 
-// ─── Helpers für Datum/Woche/Monat ───
+// Farb-Palette für Models (warm/feminin) und Chatter (kühl/technisch)
+const MODEL_COLORS = [
+  { name: 'pink',   bg: 'rgba(236,72,153,0.10)', border: '#ec4899', text: '#ec4899', bgSoft: 'rgba(236,72,153,0.05)' },
+  { name: 'purple', bg: 'rgba(167,139,250,0.10)', border: '#a78bfa', text: '#a78bfa', bgSoft: 'rgba(167,139,250,0.05)' },
+  { name: 'coral',  bg: 'rgba(251,113,133,0.10)', border: '#fb7185', text: '#fb7185', bgSoft: 'rgba(251,113,133,0.05)' },
+  { name: 'amber',  bg: 'rgba(245,158,11,0.10)', border: '#f59e0b', text: '#f59e0b', bgSoft: 'rgba(245,158,11,0.05)' },
+  { name: 'rose',   bg: 'rgba(244,114,182,0.10)', border: '#f472b6', text: '#f472b6', bgSoft: 'rgba(244,114,182,0.05)' },
+  { name: 'fuchsia',bg: 'rgba(217,70,239,0.10)', border: '#d946ef', text: '#d946ef', bgSoft: 'rgba(217,70,239,0.05)' },
+  { name: 'orange', bg: 'rgba(249,115,22,0.10)', border: '#f97316', text: '#f97316', bgSoft: 'rgba(249,115,22,0.05)' },
+  { name: 'lime',   bg: 'rgba(132,204,22,0.10)', border: '#84cc16', text: '#84cc16', bgSoft: 'rgba(132,204,22,0.05)' },
+]
+const CHATTER_COLORS = [
+  { name: 'cyan',   bg: 'rgba(6,182,212,0.10)', border: '#06b6d4', text: '#06b6d4', bgSoft: 'rgba(6,182,212,0.05)' },
+  { name: 'teal',   bg: 'rgba(20,184,166,0.10)', border: '#14b8a6', text: '#14b8a6', bgSoft: 'rgba(20,184,166,0.05)' },
+  { name: 'indigo', bg: 'rgba(99,102,241,0.10)', border: '#6366f1', text: '#6366f1', bgSoft: 'rgba(99,102,241,0.05)' },
+  { name: 'sky',    bg: 'rgba(56,189,248,0.10)', border: '#38bdf8', text: '#38bdf8', bgSoft: 'rgba(56,189,248,0.05)' },
+  { name: 'violet', bg: 'rgba(139,92,246,0.10)', border: '#8b5cf6', text: '#8b5cf6', bgSoft: 'rgba(139,92,246,0.05)' },
+  { name: 'green',  bg: 'rgba(34,197,94,0.10)', border: '#22c55e', text: '#22c55e', bgSoft: 'rgba(34,197,94,0.05)' },
+  { name: 'emerald',bg: 'rgba(16,185,129,0.10)', border: '#10b981', text: '#10b981', bgSoft: 'rgba(16,185,129,0.05)' },
+  { name: 'blue',   bg: 'rgba(59,130,246,0.10)', border: '#3b82f6', text: '#3b82f6', bgSoft: 'rgba(59,130,246,0.05)' },
+]
+
+function getColorForEntity(entity, allEntities, palette) {
+  const idx = allEntities.indexOf(entity)
+  if (idx < 0) return palette[0]
+  return palette[idx % palette.length]
+}
+
+// ─── Datum-Helpers ───
 function isoWeekKey(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
   const dayNum = date.getUTCDay() || 7
@@ -43,19 +71,17 @@ function daysInMonth(mKey) {
   const [y, m] = mKey.split('-').map(Number)
   return new Date(y, m, 0).getDate()
 }
-function isCurrentMonth(mKey) {
-  return mKey === monthKey(new Date())
-}
+function isCurrentMonth(mKey) { return mKey === monthKey(new Date()) }
 function elapsedDaysInMonth(mKey) {
   if (!isCurrentMonth(mKey)) return daysInMonth(mKey)
   return new Date().getDate()
 }
 
-// Trend-Pfeil + Farbe + Format
-function TrendIndicator({ current, previous, isInverse = false }) {
+// ─── Trend & Sparkline ───
+function TrendIndicator({ current, previous, isInverse = false, big = false }) {
   if (previous === 0 || previous == null) {
-    if (current > 0) return <span style={{ fontSize: 10, color: '#10b981', fontWeight: 600 }}>neu</span>
-    return <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>—</span>
+    if (current > 0) return <span style={{ fontSize: big ? 12 : 10, color: '#10b981', fontWeight: 600 }}>neu</span>
+    return <span style={{ fontSize: big ? 12 : 10, color: 'var(--text-muted)' }}>—</span>
   }
   const diff = current - previous
   const pct = (diff / Math.abs(previous)) * 100
@@ -64,14 +90,13 @@ function TrendIndicator({ current, previous, isInverse = false }) {
   const color = closeToZero ? 'var(--text-muted)' : (isPositive ? '#10b981' : '#ef4444')
   const arrow = closeToZero ? '·' : (diff > 0 ? '▲' : '▼')
   return (
-    <span style={{ fontSize: 11, color, fontWeight: 600, fontFamily: 'monospace' }}>
+    <span style={{ fontSize: big ? 12 : 11, color, fontWeight: 600, fontFamily: 'monospace' }}>
       {arrow} {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
     </span>
   )
 }
 
-// Sparkline mit polyline
-function Sparkline({ data, color = '#7c3aed', width = 60, height = 20 }) {
+function Sparkline({ data, color = '#7c3aed', width = 60, height = 18 }) {
   if (!data || data.length < 2) return <div style={{ width, height }} />
   const max = Math.max(...data, 1)
   const min = Math.min(...data, 0)
@@ -90,7 +115,7 @@ function Sparkline({ data, color = '#7c3aed', width = 60, height = 20 }) {
   )
 }
 
-// Aggregation: Snapshots → pro Entity / pro Periode
+// ─── Aggregation ───
 function aggregateSnapshots(snapshots, entityKey, metricKeys, periodFn) {
   const result = {}
   for (const snap of snapshots) {
@@ -129,50 +154,72 @@ function getEntities(agg, latestPeriod) {
   })
 }
 
-// Vergleichs-Karte für eine Entity
-function ComparisonCard({ entity, agg, periodA, periodB, metrics, sparklineData, headerColor }) {
+// ─── Collapsible Card ───
+function CollapsibleEntityCard({ entity, agg, periodA, periodB, metrics, sparklineData, color, isOpen, onToggle }) {
   const periodADays = periodA?.daysCount || 1
   const periodBDays = periodB?.daysCount || 1
+  // Header-Werte (Umsatz + Trend)
+  const revB = getMetricValue(agg, entity, periodB.key, 'revenue', false) / periodBDays
+  const revA = getMetricValue(agg, entity, periodA.key, 'revenue', false) / periodADays
+
   return (
-    <div style={cardS}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <div style={{ width: 8, height: 8, borderRadius: 2, background: headerColor }} />
-        <div style={{ fontSize: 14, fontWeight: 700, color: headerColor, flex: 1 }}>{entity}</div>
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-          {periodA.label} → {periodB.label}
+    <div style={{ background: 'var(--bg-card)', border: `1px solid ${color.border}55`, borderRadius: 10, overflow: 'hidden', transition: 'all 0.2s' }}>
+      {/* Header — klickbar */}
+      <div onClick={onToggle} style={{
+        background: color.bgSoft,
+        padding: '10px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}>
+        <div style={{ fontSize: 11, color: color.text, transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▼</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: color.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {entity}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+          ${Math.round(revB).toLocaleString()}
+        </div>
+        <div style={{ minWidth: 70, textAlign: 'right' }}>
+          <TrendIndicator current={revB} previous={revA} big />
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 8 }}>
-        {metrics.map(m => {
-          const valA = getMetricValue(agg, entity, periodA.key, m.key, m.useAvg)
-          const valB = getMetricValue(agg, entity, periodB.key, m.key, m.useAvg)
-          // Bei Sums: für Monatsvergleich auf Tagesschnitt normalisieren
-          const valAnorm = m.useAvg ? valA : (valA / periodADays)
-          const valBnorm = m.useAvg ? valB : (valB / periodBDays)
-          const sparkData = sparklineData?.[entity]?.[m.key] || []
-          return (
-            <div key={m.key} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px' }}>
-              <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em' }}>{m.label}</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>
-                {m.format(valBnorm)}
-              </div>
-              <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
-                vs {m.format(valAnorm)}
-              </div>
-              <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                <TrendIndicator current={valBnorm} previous={valAnorm} isInverse={m.inverse} />
-                <Sparkline data={sparkData} color={headerColor} width={50} height={14} />
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      {/* Inhalt — nur wenn aufgeklappt */}
+      {isOpen && (
+        <div style={{ padding: 12, background: 'var(--bg-card)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 8 }}>
+            {metrics.map(m => {
+              const valA = getMetricValue(agg, entity, periodA.key, m.key, m.useAvg)
+              const valB = getMetricValue(agg, entity, periodB.key, m.key, m.useAvg)
+              const valAnorm = m.useAvg ? valA : (valA / periodADays)
+              const valBnorm = m.useAvg ? valB : (valB / periodBDays)
+              const sparkData = sparklineData?.[entity]?.[m.key] || []
+              return (
+                <div key={m.key} style={{ background: color.bg, borderRadius: 7, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 9, color: color.text, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700, opacity: 0.8 }}>{m.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>
+                    {m.format(valBnorm)}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+                    vs {m.format(valAnorm)}
+                  </div>
+                  <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                    <TrendIndicator current={valBnorm} previous={valAnorm} isInverse={m.inverse} />
+                    <Sparkline data={sparkData} color={color.text} width={50} height={14} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-// HAUPTKOMPONENTE
+// ─── HAUPTKOMPONENTE ───
 export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots = [] }) {
   const [tab, setTab] = useState('models')
   const [periodMode, setPeriodMode] = useState('week')
@@ -180,17 +227,18 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
   const [selectedWeekB, setSelectedWeekB] = useState('')
   const [selectedMonthA, setSelectedMonthA] = useState('')
   const [selectedMonthB, setSelectedMonthB] = useState('')
+  const [openCards, setOpenCards] = useState(new Set())
+  const [filterModels, setFilterModels] = useState(new Set()) // empty = alle, sonst nur diese
+  const [filterChatters, setFilterChatters] = useState(new Set())
 
   const modelMetricKeys = ['revenue', 'subs', 'tipsRevenue', 'messageRevenue', 'subsRevenue']
   const chatterMetricKeys = ['revenue', 'buyRate', 'sentMessages', 'activeHours', 'avgResponseSeconds', 'revenuePerHour']
 
-  // Aggregationen
   const modelByWeek = useMemo(() => aggregateSnapshots(modelSnapshots, 'creator', modelMetricKeys, d => isoWeekKey(d)), [modelSnapshots])
   const modelByMonth = useMemo(() => aggregateSnapshots(modelSnapshots, 'creator', modelMetricKeys, d => monthKey(d)), [modelSnapshots])
   const chatterByWeek = useMemo(() => aggregateSnapshots(chatterSnapshots, 'name', chatterMetricKeys, d => isoWeekKey(d)), [chatterSnapshots])
   const chatterByMonth = useMemo(() => aggregateSnapshots(chatterSnapshots, 'name', chatterMetricKeys, d => monthKey(d)), [chatterSnapshots])
 
-  // Tag-Counts pro Periode
   const periodDayCount = useMemo(() => {
     const result = { week: {}, month: {} }
     for (const snap of [...modelSnapshots, ...chatterSnapshots]) {
@@ -206,7 +254,6 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     return result
   }, [modelSnapshots, chatterSnapshots])
 
-  // Verfügbare Wochen/Monate
   const allWeeks = useMemo(() => {
     const set = new Set()
     for (const snap of [...modelSnapshots, ...chatterSnapshots]) {
@@ -223,14 +270,12 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     return [...set].sort()
   }, [modelSnapshots, chatterSnapshots])
 
-  // Default-Auswahl
   useEffect(() => {
     if (allWeeks.length >= 2 && !selectedWeekA && !selectedWeekB) {
       setSelectedWeekB(allWeeks[allWeeks.length - 1])
       setSelectedWeekA(allWeeks[allWeeks.length - 2])
     } else if (allWeeks.length === 1 && !selectedWeekB) {
-      setSelectedWeekB(allWeeks[0])
-      setSelectedWeekA(allWeeks[0])
+      setSelectedWeekB(allWeeks[0]); setSelectedWeekA(allWeeks[0])
     }
   }, [allWeeks])
 
@@ -239,12 +284,10 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
       setSelectedMonthB(allMonths[allMonths.length - 1])
       setSelectedMonthA(allMonths[allMonths.length - 2])
     } else if (allMonths.length === 1 && !selectedMonthB) {
-      setSelectedMonthB(allMonths[0])
-      setSelectedMonthA(allMonths[0])
+      setSelectedMonthB(allMonths[0]); setSelectedMonthA(allMonths[0])
     }
   }, [allMonths])
 
-  // Aktuelle Periodenobjekte
   const periodA = periodMode === 'week'
     ? { key: selectedWeekA, label: isoWeekLabel(selectedWeekA), daysCount: periodDayCount.week[selectedWeekA]?.size || 7 }
     : { key: selectedMonthA, label: monthLabel(selectedMonthA), daysCount: elapsedDaysInMonth(selectedMonthA || monthKey(new Date())) }
@@ -252,7 +295,6 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     ? { key: selectedWeekB, label: isoWeekLabel(selectedWeekB), daysCount: periodDayCount.week[selectedWeekB]?.size || 7 }
     : { key: selectedMonthB, label: monthLabel(selectedMonthB), daysCount: elapsedDaysInMonth(selectedMonthB || monthKey(new Date())) }
 
-  // Sparkline-Daten
   const sparklineData = useMemo(() => {
     const periods = periodMode === 'week' ? allWeeks.slice(-8) : allMonths.slice(-6)
     const agg = tab === 'models' ? (periodMode === 'week' ? modelByWeek : modelByMonth) : (periodMode === 'week' ? chatterByWeek : chatterByMonth)
@@ -272,7 +314,6 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     return result
   }, [tab, periodMode, modelByWeek, modelByMonth, chatterByWeek, chatterByMonth, allWeeks, allMonths])
 
-  // Metric-Konfigurationen
   const modelMetrics = [
     { key: 'revenue', label: 'Umsatz', format: v => '$' + Math.round(v).toLocaleString() },
     { key: 'tipsRevenue', label: 'Tips', format: v => '$' + Math.round(v).toLocaleString() },
@@ -293,9 +334,40 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
   const currentAgg = tab === 'models'
     ? (periodMode === 'week' ? modelByWeek : modelByMonth)
     : (periodMode === 'week' ? chatterByWeek : chatterByMonth)
-  const entities = useMemo(() => getEntities(currentAgg, periodB?.key), [currentAgg, periodB?.key])
+  const allEntities = useMemo(() => getEntities(currentAgg, periodB?.key), [currentAgg, periodB?.key])
 
-  // Insights (für 3. Tab)
+  // Filter anwenden
+  const activeFilter = tab === 'models' ? filterModels : filterChatters
+  const setActiveFilter = tab === 'models' ? setFilterModels : setFilterChatters
+  const visibleEntities = activeFilter.size === 0 ? allEntities : allEntities.filter(e => activeFilter.has(e))
+
+  const palette = tab === 'models' ? MODEL_COLORS : CHATTER_COLORS
+  const tabColor = tab === 'models' ? '#ec4899' : '#06b6d4'
+
+  // Toggle Card
+  const toggleCard = (entity) => {
+    setOpenCards(prev => {
+      const next = new Set(prev)
+      if (next.has(entity)) next.delete(entity)
+      else next.add(entity)
+      return next
+    })
+  }
+  const expandAll = () => setOpenCards(new Set(visibleEntities))
+  const collapseAll = () => setOpenCards(new Set())
+
+  // Filter-Toggle
+  const toggleFilter = (entity) => {
+    setActiveFilter(prev => {
+      const next = new Set(prev)
+      if (next.has(entity)) next.delete(entity)
+      else next.add(entity)
+      return next
+    })
+  }
+  const clearFilter = () => setActiveFilter(new Set())
+
+  // Insights (alt)
   const insights = useMemo(() => {
     if (!chatterSnapshots.length) return null
     const byWeekday = [[], [], [], [], [], [], []]
@@ -319,13 +391,11 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     return <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 60, fontSize: 14 }}>Noch keine Daten für Performance-Analyse</div>
   }
 
-  const headerColor = tab === 'models' ? '#ec4899' : '#06b6d4'
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       {/* Tab-Switcher */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {[
           { key: 'models', label: '📸 Models', color: '#ec4899' },
           { key: 'chatters', label: '💬 Chatters', color: '#06b6d4' },
@@ -338,9 +408,16 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
             color: tab === t.key ? t.color : 'var(--text-secondary)',
           }}>{t.label}</button>
         ))}
+
+        {(tab === 'models' || tab === 'chatters') && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <button onClick={expandAll} style={{ fontSize: 10, padding: '5px 10px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>▼ Alle auf</button>
+            <button onClick={collapseAll} style={{ fontSize: 10, padding: '5px 10px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>▶ Alle zu</button>
+          </div>
+        )}
       </div>
 
-      {/* MODELS / CHATTERS – Vergleichs-Ansicht */}
+      {/* MODELS / CHATTERS */}
       {(tab === 'models' || tab === 'chatters') && (
         <>
           {/* Periodenwahl */}
@@ -395,28 +472,71 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
             </div>
           </div>
 
-          {entities.length === 0 ? (
+          {/* Filter-Chips */}
+          {allEntities.length > 1 && (
+            <div style={{ ...cardS, padding: '10px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>
+                  {activeFilter.size === 0 ? 'Alle anzeigen' : `${activeFilter.size} ausgewählt`}
+                </span>
+                {activeFilter.size > 0 && (
+                  <button onClick={clearFilter} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    ✕ Filter zurücksetzen
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {allEntities.map(entity => {
+                  const c = getColorForEntity(entity, allEntities, palette)
+                  const isActive = activeFilter.size === 0 || activeFilter.has(entity)
+                  return (
+                    <button key={entity} onClick={() => toggleFilter(entity)} style={{
+                      fontSize: 11,
+                      padding: '4px 10px',
+                      borderRadius: 5,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      fontWeight: 600,
+                      background: isActive ? c.bg : 'transparent',
+                      border: `1px solid ${isActive ? c.border : 'var(--border)'}`,
+                      color: isActive ? c.text : 'var(--text-muted)',
+                      opacity: isActive ? 1 : 0.55,
+                      transition: 'all 0.15s',
+                    }}>{entity}</button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Liste */}
+          {visibleEntities.length === 0 ? (
             <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-              Keine Daten für die ausgewählten Perioden
+              {allEntities.length === 0 ? 'Keine Daten für die ausgewählten Perioden' : 'Keine Auswahl — alle Filter aktiv aber keine Daten'}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {entities.map(entity => (
-                <ComparisonCard key={entity}
-                  entity={entity}
-                  agg={currentAgg}
-                  periodA={periodA}
-                  periodB={periodB}
-                  metrics={tab === 'models' ? modelMetrics : chatterMetrics}
-                  sparklineData={sparklineData}
-                  headerColor={headerColor}
-                />
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {visibleEntities.map(entity => {
+                const c = getColorForEntity(entity, allEntities, palette)
+                return (
+                  <CollapsibleEntityCard key={entity}
+                    entity={entity}
+                    agg={currentAgg}
+                    periodA={periodA}
+                    periodB={periodB}
+                    metrics={tab === 'models' ? modelMetrics : chatterMetrics}
+                    sparklineData={sparklineData}
+                    color={c}
+                    isOpen={openCards.has(entity)}
+                    onToggle={() => toggleCard(entity)}
+                  />
+                )
+              })}
             </div>
           )}
 
           <div style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', padding: '4px 0' }}>
-            Sparklines zeigen letzte {periodMode === 'week' ? '8 Wochen' : '6 Monate'} · Bei Monatsvergleich werden Werte auf Tagesschnitt normalisiert
+            Sparklines: letzte {periodMode === 'week' ? '8 Wochen' : '6 Monate'} · Monatsvergleich auf Tagesschnitt normiert · Klick auf Header zum Ein-/Ausklappen
           </div>
         </>
       )}
