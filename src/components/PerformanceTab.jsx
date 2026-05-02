@@ -361,6 +361,14 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
   const [heatmapMonth, setHeatmapMonth] = useState('') // YYYY-MM
   const [heatmapModel, setHeatmapModel] = useState('') // '' = Gesamt, sonst model_name (Gruppe)
 
+  // Mobile-Detection
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
   // Model-Aliases aus DB laden für Account-Gruppierung
   const [modelAliases, setModelAliases] = useState([])
   useEffect(() => {
@@ -974,36 +982,42 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
                 return (
                   <>
                     {/* Wochentage-Header */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: isMobile ? 2 : 4, marginBottom: 4 }}>
                       {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(d => (
                         <div key={d} style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', fontFamily: 'monospace', padding: '2px 0' }}>{d}</div>
                       ))}
                     </div>
                     {/* Grid mit Tagen */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: isMobile ? 2 : 4 }}>
                       {cells.map(c => {
-                        if (c.empty) return <div key={c.key} />
+                        if (c.empty) return <div key={c.key} style={{ minHeight: isMobile ? 40 : 56 }} />
                         const idx = getStopIdx(c.rev)
                         const bg = idx < 0 ? 'transparent' : stops[idx]
                         const txt = idx >= 3 ? textOnDark : textOnLight
                         const isBestDay = c.day === bestDay && bestRev > 0
                         return (
                           <div key={c.key} title={c.rev > 0 ? `${c.day}.${m}.${y}: $${Math.round(c.rev).toLocaleString()}` : ''} style={{
-                            aspectRatio: '1',
                             background: bg,
                             border: isBestDay ? '2px solid #f59e0b' : (idx < 0 ? '1px dashed var(--border)' : '0.5px solid rgba(0,0,0,0.05)'),
-                            borderRadius: 6,
+                            borderRadius: isMobile ? 4 : 6,
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            padding: 4,
-                            minHeight: 50,
+                            padding: isMobile ? 2 : 4,
+                            minHeight: isMobile ? 40 : 56,
+                            minWidth: 0,
+                            overflow: 'hidden',
                           }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: idx < 0 ? 'var(--text-muted)' : txt }}>{c.day}</div>
-                            {c.rev > 0 && (
-                              <div style={{ fontSize: 8, color: txt, fontFamily: 'monospace', opacity: idx >= 3 ? 0.95 : 0.75 }}>
+                            <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 700, color: idx < 0 ? 'var(--text-muted)' : txt, lineHeight: 1 }}>{c.day}</div>
+                            {c.rev > 0 && !isMobile && (
+                              <div style={{ fontSize: 8, color: txt, fontFamily: 'monospace', opacity: idx >= 3 ? 0.95 : 0.75, marginTop: 2 }}>
                                 ${Math.round(c.rev).toLocaleString()}
+                              </div>
+                            )}
+                            {c.rev > 0 && isMobile && (
+                              <div style={{ fontSize: 7, color: txt, fontFamily: 'monospace', opacity: idx >= 3 ? 0.95 : 0.75, marginTop: 1, lineHeight: 1 }}>
+                                ${c.rev >= 1000 ? (c.rev/1000).toFixed(1) + 'k' : Math.round(c.rev)}
                               </div>
                             )}
                           </div>
@@ -1035,7 +1049,7 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
                 return (
                   <div style={{ marginTop: 16 }}>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700, marginBottom: 8 }}>Wochenanalyse</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekAnalysis.length}, 1fr)`, gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : `repeat(${weekAnalysis.length}, 1fr)`, gap: 8 }}>
                       {weekAnalysis.map(w => {
                         const isBest = w.total === maxWeek && w.total > 0
                         const ratio = w.total / avg
