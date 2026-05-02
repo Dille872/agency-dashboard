@@ -147,20 +147,32 @@ function getMetricValue(agg, entity, period, metric, useAvg) {
 }
 
 function getEntities(agg, latestPeriod) {
-  return Object.keys(agg).sort((a, b) => {
-    const aRev = agg[a]?.[latestPeriod]?.revenue?.sum || 0
-    const bRev = agg[b]?.[latestPeriod]?.revenue?.sum || 0
-    return bRev - aRev
-  })
+  return Object.keys(agg)
+    .filter(name => !/\*/.test(name)) // gelöschte Accounts (mit Sternchen) ausblenden
+    .sort((a, b) => {
+      const aRev = agg[a]?.[latestPeriod]?.revenue?.sum || 0
+      const bRev = agg[b]?.[latestPeriod]?.revenue?.sum || 0
+      return bRev - aRev
+    })
+}
+
+// ─── Helper: Helle Stops für Pastel-Look ───
+// Bei dunklem Theme: heller bgSoft + dunkle Schrift wirkt wie "warm leuchtend"
+function getDarkText(color) {
+  // Mappt von Border-Hex auf einen dunklen Stop für Text
+  // Wir nutzen rgba/Manipulation: einen sehr satten dunklen Ton
+  return color.text // unverändert, weil dunkles Theme
 }
 
 // ─── Collapsible Card ───
 function CollapsibleEntityCard({ entity, agg, periodA, periodB, metrics, sparklineData, color, isOpen, onToggle }) {
   const periodADays = periodA?.daysCount || 1
   const periodBDays = periodB?.daysCount || 1
-  // Header-Werte (Umsatz + Trend)
-  const revB = getMetricValue(agg, entity, periodB.key, 'revenue', false) / periodBDays
-  const revA = getMetricValue(agg, entity, periodA.key, 'revenue', false) / periodADays
+  // Header: GESAMT-Werte zeigen, aber Trend auf Tagesbasis berechnen (für faire März/April-Vergleiche)
+  const revBtotal = getMetricValue(agg, entity, periodB.key, 'revenue', false)
+  const revAtotal = getMetricValue(agg, entity, periodA.key, 'revenue', false)
+  const revBperDay = revBtotal / periodBDays
+  const revAperDay = revAtotal / periodADays
 
   return (
     <div style={{ background: 'var(--bg-card)', border: `1px solid ${color.border}55`, borderRadius: 10, overflow: 'hidden', transition: 'all 0.2s' }}>
@@ -178,35 +190,57 @@ function CollapsibleEntityCard({ entity, agg, periodA, periodB, metrics, sparkli
         <div style={{ fontSize: 14, fontWeight: 700, color: color.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {entity}
         </div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-          ${Math.round(revB).toLocaleString()}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 100 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+            ${Math.round(revBtotal).toLocaleString()}
+          </div>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+            ⌀ ${Math.round(revBperDay).toLocaleString()}/Tag
+          </div>
         </div>
         <div style={{ minWidth: 70, textAlign: 'right' }}>
-          <TrendIndicator current={revB} previous={revA} big />
+          <TrendIndicator current={revBperDay} previous={revAperDay} big />
         </div>
       </div>
 
       {/* Inhalt — nur wenn aufgeklappt */}
       {isOpen && (
         <div style={{ padding: 12, background: 'var(--bg-card)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
             {metrics.map(m => {
-              const valA = getMetricValue(agg, entity, periodA.key, m.key, m.useAvg)
-              const valB = getMetricValue(agg, entity, periodB.key, m.key, m.useAvg)
-              const valAnorm = m.useAvg ? valA : (valA / periodADays)
-              const valBnorm = m.useAvg ? valB : (valB / periodBDays)
+              const valAraw = getMetricValue(agg, entity, periodA.key, m.key, m.useAvg)
+              const valBraw = getMetricValue(agg, entity, periodB.key, m.key, m.useAvg)
+              // Sums (Umsatz, Tips, ...) GESAMT zeigen, daneben Tagesschnitt
+              // Avgs (BuyRate, AntwZeit, RevenuePerHour) sind schon Durchschnitt → unverändert
+              const isSum = !m.useAvg
+              const valBdisplay = valBraw // Gesamt/Avg wie aus DB
+              const valAdisplay = valAraw
+              // Trend immer auf Tagesschnitt für Sums berechnen → fair
+              const valBcompare = isSum ? (valBraw / periodBDays) : valBraw
+              const valAcompare = isSum ? (valAraw / periodADays) : valAraw
+              const valBperDay = isSum ? (valBraw / periodBDays) : null
               const sparkData = sparklineData?.[entity]?.[m.key] || []
               return (
-                <div key={m.key} style={{ background: color.bg, borderRadius: 7, padding: '8px 10px' }}>
-                  <div style={{ fontSize: 9, color: color.text, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700, opacity: 0.8 }}>{m.label}</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', lineHeight: 1.1 }}>
-                    {m.format(valBnorm)}
+                <div key={m.key} style={{
+                  background: color.bg,
+                  borderRadius: 8,
+                  padding: '9px 11px',
+                  border: `1px solid ${color.border}33`,
+                }}>
+                  <div style={{ fontSize: 9, color: color.text, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700, opacity: 0.85 }}>
+                    {m.label}
                   </div>
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
-                    vs {m.format(valAnorm)}
+                  <div style={{ fontSize: 17, fontWeight: 700, color: color.text, fontFamily: 'monospace', lineHeight: 1.1 }}>
+                    {m.format(valBdisplay)}
+                  </div>
+                  <div style={{ fontSize: 9, color: color.text, opacity: 0.65, fontFamily: 'monospace', marginTop: 2 }}>
+                    {isSum && valBperDay != null ? `⌀ ${m.format(valBperDay)}/Tag` : null}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 1 }}>
+                    vs {m.format(valAdisplay)}
                   </div>
                   <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                    <TrendIndicator current={valBnorm} previous={valAnorm} isInverse={m.inverse} />
+                    <TrendIndicator current={valBcompare} previous={valAcompare} isInverse={m.inverse} />
                     <Sparkline data={sparkData} color={color.text} width={50} height={14} />
                   </div>
                 </div>
@@ -536,7 +570,7 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
           )}
 
           <div style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', padding: '4px 0' }}>
-            Sparklines: letzte {periodMode === 'week' ? '8 Wochen' : '6 Monate'} · Monatsvergleich auf Tagesschnitt normiert · Klick auf Header zum Ein-/Ausklappen
+            Hauptzahl = Gesamt · ⌀ pro Tag klein darunter · Trends fair auf Tagesbasis berechnet · Sparklines: letzte {periodMode === 'week' ? '8 Wochen' : '6 Monate'} · Klick auf Header zum Auf-/Zuklappen
           </div>
         </>
       )}
