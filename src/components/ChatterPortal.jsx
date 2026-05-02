@@ -1515,7 +1515,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Typ *</label>
                 <div style={{ display: 'flex', gap: 4 }}>
-                  {[['video','Video'],['bild','Bild'],['audio','Audio']].map(([k,l]) => (
+                  {[['video','Video'],['bild','Bild'],['audio','Audio'],['sonstiges','Sonstiges']].map(([k,l]) => (
                     <button key={k} onClick={() => setNewRequestType(k)} style={{
                       flex: 1, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
                       background: newRequestType === k ? 'rgba(124,58,237,0.2)' : 'transparent',
