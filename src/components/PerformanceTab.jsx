@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react'
+import { supabase } from '../supabase'
 
 const cardS = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }
 const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 12 }
@@ -15,26 +16,29 @@ const selectS = {
   cursor: 'pointer',
 }
 
-// Farb-Palette für Models (warm/feminin) und Chatter (kühl/technisch)
+// ─── Farb-Palette ───
+// bgPastel: heller Pastel-Background für Tile
+// textDark: dunkle satte Variante für die Hauptzahl drüber
+// border/text: Akzentfarbe
 const MODEL_COLORS = [
-  { name: 'pink',   bg: 'rgba(236,72,153,0.10)', border: '#ec4899', text: '#ec4899', bgSoft: 'rgba(236,72,153,0.05)' },
-  { name: 'purple', bg: 'rgba(167,139,250,0.10)', border: '#a78bfa', text: '#a78bfa', bgSoft: 'rgba(167,139,250,0.05)' },
-  { name: 'coral',  bg: 'rgba(251,113,133,0.10)', border: '#fb7185', text: '#fb7185', bgSoft: 'rgba(251,113,133,0.05)' },
-  { name: 'amber',  bg: 'rgba(245,158,11,0.10)', border: '#f59e0b', text: '#f59e0b', bgSoft: 'rgba(245,158,11,0.05)' },
-  { name: 'rose',   bg: 'rgba(244,114,182,0.10)', border: '#f472b6', text: '#f472b6', bgSoft: 'rgba(244,114,182,0.05)' },
-  { name: 'fuchsia',bg: 'rgba(217,70,239,0.10)', border: '#d946ef', text: '#d946ef', bgSoft: 'rgba(217,70,239,0.05)' },
-  { name: 'orange', bg: 'rgba(249,115,22,0.10)', border: '#f97316', text: '#f97316', bgSoft: 'rgba(249,115,22,0.05)' },
-  { name: 'lime',   bg: 'rgba(132,204,22,0.10)', border: '#84cc16', text: '#84cc16', bgSoft: 'rgba(132,204,22,0.05)' },
+  { bgPastel: '#FBEAF0', textDark: '#993556', border: '#ec4899', text: '#ec4899' },
+  { bgPastel: '#EEEDFE', textDark: '#3C3489', border: '#a78bfa', text: '#a78bfa' },
+  { bgPastel: '#FAECE7', textDark: '#993C1D', border: '#fb7185', text: '#fb7185' },
+  { bgPastel: '#FAEEDA', textDark: '#854F0B', border: '#f59e0b', text: '#f59e0b' },
+  { bgPastel: '#FBE6F0', textDark: '#9F2D5F', border: '#f472b6', text: '#f472b6' },
+  { bgPastel: '#FAE8FF', textDark: '#86198F', border: '#d946ef', text: '#d946ef' },
+  { bgPastel: '#FFEDD5', textDark: '#9A3412', border: '#f97316', text: '#f97316' },
+  { bgPastel: '#EAF3DE', textDark: '#3B6D11', border: '#84cc16', text: '#84cc16' },
 ]
 const CHATTER_COLORS = [
-  { name: 'cyan',   bg: 'rgba(6,182,212,0.10)', border: '#06b6d4', text: '#06b6d4', bgSoft: 'rgba(6,182,212,0.05)' },
-  { name: 'teal',   bg: 'rgba(20,184,166,0.10)', border: '#14b8a6', text: '#14b8a6', bgSoft: 'rgba(20,184,166,0.05)' },
-  { name: 'indigo', bg: 'rgba(99,102,241,0.10)', border: '#6366f1', text: '#6366f1', bgSoft: 'rgba(99,102,241,0.05)' },
-  { name: 'sky',    bg: 'rgba(56,189,248,0.10)', border: '#38bdf8', text: '#38bdf8', bgSoft: 'rgba(56,189,248,0.05)' },
-  { name: 'violet', bg: 'rgba(139,92,246,0.10)', border: '#8b5cf6', text: '#8b5cf6', bgSoft: 'rgba(139,92,246,0.05)' },
-  { name: 'green',  bg: 'rgba(34,197,94,0.10)', border: '#22c55e', text: '#22c55e', bgSoft: 'rgba(34,197,94,0.05)' },
-  { name: 'emerald',bg: 'rgba(16,185,129,0.10)', border: '#10b981', text: '#10b981', bgSoft: 'rgba(16,185,129,0.05)' },
-  { name: 'blue',   bg: 'rgba(59,130,246,0.10)', border: '#3b82f6', text: '#3b82f6', bgSoft: 'rgba(59,130,246,0.05)' },
+  { bgPastel: '#CFFAFE', textDark: '#155E75', border: '#06b6d4', text: '#06b6d4' },
+  { bgPastel: '#CCFBF1', textDark: '#0F766E', border: '#14b8a6', text: '#14b8a6' },
+  { bgPastel: '#E0E7FF', textDark: '#3730A3', border: '#6366f1', text: '#6366f1' },
+  { bgPastel: '#E0F2FE', textDark: '#075985', border: '#38bdf8', text: '#38bdf8' },
+  { bgPastel: '#EDE9FE', textDark: '#5B21B6', border: '#8b5cf6', text: '#8b5cf6' },
+  { bgPastel: '#DCFCE7', textDark: '#166534', border: '#22c55e', text: '#22c55e' },
+  { bgPastel: '#D1FAE5', textDark: '#065F46', border: '#10b981', text: '#10b981' },
+  { bgPastel: '#DBEAFE', textDark: '#1E40AF', border: '#3b82f6', text: '#3b82f6' },
 ]
 
 function getColorForEntity(entity, allEntities, palette) {
@@ -115,7 +119,7 @@ function Sparkline({ data, color = '#7c3aed', width = 60, height = 18 }) {
   )
 }
 
-// ─── Aggregation ───
+// ─── Aggregation pro raw Account ───
 function aggregateSnapshots(snapshots, entityKey, metricKeys, periodFn) {
   const result = {}
   for (const snap of snapshots) {
@@ -146,39 +150,104 @@ function getMetricValue(agg, entity, period, metric, useAvg) {
   return useAvg ? e.sum / e.count : e.sum
 }
 
-function getEntities(agg, latestPeriod) {
-  return Object.keys(agg)
-    .filter(name => !/\*/.test(name)) // gelöschte Accounts (mit Sternchen) ausblenden
-    .sort((a, b) => {
-      const aRev = agg[a]?.[latestPeriod]?.revenue?.sum || 0
-      const bRev = agg[b]?.[latestPeriod]?.revenue?.sum || 0
-      return bRev - aRev
-    })
+// Summe mehrerer Accounts in einer Periode/Metrik
+function getMetricValueForGroup(agg, accounts, period, metric, useAvg) {
+  let sum = 0, count = 0
+  for (const acc of accounts) {
+    const e = agg[acc]?.[period]?.[metric]
+    if (!e || e.count === 0) continue
+    sum += e.sum
+    count += e.count
+  }
+  if (count === 0) return 0
+  return useAvg ? sum / count : sum
 }
 
-// ─── Helper: Helle Stops für Pastel-Look ───
-// Bei dunklem Theme: heller bgSoft + dunkle Schrift wirkt wie "warm leuchtend"
-function getDarkText(color) {
-  // Mappt von Border-Hex auf einen dunklen Stop für Text
-  // Wir nutzen rgba/Manipulation: einen sehr satten dunklen Ton
-  return color.text // unverändert, weil dunkles Theme
-}
-
-// ─── Collapsible Card ───
-function CollapsibleEntityCard({ entity, agg, periodA, periodB, metrics, sparklineData, color, isOpen, onToggle }) {
+// ─── Sub-Account Zeile beim Aufklappen ───
+function SubAccountRow({ accountName, aliasLabel, agg, periodA, periodB, metrics, sparklineData, color }) {
   const periodADays = periodA?.daysCount || 1
   const periodBDays = periodB?.daysCount || 1
-  // Header: GESAMT-Werte zeigen, aber Trend auf Tagesbasis berechnen (für faire März/April-Vergleiche)
-  const revBtotal = getMetricValue(agg, entity, periodB.key, 'revenue', false)
-  const revAtotal = getMetricValue(agg, entity, periodA.key, 'revenue', false)
+  const revBtotal = getMetricValue(agg, accountName, periodB.key, 'revenue', false)
+  const revAtotal = getMetricValue(agg, accountName, periodA.key, 'revenue', false)
+  const revBperDay = revBtotal / periodBDays
+  const revAperDay = revAtotal / periodADays
+  return (
+    <div style={{
+      borderLeft: `3px solid ${color.border}55`,
+      paddingLeft: 12,
+      marginLeft: 12,
+      marginBottom: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        {aliasLabel && (
+          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: color.bgPastel, color: color.textDark, letterSpacing: '.04em' }}>
+            {aliasLabel}
+          </span>
+        )}
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {accountName}
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+          ${Math.round(revBtotal).toLocaleString()}
+        </span>
+        <span style={{ minWidth: 65, textAlign: 'right' }}>
+          <TrendIndicator current={revBperDay} previous={revAperDay} />
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 6 }}>
+        {metrics.map(m => {
+          const valBraw = getMetricValue(agg, accountName, periodB.key, m.key, m.useAvg)
+          const valAraw = getMetricValue(agg, accountName, periodA.key, m.key, m.useAvg)
+          const isSum = !m.useAvg
+          const valBcompare = isSum ? (valBraw / periodBDays) : valBraw
+          const valAcompare = isSum ? (valAraw / periodADays) : valAraw
+          const valBperDay = isSum ? (valBraw / periodBDays) : null
+          const sparkData = sparklineData?.[accountName]?.[m.key] || []
+          return (
+            <div key={m.key} style={{
+              background: color.bgPastel,
+              borderRadius: 7,
+              padding: '7px 10px',
+              border: `1px solid ${color.border}33`,
+            }}>
+              <div style={{ fontSize: 9, color: color.textDark, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700, opacity: 0.7 }}>
+                {m.label}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: color.textDark, fontFamily: 'monospace', lineHeight: 1.1 }}>
+                {m.format(valBraw)}
+              </div>
+              {valBperDay != null && (
+                <div style={{ fontSize: 9, color: color.textDark, opacity: 0.6, fontFamily: 'monospace' }}>
+                  ⌀ {m.format(valBperDay)}/Tag
+                </div>
+              )}
+              <div style={{ marginTop: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                <TrendIndicator current={valBcompare} previous={valAcompare} isInverse={m.inverse} />
+                <Sparkline data={sparkData} color={color.text} width={40} height={12} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Collapsible Card (Group oder Solo) ───
+function CollapsibleEntityCard({ entity, accounts, agg, periodA, periodB, metrics, sparklineData, sparklineGroupData, color, isOpen, onToggle, isGroup, aliasLabels }) {
+  const periodADays = periodA?.daysCount || 1
+  const periodBDays = periodB?.daysCount || 1
+  // Header-Werte: Summe über alle Accounts der Gruppe
+  const revBtotal = getMetricValueForGroup(agg, accounts, periodB.key, 'revenue', false)
+  const revAtotal = getMetricValueForGroup(agg, accounts, periodA.key, 'revenue', false)
   const revBperDay = revBtotal / periodBDays
   const revAperDay = revAtotal / periodADays
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: `1px solid ${color.border}55`, borderRadius: 10, overflow: 'hidden', transition: 'all 0.2s' }}>
+    <div style={{ background: 'var(--bg-card)', border: `1px solid ${color.border}55`, borderRadius: 10, overflow: 'hidden' }}>
       {/* Header — klickbar */}
       <div onClick={onToggle} style={{
-        background: color.bgSoft,
+        background: color.bgPastel + '22',
         padding: '10px 14px',
         display: 'flex',
         alignItems: 'center',
@@ -189,6 +258,11 @@ function CollapsibleEntityCard({ entity, agg, periodA, periodB, metrics, sparkli
         <div style={{ fontSize: 11, color: color.text, transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▼</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: color.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {entity}
+          {isGroup && accounts.length > 1 && (
+            <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6, fontFamily: 'monospace' }}>
+              ({accounts.length} Accounts)
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 100 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
@@ -206,47 +280,66 @@ function CollapsibleEntityCard({ entity, agg, periodA, periodB, metrics, sparkli
       {/* Inhalt — nur wenn aufgeklappt */}
       {isOpen && (
         <div style={{ padding: 12, background: 'var(--bg-card)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
-            {metrics.map(m => {
-              const valAraw = getMetricValue(agg, entity, periodA.key, m.key, m.useAvg)
-              const valBraw = getMetricValue(agg, entity, periodB.key, m.key, m.useAvg)
-              // Sums (Umsatz, Tips, ...) GESAMT zeigen, daneben Tagesschnitt
-              // Avgs (BuyRate, AntwZeit, RevenuePerHour) sind schon Durchschnitt → unverändert
-              const isSum = !m.useAvg
-              const valBdisplay = valBraw // Gesamt/Avg wie aus DB
-              const valAdisplay = valAraw
-              // Trend immer auf Tagesschnitt für Sums berechnen → fair
-              const valBcompare = isSum ? (valBraw / periodBDays) : valBraw
-              const valAcompare = isSum ? (valAraw / periodADays) : valAraw
-              const valBperDay = isSum ? (valBraw / periodBDays) : null
-              const sparkData = sparklineData?.[entity]?.[m.key] || []
-              return (
-                <div key={m.key} style={{
-                  background: color.bg,
-                  borderRadius: 8,
-                  padding: '9px 11px',
-                  border: `1px solid ${color.border}33`,
-                }}>
-                  <div style={{ fontSize: 9, color: color.text, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700, opacity: 0.85 }}>
-                    {m.label}
+
+          {/* GROUP-AGGREGAT (alle Accounts zusammen) */}
+          <div style={{ marginBottom: isGroup && accounts.length > 1 ? 14 : 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+              {metrics.map(m => {
+                const valBraw = getMetricValueForGroup(agg, accounts, periodB.key, m.key, m.useAvg)
+                const valAraw = getMetricValueForGroup(agg, accounts, periodA.key, m.key, m.useAvg)
+                const isSum = !m.useAvg
+                const valBcompare = isSum ? (valBraw / periodBDays) : valBraw
+                const valAcompare = isSum ? (valAraw / periodADays) : valAraw
+                const valBperDay = isSum ? (valBraw / periodBDays) : null
+                const sparkData = sparklineGroupData?.[entity]?.[m.key] || []
+                return (
+                  <div key={m.key} style={{
+                    background: color.bgPastel,
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    border: `1px solid ${color.border}44`,
+                  }}>
+                    <div style={{ fontSize: 9, color: color.textDark, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700, opacity: 0.75 }}>
+                      {m.label}
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: color.textDark, fontFamily: 'monospace', lineHeight: 1.1 }}>
+                      {m.format(valBraw)}
+                    </div>
+                    {valBperDay != null && (
+                      <div style={{ fontSize: 9, color: color.textDark, opacity: 0.65, fontFamily: 'monospace', marginTop: 2 }}>
+                        ⌀ {m.format(valBperDay)}/Tag
+                      </div>
+                    )}
+                    <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      <TrendIndicator current={valBcompare} previous={valAcompare} isInverse={m.inverse} />
+                      <Sparkline data={sparkData} color={color.text} width={50} height={14} />
+                    </div>
                   </div>
-                  <div style={{ fontSize: 17, fontWeight: 700, color: color.text, fontFamily: 'monospace', lineHeight: 1.1 }}>
-                    {m.format(valBdisplay)}
-                  </div>
-                  <div style={{ fontSize: 9, color: color.text, opacity: 0.65, fontFamily: 'monospace', marginTop: 2 }}>
-                    {isSum && valBperDay != null ? `⌀ ${m.format(valBperDay)}/Tag` : null}
-                  </div>
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 1 }}>
-                    vs {m.format(valAdisplay)}
-                  </div>
-                  <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                    <TrendIndicator current={valBcompare} previous={valAcompare} isInverse={m.inverse} />
-                    <Sparkline data={sparkData} color={color.text} width={50} height={14} />
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
+
+          {/* Sub-Accounts wenn Gruppe mit >1 Account */}
+          {isGroup && accounts.length > 1 && (
+            <>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700, marginBottom: 8, marginTop: 4 }}>
+                Pro Account
+              </div>
+              {accounts.map(acc => (
+                <SubAccountRow key={acc}
+                  accountName={acc}
+                  aliasLabel={aliasLabels[acc] || ''}
+                  agg={agg}
+                  periodA={periodA}
+                  periodB={periodB}
+                  metrics={metrics}
+                  sparklineData={sparklineData}
+                  color={color}
+                />
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -262,8 +355,34 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
   const [selectedMonthA, setSelectedMonthA] = useState('')
   const [selectedMonthB, setSelectedMonthB] = useState('')
   const [openCards, setOpenCards] = useState(new Set())
-  const [filterModels, setFilterModels] = useState(new Set()) // empty = alle, sonst nur diese
+  const [filterModels, setFilterModels] = useState(new Set())
   const [filterChatters, setFilterChatters] = useState(new Set())
+
+  // Model-Aliases aus DB laden für Account-Gruppierung
+  const [modelAliases, setModelAliases] = useState([])
+  useEffect(() => {
+    supabase.from('model_aliases').select('model_name, csv_name, alias_label').then(({ data }) => {
+      setModelAliases(data || [])
+    })
+  }, [])
+
+  // Lookup: csv_name → display group name
+  const accountToGroup = useMemo(() => {
+    const map = {}
+    for (const a of modelAliases) {
+      if (a.csv_name && a.model_name) map[a.csv_name] = a.model_name
+    }
+    return map
+  }, [modelAliases])
+
+  // Lookup: csv_name → alias_label (FREE/VIP/MAIN)
+  const accountToLabel = useMemo(() => {
+    const map = {}
+    for (const a of modelAliases) {
+      if (a.csv_name) map[a.csv_name] = a.alias_label || ''
+    }
+    return map
+  }, [modelAliases])
 
   const modelMetricKeys = ['revenue', 'subs', 'tipsRevenue', 'messageRevenue', 'subsRevenue']
   const chatterMetricKeys = ['revenue', 'buyRate', 'sentMessages', 'activeHours', 'avgResponseSeconds', 'revenuePerHour']
@@ -329,7 +448,42 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     ? { key: selectedWeekB, label: isoWeekLabel(selectedWeekB), daysCount: periodDayCount.week[selectedWeekB]?.size || 7 }
     : { key: selectedMonthB, label: monthLabel(selectedMonthB), daysCount: elapsedDaysInMonth(selectedMonthB || monthKey(new Date())) }
 
+  // Chatter Entities (flat, nur Sternchen-Filter)
+  const chatterEntities = useMemo(() => {
+    const agg = periodMode === 'week' ? chatterByWeek : chatterByMonth
+    return Object.keys(agg)
+      .filter(name => !/\*/.test(name))
+      .sort((a, b) => {
+        const aRev = agg[a]?.[periodB?.key]?.revenue?.sum || 0
+        const bRev = agg[b]?.[periodB?.key]?.revenue?.sum || 0
+        return bRev - aRev
+      })
+  }, [chatterByWeek, chatterByMonth, periodMode, periodB?.key])
+
+  // Model-Gruppen (display name + accounts list)
+  const modelGroupedEntities = useMemo(() => {
+    const agg = periodMode === 'week' ? modelByWeek : modelByMonth
+    const groups = {} // display_name → { accounts: [], totalRev: 0 }
+    for (const account of Object.keys(agg)) {
+      if (/\*/.test(account)) continue // Sternchen raus
+      const groupName = accountToGroup[account] || account
+      if (!groups[groupName]) groups[groupName] = { accounts: [], totalRev: 0 }
+      groups[groupName].accounts.push(account)
+      groups[groupName].totalRev += (agg[account]?.[periodB?.key]?.revenue?.sum || 0)
+    }
+    // Sortiere nach Total-Revenue
+    return Object.entries(groups)
+      .sort((a, b) => b[1].totalRev - a[1].totalRev)
+      .map(([name, info]) => ({
+        name,
+        accounts: info.accounts,
+        isGroup: info.accounts.length > 1 || !!accountToGroup[info.accounts[0]],
+      }))
+  }, [modelByWeek, modelByMonth, periodMode, periodB?.key, accountToGroup])
+
+  // Sparkline-Daten pro Account (für Sub-Accounts) und pro Gruppe (für Header-Tile)
   const sparklineData = useMemo(() => {
+    // pro Account
     const periods = periodMode === 'week' ? allWeeks.slice(-8) : allMonths.slice(-6)
     const agg = tab === 'models' ? (periodMode === 'week' ? modelByWeek : modelByMonth) : (periodMode === 'week' ? chatterByWeek : chatterByMonth)
     const metricKeys = tab === 'models' ? modelMetricKeys : chatterMetricKeys
@@ -348,6 +502,32 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     return result
   }, [tab, periodMode, modelByWeek, modelByMonth, chatterByWeek, chatterByMonth, allWeeks, allMonths])
 
+  // Sparkline-Daten pro Gruppe (Summe der Accounts)
+  const sparklineGroupData = useMemo(() => {
+    if (tab !== 'models') return {}
+    const periods = periodMode === 'week' ? allWeeks.slice(-8) : allMonths.slice(-6)
+    const agg = periodMode === 'week' ? modelByWeek : modelByMonth
+    const result = {}
+    for (const grp of modelGroupedEntities) {
+      result[grp.name] = {}
+      for (const m of modelMetricKeys) {
+        result[grp.name][m] = periods.map(p => {
+          let sum = 0, count = 0
+          for (const acc of grp.accounts) {
+            const e = agg[acc]?.[p]?.[m]
+            if (!e || e.count === 0) continue
+            sum += e.sum
+            count += e.count
+          }
+          if (count === 0) return 0
+          const isAvg = ['avgResponseSeconds', 'buyRate', 'revenuePerHour'].includes(m)
+          return isAvg ? sum / count : sum
+        })
+      }
+    }
+    return result
+  }, [tab, periodMode, modelByWeek, modelByMonth, allWeeks, allMonths, modelGroupedEntities])
+
   const modelMetrics = [
     { key: 'revenue', label: 'Umsatz', format: v => '$' + Math.round(v).toLocaleString() },
     { key: 'tipsRevenue', label: 'Tips', format: v => '$' + Math.round(v).toLocaleString() },
@@ -365,43 +545,41 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     { key: 'sentMessages', label: 'Nachrichten', format: v => Math.round(v).toLocaleString() },
   ]
 
+  // Aktuelle Listen + Filter
   const currentAgg = tab === 'models'
     ? (periodMode === 'week' ? modelByWeek : modelByMonth)
     : (periodMode === 'week' ? chatterByWeek : chatterByMonth)
-  const allEntities = useMemo(() => getEntities(currentAgg, periodB?.key), [currentAgg, periodB?.key])
 
-  // Filter anwenden
+  const allEntityNames = tab === 'models'
+    ? modelGroupedEntities.map(g => g.name)
+    : chatterEntities
+
   const activeFilter = tab === 'models' ? filterModels : filterChatters
   const setActiveFilter = tab === 'models' ? setFilterModels : setFilterChatters
-  const visibleEntities = activeFilter.size === 0 ? allEntities : allEntities.filter(e => activeFilter.has(e))
+  const visibleEntityNames = activeFilter.size === 0 ? allEntityNames : allEntityNames.filter(e => activeFilter.has(e))
 
   const palette = tab === 'models' ? MODEL_COLORS : CHATTER_COLORS
-  const tabColor = tab === 'models' ? '#ec4899' : '#06b6d4'
 
-  // Toggle Card
   const toggleCard = (entity) => {
     setOpenCards(prev => {
       const next = new Set(prev)
-      if (next.has(entity)) next.delete(entity)
-      else next.add(entity)
+      if (next.has(entity)) next.delete(entity); else next.add(entity)
       return next
     })
   }
-  const expandAll = () => setOpenCards(new Set(visibleEntities))
+  const expandAll = () => setOpenCards(new Set(visibleEntityNames))
   const collapseAll = () => setOpenCards(new Set())
 
-  // Filter-Toggle
   const toggleFilter = (entity) => {
     setActiveFilter(prev => {
       const next = new Set(prev)
-      if (next.has(entity)) next.delete(entity)
-      else next.add(entity)
+      if (next.has(entity)) next.delete(entity); else next.add(entity)
       return next
     })
   }
   const clearFilter = () => setActiveFilter(new Set())
 
-  // Insights (alt)
+  // Insights
   const insights = useMemo(() => {
     if (!chatterSnapshots.length) return null
     const byWeekday = [[], [], [], [], [], [], []]
@@ -499,7 +677,7 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
                     {allMonths.map(m => <option key={m} value={m}>{monthLabel(m)}{isCurrentMonth(m) ? ' (läuft)' : ''}</option>)}
                   </select>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', marginLeft: 'auto' }}>
-                    {periodA.daysCount}d · {periodB.daysCount}d (auf Tag normiert)
+                    {periodA.daysCount}d · {periodB.daysCount}d
                   </span>
                 </div>
               )}
@@ -507,7 +685,7 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
           </div>
 
           {/* Filter-Chips */}
-          {allEntities.length > 1 && (
+          {allEntityNames.length > 1 && (
             <div style={{ ...cardS, padding: '10px 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>
@@ -520,22 +698,16 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
                 )}
               </div>
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                {allEntities.map(entity => {
-                  const c = getColorForEntity(entity, allEntities, palette)
+                {allEntityNames.map(entity => {
+                  const c = getColorForEntity(entity, allEntityNames, palette)
                   const isActive = activeFilter.size === 0 || activeFilter.has(entity)
                   return (
                     <button key={entity} onClick={() => toggleFilter(entity)} style={{
-                      fontSize: 11,
-                      padding: '4px 10px',
-                      borderRadius: 5,
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      fontWeight: 600,
-                      background: isActive ? c.bg : 'transparent',
+                      fontSize: 11, padding: '4px 10px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                      background: isActive ? c.bgPastel : 'transparent',
                       border: `1px solid ${isActive ? c.border : 'var(--border)'}`,
-                      color: isActive ? c.text : 'var(--text-muted)',
+                      color: isActive ? c.textDark : 'var(--text-muted)',
                       opacity: isActive ? 1 : 0.55,
-                      transition: 'all 0.15s',
                     }}>{entity}</button>
                   )
                 })}
@@ -544,22 +716,35 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
           )}
 
           {/* Liste */}
-          {visibleEntities.length === 0 ? (
+          {visibleEntityNames.length === 0 ? (
             <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-              {allEntities.length === 0 ? 'Keine Daten für die ausgewählten Perioden' : 'Keine Auswahl — alle Filter aktiv aber keine Daten'}
+              Keine Daten für die ausgewählten Perioden
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {visibleEntities.map(entity => {
-                const c = getColorForEntity(entity, allEntities, palette)
+              {visibleEntityNames.map(entity => {
+                const c = getColorForEntity(entity, allEntityNames, palette)
+                let accounts, isGroupCard
+                if (tab === 'models') {
+                  const grp = modelGroupedEntities.find(g => g.name === entity)
+                  accounts = grp?.accounts || [entity]
+                  isGroupCard = grp?.isGroup || false
+                } else {
+                  accounts = [entity]
+                  isGroupCard = false
+                }
                 return (
                   <CollapsibleEntityCard key={entity}
                     entity={entity}
+                    accounts={accounts}
+                    isGroup={isGroupCard}
+                    aliasLabels={accountToLabel}
                     agg={currentAgg}
                     periodA={periodA}
                     periodB={periodB}
                     metrics={tab === 'models' ? modelMetrics : chatterMetrics}
                     sparklineData={sparklineData}
+                    sparklineGroupData={sparklineGroupData}
                     color={c}
                     isOpen={openCards.has(entity)}
                     onToggle={() => toggleCard(entity)}
@@ -570,7 +755,7 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
           )}
 
           <div style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', padding: '4px 0' }}>
-            Hauptzahl = Gesamt · ⌀ pro Tag klein darunter · Trends fair auf Tagesbasis berechnet · Sparklines: letzte {periodMode === 'week' ? '8 Wochen' : '6 Monate'} · Klick auf Header zum Auf-/Zuklappen
+            Hauptzahl = Gesamt · ⌀ pro Tag drunter · Trends auf Tagesbasis berechnet · Bei Models mit mehreren Accounts: aufklappen für Details
           </div>
         </>
       )}
@@ -607,18 +792,6 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
                   </div>
                 )
               })}
-            </div>
-          </div>
-
-          <div style={cardS}>
-            <div style={labelS}>Insights</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {insights.bestDay && <div style={{ padding: '8px 10px', background: 'rgba(16,185,129,0.07)', borderLeft: '3px solid #10b981', borderRadius: '0 7px 7px 0' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-primary)' }}><span style={{ fontWeight: 700 }}>{insights.bestDay.day}</span> ist euer stärkster Tag mit Ø ${Math.round(insights.bestDay.avg).toLocaleString()} — Schichten hier priorisieren.</div>
-              </div>}
-              {insights.worstDay && <div style={{ padding: '8px 10px', background: 'rgba(239,68,68,0.07)', borderLeft: '3px solid #ef4444', borderRadius: '0 7px 7px 0' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-primary)' }}><span style={{ fontWeight: 700 }}>{insights.worstDay.day}</span> läuft am schwächsten mit Ø ${Math.round(insights.worstDay.avg).toLocaleString()} — gezielte Aktionen oder weniger Schichten.</div>
-              </div>}
             </div>
           </div>
         </>
