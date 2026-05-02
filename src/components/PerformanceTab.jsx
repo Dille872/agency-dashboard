@@ -357,6 +357,9 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
   const [openCards, setOpenCards] = useState(new Set())
   const [filterModels, setFilterModels] = useState(new Set())
   const [filterChatters, setFilterChatters] = useState(new Set())
+  // Heatmap-State
+  const [heatmapMonth, setHeatmapMonth] = useState('') // YYYY-MM
+  const [heatmapModel, setHeatmapModel] = useState('') // '' = Gesamt, sonst model_name (Gruppe)
 
   // Model-Aliases aus DB laden für Account-Gruppierung
   const [modelAliases, setModelAliases] = useState([])
@@ -599,6 +602,102 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     return { weekdayAvg, bestDay, worstDay }
   }, [chatterSnapshots])
 
+  // Heatmap-Daten: Tagesumsatz pro Tag im ausgewählten Monat
+  // Standard = Gesamt-Agentur (alle Chatter-Snapshots aufsummiert)
+  // Mit Filter = Nur ein bestimmtes Model (alle Accounts der Gruppe)
+  const heatmapData = useMemo(() => {
+    if (!heatmapMonth) return { days: {}, max: 0, monthDays: 30 }
+    const [y, m] = heatmapMonth.split('-').map(Number)
+    const monthDays = new Date(y, m, 0).getDate()
+    const dailyRev = {} // dayNumber → revenue
+
+    if (heatmapModel) {
+      // Pro Model: aus modelSnapshots filter nach Accounts der Gruppe
+      const accounts = []
+      for (const a of modelAliases) {
+        if (a.model_name === heatmapModel) accounts.push(a.csv_name)
+      }
+      // Falls Solo-Model (nicht in aliases): self
+      if (accounts.length === 0) accounts.push(heatmapModel)
+
+      for (const snap of modelSnapshots) {
+        if (!snap.businessDate) continue
+        if (!snap.businessDate.startsWith(heatmapMonth)) continue
+        const day = parseInt(snap.businessDate.slice(8, 10))
+        let dayRev = 0
+        for (const row of (snap.rows || [])) {
+          const acc = row.creator || row.name
+          if (!accounts.includes(acc)) continue
+          dayRev += (row.revenue || 0)
+        }
+        if (dayRev > 0) dailyRev[day] = (dailyRev[day] || 0) + dayRev
+      }
+    } else {
+      // Gesamt: aus chatterSnapshots alles aufsummieren
+      for (const snap of chatterSnapshots) {
+        if (!snap.businessDate) continue
+        if (!snap.businessDate.startsWith(heatmapMonth)) continue
+        const day = parseInt(snap.businessDate.slice(8, 10))
+        let dayRev = 0
+        for (const row of (snap.rows || [])) {
+          dayRev += (row.revenue || 0)
+        }
+        if (dayRev > 0) dailyRev[day] = (dailyRev[day] || 0) + dayRev
+      }
+    }
+
+    const values = Object.values(dailyRev)
+    const max = values.length ? Math.max(...values) : 0
+    return { days: dailyRev, max, monthDays }
+  }, [heatmapMonth, heatmapModel, modelSnapshots, chatterSnapshots, modelAliases])
+
+  // Wochenanalyse: Welche Woche ist die stärkste/schwächste im Monat
+  const weekAnalysis = useMemo(() => {
+    if (!heatmapMonth) return []
+    const [y, m] = heatmapMonth.split('-').map(Number)
+    const weeks = [] // {weekIdx, total, days: [], label}
+    let currentWeek = []
+    let weekIdx = 0
+    for (let day = 1; day <= heatmapData.monthDays; day++) {
+      const d = new Date(y, m - 1, day)
+      const dow = d.getDay() === 0 ? 6 : d.getDay() - 1 // Mo=0..So=6
+      currentWeek.push({ day, dow, rev: heatmapData.days[day] || 0 })
+      if (dow === 6 || day === heatmapData.monthDays) {
+        const total = currentWeek.reduce((s, x) => s + x.rev, 0)
+        weeks.push({ weekIdx: ++weekIdx, total, days: [...currentWeek], firstDay: currentWeek[0].day, lastDay: currentWeek[currentWeek.length-1].day })
+        currentWeek = []
+      }
+    }
+    return weeks
+  }, [heatmapMonth, heatmapData])
+
+  // Initial-Monat setzen: aktuellster verfügbarer Monat
+  useEffect(() => {
+    if (!heatmapMonth && allMonths.length > 0) {
+      setHeatmapMonth(allMonths[allMonths.length - 1])
+    }
+  }, [allMonths])
+
+  // Liste aller Models für Filter (unique model_names aus Aliases)
+  const heatmapModelOptions = useMemo(() => {
+    const set = new Set()
+    for (const a of modelAliases) {
+      if (a.model_name) set.add(a.model_name)
+    }
+    return [...set].sort()
+  }, [modelAliases])
+
+  // Vorheriger / Nächster Monat
+  const navigateMonth = (direction) => {
+    const idx = allMonths.indexOf(heatmapMonth)
+    if (idx < 0) return
+    const newIdx = idx + direction
+    if (newIdx < 0 || newIdx >= allMonths.length) return
+    setHeatmapMonth(allMonths[newIdx])
+  }
+  const canPrevMonth = allMonths.indexOf(heatmapMonth) > 0
+  const canNextMonth = allMonths.indexOf(heatmapMonth) < allMonths.length - 1
+
   if (!chatterSnapshots.length && !modelSnapshots.length) {
     return <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 60, fontSize: 14 }}>Noch keine Daten für Performance-Analyse</div>
   }
@@ -794,6 +893,180 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
               })}
             </div>
           </div>
+
+          {/* MONATS-HEATMAP */}
+          {heatmapMonth && (
+            <div style={cardS}>
+              {/* Header: Titel + Monat-Navigation */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 3 }}>Tagesumsatz Heatmap</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{monthLabel(heatmapMonth)}{isCurrentMonth(heatmapMonth) ? ' (läuft)' : ''}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => navigateMonth(-1)} disabled={!canPrevMonth} style={{
+                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit',
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: canPrevMonth ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    cursor: canPrevMonth ? 'pointer' : 'not-allowed',
+                    opacity: canPrevMonth ? 1 : 0.4,
+                  }}>‹ Vorheriger</button>
+                  <button onClick={() => navigateMonth(1)} disabled={!canNextMonth} style={{
+                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit',
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: canNextMonth ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    cursor: canNextMonth ? 'pointer' : 'not-allowed',
+                    opacity: canNextMonth ? 1 : 0.4,
+                  }}>Nächster ›</button>
+                </div>
+              </div>
+
+              {/* Model-Filter */}
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 4, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>Anzeigen:</span>
+                <button onClick={() => setHeatmapModel('')} style={{
+                  fontSize: 11, padding: '4px 10px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                  background: heatmapModel === '' ? 'rgba(124,58,237,0.15)' : 'transparent',
+                  border: `1px solid ${heatmapModel === '' ? '#7c3aed' : 'var(--border)'}`,
+                  color: heatmapModel === '' ? '#a78bfa' : 'var(--text-secondary)',
+                }}>Gesamt-Agentur</button>
+                {heatmapModelOptions.map(m => (
+                  <button key={m} onClick={() => setHeatmapModel(m)} style={{
+                    fontSize: 11, padding: '4px 10px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                    background: heatmapModel === m ? 'rgba(236,72,153,0.15)' : 'transparent',
+                    border: `1px solid ${heatmapModel === m ? '#ec4899' : 'var(--border)'}`,
+                    color: heatmapModel === m ? '#ec4899' : 'var(--text-secondary)',
+                  }}>{m}</button>
+                ))}
+              </div>
+
+              {/* Kalender-Heatmap */}
+              {(() => {
+                const [y, m] = heatmapMonth.split('-').map(Number)
+                const firstDay = new Date(y, m - 1, 1)
+                const firstDow = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1
+                const max = heatmapData.max || 1
+                // Pinks-Skala: 5 Stufen
+                const stops = ['#FBEAF0', '#F4C0D1', '#ED93B1', '#D4537E', '#993556']
+                const textOnLight = '#4B1528'
+                const textOnDark = '#FFFFFF'
+                const getStopIdx = (rev) => {
+                  if (rev === 0) return -1
+                  const ratio = rev / max
+                  if (ratio < 0.2) return 0
+                  if (ratio < 0.4) return 1
+                  if (ratio < 0.6) return 2
+                  if (ratio < 0.8) return 3
+                  return 4
+                }
+
+                // Tages-Liste: Leerzellen bis zum 1., dann Tage
+                const cells = []
+                for (let i = 0; i < firstDow; i++) cells.push({ empty: true, key: 'pad' + i })
+                for (let d = 1; d <= heatmapData.monthDays; d++) cells.push({ day: d, rev: heatmapData.days[d] || 0, key: 'd' + d })
+
+                // Bester Tag
+                let bestDay = 0, bestRev = 0
+                for (const d of Object.keys(heatmapData.days)) {
+                  if (heatmapData.days[d] > bestRev) { bestRev = heatmapData.days[d]; bestDay = parseInt(d) }
+                }
+
+                return (
+                  <>
+                    {/* Wochentage-Header */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+                      {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(d => (
+                        <div key={d} style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', fontFamily: 'monospace', padding: '2px 0' }}>{d}</div>
+                      ))}
+                    </div>
+                    {/* Grid mit Tagen */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+                      {cells.map(c => {
+                        if (c.empty) return <div key={c.key} />
+                        const idx = getStopIdx(c.rev)
+                        const bg = idx < 0 ? 'transparent' : stops[idx]
+                        const txt = idx >= 3 ? textOnDark : textOnLight
+                        const isBestDay = c.day === bestDay && bestRev > 0
+                        return (
+                          <div key={c.key} title={c.rev > 0 ? `${c.day}.${m}.${y}: $${Math.round(c.rev).toLocaleString()}` : ''} style={{
+                            aspectRatio: '1',
+                            background: bg,
+                            border: isBestDay ? '2px solid #f59e0b' : (idx < 0 ? '1px dashed var(--border)' : '0.5px solid rgba(0,0,0,0.05)'),
+                            borderRadius: 6,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 4,
+                            minHeight: 50,
+                          }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: idx < 0 ? 'var(--text-muted)' : txt }}>{c.day}</div>
+                            {c.rev > 0 && (
+                              <div style={{ fontSize: 8, color: txt, fontFamily: 'monospace', opacity: idx >= 3 ? 0.95 : 0.75 }}>
+                                ${Math.round(c.rev).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {/* Legende */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 10, marginTop: 10, borderTop: '0.5px solid var(--border)' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Wenig</div>
+                      {stops.map((s, i) => (
+                        <div key={i} style={{ width: 14, height: 14, background: s, borderRadius: 3 }} />
+                      ))}
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Stark</div>
+                      {bestRev > 0 && (
+                        <div style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                          Bester Tag: {bestDay}.{String(m).padStart(2,'0')} · ${Math.round(bestRev).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )
+              })()}
+
+              {/* Wochenanalyse */}
+              {weekAnalysis.length > 0 && (() => {
+                const totals = weekAnalysis.map(w => w.total)
+                const maxWeek = Math.max(...totals, 1)
+                const avg = totals.reduce((s, v) => s + v, 0) / totals.length
+                return (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700, marginBottom: 8 }}>Wochenanalyse</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${weekAnalysis.length}, 1fr)`, gap: 8 }}>
+                      {weekAnalysis.map(w => {
+                        const isBest = w.total === maxWeek && w.total > 0
+                        const ratio = w.total / avg
+                        let label = 'solide', labelColor = '#0F766E'
+                        if (w.total === 0) { label = '—'; labelColor = 'var(--text-muted)' }
+                        else if (ratio < 0.85) { label = 'schwach'; labelColor = '#854F0B' }
+                        else if (ratio > 1.15) { label = 'stark'; labelColor = '#3C3489' }
+                        if (isBest) { label = 'beste Woche'; labelColor = '#3C3489' }
+                        return (
+                          <div key={w.weekIdx} style={{
+                            padding: '8px 10px',
+                            background: isBest ? '#FBEAF0' : 'var(--bg-card2)',
+                            borderRadius: 7,
+                            border: isBest ? '1px solid #D4537E' : '0.5px solid var(--border)',
+                          }}>
+                            <div style={{ fontSize: 10, color: isBest ? '#993556' : 'var(--text-muted)', marginBottom: 3 }}>
+                              W{w.weekIdx} · {w.firstDay}.–{w.lastDay}.
+                            </div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: isBest ? '#4B1528' : 'var(--text-primary)', fontFamily: 'monospace' }}>
+                              ${Math.round(w.total).toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: 10, color: labelColor, fontWeight: 600 }}>{label}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
         </>
       )}
 
