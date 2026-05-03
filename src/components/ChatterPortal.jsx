@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
+import SurveyModal from './SurveyModal'
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage } from '../telegram'
 import { APP_VERSION } from '../version'
@@ -1940,6 +1941,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </div>
         )}
       </main>
+      {!isPreview && displayName && <SurveyModal displayName={displayName} role="chatter" />}
     </div>
   )
 }

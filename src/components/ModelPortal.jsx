@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { getTheme, setTheme } from '../theme'
 import { APP_VERSION } from '../version'
 import { sendTelegramMessage } from '../telegram'
+import SurveyModal from './SurveyModal'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -1451,6 +1452,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         )}
 
       </main>
+      {!isPreview && displayName && <SurveyModal displayName={displayName} role="model" />}
     </div>
   )
 }

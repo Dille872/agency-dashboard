@@ -72,13 +72,17 @@ export default function SettingsTab() {
   const [newMA, setNewMA] = useState({ model_name: '', csv_name: '', alias_label: '', telegram_id: '' })
   const [newCA, setNewCA] = useState({ chatter_name: '', csv_name: '', telegram_id: '' })
 
-  // Surveys
+  // Surveys (v2.7.33: multi-question + recipient selection)
   const [surveys, setSurveys] = useState([])
+  const [surveyQuestions, setSurveyQuestions] = useState([]) // alle Fragen aller Surveys (für Anzeige)
+  const [surveyRecipients, setSurveyRecipients] = useState([]) // alle Recipients aller Surveys
   const [surveyResponses, setSurveyResponses] = useState([])
-  const [newQuestion, setNewQuestion] = useState('')
-  const [newAnswerType, setNewAnswerType] = useState('choice')
-  const [newOptions, setNewOptions] = useState(['', '', ''])
-  const [newTargetRoles, setNewTargetRoles] = useState([])
+  const [newSurveyTitle, setNewSurveyTitle] = useState('')
+  const [newSurveyQuestions, setNewSurveyQuestions] = useState([
+    { question: '', answer_type: 'choice', options: ['', '', ''] },
+  ])
+  const [activeQIdx, setActiveQIdx] = useState(0)
+  const [newRecipientNames, setNewRecipientNames] = useState([]) // ["Lukas", "Sandra", ...]
   const [creatingsurvey, setCreatingSurvey] = useState(false)
   const [expandedSurvey, setExpandedSurvey] = useState(null)
 
@@ -98,27 +102,115 @@ export default function SettingsTab() {
   const loadSurveys = async () => {
     const { data } = await supabase.from('surveys').select('*').order('created_at', { ascending: false })
     setSurveys(data || [])
-    const { data: resp } = await supabase.from('survey_responses').select('*').order('created_at', { ascending: false })
+    const ids = (data || []).map(s => s.id)
+    if (ids.length === 0) {
+      setSurveyQuestions([]); setSurveyRecipients([]); setSurveyResponses([])
+      return
+    }
+    const [{ data: qs }, { data: recs }, { data: resp }] = await Promise.all([
+      supabase.from('survey_questions').select('*').in('survey_id', ids).order('position'),
+      supabase.from('survey_recipients').select('*').in('survey_id', ids),
+      supabase.from('survey_responses').select('*').in('survey_id', ids).order('created_at', { ascending: false }),
+    ])
+    setSurveyQuestions(qs || [])
+    setSurveyRecipients(recs || [])
     setSurveyResponses(resp || [])
   }
 
+  // Helpers für Frage-Editor
+  const addQuestion = () => {
+    setNewSurveyQuestions(prev => [...prev, { question: '', answer_type: 'choice', options: ['', '', ''] }])
+    setActiveQIdx(newSurveyQuestions.length)
+  }
+  const removeQuestion = (idx) => {
+    if (newSurveyQuestions.length === 1) return
+    const next = newSurveyQuestions.filter((_, i) => i !== idx)
+    setNewSurveyQuestions(next)
+    setActiveQIdx(Math.max(0, Math.min(activeQIdx, next.length - 1)))
+  }
+  const updateQuestion = (idx, patch) => {
+    setNewSurveyQuestions(prev => prev.map((q, i) => i === idx ? { ...q, ...patch } : q))
+  }
+  const updateOption = (qIdx, oIdx, val) => {
+    setNewSurveyQuestions(prev => prev.map((q, i) => {
+      if (i !== qIdx) return q
+      const opts = [...(q.options || [])]
+      opts[oIdx] = val
+      return { ...q, options: opts }
+    }))
+  }
+  const addOption = (qIdx) => {
+    setNewSurveyQuestions(prev => prev.map((q, i) =>
+      i === qIdx ? { ...q, options: [...(q.options || []), ''] } : q))
+  }
+
+  // Empfänger-Helpers
+  const toggleRecipient = (name) => {
+    setNewRecipientNames(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+  }
+  const selectAllChatters = () => {
+    const names = chatters.map(c => c.name)
+    setNewRecipientNames(prev => Array.from(new Set([...prev, ...names])))
+  }
+  const selectAllModels = () => {
+    const names = models.map(m => m.name)
+    setNewRecipientNames(prev => Array.from(new Set([...prev, ...names])))
+  }
+  const clearRecipients = () => setNewRecipientNames([])
+
   const createSurvey = async () => {
-    if (!newQuestion.trim()) return
+    const validQuestions = newSurveyQuestions.filter(q => q.question.trim())
+    if (validQuestions.length === 0 || newRecipientNames.length === 0) return
     setCreatingSurvey(true)
-    const opts = newAnswerType === 'choice' ? newOptions.filter(o => o.trim()) : []
-    await supabase.from('surveys').insert({
-      question: newQuestion.trim(), answer_type: newAnswerType, options: opts,
-      target_roles: newTargetRoles, active: true, created_by: 'Admin',
-    })
-    setNewQuestion(''); setNewOptions(['', '', '']); setNewTargetRoles([])
-    await loadSurveys(); setCreatingSurvey(false)
+
+    // 1. Survey anlegen (title als Hauptbezeichner; question = erste Frage für Rückwärtskompat.)
+    const title = newSurveyTitle.trim() || validQuestions[0].question.trim().slice(0, 60)
+    const { data: created, error } = await supabase.from('surveys').insert({
+      title,
+      question: validQuestions[0].question.trim(),
+      answer_type: validQuestions[0].answer_type,
+      options: validQuestions[0].answer_type === 'choice'
+        ? validQuestions[0].options.filter(o => o.trim()) : [],
+      target_roles: [],
+      active: true,
+      created_by: 'Admin',
+    }).select().single()
+
+    if (error || !created) { setCreatingSurvey(false); alert('Fehler beim Anlegen: ' + (error?.message || 'unbekannt')); return }
+
+    // 2. Fragen
+    const qRows = validQuestions.map((q, idx) => ({
+      survey_id: created.id,
+      question: q.question.trim(),
+      answer_type: q.answer_type,
+      options: q.answer_type === 'choice' ? q.options.filter(o => o.trim()) : [],
+      position: idx,
+    }))
+    await supabase.from('survey_questions').insert(qRows)
+
+    // 3. Empfänger
+    const chatterSet = new Set(chatters.map(c => c.name))
+    const recRows = newRecipientNames.map(name => ({
+      survey_id: created.id,
+      recipient_name: name,
+      recipient_role: chatterSet.has(name) ? 'chatter' : 'model',
+    }))
+    await supabase.from('survey_recipients').insert(recRows)
+
+    // Reset
+    setNewSurveyTitle('')
+    setNewSurveyQuestions([{ question: '', answer_type: 'choice', options: ['', '', ''] }])
+    setActiveQIdx(0)
+    setNewRecipientNames([])
+    await loadSurveys()
+    setCreatingSurvey(false)
   }
 
   const closeSurvey = async (id) => { await supabase.from('surveys').update({ active: false }).eq('id', id); loadSurveys() }
   const reopenSurvey = async (id) => { await supabase.from('surveys').update({ active: true }).eq('id', id); loadSurveys() }
   const deleteSurvey = async (id) => {
     if (!confirm('Umfrage und alle Antworten löschen?')) return
-    await supabase.from('survey_responses').delete().eq('survey_id', id)
+    // CASCADE kümmert sich um questions, recipients, responses (FK ON DELETE CASCADE)
     await supabase.from('surveys').delete().eq('id', id)
     loadSurveys()
   }
@@ -435,77 +527,204 @@ export default function SettingsTab() {
 
       {/* SURVEYS */}
       {activeSection === 'surveys' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 720 }}>
 
           {/* Create new */}
           <div style={cardS}>
             <div style={labelS}>Neue Umfrage erstellen</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Frage</label>
-                <input value={newQuestion} onChange={e => setNewQuestion(e.target.value)} placeholder="z.B. Wie war der Traffic heute um 22 Uhr?" style={inputS} />
+
+            {/* Titel */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Titel der Umfrage</label>
+              <input value={newSurveyTitle} onChange={e => setNewSurveyTitle(e.target.value)} placeholder="z.B. Wochen-Feedback KW 18" style={inputS} />
+            </div>
+
+            {/* Fragen-Tabs */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+              {newSurveyQuestions.map((q, i) => {
+                const active = activeQIdx === i
+                const filled = (q.question || '').trim().length > 0
+                return (
+                  <button key={i} onClick={() => setActiveQIdx(i)} style={{
+                    padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                    background: active ? '#7c3aed22' : 'transparent',
+                    color: active ? '#a78bfa' : (filled ? 'var(--text-secondary)' : 'var(--text-muted)'),
+                    border: `1px solid ${active ? '#7c3aed' : 'var(--border)'}`,
+                  }}>Frage {i + 1}{!filled && ' …'}</button>
+                )
+              })}
+              <button onClick={addQuestion} style={{
+                padding: '5px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                background: 'transparent', color: '#a78bfa', border: '1px dashed rgba(124,58,237,0.5)',
+              }}>+ Frage</button>
+            </div>
+
+            {/* Aktive Frage */}
+            <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
+                <input
+                  value={newSurveyQuestions[activeQIdx]?.question || ''}
+                  onChange={e => updateQuestion(activeQIdx, { question: e.target.value })}
+                  placeholder={`Frage ${activeQIdx + 1} eingeben…`}
+                  style={{ ...inputS, flex: 1 }}
+                />
+                {newSurveyQuestions.length > 1 && (
+                  <button onClick={() => removeQuestion(activeQIdx)} style={{
+                    fontSize: 11, padding: '6px 10px', borderRadius: 6,
+                    background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
+                    color: 'rgba(239,68,68,0.8)', cursor: 'pointer', fontFamily: 'inherit',
+                  }}>✕ Löschen</button>
+                )}
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Antworttyp</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {[['choice', 'Auswahl'], ['scale', 'Skala 1-5'], ['text', 'Freitext']].map(([k, l]) => (
-                    <button key={k} onClick={() => setNewAnswerType(k)} style={{
+
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Antworttyp</label>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                {[['choice', 'Auswahl'], ['scale', 'Skala 1-5'], ['text', 'Freitext']].map(([k, l]) => {
+                  const active = newSurveyQuestions[activeQIdx]?.answer_type === k
+                  return (
+                    <button key={k} onClick={() => updateQuestion(activeQIdx, { answer_type: k })} style={{
                       padding: '5px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
-                      background: newAnswerType === k ? '#7c3aed22' : 'transparent',
-                      color: newAnswerType === k ? '#a78bfa' : 'var(--text-muted)',
-                      border: `1px solid ${newAnswerType === k ? '#7c3aed' : 'var(--border)'}`,
+                      background: active ? '#7c3aed22' : 'transparent',
+                      color: active ? '#a78bfa' : 'var(--text-muted)',
+                      border: `1px solid ${active ? '#7c3aed' : 'var(--border)'}`,
                     }}>{l}</button>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
-              {newAnswerType === 'choice' && (
+
+              {newSurveyQuestions[activeQIdx]?.answer_type === 'choice' && (
                 <div>
                   <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Antwortoptionen</label>
-                  {newOptions.map((opt, i) => (
-                    <input key={i} value={opt} onChange={e => { const o = [...newOptions]; o[i] = e.target.value; setNewOptions(o) }}
+                  {(newSurveyQuestions[activeQIdx]?.options || []).map((opt, i) => (
+                    <input key={i} value={opt} onChange={e => updateOption(activeQIdx, i, e.target.value)}
                       placeholder={`Option ${i + 1}`} style={{ ...inputS, marginBottom: 6 }} />
                   ))}
-                  <button onClick={() => setNewOptions([...newOptions, ''])} style={{ fontSize: 11, color: 'var(--text-muted)', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>+ Option</button>
+                  <button onClick={() => addOption(activeQIdx)} style={{ fontSize: 11, color: 'var(--text-muted)', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>+ Option</button>
                 </div>
               )}
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Empfänger</label>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {[['chatter', 'Alle Chatters', '#06b6d4'], ['model', 'Alle Models', '#f59e0b']].map(([k, l, c]) => {
-                    const active = newTargetRoles.includes(k)
-                    return (
-                      <button key={k} onClick={() => setNewTargetRoles(prev => active ? prev.filter(r => r !== k) : [...prev, k])} style={{
-                        padding: '5px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
-                        background: active ? c + '22' : 'transparent', color: active ? c : 'var(--text-muted)',
-                        border: `1px solid ${active ? c : 'var(--border)'}`,
-                      }}>{active ? '✓ ' : ''}{l}</button>
-                    )
-                  })}
+              {newSurveyQuestions[activeQIdx]?.answer_type === 'scale' && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>User wählt eine Zahl von 1 bis 5.</div>
+              )}
+              {newSurveyQuestions[activeQIdx]?.answer_type === 'text' && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>User schreibt frei. Optional (keine Pflicht).</div>
+              )}
+            </div>
+
+            {/* Empfänger */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                  Empfänger {newRecipientNames.length > 0 && <span style={{ color: '#a78bfa', fontWeight: 700 }}>· {newRecipientNames.length} ausgewählt</span>}
+                </label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={selectAllChatters} style={{
+                    fontSize: 10, padding: '3px 8px', borderRadius: 5,
+                    background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.3)',
+                    color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                  }}>+ Alle Chatters</button>
+                  <button onClick={selectAllModels} style={{
+                    fontSize: 10, padding: '3px 8px', borderRadius: 5,
+                    background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)',
+                    color: '#f59e0b', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                  }}>+ Alle Models</button>
+                  {newRecipientNames.length > 0 && (
+                    <button onClick={clearRecipients} style={{
+                      fontSize: 10, padding: '3px 8px', borderRadius: 5,
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
+                    }}>Zurücksetzen</button>
+                  )}
                 </div>
               </div>
-              <button onClick={createSurvey} disabled={creatingsurvey || !newQuestion.trim() || newTargetRoles.length === 0}
-                style={{ padding: '9px', borderRadius: 7, background: newQuestion && newTargetRoles.length > 0 ? '#7c3aed' : 'var(--border)', color: newQuestion && newTargetRoles.length > 0 ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                {creatingsurvey ? '...' : '+ Umfrage erstellen'}
-              </button>
+
+              {/* Chatter-Liste */}
+              {chatters.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 700, letterSpacing: 0.5 }}>CHATTERS</div>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {chatters.map(c => {
+                      const active = newRecipientNames.includes(c.name)
+                      return (
+                        <button key={c.name} onClick={() => toggleRecipient(c.name)} style={{
+                          padding: '4px 10px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+                          fontWeight: 600, fontSize: 11,
+                          background: active ? 'rgba(6,182,212,0.18)' : 'transparent',
+                          color: active ? '#06b6d4' : 'var(--text-muted)',
+                          border: `1px solid ${active ? '#06b6d4' : 'var(--border)'}`,
+                        }}>{active ? '✓ ' : ''}{c.name}</button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Model-Liste */}
+              {models.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 700, letterSpacing: 0.5 }}>MODELS</div>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {models.map(m => {
+                      const active = newRecipientNames.includes(m.name)
+                      return (
+                        <button key={m.name} onClick={() => toggleRecipient(m.name)} style={{
+                          padding: '4px 10px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+                          fontWeight: 600, fontSize: 11,
+                          background: active ? 'rgba(245,158,11,0.18)' : 'transparent',
+                          color: active ? '#f59e0b' : 'var(--text-muted)',
+                          border: `1px solid ${active ? '#f59e0b' : 'var(--border)'}`,
+                        }}>{active ? '✓ ' : ''}{m.name}</button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Submit */}
+            {(() => {
+              const validQs = newSurveyQuestions.filter(q => q.question.trim()).length
+              const ready = validQs > 0 && newRecipientNames.length > 0
+              return (
+                <button onClick={createSurvey} disabled={creatingsurvey || !ready} style={{
+                  padding: '10px', borderRadius: 7,
+                  background: ready ? '#7c3aed' : 'var(--border)',
+                  color: ready ? '#fff' : 'var(--text-muted)',
+                  border: 'none', fontSize: 13, fontWeight: 700,
+                  cursor: ready ? 'pointer' : 'not-allowed', fontFamily: 'inherit', width: '100%',
+                }}>
+                  {creatingsurvey ? '…' : `Umfrage erstellen (${validQs} Frage${validQs !== 1 ? 'n' : ''} · ${newRecipientNames.length} Empfänger)`}
+                </button>
+              )
+            })()}
           </div>
 
           {/* Existing surveys */}
           {surveys.map(s => {
+            const sQuestions = surveyQuestions.filter(q => q.survey_id === s.id)
+            const sRecipients = surveyRecipients.filter(r => r.survey_id === s.id)
             const responses = surveyResponses.filter(r => r.survey_id === s.id)
             const isExpanded = expandedSurvey === s.id
+            // Wer hat geantwortet (= mind. eine Antwort gegeben)?
+            const responderSet = new Set(responses.map(r => r.responder_name))
+            const completionPct = sRecipients.length > 0
+              ? Math.round((responderSet.size / sRecipients.length) * 100)
+              : 0
             return (
               <div key={s.id} style={{ ...cardS, borderLeft: `3px solid ${s.active ? '#10b981' : '#555580'}`, borderRadius: '0 10px 10px 0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: s.active ? 'rgba(16,185,129,0.15)' : 'rgba(100,100,120,0.15)', color: s.active ? '#10b981' : 'var(--text-muted)' }}>
                         {s.active ? 'AKTIV' : 'GESCHLOSSEN'}
                       </span>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.answer_type} · {(s.target_roles || []).join(', ')}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        {sQuestions.length} Frage{sQuestions.length !== 1 ? 'n' : ''} · {sRecipients.length} Empfänger
+                      </span>
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{s.question}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{responses.length} Antwort{responses.length !== 1 ? 'en' : ''}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{s.title || s.question}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {responderSet.size} von {sRecipients.length} geantwortet ({completionPct}%)
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     <button onClick={() => setExpandedSurvey(isExpanded ? null : s.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -519,22 +738,64 @@ export default function SettingsTab() {
                     <button onClick={() => deleteSurvey(s.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.4)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
                   </div>
                 </div>
-                {isExpanded && responses.length > 0 && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1e1e3a', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {responses.map(r => (
-                      <div key={r.id} style={{ display: 'flex', gap: 10, padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7 }}>
-                        <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>{r.responder_name[0]}</div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{r.responder_name}</span>
-                            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{new Date(r.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                          <div style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>{r.answer}</div>
-                          {r.comment && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{r.comment}</div>}
-                        </div>
+
+                {isExpanded && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1e1e3a' }}>
+                    {/* Empfänger-Liste mit Status */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: 0.5, marginBottom: 6 }}>EMPFÄNGER</div>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {sRecipients.map(r => {
+                          const done = responderSet.has(r.recipient_name)
+                          return (
+                            <span key={r.id} style={{
+                              fontSize: 10, padding: '3px 8px', borderRadius: 5,
+                              background: done ? 'rgba(16,185,129,0.15)' : 'rgba(100,100,120,0.1)',
+                              color: done ? '#10b981' : 'var(--text-muted)',
+                              border: `1px solid ${done ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
+                              fontWeight: 600,
+                            }}>{done ? '✓ ' : '○ '}{r.recipient_name}</span>
+                          )
+                        })}
                       </div>
-                    ))}
-                    {isExpanded && responses.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 12 }}>Noch keine Antworten</div>}
+                    </div>
+
+                    {/* Antworten gruppiert pro Frage */}
+                    {sQuestions.map((q, qIdx) => {
+                      const qResponses = responses.filter(r => r.question_id === q.id)
+                      return (
+                        <div key={q.id} style={{ marginBottom: 14, padding: 10, background: 'var(--bg-card2)', borderRadius: 8 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+                            <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>{qIdx + 1}.</span>
+                            {q.question}
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6, fontWeight: 400 }}>
+                              · {q.answer_type === 'choice' ? 'Auswahl' : q.answer_type === 'scale' ? 'Skala' : 'Freitext'}
+                            </span>
+                          </div>
+                          {qResponses.length === 0 ? (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Noch keine Antworten</div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {qResponses.map(r => (
+                                <div key={r.id} style={{ display: 'flex', gap: 8, padding: '5px 8px', background: 'var(--bg-card)', borderRadius: 6 }}>
+                                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>{(r.responder_name || '?')[0]}</div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 1, flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{r.responder_name}</span>
+                                      <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                        {new Date(r.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>{r.answer || '(leer)'}</div>
+                                    {r.comment && <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{r.comment}</div>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
