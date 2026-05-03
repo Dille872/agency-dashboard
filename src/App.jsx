@@ -16,7 +16,6 @@ import PerformanceTab from './components/PerformanceTab'
 import TodoTab from './components/TodoTab'
 import SocialTab from './components/SocialTab'
 import SetPasswordPage from './components/SetPasswordPage'
-import SurveyPopup from './components/SurveyPopup'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 
@@ -370,7 +369,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
-      <SurveyPopup session={session} displayName={userDisplayName} userRole={userRole} />
+      {/* SurveyModal wird in ChatterPortal/ModelPortal selbst gerendert */}
       {/* ── HEADER ── */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 100,
