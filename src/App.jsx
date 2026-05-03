@@ -175,14 +175,21 @@ export default function App() {
       setUnreadCustomContent(modelCcCount || 0)
     }
 
-    // Open todos
-    const { count: todoCount } = await supabase
-      .from('todos').select('*', { count: 'exact', head: true })
+    // Open todos: zähle nur die, wo der eingeloggte User NICHT in read_by[] steht
+    const { data: openTodosData } = await supabase
+      .from('todos').select('read_by')
       .eq('completed', false)
-    setOpenTodos(todoCount || 0)
+    const unreadTodoCount = (openTodosData || []).filter(t => {
+      const readBy = Array.isArray(t.read_by) ? t.read_by : []
+      return !readBy.includes(userDisplayName)
+    }).length
+    setOpenTodos(unreadTodoCount)
+
+    // Open swaps: nur ungelesene (seen_by_admin=false) zählen für Badge
     const { count: swapCount } = await supabase
       .from('shift_swaps').select('*', { count: 'exact', head: true })
       .eq('status', 'offen')
+      .eq('seen_by_admin', false)
     setOpenSwaps((swapCount || 0) + (chatterMsgCount || 0))
   }
 

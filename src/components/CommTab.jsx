@@ -719,6 +719,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadSwaps()
   }
 
+  // Top-Nav Badge zurücksetzen: alle offenen Schichten als gesehen markieren
+  const markAllSwapsSeen = async () => {
+    await supabase.from('shift_swaps')
+      .update({ seen_by_admin: true })
+      .eq('status', 'offen')
+      .eq('seen_by_admin', false)
+    loadSwaps()
+  }
+
   // Admin-eigene Stornierung (nur eigener Admin-Anbote, also requester_name=NULL)
   const cancelAdminOffer = async (id) => {
     if (!confirm('Schicht-Anbot zurücknehmen?')) return
@@ -2357,8 +2366,19 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       )}
 
       {/* SCHICHT-TAUSCH */}
-      {activeSection === 'swaps' && (
+      {activeSection === 'swaps' && (() => {
+        const unseenOpenCount = swaps.filter(s => s.status === 'offen' && !s.seen_by_admin).length
+        return (
         <Card title="Schicht-Tausch Anfragen">
+          {unseenOpenCount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+              <button onClick={markAllSwapsSeen} style={{
+                fontSize: 11, padding: '5px 12px', borderRadius: 6,
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
+              }}>✓ Alle als gelesen markieren ({unseenOpenCount})</button>
+            </div>
+          )}
           {swaps.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
           ) : (
@@ -2475,7 +2495,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             </div>
           )}
         </Card>
-      )}
+        )
+      })()}
 
       {/* MODEL BOARDS */}
       {activeSection === 'modelboards' && (
