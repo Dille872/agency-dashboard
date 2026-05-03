@@ -612,7 +612,57 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   }
 
   const updateSwap = async (id, status, acceptedBy = null) => {
-    await supabase.from('shift_swaps').update({ status, ...(acceptedBy ? { accepted_by: acceptedBy } : {}) }).eq('id', id)
+    // Vor Update: Datensatz holen für Telegram-Logik
+    const { data: swap } = await supabase.from('shift_swaps').select('*').eq('id', id).single()
+
+    await supabase.from('shift_swaps').update({
+      status,
+      ...(acceptedBy ? { accepted_by: acceptedBy } : {}),
+    }).eq('id', id)
+
+    // Telegram nur am Ende (angenommen/abgelehnt) und nur wenn jemand übernehmen wollte
+    if (swap && (status === 'angenommen' || status === 'abgelehnt')) {
+      const involved = []
+      if (swap.requester_name) involved.push(swap.requester_name)
+      if (swap.proposed_by) involved.push(swap.proposed_by)
+
+      const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', {
+        weekday: 'short', day: '2-digit', month: '2-digit',
+      })
+      const shiftLabel = `${dateLabel} · ${swap.shift} · ${swap.model_name}`
+
+      for (const name of involved) {
+        const { data: c } = await supabase.from('chatters_contact').select('telegram_id').eq('name', name).maybeSingle()
+        if (!c?.telegram_id) continue
+        const isRequester = name === swap.requester_name
+        const isProposer = name === swap.proposed_by
+        let msg = ''
+        if (status === 'angenommen') {
+          if (isRequester && isProposer) {
+            msg = `✓ Schicht-Tausch bestätigt: ${shiftLabel}`
+          } else if (isRequester) {
+            msg = `✓ Dein Schicht-Tausch wurde bestätigt!\n${shiftLabel}\n→ ${swap.proposed_by} übernimmt für dich.`
+          } else if (isProposer) {
+            msg = `✓ Du übernimmst die Schicht!\n${shiftLabel}${swap.requester_name ? `\nVon: ${swap.requester_name}` : ''}`
+          }
+        } else if (status === 'abgelehnt') {
+          if (isRequester) {
+            msg = `✕ Schicht-Tausch abgelehnt.\n${shiftLabel}`
+          } else if (isProposer) {
+            msg = `✕ Schicht-Übernahme wurde nicht bestätigt.\n${shiftLabel}`
+          }
+        }
+        if (msg) await sendTelegramMessage(c.telegram_id, msg)
+      }
+    }
+
+    loadSwaps()
+  }
+
+  // Admin-eigene Stornierung (nur eigener Admin-Anbote, also requester_name=NULL)
+  const cancelAdminOffer = async (id) => {
+    if (!confirm('Schicht-Anbot zurücknehmen?')) return
+    await supabase.from('shift_swaps').delete().eq('id', id).is('requester_name', null).eq('status', 'offen')
     loadSwaps()
   }
 
@@ -753,9 +803,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
           section === 'models' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model').length },
           section === 'models' && { key: 'history', label: 'Verlauf' },
-          (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'offen').length },
+          (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'vorgeschlagen').length },
           section === 'chatters' && { key: 'pinnwand', label: `📌 Pinnwand${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length > 0 ? ` (${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length})` : ''}` },
-          section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'offen').length > 0 ? ` (${swaps.filter(s => s.status === 'offen').length})` : ''}` },
+          section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'vorgeschlagen').length > 0 ? ` (${swaps.filter(s => s.status === 'vorgeschlagen').length})` : ''}` },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
           section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
           section === 'chatters' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter').length },
@@ -880,11 +930,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const now = new Date()
         const activeAnnCount = announcements.filter(a => !a.expires_at || new Date(a.expires_at) > now).length
         const openSwapsCount = swaps.filter(s => s.status === 'offen').length
+        const proposedSwapsCount = swaps.filter(s => s.status === 'vorgeschlagen').length
         const unreadOutMsgs = messages.filter(m => m.direction === 'out' && m.contact_type === 'chatter' && !m.read_at)
         // Out-Messages älter als 24h ungelesen = möglicherweise problematisch
         const oldUnreadOut = unreadOutMsgs.filter(m => new Date(m.created_at) < new Date(Date.now() - 24*60*60*1000))
         const attentionItems = []
-        if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Anfragen`, color: '#f59e0b', action: 'swaps' })
+        if (proposedSwapsCount > 0) attentionItems.push({ icon: '↻', text: `${proposedSwapsCount} Schicht-Tausch wartet auf deine Bestätigung`, color: '#a78bfa', action: 'swaps' })
+        if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
         if (oldUnreadOut.length > 0) attentionItems.push({ icon: '⏳', text: `${oldUnreadOut.length} Nachrichten >24h ungelesen`, color: '#ef4444', action: 'history' })
 
         return (
@@ -2224,29 +2276,72 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {swaps.map(swap => (
-                <div key={swap.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${swap.status === 'offen' ? 'rgba(245,158,11,0.3)' : swap.status === 'angenommen' ? 'rgba(16,185,129,0.3)' : 'var(--border)'}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                        <span style={{ color: '#a78bfa' }}>{swap.requester_name}</span> · {swap.shift}schicht · {new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+              {swaps.map(swap => {
+                const isAdminOffer = !swap.requester_name
+                const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                const borderColor =
+                  swap.status === 'offen' ? 'rgba(245,158,11,0.3)'
+                  : swap.status === 'vorgeschlagen' ? 'rgba(167,139,250,0.45)'
+                  : swap.status === 'angenommen' ? 'rgba(16,185,129,0.3)'
+                  : 'var(--border)'
+                const statusBg =
+                  swap.status === 'offen' ? 'rgba(245,158,11,0.15)'
+                  : swap.status === 'vorgeschlagen' ? 'rgba(167,139,250,0.18)'
+                  : swap.status === 'angenommen' ? 'rgba(16,185,129,0.15)'
+                  : 'rgba(100,100,120,0.15)'
+                const statusColor =
+                  swap.status === 'offen' ? '#f59e0b'
+                  : swap.status === 'vorgeschlagen' ? '#a78bfa'
+                  : swap.status === 'angenommen' ? '#10b981'
+                  : 'var(--text-muted)'
+                const statusLabel =
+                  swap.status === 'offen' ? 'Offen'
+                  : swap.status === 'vorgeschlagen' ? `↻ ${swap.proposed_by} will übernehmen`
+                  : swap.status === 'angenommen' ? `✓ ${swap.accepted_by || swap.proposed_by || 'übernommen'}`
+                  : 'Abgelehnt'
+                return (
+                  <div key={swap.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${borderColor}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                          {isAdminOffer ? (
+                            <span style={{ color: '#06b6d4' }}>📢 Admin-Anbot</span>
+                          ) : (
+                            <span style={{ color: '#a78bfa' }}>{swap.requester_name}</span>
+                          )}
+                          {' · '}{swap.shift}schicht · {dateLabel}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          Model: {swap.model_name}{swap.reason ? ` · ${swap.reason}` : ''}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Model: {swap.model_name}{swap.reason ? ` · ${swap.reason}` : ''}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700, background: swap.status === 'offen' ? 'rgba(245,158,11,0.15)' : swap.status === 'angenommen' ? 'rgba(16,185,129,0.15)' : 'rgba(100,100,120,0.15)', color: swap.status === 'offen' ? '#f59e0b' : swap.status === 'angenommen' ? '#10b981' : 'var(--text-muted)' }}>
-                        {swap.status === 'offen' ? 'Offen' : swap.status === 'angenommen' ? `✓ ${swap.accepted_by}` : 'Abgelehnt'}
-                      </span>
-                      {swap.status === 'offen' && (
-                        <>
-                          <button onClick={() => updateSwap(swap.id, 'angenommen', 'Admin')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Annehmen</button>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700, background: statusBg, color: statusColor }}>
+                          {statusLabel}
+                        </span>
+
+                        {/* Status: vorgeschlagen → Admin bestätigt oder lehnt ab */}
+                        {swap.status === 'vorgeschlagen' && (
+                          <>
+                            <button onClick={() => updateSwap(swap.id, 'angenommen', swap.proposed_by)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Bestätigen</button>
+                            <button onClick={() => updateSwap(swap.id, 'abgelehnt')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
+                          </>
+                        )}
+
+                        {/* Status: offen + Admin-Anbot → Admin kann zurücknehmen */}
+                        {swap.status === 'offen' && isAdminOffer && (
+                          <button onClick={() => cancelAdminOffer(swap.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: 'rgba(239,68,68,0.7)', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Zurücknehmen</button>
+                        )}
+
+                        {/* Status: offen + Chatter-Anfrage → Admin kann Direkt-Aktion (legacy) */}
+                        {swap.status === 'offen' && !isAdminOffer && (
                           <button onClick={() => updateSwap(swap.id, 'abgelehnt')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
-                        </>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </Card>

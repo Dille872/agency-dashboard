@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
 import SurveyModal from './SurveyModal'
+import SwapModal from './SwapModal'
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage } from '../telegram'
 import { APP_VERSION } from '../version'
@@ -144,16 +145,40 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
       </div>
       {mySwaps.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {mySwaps.map(s => (
-            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {new Date(s.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {s.shift} · {s.model_name}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: s.status === 'offen' ? '#f59e0b' : s.status === 'angenommen' ? '#10b981' : '#ef4444' }}>
-                {s.status === 'offen' ? 'Offen' : s.status === 'angenommen' ? `✓ ${s.accepted_by}` : 'Abgelehnt'}
-              </span>
-            </div>
-          ))}
+          {mySwaps.map(s => {
+            const cancel = async () => {
+              if (!confirm('Tausch-Anfrage stornieren?')) return
+              await supabase.from('shift_swaps').delete().eq('id', s.id).eq('status', 'offen')
+              await loadMySwaps()
+            }
+            const statusLabel =
+              s.status === 'offen' ? 'Offen'
+              : s.status === 'vorgeschlagen' ? `↻ ${s.proposed_by} will übernehmen`
+              : s.status === 'angenommen' ? `✓ ${s.accepted_by || 'übernommen'}`
+              : 'Abgelehnt'
+            const statusColor =
+              s.status === 'offen' ? '#f59e0b'
+              : s.status === 'vorgeschlagen' ? '#a78bfa'
+              : s.status === 'angenommen' ? '#10b981'
+              : '#ef4444'
+            return (
+              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, gap: 8 }}>
+                <span style={{ color: 'var(--text-secondary)', flex: 1, minWidth: 0 }}>
+                  {new Date(s.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {s.shift} · {s.model_name}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: statusColor }}>
+                  {statusLabel}
+                </span>
+                {s.status === 'offen' && (
+                  <button onClick={cancel} style={{
+                    fontSize: 10, padding: '2px 7px', borderRadius: 5,
+                    background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
+                    color: 'rgba(239,68,68,0.7)', cursor: 'pointer', fontFamily: 'inherit',
+                  }}>✕</button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -1942,6 +1967,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         )}
       </main>
       {!isPreview && displayName && <SurveyModal displayName={displayName} role="chatter" />}
+      {!isPreview && displayName && <SwapModal displayName={displayName} />}
     </div>
   )
 }

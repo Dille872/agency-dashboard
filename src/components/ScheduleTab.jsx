@@ -485,6 +485,36 @@ export default function ScheduleTab({ session }) {
     }
   }
 
+  // Schicht zum Tausch ausschreiben (Admin-Anbot)
+  // requester_name = NULL als Marker für Admin-Anbot
+  const offerShift = async (modelId, dayIso, shift) => {
+    const model = models.find(m => m.id === modelId)
+    if (!model) return
+    // Schon ausgeschrieben?
+    const { data: existing } = await supabase
+      .from('shift_swaps')
+      .select('id')
+      .eq('shift_date', dayIso)
+      .eq('shift', shift)
+      .eq('model_name', model.name)
+      .in('status', ['offen', 'vorgeschlagen'])
+    if (existing && existing.length > 0) {
+      alert('Diese Schicht wurde bereits zum Tausch ausgeschrieben.')
+      return
+    }
+    const reason = prompt('Grund (optional, sichtbar für Chatter):') || null
+    const { error } = await supabase.from('shift_swaps').insert({
+      requester_name: null, // = Admin-Anbot
+      shift_date: dayIso,
+      shift,
+      model_name: model.name,
+      reason,
+      status: 'offen',
+    })
+    if (error) { alert('Fehler: ' + error.message); return }
+    alert('✓ Schicht ausgeschrieben. Chatter sehen das beim nächsten Login.')
+  }
+
   const sendReminder = async (modelId, dayIso, shift, chatterName, hoursBeforeStr) => {
     const hoursBefore = parseInt(hoursBeforeStr)
     setSendingReminder(true)
@@ -995,7 +1025,10 @@ export default function ScheduleTab({ session }) {
                                   style={{ accentColor: '#7c3aed' }} />
                                 <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
                               </label>
-                              <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }} style={{ flex: 1, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>🔄 Ausschr.</button>
+                                <button onClick={() => setEditingCell(null)} style={{ flex: 1, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
+                              </div>
                             </div>
                           ) : cell.chatter ? (
                             <div style={{ flex: 1 }}>
@@ -1160,6 +1193,11 @@ export default function ScheduleTab({ session }) {
 
               {/* Aktion */}
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                <button onClick={() => offerShift(editSheet.modelId, editSheet.dayIso, editSheet.shift)} style={{
+                  flex: 1, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)',
+                  color: '#f59e0b', borderRadius: 8, padding: '12px', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>🔄 Ausschreiben</button>
                 <button onClick={() => {
                   setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { chatter: '', note: '', confirmed: true })
                   setEditSheet(null)
