@@ -630,15 +630,30 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (c?.telegram_id) await sendTelegramMessage(c.telegram_id, msg)
   }
 
+  // Race-safe Update: nur wenn Status noch 'offen' ist
+  const safeUpdateSwapStatus = async (id, patch) => {
+    const { error, count } = await supabase
+      .from('shift_swaps').update(patch, { count: 'exact' })
+      .eq('id', id).eq('status', 'offen')
+    return { error, count }
+  }
+
   // Admin weist die Schicht einem Chatter zu (final)
   const assignSwapTo = async (swap, chatterName) => {
     if (!swap || !chatterName) return
     if (!confirm(`Schicht an ${chatterName} vergeben?`)) return
 
-    await supabase.from('shift_swaps').update({
+    // Race-safe: nur wenn Status noch offen ist
+    const { error, count } = await safeUpdateSwapStatus(swap.id, {
       status: 'angenommen',
       accepted_by: chatterName,
-    }).eq('id', swap.id)
+    })
+    if (error) { alert('Fehler: ' + error.message); return }
+    if (count === 0) {
+      alert('Diese Schicht wurde inzwischen schon vergeben oder abgeschlossen.\nLade neu.')
+      loadSwaps()
+      return
+    }
 
     const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', {
       weekday: 'short', day: '2-digit', month: '2-digit',
@@ -677,15 +692,29 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadSwaps()
   }
 
-  // Admin weist die Schicht ab (komplett zu)
+  // Admin schließt Anfrage ab ohne Vergabe
   const closeSwap = async (swap) => {
     if (!confirm('Schicht-Anfrage abschließen ohne Vergabe?')) return
-    await supabase.from('shift_swaps').update({ status: 'abgelehnt' }).eq('id', swap.id)
+    const { error, count } = await safeUpdateSwapStatus(swap.id, { status: 'abgelehnt' })
+    if (error) { alert('Fehler: ' + error.message); return }
+    if (count === 0) {
+      alert('Diese Schicht wurde inzwischen schon vergeben.')
+      loadSwaps()
+      return
+    }
+    const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', {
+      weekday: 'short', day: '2-digit', month: '2-digit',
+    })
+    const shiftLabel = `${dateLabel} · ${swap.shift} · ${swap.model_name}`
+
+    // Anfragenden + alle Reagierer benachrichtigen
     if (swap.requester_name) {
-      const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', {
-        weekday: 'short', day: '2-digit', month: '2-digit',
-      })
-      await tgToChatter(swap.requester_name, `✕ Schicht-Tausch nicht zustande gekommen.\n${dateLabel} · ${swap.shift} · ${swap.model_name}`)
+      await tgToChatter(swap.requester_name, `✕ Schicht-Tausch nicht zustande gekommen.\n${shiftLabel}`)
+    }
+    const reactionsForSwap = swapReactions.filter(r => r.swap_id === swap.id && r.reaction !== 'abgelehnt')
+    for (const r of reactionsForSwap) {
+      if (r.chatter_name === swap.requester_name) continue // schon benachrichtigt
+      await tgToChatter(r.chatter_name, `ℹ Schicht-Angebot wurde geschlossen.\n${shiftLabel}`)
     }
     loadSwaps()
   }
@@ -693,7 +722,25 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   // Admin-eigene Stornierung (nur eigener Admin-Anbote, also requester_name=NULL)
   const cancelAdminOffer = async (id) => {
     if (!confirm('Schicht-Anbot zurücknehmen?')) return
-    await supabase.from('shift_swaps').delete().eq('id', id).is('requester_name', null).eq('status', 'offen')
+
+    // Vor dem Delete: Reagierer ermitteln, um sie zu benachrichtigen
+    const { data: swap } = await supabase.from('shift_swaps').select('*').eq('id', id).maybeSingle()
+    const reactionsForSwap = swapReactions.filter(r => r.swap_id === id && r.reaction !== 'abgelehnt')
+
+    const { error } = await supabase.from('shift_swaps').delete()
+      .eq('id', id).is('requester_name', null).eq('status', 'offen')
+    if (error) { alert('Fehler: ' + error.message); return }
+
+    // Telegram an alle die Interesse hatten
+    if (swap && reactionsForSwap.length > 0) {
+      const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', {
+        weekday: 'short', day: '2-digit', month: '2-digit',
+      })
+      const shiftLabel = `${dateLabel} · ${swap.shift} · ${swap.model_name}`
+      for (const r of reactionsForSwap) {
+        await tgToChatter(r.chatter_name, `ℹ Schicht-Angebot wurde zurückgezogen.\n${shiftLabel}`)
+      }
+    }
     loadSwaps()
   }
 

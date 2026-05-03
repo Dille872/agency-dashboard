@@ -97,6 +97,7 @@ export default function SurveyModal({ displayName, role }) {
   })
 
   const handleSubmit = async () => {
+    if (submitting) return // Double-Click-Schutz
     setSubmitting(true)
     const rows = questions.map(q => ({
       survey_id: survey.id,
@@ -106,7 +107,17 @@ export default function SurveyModal({ displayName, role }) {
       answer: String(answers[q.id]?.answer ?? ''),
       comment: answers[q.id]?.comment || null,
     }))
-    await supabase.from('survey_responses').insert(rows)
+    const { error } = await supabase.from('survey_responses').insert(rows)
+
+    if (error) {
+      // Falls Doppel-Insert: nicht als Fehler behandeln (User hat schon geantwortet)
+      const isDuplicate = error.code === '23505' || /duplicate|unique/i.test(error.message || '')
+      if (!isDuplicate) {
+        alert('Fehler beim Speichern: ' + error.message + '\nBitte erneut versuchen.')
+        setSubmitting(false)
+        return
+      }
+    }
 
     // Nächste Umfrage oder fertig
     if (currentIdx + 1 < pending.length) {

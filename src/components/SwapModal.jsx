@@ -51,16 +51,21 @@ export default function SwapModal({ displayName }) {
   }
 
   const react = async (swapId, reaction) => {
+    if (submitting) return // Double-Click-Schutz
     setSubmitting(true)
     const { error } = await supabase.from('swap_reactions').insert({
       swap_id: swapId,
       chatter_name: displayName,
       reaction,
     })
-    if (error && !error.message.includes('duplicate')) {
-      alert('Fehler: ' + error.message)
-      setSubmitting(false)
-      return
+    if (error) {
+      const isDuplicate = error.code === '23505' || /duplicate|unique/i.test(error.message || '')
+      if (!isDuplicate) {
+        alert('Fehler: ' + error.message + '\nBitte erneut versuchen.')
+        setSubmitting(false)
+        return
+      }
+      // Falls Duplicate: Reaktion existiert schon, einfach aus Liste entfernen
     }
     setOffers(prev => prev.filter(o => o.id !== swapId))
     setSubmitting(false)

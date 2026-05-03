@@ -148,7 +148,18 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
           {mySwaps.map(s => {
             const cancel = async () => {
               if (!confirm('Tausch-Anfrage stornieren?')) return
-              await supabase.from('shift_swaps').delete().eq('id', s.id).eq('status', 'offen')
+              const { error, count } = await supabase
+                .from('shift_swaps')
+                .delete({ count: 'exact' })
+                .eq('id', s.id)
+                .eq('status', 'offen')
+              if (error) {
+                alert('Fehler beim Stornieren: ' + error.message)
+                return
+              }
+              if (count === 0) {
+                alert('Stornieren nicht möglich — die Schicht wurde inzwischen bereits vom Admin bearbeitet.')
+              }
               await loadMySwaps()
             }
             const statusLabel =
@@ -752,7 +763,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const loadSchedule = async () => {
-    const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey).single()
+    const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey).maybeSingle()
     if (data) {
       setScheduleData(data.assignments || {})
       setShiftTimes(data.shift_times || {})

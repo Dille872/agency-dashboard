@@ -83,7 +83,7 @@ export default function SettingsTab() {
   ])
   const [activeQIdx, setActiveQIdx] = useState(0)
   const [newRecipientNames, setNewRecipientNames] = useState([]) // ["Lukas", "Sandra", ...]
-  const [creatingsurvey, setCreatingSurvey] = useState(false)
+  const [creatingSurvey, setCreatingSurvey] = useState(false)
   const [expandedSurvey, setExpandedSurvey] = useState(null)
 
   useEffect(() => {
@@ -159,6 +159,7 @@ export default function SettingsTab() {
   const clearRecipients = () => setNewRecipientNames([])
 
   const createSurvey = async () => {
+    if (creatingSurvey) return // Double-Click-Schutz
     const validQuestions = newSurveyQuestions.filter(q => q.question.trim())
     if (validQuestions.length === 0 || newRecipientNames.length === 0) return
     setCreatingSurvey(true)
@@ -186,7 +187,14 @@ export default function SettingsTab() {
       options: q.answer_type === 'choice' ? q.options.filter(o => o.trim()) : [],
       position: idx,
     }))
-    await supabase.from('survey_questions').insert(qRows)
+    const { error: qErr } = await supabase.from('survey_questions').insert(qRows)
+    if (qErr) {
+      // Rollback: Survey wieder löschen damit nicht halb-fertige Umfragen rumliegen
+      await supabase.from('surveys').delete().eq('id', created.id)
+      setCreatingSurvey(false)
+      alert('Fehler beim Speichern der Fragen: ' + qErr.message)
+      return
+    }
 
     // 3. Empfänger
     const chatterSet = new Set(chatters.map(c => c.name))
@@ -195,7 +203,14 @@ export default function SettingsTab() {
       recipient_name: name,
       recipient_role: chatterSet.has(name) ? 'chatter' : 'model',
     }))
-    await supabase.from('survey_recipients').insert(recRows)
+    const { error: rErr } = await supabase.from('survey_recipients').insert(recRows)
+    if (rErr) {
+      // Rollback survey + questions (questions per cascade)
+      await supabase.from('surveys').delete().eq('id', created.id)
+      setCreatingSurvey(false)
+      alert('Fehler beim Speichern der Empfänger: ' + rErr.message)
+      return
+    }
 
     // Reset
     setNewSurveyTitle('')
@@ -685,14 +700,14 @@ export default function SettingsTab() {
               const validQs = newSurveyQuestions.filter(q => q.question.trim()).length
               const ready = validQs > 0 && newRecipientNames.length > 0
               return (
-                <button onClick={createSurvey} disabled={creatingsurvey || !ready} style={{
+                <button onClick={createSurvey} disabled={creatingSurvey || !ready} style={{
                   padding: '10px', borderRadius: 7,
                   background: ready ? '#7c3aed' : 'var(--border)',
                   color: ready ? '#fff' : 'var(--text-muted)',
                   border: 'none', fontSize: 13, fontWeight: 700,
                   cursor: ready ? 'pointer' : 'not-allowed', fontFamily: 'inherit', width: '100%',
                 }}>
-                  {creatingsurvey ? '…' : `Umfrage erstellen (${validQs} Frage${validQs !== 1 ? 'n' : ''} · ${newRecipientNames.length} Empfänger)`}
+                  {creatingSurvey ? '…' : `Umfrage erstellen (${validQs} Frage${validQs !== 1 ? 'n' : ''} · ${newRecipientNames.length} Empfänger)`}
                 </button>
               )
             })()}
