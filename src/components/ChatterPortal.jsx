@@ -153,12 +153,10 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
             }
             const statusLabel =
               s.status === 'offen' ? 'Offen'
-              : s.status === 'vorgeschlagen' ? `↻ ${s.proposed_by} will übernehmen`
               : s.status === 'angenommen' ? `✓ ${s.accepted_by || 'übernommen'}`
-              : 'Abgelehnt'
+              : 'Abgeschlossen'
             const statusColor =
               s.status === 'offen' ? '#f59e0b'
-              : s.status === 'vorgeschlagen' ? '#a78bfa'
               : s.status === 'angenommen' ? '#10b981'
               : '#ef4444'
             return (

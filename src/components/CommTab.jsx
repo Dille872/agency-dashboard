@@ -606,56 +606,87 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     setChatterStats(Object.values(statsMap).sort((a, b) => b.totalShifts - a.totalShifts))
   }
 
+  const [swapReactions, setSwapReactions] = useState([]) // [{swap_id, chatter_name, reaction, created_at}]
+
   const loadSwaps = async () => {
     const { data } = await supabase.from('shift_swaps').select('*').order('created_at', { ascending: false })
     setSwaps(data || [])
+    const ids = (data || []).map(s => s.id)
+    if (ids.length > 0) {
+      const { data: reacts } = await supabase
+        .from('swap_reactions').select('*').in('swap_id', ids)
+        .order('created_at', { ascending: true })
+      setSwapReactions(reacts || [])
+    } else {
+      setSwapReactions([])
+    }
   }
 
-  const updateSwap = async (id, status, acceptedBy = null) => {
-    // Vor Update: Datensatz holen für Telegram-Logik
-    const { data: swap } = await supabase.from('shift_swaps').select('*').eq('id', id).single()
+  // Hilfs-Funktion: Telegram an einen Chatter
+  const tgToChatter = async (chatterName, msg) => {
+    if (!chatterName) return
+    const { data: c } = await supabase.from('chatters_contact')
+      .select('telegram_id').eq('name', chatterName).maybeSingle()
+    if (c?.telegram_id) await sendTelegramMessage(c.telegram_id, msg)
+  }
+
+  // Admin weist die Schicht einem Chatter zu (final)
+  const assignSwapTo = async (swap, chatterName) => {
+    if (!swap || !chatterName) return
+    if (!confirm(`Schicht an ${chatterName} vergeben?`)) return
 
     await supabase.from('shift_swaps').update({
-      status,
-      ...(acceptedBy ? { accepted_by: acceptedBy } : {}),
-    }).eq('id', id)
+      status: 'angenommen',
+      accepted_by: chatterName,
+    }).eq('id', swap.id)
 
-    // Telegram nur am Ende (angenommen/abgelehnt) und nur wenn jemand übernehmen wollte
-    if (swap && (status === 'angenommen' || status === 'abgelehnt')) {
-      const involved = []
-      if (swap.requester_name) involved.push(swap.requester_name)
-      if (swap.proposed_by) involved.push(swap.proposed_by)
+    const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', {
+      weekday: 'short', day: '2-digit', month: '2-digit',
+    })
+    const shiftLabel = `${dateLabel} · ${swap.shift} · ${swap.model_name}`
 
+    // 1. Gewählter: bekommt Bestätigung
+    await tgToChatter(chatterName, `✓ Du übernimmst die Schicht: ${shiftLabel}`)
+
+    // 2. Anfragender (falls Chatter-Anfrage, nicht Admin-Anbot): bekommt Bestätigung
+    if (swap.requester_name && swap.requester_name !== chatterName) {
+      await tgToChatter(swap.requester_name, `✓ Deine Schicht-Anfrage wurde geklärt: ${shiftLabel}\nDie Schicht wird übernommen.`)
+    }
+
+    // 3. Andere Reagierer (uebernehmen/vielleicht), die NICHT gewählt wurden: anonyme Absage
+    const reactionsForSwap = swapReactions.filter(r => r.swap_id === swap.id)
+    const otherInterested = reactionsForSwap
+      .filter(r => r.reaction !== 'abgelehnt' && r.chatter_name !== chatterName)
+    for (const r of otherInterested) {
+      await tgToChatter(r.chatter_name, `Die Schicht wurde an jemand anderen vergeben. Danke fürs Angebot.\n${shiftLabel}`)
+    }
+
+    loadSwaps()
+  }
+
+  // Admin setzt Schicht zurück auf 'offen' (nach Ablehnung oder versehentlich vergeben)
+  // Behält 'abgelehnt'-Reaktionen, löscht 'uebernehmen'/'vielleicht' damit Chatter neu reagieren können
+  const resetSwapToOpen = async (swapId) => {
+    if (!confirm('Schicht wieder als offen ausschreiben?')) return
+    await supabase.from('shift_swaps').update({
+      status: 'offen', accepted_by: null,
+    }).eq('id', swapId)
+    await supabase.from('swap_reactions').delete()
+      .eq('swap_id', swapId)
+      .in('reaction', ['uebernehmen', 'vielleicht'])
+    loadSwaps()
+  }
+
+  // Admin weist die Schicht ab (komplett zu)
+  const closeSwap = async (swap) => {
+    if (!confirm('Schicht-Anfrage abschließen ohne Vergabe?')) return
+    await supabase.from('shift_swaps').update({ status: 'abgelehnt' }).eq('id', swap.id)
+    if (swap.requester_name) {
       const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', {
         weekday: 'short', day: '2-digit', month: '2-digit',
       })
-      const shiftLabel = `${dateLabel} · ${swap.shift} · ${swap.model_name}`
-
-      for (const name of involved) {
-        const { data: c } = await supabase.from('chatters_contact').select('telegram_id').eq('name', name).maybeSingle()
-        if (!c?.telegram_id) continue
-        const isRequester = name === swap.requester_name
-        const isProposer = name === swap.proposed_by
-        let msg = ''
-        if (status === 'angenommen') {
-          if (isRequester && isProposer) {
-            msg = `✓ Schicht-Tausch bestätigt: ${shiftLabel}`
-          } else if (isRequester) {
-            msg = `✓ Dein Schicht-Tausch wurde bestätigt!\n${shiftLabel}\n→ ${swap.proposed_by} übernimmt für dich.`
-          } else if (isProposer) {
-            msg = `✓ Du übernimmst die Schicht!\n${shiftLabel}${swap.requester_name ? `\nVon: ${swap.requester_name}` : ''}`
-          }
-        } else if (status === 'abgelehnt') {
-          if (isRequester) {
-            msg = `✕ Schicht-Tausch abgelehnt.\n${shiftLabel}`
-          } else if (isProposer) {
-            msg = `✕ Schicht-Übernahme wurde nicht bestätigt.\n${shiftLabel}`
-          }
-        }
-        if (msg) await sendTelegramMessage(c.telegram_id, msg)
-      }
+      await tgToChatter(swap.requester_name, `✕ Schicht-Tausch nicht zustande gekommen.\n${dateLabel} · ${swap.shift} · ${swap.model_name}`)
     }
-
     loadSwaps()
   }
 
@@ -803,9 +834,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
           section === 'models' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model').length },
           section === 'models' && { key: 'history', label: 'Verlauf' },
-          (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: swaps.filter(s => s.status === 'vorgeschlagen').length },
+          (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: (() => {
+            const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
+            const interested = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id))
+            return interested.size
+          })() },
           section === 'chatters' && { key: 'pinnwand', label: `📌 Pinnwand${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length > 0 ? ` (${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length})` : ''}` },
-          section === 'chatters' && { key: 'swaps', label: `Schicht-Tausch${swaps.filter(s => s.status === 'vorgeschlagen').length > 0 ? ` (${swaps.filter(s => s.status === 'vorgeschlagen').length})` : ''}` },
+          section === 'chatters' && { key: 'swaps', label: (() => {
+            const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
+            const cnt = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id)).size
+            return `Schicht-Tausch${cnt > 0 ? ` (${cnt})` : ''}`
+          })() },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
           section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
           section === 'chatters' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter').length },
@@ -930,12 +969,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const now = new Date()
         const activeAnnCount = announcements.filter(a => !a.expires_at || new Date(a.expires_at) > now).length
         const openSwapsCount = swaps.filter(s => s.status === 'offen').length
-        const proposedSwapsCount = swaps.filter(s => s.status === 'vorgeschlagen').length
+        const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
+        const reactedSwapsCount = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id)).size
         const unreadOutMsgs = messages.filter(m => m.direction === 'out' && m.contact_type === 'chatter' && !m.read_at)
         // Out-Messages älter als 24h ungelesen = möglicherweise problematisch
         const oldUnreadOut = unreadOutMsgs.filter(m => new Date(m.created_at) < new Date(Date.now() - 24*60*60*1000))
         const attentionItems = []
-        if (proposedSwapsCount > 0) attentionItems.push({ icon: '↻', text: `${proposedSwapsCount} Schicht-Tausch wartet auf deine Bestätigung`, color: '#a78bfa', action: 'swaps' })
+        if (reactedSwapsCount > 0) attentionItems.push({ icon: '↻', text: `${reactedSwapsCount} Schicht${reactedSwapsCount === 1 ? '' : 'en'} mit Reaktionen — du musst zuweisen`, color: '#a78bfa', action: 'swaps' })
         if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
         if (oldUnreadOut.length > 0) attentionItems.push({ icon: '⏳', text: `${oldUnreadOut.length} Nachrichten >24h ungelesen`, color: '#ef4444', action: 'history' })
 
@@ -2279,29 +2319,20 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               {swaps.map(swap => {
                 const isAdminOffer = !swap.requester_name
                 const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                const reactions = swapReactions.filter(r => r.swap_id === swap.id)
+                const wantTake = reactions.filter(r => r.reaction === 'uebernehmen')
+                const maybe = reactions.filter(r => r.reaction === 'vielleicht')
+                const declined = reactions.filter(r => r.reaction === 'abgelehnt')
+
                 const borderColor =
                   swap.status === 'offen' ? 'rgba(245,158,11,0.3)'
-                  : swap.status === 'vorgeschlagen' ? 'rgba(167,139,250,0.45)'
                   : swap.status === 'angenommen' ? 'rgba(16,185,129,0.3)'
                   : 'var(--border)'
-                const statusBg =
-                  swap.status === 'offen' ? 'rgba(245,158,11,0.15)'
-                  : swap.status === 'vorgeschlagen' ? 'rgba(167,139,250,0.18)'
-                  : swap.status === 'angenommen' ? 'rgba(16,185,129,0.15)'
-                  : 'rgba(100,100,120,0.15)'
-                const statusColor =
-                  swap.status === 'offen' ? '#f59e0b'
-                  : swap.status === 'vorgeschlagen' ? '#a78bfa'
-                  : swap.status === 'angenommen' ? '#10b981'
-                  : 'var(--text-muted)'
-                const statusLabel =
-                  swap.status === 'offen' ? 'Offen'
-                  : swap.status === 'vorgeschlagen' ? `↻ ${swap.proposed_by} will übernehmen`
-                  : swap.status === 'angenommen' ? `✓ ${swap.accepted_by || swap.proposed_by || 'übernommen'}`
-                  : 'Abgelehnt'
+
                 return (
                   <div key={swap.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${borderColor}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: reactions.length > 0 || swap.status !== 'offen' ? 12 : 0 }}>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
                           {isAdminOffer ? (
@@ -2316,29 +2347,81 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700, background: statusBg, color: statusColor }}>
-                          {statusLabel}
+                        <span style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 700,
+                          background: swap.status === 'offen' ? 'rgba(245,158,11,0.15)' : swap.status === 'angenommen' ? 'rgba(16,185,129,0.15)' : 'rgba(100,100,120,0.15)',
+                          color: swap.status === 'offen' ? '#f59e0b' : swap.status === 'angenommen' ? '#10b981' : 'var(--text-muted)',
+                        }}>
+                          {swap.status === 'offen' ? 'Offen' : swap.status === 'angenommen' ? `✓ ${swap.accepted_by}` : 'Abgeschlossen'}
                         </span>
 
-                        {/* Status: vorgeschlagen → Admin bestätigt oder lehnt ab */}
-                        {swap.status === 'vorgeschlagen' && (
-                          <>
-                            <button onClick={() => updateSwap(swap.id, 'angenommen', swap.proposed_by)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Bestätigen</button>
-                            <button onClick={() => updateSwap(swap.id, 'abgelehnt')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
-                          </>
-                        )}
-
-                        {/* Status: offen + Admin-Anbot → Admin kann zurücknehmen */}
                         {swap.status === 'offen' && isAdminOffer && (
                           <button onClick={() => cancelAdminOffer(swap.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: 'rgba(239,68,68,0.7)', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Zurücknehmen</button>
                         )}
-
-                        {/* Status: offen + Chatter-Anfrage → Admin kann Direkt-Aktion (legacy) */}
                         {swap.status === 'offen' && !isAdminOffer && (
-                          <button onClick={() => updateSwap(swap.id, 'abgelehnt')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
+                          <button onClick={() => closeSwap(swap)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Abschließen</button>
+                        )}
+                        {swap.status === 'angenommen' && (
+                          <button onClick={() => resetSwapToOpen(swap.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↺ Wieder offen</button>
                         )}
                       </div>
                     </div>
+
+                    {/* Reaktionen */}
+                    {swap.status === 'offen' && reactions.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: 0.5, marginBottom: 2 }}>
+                          REAKTIONEN ({reactions.length})
+                        </div>
+
+                        {wantTake.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10, color: '#10b981', fontWeight: 700, marginBottom: 4 }}>✓ Wollen übernehmen ({wantTake.length})</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {wantTake.map(r => (
+                                <button key={r.id} onClick={() => assignSwapTo(swap, r.chatter_name)} style={{
+                                  fontSize: 11, padding: '4px 10px', borderRadius: 5,
+                                  background: 'rgba(16,185,129,0.12)', color: '#10b981',
+                                  border: '1px solid rgba(16,185,129,0.35)',
+                                  fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer',
+                                }} title="Klick zum Vergeben">{r.chatter_name} → vergeben</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {maybe.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginBottom: 4 }}>? Vielleicht ({maybe.length})</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {maybe.map(r => (
+                                <button key={r.id} onClick={() => assignSwapTo(swap, r.chatter_name)} style={{
+                                  fontSize: 11, padding: '4px 10px', borderRadius: 5,
+                                  background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
+                                  border: '1px solid rgba(245,158,11,0.3)',
+                                  fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer',
+                                }} title="Klick zum Vergeben">{r.chatter_name} → vergeben</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {declined.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, marginBottom: 4 }}>✕ Abgelehnt ({declined.length})</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {declined.map(r => (
+                                <span key={r.id} style={{
+                                  fontSize: 11, padding: '3px 9px', borderRadius: 5,
+                                  background: 'transparent', color: 'var(--text-muted)',
+                                  border: '1px solid var(--border)',
+                                }}>{r.chatter_name}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
