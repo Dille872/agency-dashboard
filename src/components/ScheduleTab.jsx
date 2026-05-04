@@ -101,6 +101,10 @@ export default function ScheduleTab({ session }) {
   const [editingShiftTime, setEditingShiftTime] = useState(null)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [showSendModal, setShowSendModal] = useState(false)
+  const [sendMode, setSendMode] = useState('all') // 'all' | 'selected'
+  const [selectedRecipients, setSelectedRecipients] = useState([])
+  const [isUpdate, setIsUpdate] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
   // Collapse pro Model — persistiert in Localstorage
@@ -594,11 +598,19 @@ export default function ScheduleTab({ session }) {
     }
   }
 
-  const sendPlanToAll = async () => {
+  // Generic: sendet an Liste von Chattern. updateMode=true → "AKTUALISIERTER" Header
+  const sendPlanTo = async (recipientNames, updateMode = false) => {
     setSending(true)
-    for (const chatter of chatters) {
-      if (!chatter.telegram_id) continue
-      const lines = [`📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`]
+    const targetChatters = chatters.filter(c =>
+      c.telegram_id &&
+      (recipientNames === null || recipientNames.includes(c.name))
+    )
+    let sentCount = 0
+    for (const chatter of targetChatters) {
+      const headerLine = updateMode
+        ? `🔄 AKTUALISIERTER Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`
+        : `📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`
+      const lines = [headerLine]
       for (const day of weekDays) {
         const dayIso = isoDate(day)
         const dayShifts = []
@@ -619,10 +631,41 @@ export default function ScheduleTab({ session }) {
           lines.push('')
         }
       }
-      if (lines.length > 1) await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
+      if (lines.length > 1) {
+        await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
+        sentCount++
+      }
     }
     setSending(false)
-    alert('✓ Dienstplan versendet!')
+    return sentCount
+  }
+
+  // Bestehender Wrapper für Kompatibilität (wird nicht mehr direkt gebraucht, aber falls von woanders aufgerufen)
+  const sendPlanToAll = async () => {
+    const count = await sendPlanTo(null, false)
+    alert(`✓ Dienstplan an ${count} Chatter versendet!`)
+  }
+
+  // Modal-Aktion: sendet basierend auf sendMode
+  const confirmSend = async () => {
+    let count
+    if (sendMode === 'all') {
+      count = await sendPlanTo(null, isUpdate)
+    } else {
+      if (selectedRecipients.length === 0) { alert('Bitte mindestens einen Chatter auswählen.'); return }
+      count = await sendPlanTo(selectedRecipients, isUpdate)
+    }
+    setShowSendModal(false)
+    setSelectedRecipients([])
+    setIsUpdate(false)
+    setSendMode('all')
+    alert(`✓ Dienstplan an ${count} ${isUpdate ? '(als Update) ' : ''}versendet!`)
+  }
+
+  const toggleRecipient = (name) => {
+    setSelectedRecipients(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+    )
   }
 
   const prevWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d) }
@@ -652,7 +695,7 @@ export default function ScheduleTab({ session }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={sendPlanToAll} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => setShowSendModal(true)} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {sending ? 'Sende...' : '✈ Plan versenden'}
           </button>
           <button onClick={autoGeneratePlan} disabled={autoPlanning} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -1335,6 +1378,114 @@ export default function ScheduleTab({ session }) {
           ↻ Als Vorlage für nächste Woche
         </button>
       </div>
+
+      {/* Send-Modal: Auswahl An alle / An ausgewählte + Update-Toggle */}
+      {showSendModal && (
+        <div onClick={() => !sending && setShowSendModal(false)} style={{
+          position: 'fixed', inset: 0, zIndex: 10000,
+          background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
+            padding: 20, maxWidth: 480, width: '100%',
+            maxHeight: '90vh', overflowY: 'auto',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Dienstplan versenden</div>
+              <button onClick={() => !sending && setShowSendModal(false)} style={{
+                background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', padding: 0,
+              }}>✕</button>
+            </div>
+
+            {/* Modus-Auswahl */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+              <button onClick={() => setSendMode('all')} style={{
+                flex: 1, padding: '8px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                background: sendMode === 'all' ? 'rgba(6,182,212,0.18)' : 'transparent',
+                color: sendMode === 'all' ? '#06b6d4' : 'var(--text-muted)',
+                border: `1px solid ${sendMode === 'all' ? '#06b6d4' : 'var(--border)'}`,
+              }}>An alle</button>
+              <button onClick={() => setSendMode('selected')} style={{
+                flex: 1, padding: '8px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                background: sendMode === 'selected' ? 'rgba(124,58,237,0.18)' : 'transparent',
+                color: sendMode === 'selected' ? '#a78bfa' : 'var(--text-muted)',
+                border: `1px solid ${sendMode === 'selected' ? '#7c3aed' : 'var(--border)'}`,
+              }}>An ausgewählte</button>
+            </div>
+
+            {/* Empfänger-Auswahl */}
+            {sendMode === 'selected' && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: 0.5 }}>
+                    EMPFÄNGER {selectedRecipients.length > 0 && <span style={{ color: '#a78bfa' }}>· {selectedRecipients.length} ausgewählt</span>}
+                  </div>
+                  {selectedRecipients.length > 0 && (
+                    <button onClick={() => setSelectedRecipients([])} style={{
+                      fontSize: 10, padding: '3px 8px', borderRadius: 5,
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
+                    }}>Zurücksetzen</button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {chatters.filter(c => c.telegram_id).map(c => {
+                    const active = selectedRecipients.includes(c.name)
+                    return (
+                      <button key={c.name} onClick={() => toggleRecipient(c.name)} style={{
+                        padding: '5px 11px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+                        fontWeight: 600, fontSize: 11,
+                        background: active ? 'rgba(124,58,237,0.18)' : 'transparent',
+                        color: active ? '#a78bfa' : 'var(--text-muted)',
+                        border: `1px solid ${active ? '#7c3aed' : 'var(--border)'}`,
+                      }}>{active ? '✓ ' : ''}{c.name}</button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Update-Toggle */}
+            <div style={{ marginBottom: 16, padding: 10, background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={isUpdate}
+                  onChange={e => setIsUpdate(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>🔄 Als Update markieren</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Nachricht beginnt mit "AKTUALISIERTER Dienstplan ..."</div>
+                </div>
+              </label>
+            </div>
+
+            {/* Aktionen */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => !sending && setShowSendModal(false)} disabled={sending} style={{
+                flex: 1, padding: '10px', borderRadius: 7,
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', fontSize: 12, fontWeight: 700,
+                cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+              }}>Abbrechen</button>
+              <button onClick={confirmSend} disabled={sending || (sendMode === 'selected' && selectedRecipients.length === 0)} style={{
+                flex: 2, padding: '10px', borderRadius: 7,
+                background: sending ? 'var(--border)' : '#06b6d4',
+                color: '#fff', border: 'none', fontSize: 13, fontWeight: 700,
+                cursor: (sending || (sendMode === 'selected' && selectedRecipients.length === 0)) ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}>
+                {sending ? 'Sende...' : `✈ ${sendMode === 'all'
+                  ? `An alle senden (${chatters.filter(c => c.telegram_id).length})`
+                  : `An ${selectedRecipients.length} senden`}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
