@@ -3,7 +3,6 @@ import { supabase } from '../supabase'
 import { getTheme, setTheme } from '../theme'
 import { APP_VERSION } from '../version'
 import { sendTelegramMessage } from '../telegram'
-import SurveyModal from './SurveyModal'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -306,7 +305,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const { data: snaps } = await supabase.from('model_snapshots').select('rows, business_date').gte('business_date', monthStart)
     const { data: snapsAll } = await supabase.from('model_snapshots').select('rows, business_date').order('business_date')
     const csvNames = myAliases.length > 0 ? myAliases.map(a => a.csv_name) : [displayName]
-    const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    // FIX v2.8.1: Whitespace + Punkte erhalten, nur Emojis/Sonderzeichen strippen
+    // Vorher wurden "Emma Victoria" und "EmmaVictoria" beide zu "emmavictoria" → identisch
+    const normalize = (s) => (s || '').toLowerCase().trim().replace(/[^\w\s.-]/g, '').replace(/\s+/g, ' ').trim()
     // If no aliases, we do a loose match on displayName in all rows
     const noAliases = myAliases.length === 0
     const revenueMap = {}
@@ -1452,7 +1453,6 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         )}
 
       </main>
-      {!isPreview && displayName && <SurveyModal displayName={displayName} role="model" />}
     </div>
   )
 }
