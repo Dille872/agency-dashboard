@@ -540,6 +540,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   // v2.8.8: Custom Verlauf Edit nur für Admins (Chris + Rey)
   const isAdminUser = displayName === 'Chris' || displayName === 'Rey'
+  const inputS = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }
 
   const saveEditedRequest = async (updates) => {
     if (!editingRequest) return
