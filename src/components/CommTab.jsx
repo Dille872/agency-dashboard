@@ -178,6 +178,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [isMobileChat, setIsMobileChat] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
   const [chatTypeFilter, setChatTypeFilter] = useState('all') // 'all' | 'chatter' | 'model'
   const [expandedMonths, setExpandedMonths] = useState({}) // {'2026-04': true} für Custom Verlauf Akkordeon
+  const [editingRequest, setEditingRequest] = useState(null) // {...request} - öffnet Edit-Modal
   const [unreadCount, setUnreadCount] = useState(0)
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
   const [replyText, setReplyText] = useState('')
@@ -535,6 +536,30 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     setReplyingTo(null)
     setSendingReply(false)
     loadMessages()
+  }
+
+  // v2.8.8: Custom Verlauf Edit nur für Admins (Chris + Rey)
+  const isAdminUser = displayName === 'Chris' || displayName === 'Rey'
+
+  const saveEditedRequest = async (updates) => {
+    if (!editingRequest) return
+    if (!isAdminUser) { alert('Nur Admins dürfen editieren.'); return }
+    const payload = {
+      ...updates,
+      edited_by: displayName,
+      edited_at: new Date().toISOString(),
+    }
+    // deposit_paid_at / remainder_paid_at automatisch setzen wenn Status auf "bezahlt" toggelt
+    if (updates.deposit_paid === true && !editingRequest.deposit_paid) {
+      payload.deposit_paid_at = new Date().toISOString()
+    }
+    if (updates.remainder_paid === true && !editingRequest.remainder_paid) {
+      payload.remainder_paid_at = new Date().toISOString()
+    }
+    const { error } = await supabase.from('content_requests').update(payload).eq('id', editingRequest.id)
+    if (error) { alert('Fehler: ' + error.message); return }
+    setEditingRequest(null)
+    loadContentRequests()
   }
 
   const markAllRead = async () => {
@@ -2573,26 +2598,50 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           <div style={{ overflowX: 'auto' }}>
             <table>
               <thead>
-                <tr>{['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Wunsch', 'Dringlichkeit', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+                <tr>
+                  {['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Wunsch', 'Dringlichkeit', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}
+                  {isAdminUser && <th style={thS}></th>}
+                </tr>
               </thead>
               <tbody>
                 {items.map(req => {
                   const remainder = (req.price || 0) - (req.deposit || 0)
                   const deadlineLabel = req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : req.deadline === 'week' ? '🗓 Diese Woche' : '—'
                   const deadlineColor = req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981'
+                  const editedInfo = req.edited_by && req.edited_at
+                    ? `bearbeitet ${new Date(req.edited_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${req.edited_by}`
+                    : null
                   return (
-                    <tr key={req.id}>
-                      <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
-                      <td style={{ ...tdS, fontWeight: 600, color: '#06b6d4' }}>{req.chatter_name}</td>
-                      <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
-                      <td style={tdS}>{req.content_type || '—'}</td>
-                      <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
-                      <td style={{ ...tdS, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.request_text}>{req.request_text || '—'}</td>
-                      <td style={{ ...tdS, color: deadlineColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{deadlineLabel}</td>
-                      <td style={{ ...tdS, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{req.price ? `$${req.price}` : '—'}</td>
-                      <td style={{ ...tdS, color: req.deposit_paid ? '#10b981' : '#f59e0b', fontFamily: 'monospace' }}>{req.deposit ? `$${req.deposit}${req.deposit_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
-                      <td style={{ ...tdS, color: req.remainder_paid ? '#10b981' : remainder > 0 ? '#ef4444' : 'var(--text-muted)', fontFamily: 'monospace' }}>{req.deposit && remainder > 0 ? `$${remainder}${req.remainder_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
-                    </tr>
+                    <React.Fragment key={req.id}>
+                      <tr>
+                        <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
+                        <td style={{ ...tdS, fontWeight: 600, color: '#06b6d4' }}>{req.chatter_name}</td>
+                        <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
+                        <td style={tdS}>{req.content_type || '—'}</td>
+                        <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
+                        <td style={{ ...tdS, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.request_text}>{req.request_text || '—'}</td>
+                        <td style={{ ...tdS, color: deadlineColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{deadlineLabel}</td>
+                        <td style={{ ...tdS, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{req.price ? `$${req.price}` : '—'}</td>
+                        <td style={{ ...tdS, color: req.deposit_paid ? '#10b981' : '#f59e0b', fontFamily: 'monospace' }}>{req.deposit ? `$${req.deposit}${req.deposit_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
+                        <td style={{ ...tdS, color: req.remainder_paid ? '#10b981' : remainder > 0 ? '#ef4444' : 'var(--text-muted)', fontFamily: 'monospace' }}>{req.deposit && remainder > 0 ? `$${remainder}${req.remainder_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
+                        {isAdminUser && (
+                          <td style={{ ...tdS, padding: '4px 8px' }}>
+                            <button onClick={() => setEditingRequest(req)} title="Bearbeiten" style={{
+                              background: 'transparent', border: '1px solid var(--border)',
+                              color: 'var(--text-muted)', borderRadius: 5,
+                              padding: '3px 8px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                            }}>✏</button>
+                          </td>
+                        )}
+                      </tr>
+                      {editedInfo && (
+                        <tr>
+                          <td colSpan={isAdminUser ? 11 : 10} style={{ padding: '0 10px 6px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-muted)', fontSize: 9, fontStyle: 'italic' }}>
+                            ↳ {editedInfo}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   )
                 })}
               </tbody>
@@ -2683,6 +2732,135 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               </>
             )}
           </Card>
+        )
+      })()}
+
+      {/* EDIT-MODAL für Custom Content (nur Admins) */}
+      {editingRequest && isAdminUser && (() => {
+        const r = editingRequest
+        return (
+          <div onClick={() => setEditingRequest(null)} style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
+              padding: 20, maxWidth: 560, width: '100%', maxHeight: '90vh', overflowY: 'auto',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Custom Content bearbeiten</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.model_name} · {r.chatter_name} · {new Date(r.created_at).toLocaleDateString('de-DE')}</div>
+                </div>
+                <button onClick={() => setEditingRequest(null)} style={{
+                  background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 22, cursor: 'pointer', padding: 0,
+                }}>✕</button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                {/* Preis */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Preis ($)</span>
+                  <input type="number" step="0.01" defaultValue={r.price ?? ''} id="edit-price" style={inputS} />
+                </label>
+                {/* Anzahlung Betrag */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Anzahlung ($)</span>
+                  <input type="number" step="0.01" defaultValue={r.deposit ?? ''} id="edit-deposit" style={inputS} />
+                </label>
+                {/* Typ */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Typ</span>
+                  <select defaultValue={r.content_type || ''} id="edit-type" style={inputS}>
+                    <option value="">—</option>
+                    <option value="audio">audio</option>
+                    <option value="video">video</option>
+                    <option value="foto">foto</option>
+                    <option value="other">other</option>
+                  </select>
+                </label>
+                {/* Dringlichkeit */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Dringlichkeit</span>
+                  <select defaultValue={r.deadline || ''} id="edit-deadline" style={inputS}>
+                    <option value="">—</option>
+                    <option value="asap">⚡ ASAP</option>
+                    <option value="hours">⏰ Heute</option>
+                    <option value="days">📅 1-2 Tage</option>
+                    <option value="week">🗓 Diese Woche</option>
+                  </select>
+                </label>
+                {/* Kunde */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Kunden-ID</span>
+                  <input type="text" defaultValue={r.customer_id || ''} id="edit-customer" style={inputS} />
+                </label>
+                {/* Status */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Status</span>
+                  <select defaultValue={r.status || ''} id="edit-status" style={inputS}>
+                    <option value="neu">neu</option>
+                    <option value="bestätigt">bestätigt</option>
+                    <option value="erledigt">erledigt</option>
+                    <option value="abgelehnt">abgelehnt</option>
+                  </select>
+                </label>
+              </div>
+
+              {/* Wunsch */}
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Wunsch</span>
+                <textarea defaultValue={r.request_text || ''} id="edit-request-text" rows={3} style={{ ...inputS, resize: 'vertical' }} />
+              </label>
+
+              {/* Zahl-Status Toggles */}
+              <div style={{ display: 'flex', gap: 14, marginBottom: 18, padding: 10, background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" defaultChecked={!!r.deposit_paid} id="edit-deposit-paid" style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Anzahlung bezahlt</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" defaultChecked={!!r.remainder_paid} id="edit-remainder-paid" style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Rest bezahlt</span>
+                </label>
+              </div>
+
+              {r.edited_by && r.edited_at && (
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: 12 }}>
+                  Zuletzt bearbeitet {new Date(r.edited_at).toLocaleString('de-DE')} · {r.edited_by}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setEditingRequest(null)} style={{
+                  flex: 1, padding: '10px', borderRadius: 7,
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--text-muted)', fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>Abbrechen</button>
+                <button onClick={() => {
+                  const updates = {
+                    price: parseFloat(document.getElementById('edit-price').value) || null,
+                    deposit: parseFloat(document.getElementById('edit-deposit').value) || null,
+                    content_type: document.getElementById('edit-type').value || null,
+                    deadline: document.getElementById('edit-deadline').value || null,
+                    customer_id: document.getElementById('edit-customer').value || null,
+                    status: document.getElementById('edit-status').value || null,
+                    request_text: document.getElementById('edit-request-text').value || null,
+                    deposit_paid: document.getElementById('edit-deposit-paid').checked,
+                    remainder_paid: document.getElementById('edit-remainder-paid').checked,
+                  }
+                  saveEditedRequest(updates)
+                }} style={{
+                  flex: 2, padding: '10px', borderRadius: 7,
+                  background: '#7c3aed', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>💾 Speichern</button>
+              </div>
+            </div>
+          </div>
         )
       })()}
 
