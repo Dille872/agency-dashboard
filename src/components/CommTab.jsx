@@ -173,6 +173,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [chatSendingTo, setChatSendingTo] = useState(false)
   const [chatSearch, setChatSearch] = useState('')
   const chatScrollRef = useRef(null)
+  const [showNewChatPicker, setShowNewChatPicker] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
   const [replyText, setReplyText] = useState('')
@@ -570,7 +571,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
     setChatSendingTo(true)
     try {
-      await sendTelegramMessage(contact.telegram_id, text)
+      // Telegram-Versand mit Status-Check
+      const tgResult = await sendTelegramMessage(contact.telegram_id, text)
+      const telegramOk = tgResult?.ok === true
+      const errorReason = telegramOk ? null : (tgResult?.description || 'Unbekannter Fehler')
+      // DB-Eintrag mit korrektem Status
       await supabase.from('messages').insert({
         model_name: activeThreadName,
         model_telegram_id: contact.telegram_id,
@@ -578,7 +583,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         contact_type: contactType,
         message_type: null, // null = reine Konversation
         text,
-        status: 'sent',
+        status: telegramOk ? 'sent' : 'failed',
         sent_by: userName,
       })
       const lastContactedTable = contactType === 'model' ? 'models_contact' : 'chatters_contact'
@@ -587,8 +592,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         .eq('id', contact.id)
       setChatInputText('')
       await loadMessages()
+      // User klar informieren wenn's NICHT angekommen ist
+      if (!telegramOk) {
+        const friendly = errorReason.toLowerCase().includes('chat not found')
+          ? `${activeThreadName} hat den Bot vermutlich blockiert oder gelöscht. Bitte um /start an @thirteen87agency_bot bitten.`
+          : errorReason.toLowerCase().includes('blocked')
+          ? `${activeThreadName} hat den Bot blockiert.`
+          : `Telegram-Fehler: ${errorReason}`
+        alert(`⚠ Nachricht NICHT angekommen!\n\n${friendly}`)
+      }
     } catch (e) {
-      alert('Fehler: ' + e.message)
+      alert('Netzwerk-Fehler: ' + e.message)
     }
     setChatSendingTo(false)
   }
@@ -969,7 +983,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             return threads.size
           })() },
           section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
-          section === 'models' && { key: 'history', label: 'Verlauf' },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: (() => {
             const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
             const interested = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id))
@@ -989,7 +1002,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             return threads.size
           })() },
           section === 'chatters' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter' && m.message_type !== null && m.message_type !== undefined).length },
-          section === 'chatters' && { key: 'history', label: 'Verlauf' },
         ].filter(Boolean).map(s => (
           <button key={s.key} onClick={() => {
             setActiveSection(s.key)
@@ -1399,15 +1411,21 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
             {/* Linke Spalte: Thread-Liste */}
             <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {/* Such-Header */}
-              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+              {/* Such-Header + Neuer-Chat */}
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6 }}>
                 <input
                   type="text"
                   value={chatSearch}
                   onChange={e => setChatSearch(e.target.value)}
                   placeholder="Suchen…"
-                  style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '7px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  style={{ flex: 1, boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '7px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                 />
+                <button onClick={() => setShowNewChatPicker(true)} title="Neuer Chat" style={{
+                  padding: '7px 11px', borderRadius: 7,
+                  background: 'rgba(124,58,237,0.15)', color: '#a78bfa',
+                  border: '1px solid rgba(124,58,237,0.3)',
+                  fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+                }}>＋</button>
               </div>
 
               {/* Thread-Liste */}
@@ -1517,10 +1535,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             {msg.text}
                           </div>
                           <div style={{
-                            fontSize: 9, color: 'var(--text-muted)',
+                            fontSize: 9, color: msg.status === 'failed' ? '#ef4444' : 'var(--text-muted)',
                             textAlign: isOut ? 'right' : 'left',
                             marginTop: 2,
                           }}>
+                            {msg.status === 'failed' && '❌ NICHT angekommen · '}
                             {fullDateTime(msg.created_at)}
                             {isOut && msg.sent_by ? ` · ${msg.sent_by}` : ''}
                           </div>
@@ -1565,6 +1584,54 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 </div>
               </div>
             )}
+          </div>
+        )
+      })()}
+
+      {/* Neuer-Chat Picker Modal */}
+      {showNewChatPicker && (activeSection === 'chat-models' || activeSection === 'chat-chatters') && (() => {
+        const contactType = activeSection === 'chat-models' ? 'model' : 'chatter'
+        const allContacts = contactType === 'model' ? models : chatters
+        const eligible = allContacts.filter(c => c.telegram_id)
+        return (
+          <div onClick={() => setShowNewChatPicker(false)} style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
+              padding: 18, maxWidth: 420, width: '100%', maxHeight: '80vh', overflowY: 'auto',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Neuer Chat mit {contactType === 'model' ? 'Model' : 'Chatter'}
+                </div>
+                <button onClick={() => setShowNewChatPicker(false)} style={{
+                  background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', padding: 0,
+                }}>✕</button>
+              </div>
+              {eligible.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>
+                  Keine {contactType === 'model' ? 'Models' : 'Chatter'} mit Telegram-ID hinterlegt.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {eligible.map(c => (
+                    <button key={c.id} onClick={() => {
+                      openChatThread(c.name, contactType)
+                      setShowNewChatPicker(false)
+                    }} style={{
+                      padding: '10px 12px', borderRadius: 7,
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-primary)', fontSize: 12, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                    }}>{c.name}</button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )
       })()}
