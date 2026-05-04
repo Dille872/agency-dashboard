@@ -175,13 +175,14 @@ export default function App() {
       setUnreadCustomContent(modelCcCount || 0)
     }
 
-    // Open todos: zähle nur die, wo der eingeloggte User NICHT in read_by[] steht
+    // Open todos: Badge zeigt nur Aufgaben wo NIEMAND von uns Admins gelesen hat
     const { data: openTodosData } = await supabase
       .from('todos').select('read_by')
       .eq('completed', false)
     const unreadTodoCount = (openTodosData || []).filter(t => {
       const readBy = Array.isArray(t.read_by) ? t.read_by : []
-      return !readBy.includes(userDisplayName)
+      // ungelesen, wenn weder "Chris" noch "Rey" drin steht
+      return !readBy.includes('Chris') && !readBy.includes('Rey')
     }).length
     setOpenTodos(unreadTodoCount)
 

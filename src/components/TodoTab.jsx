@@ -115,13 +115,12 @@ export default function TodoTab({ session, userDisplayName }) {
   }
 
   const markAllTodosRead = async () => {
-    const unreadTodos = todos.filter(t => !t.completed && !(Array.isArray(t.read_by) && t.read_by.includes(userDisplayName)))
-    if (unreadTodos.length === 0) return
-    for (const todo of unreadTodos) {
+    const openTodos = todos.filter(t => !t.completed)
+    if (openTodos.length === 0) return
+    for (const todo of openTodos) {
       const readBy = Array.isArray(todo.read_by) ? todo.read_by : []
-      if (!readBy.includes(userDisplayName)) {
-        await supabase.from('todos').update({ read_by: [...readBy, userDisplayName] }).eq('id', todo.id)
-      }
+      const updated = Array.from(new Set([...readBy, 'Chris', 'Rey']))
+      await supabase.from('todos').update({ read_by: updated }).eq('id', todo.id)
     }
     loadTodos()
   }
@@ -179,11 +178,11 @@ export default function TodoTab({ session, userDisplayName }) {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {unreadOpenCount > 0 && (
+          {todos.filter(t => !t.completed).length > 0 && (
             <button onClick={markAllTodosRead} style={{
               padding: '6px 12px', borderRadius: 7, background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
               border: '1px solid rgba(245,158,11,0.3)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            }}>👁 Alle gesehen ({unreadOpenCount})</button>
+            }}>✓ Alle als gelesen markieren</button>
           )}
           <button onClick={() => setShowAdd(!showAdd)} style={{
             padding: '6px 14px', borderRadius: 7, background: 'rgba(124,58,237,0.15)', color: '#a78bfa',
