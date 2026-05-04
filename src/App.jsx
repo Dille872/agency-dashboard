@@ -35,6 +35,7 @@ export default function App() {
   const [openSwaps, setOpenSwaps] = useState(0)
   const [unreadCustomContent, setUnreadCustomContent] = useState(0)
   const [openTodos, setOpenTodos] = useState(0)
+  const [unreadChat, setUnreadChat] = useState(0)
   const [userRole, setUserRole] = useState(null)
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
@@ -152,18 +153,30 @@ export default function App() {
       .from('content_requests').select('*', { count: 'exact', head: true })
       .eq('status', 'neu')
 
-    // Unread model messages
-    const { count: modelMsgCount } = await supabase
+    // Unread MODEL TICKETS (message_type set) — gehört zum Creator-Badge
+    const { count: modelTicketCount } = await supabase
       .from('messages').select('*', { count: 'exact', head: true })
       .eq('direction', 'in').eq('read', false).eq('contact_type', 'model')
+      .not('message_type', 'is', null)
 
-    // Unread chatter messages
-    const { count: chatterMsgCount } = await supabase
+    // Unread CHATTER TICKETS (message_type set) — gehört zum Crew-Badge
+    const { count: chatterTicketCount } = await supabase
       .from('messages').select('*', { count: 'exact', head: true })
       .eq('direction', 'in').eq('read', false).eq('contact_type', 'chatter')
+      .not('message_type', 'is', null)
 
-    setUnreadModelChanges((modelCount || 0) + (ccCount || 0) + (reqCount || 0) + (modelMsgCount || 0))
-    setOpenSwaps(prev => prev) // keep existing swap count, add chatter msgs to crew badge below
+    // Unread CHAT (message_type IS NULL, beide contact_types ohne unknown) — gehört zum Chat-Badge
+    // Wir zählen Threads (unique sender), nicht einzelne Nachrichten
+    const { data: chatUnreadRows } = await supabase
+      .from('messages').select('model_name, contact_type')
+      .eq('direction', 'in').eq('read', false)
+      .in('contact_type', ['model', 'chatter'])
+      .is('message_type', null)
+    const uniqueThreads = new Set((chatUnreadRows || []).map(r => `${r.contact_type}:${r.model_name}`))
+    setUnreadChat(uniqueThreads.size)
+
+    setUnreadModelChanges((modelCount || 0) + (ccCount || 0) + (reqCount || 0) + (modelTicketCount || 0))
+    setOpenSwaps(prev => prev) // keep existing swap count, add chatter tickets to crew badge below
 
     // Unread custom content for model portal
     if (userRole === 'model' && userDisplayName) {
@@ -181,17 +194,16 @@ export default function App() {
       .eq('completed', false)
     const unreadTodoCount = (openTodosData || []).filter(t => {
       const readBy = Array.isArray(t.read_by) ? t.read_by : []
-      // ungelesen, wenn weder "Chris" noch "Rey" drin steht
       return !readBy.includes('Chris') && !readBy.includes('Rey')
     }).length
     setOpenTodos(unreadTodoCount)
 
-    // Open swaps: nur ungelesene (seen_by_admin=false) zählen für Badge
+    // Open swaps: nur ungelesene (seen_by_admin=false) zählen + Chatter-Tickets
     const { count: swapCount } = await supabase
       .from('shift_swaps').select('*', { count: 'exact', head: true })
       .eq('status', 'offen')
       .eq('seen_by_admin', false)
-    setOpenSwaps((swapCount || 0) + (chatterMsgCount || 0))
+    setOpenSwaps((swapCount || 0) + (chatterTicketCount || 0))
   }
 
   const loadAllData = async () => {
@@ -419,6 +431,7 @@ export default function App() {
               { key: 'todos', label: 'ToDos', badge: openTodos },
               { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
               { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
+              { key: 'chat', label: '💬 Chat', badge: unreadChat },
               { key: 'divider2' },
               { key: 'performance', label: 'Performance' },
               { key: 'schedule', label: 'Dienstplan' },
@@ -550,6 +563,8 @@ export default function App() {
           <CommTab key="models-comm" session={session} section="models" displayName={userDisplayName} />
         ) : activeTab === 'chatters-comm' ? (
           <CommTab key="chatters-comm" session={session} section="chatters" displayName={userDisplayName} />
+        ) : activeTab === 'chat' ? (
+          <CommTab key="chat" session={session} section="chat" displayName={userDisplayName} />
         ) : activeTab === 'performance' ? (
           <PerformanceTab modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'todos' ? (

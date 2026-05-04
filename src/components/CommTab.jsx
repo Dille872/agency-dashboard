@@ -169,16 +169,20 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [messages, setMessages] = useState([])
   // Chat-Thread State (v2.8.3)
   const [activeThreadName, setActiveThreadName] = useState(null) // ausgewählter Person-Name
+  const [activeThreadType, setActiveThreadType] = useState(null) // 'model' | 'chatter' (für unified chat)
   const [chatInputText, setChatInputText] = useState('')
   const [chatSendingTo, setChatSendingTo] = useState(false)
   const [chatSearch, setChatSearch] = useState('')
   const chatScrollRef = useRef(null)
   const [showNewChatPicker, setShowNewChatPicker] = useState(false)
+  const [isMobileChat, setIsMobileChat] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
+  const [chatTypeFilter, setChatTypeFilter] = useState('all') // 'all' | 'chatter' | 'model'
   const [unreadCount, setUnreadCount] = useState(0)
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
   const [replyText, setReplyText] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
   const [activeSection, setActiveSection] = useState(() => {
+    if (section === 'chat') return 'chat-unified'
     if (section === 'models') return 'models'
     if (section === 'chatters') return 'chatters'
     return 'nachrichten'
@@ -239,6 +243,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
     }
   }, [activeThreadName, messages])
+
+  // Mobile-Detection für Chat-Layout
+  useEffect(() => {
+    const onResize = () => setIsMobileChat(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     const names = selectedChatters.size === 0 ? 'alle' : [...selectedChatters].join(', ')
@@ -544,6 +555,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   // Thread-spezifisch: alle eingehenden Nachrichten dieser Person als gelesen markieren
   const openChatThread = async (personName, contactType) => {
     setActiveThreadName(personName)
+    setActiveThreadType(contactType)
     setChatInputText('')
     // Alle in-messages dieser Person die ungelesen sind: read=true
     const unreadIds = messages
@@ -969,7 +981,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Tabs */}
+      {/* Tabs (nur in models/chatters Sections, NICHT im zentralen Chat) */}
+      {section !== 'chat' && (
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[
           (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => !a.read).length > 0) ? 1 : 0 },
@@ -977,11 +990,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
-          section === 'models' && { key: 'chat-models', label: 'Chat', badge: (() => {
-            const chatMsgs = messages.filter(m => m.contact_type === 'model' && (m.message_type === null || m.message_type === undefined))
-            const threads = new Set(chatMsgs.filter(m => m.direction === 'in' && !m.read).map(m => m.model_name))
-            return threads.size
-          })() },
           section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: (() => {
             const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
@@ -996,11 +1004,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           })() },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
           section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
-          section === 'chatters' && { key: 'chat-chatters', label: 'Chat', badge: (() => {
-            const chatMsgs = messages.filter(m => m.contact_type === 'chatter' && (m.message_type === null || m.message_type === undefined))
-            const threads = new Set(chatMsgs.filter(m => m.direction === 'in' && !m.read).map(m => m.model_name))
-            return threads.size
-          })() },
           section === 'chatters' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter' && m.message_type !== null && m.message_type !== undefined).length },
         ].filter(Boolean).map(s => (
           <button key={s.key} onClick={() => {
@@ -1030,6 +1033,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           </button>
         ))}
       </div>
+      )}
 
       {/* MODELS */}
       {activeSection === 'models' && (
@@ -1360,34 +1364,45 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       })()}
 
       {/* CHAT (WhatsApp-Style) — nur reine Konversation, kein message_type */}
-      {(activeSection === 'chat-models' || activeSection === 'chat-chatters') && (() => {
-        const contactType = activeSection === 'chat-models' ? 'model' : 'chatter'
-        const contactsList = contactType === 'model' ? models : chatters
-        // Alle Chat-Nachrichten dieser Section
+      {(activeSection === 'chat-models' || activeSection === 'chat-chatters' || activeSection === 'chat-unified') && (() => {
+        const isUnified = activeSection === 'chat-unified'
+        const contactType = activeSection === 'chat-models' ? 'model'
+                          : activeSection === 'chat-chatters' ? 'chatter'
+                          : (activeThreadType || 'chatter') // unified: nutze type vom aktiven Thread (für Senden)
+        // Welche contact_types in der Thread-Liste anzeigen?
+        const allowedContactTypes = isUnified
+          ? (chatTypeFilter === 'all' ? ['model', 'chatter'] : [chatTypeFilter])
+          : [contactType]
+        // Alle Chat-Nachrichten passend
         const chatMsgs = messages.filter(m =>
-          m.contact_type === contactType && isChat(m) && m.contact_type !== 'unknown'
+          allowedContactTypes.includes(m.contact_type) && isChat(m) && m.contact_type !== 'unknown'
         )
-        // Threads gruppieren nach model_name
+        // Threads gruppieren nach `${contact_type}:${model_name}` für unified, sonst nur model_name
         const threadsMap = {}
         for (const msg of chatMsgs) {
           const name = msg.model_name
           if (!name) continue
-          if (!threadsMap[name]) threadsMap[name] = []
-          threadsMap[name].push(msg)
+          const key = isUnified ? `${msg.contact_type}:${name}` : name
+          if (!threadsMap[key]) threadsMap[key] = { msgs: [], name, contactType: msg.contact_type }
+          threadsMap[key].msgs.push(msg)
         }
         // Liste sortieren nach jüngster Nachricht
         const threadList = Object.entries(threadsMap)
-          .map(([name, msgs]) => {
-            const sorted = msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+          .map(([key, val]) => {
+            const sorted = val.msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
             const last = sorted[sorted.length - 1]
             const unreadCount = sorted.filter(m => m.direction === 'in' && !m.read).length
-            return { name, last, sorted, unreadCount }
+            return { key, name: val.name, contactType: val.contactType, last, sorted, unreadCount }
           })
           .filter(t => !chatSearch || t.name.toLowerCase().includes(chatSearch.toLowerCase()))
           .sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at))
 
-        const activeThread = activeThreadName
-          ? threadsMap[activeThreadName]?.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) || []
+        // Aktiver Thread: in unified per name+type matchen, sonst per name
+        const activeKey = activeThreadName
+          ? (isUnified ? `${activeThreadType}:${activeThreadName}` : activeThreadName)
+          : null
+        const activeThread = activeKey && threadsMap[activeKey]
+          ? threadsMap[activeKey].msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
           : []
 
         const formatRelative = (ts) => {
@@ -1407,25 +1422,50 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         })
 
         return (
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', display: 'grid', gridTemplateColumns: '260px 1fr', minHeight: 540, maxHeight: 720 }}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
+            display: 'grid',
+            gridTemplateColumns: isMobileChat ? '1fr' : '260px 1fr',
+            minHeight: isMobileChat ? '70vh' : 540,
+            maxHeight: isMobileChat ? '85vh' : 720,
+          }}>
 
-            {/* Linke Spalte: Thread-Liste */}
-            <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {/* Linke Spalte: Thread-Liste (auf Mobile nur wenn KEIN Thread aktiv) */}
+            {(!isMobileChat || !activeThreadName) && (
+            <div style={{ borderRight: isMobileChat ? 'none' : '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               {/* Such-Header + Neuer-Chat */}
-              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6 }}>
-                <input
-                  type="text"
-                  value={chatSearch}
-                  onChange={e => setChatSearch(e.target.value)}
-                  placeholder="Suchen…"
-                  style={{ flex: 1, boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '7px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                />
-                <button onClick={() => setShowNewChatPicker(true)} title="Neuer Chat" style={{
-                  padding: '7px 11px', borderRadius: 7,
-                  background: 'rgba(124,58,237,0.15)', color: '#a78bfa',
-                  border: '1px solid rgba(124,58,237,0.3)',
-                  fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-                }}>＋</button>
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    value={chatSearch}
+                    onChange={e => setChatSearch(e.target.value)}
+                    placeholder="Suchen…"
+                    style={{ flex: 1, boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '7px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  />
+                  <button onClick={() => setShowNewChatPicker(true)} title="Neuer Chat" style={{
+                    padding: '7px 11px', borderRadius: 7,
+                    background: 'rgba(124,58,237,0.15)', color: '#a78bfa',
+                    border: '1px solid rgba(124,58,237,0.3)',
+                    fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+                  }}>＋</button>
+                </div>
+                {isUnified && (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[
+                      { key: 'all', label: 'Alle' },
+                      { key: 'chatter', label: 'Chatters' },
+                      { key: 'model', label: 'Models' },
+                    ].map(opt => (
+                      <button key={opt.key} onClick={() => setChatTypeFilter(opt.key)} style={{
+                        flex: 1, padding: '4px 6px', borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                        background: chatTypeFilter === opt.key ? 'rgba(124,58,237,0.18)' : 'transparent',
+                        color: chatTypeFilter === opt.key ? '#a78bfa' : 'var(--text-muted)',
+                        border: `1px solid ${chatTypeFilter === opt.key ? '#7c3aed' : 'var(--border)'}`,
+                      }}>{opt.label}</button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Thread-Liste */}
@@ -1436,11 +1476,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   </div>
                 )}
                 {threadList.map(thread => {
-                  const isActive = activeThreadName === thread.name
+                  const isActive = activeThreadName === thread.name && (!isUnified || activeThreadType === thread.contactType)
                   return (
                     <div
-                      key={thread.name}
-                      onClick={() => openChatThread(thread.name, contactType)}
+                      key={thread.key}
+                      onClick={() => openChatThread(thread.name, thread.contactType)}
                       style={{
                         padding: '10px 12px',
                         borderBottom: '1px solid var(--border)',
@@ -1450,7 +1490,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                        <span style={{ fontSize: 12, fontWeight: thread.unreadCount > 0 ? 700 : 600, color: 'var(--text-primary)' }}>
+                        <span style={{ fontSize: 12, fontWeight: thread.unreadCount > 0 ? 700 : 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {isUnified && (
+                            <span style={{
+                              fontSize: 8, padding: '1px 5px', borderRadius: 3,
+                              background: thread.contactType === 'model' ? 'rgba(245,158,11,0.18)' : 'rgba(6,182,212,0.18)',
+                              color: thread.contactType === 'model' ? '#f59e0b' : '#06b6d4',
+                              fontWeight: 700, letterSpacing: 0.3,
+                            }}>{thread.contactType === 'model' ? 'M' : 'C'}</span>
+                          )}
                           {thread.name}
                         </span>
                         <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{formatRelative(thread.last.created_at)}</span>
@@ -1476,21 +1524,33 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 })}
               </div>
             </div>
+            )}
 
-            {/* Rechte Spalte: Aktiver Thread */}
+            {/* Rechte Spalte: Aktiver Thread (auf Mobile nur wenn Thread aktiv) */}
             {!activeThreadName ? (
+              !isMobileChat && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 20 }}>
                 Wähle eine Konversation links aus
               </div>
+              )
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {/* Thread-Header */}
                 <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{activeThreadName}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{contactType === 'model' ? 'Model' : 'Chatter'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {isMobileChat && (
+                      <button onClick={() => { setActiveThreadName(null); setActiveThreadType(null) }} style={{
+                        background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', padding: 0,
+                      }}>←</button>
+                    )}
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{activeThreadName}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        {(isUnified ? activeThreadType : contactType) === 'model' ? 'Model' : 'Chatter'}
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={() => setActiveThreadName(null)} style={{
+                  <button onClick={() => { setActiveThreadName(null); setActiveThreadType(null) }} style={{
                     fontSize: 11, padding: '4px 10px', borderRadius: 6,
                     background: 'transparent', border: '1px solid var(--border)',
                     color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
@@ -1589,10 +1649,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       })()}
 
       {/* Neuer-Chat Picker Modal */}
-      {showNewChatPicker && (activeSection === 'chat-models' || activeSection === 'chat-chatters') && (() => {
-        const contactType = activeSection === 'chat-models' ? 'model' : 'chatter'
-        const allContacts = contactType === 'model' ? models : chatters
-        const eligible = allContacts.filter(c => c.telegram_id)
+      {showNewChatPicker && (activeSection === 'chat-models' || activeSection === 'chat-chatters' || activeSection === 'chat-unified') && (() => {
+        const isUnifiedPicker = activeSection === 'chat-unified'
+        const pickerContactType = activeSection === 'chat-models' ? 'model' : activeSection === 'chat-chatters' ? 'chatter' : null
+        // Liste: in unified beide, sonst nur einer
+        const pickerEntries = isUnifiedPicker
+          ? [
+              ...chatters.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'chatter' })),
+              ...models.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'model' })),
+            ].sort((a, b) => a.name.localeCompare(b.name))
+          : (pickerContactType === 'model' ? models : chatters).filter(c => c.telegram_id).map(c => ({ ...c, _type: pickerContactType }))
         return (
           <div onClick={() => setShowNewChatPicker(false)} style={{
             position: 'fixed', inset: 0, zIndex: 10000,
@@ -1606,28 +1672,39 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Neuer Chat mit {contactType === 'model' ? 'Model' : 'Chatter'}
+                  {isUnifiedPicker ? 'Neuer Chat' : `Neuer Chat mit ${pickerContactType === 'model' ? 'Model' : 'Chatter'}`}
                 </div>
                 <button onClick={() => setShowNewChatPicker(false)} style={{
                   background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', padding: 0,
                 }}>✕</button>
               </div>
-              {eligible.length === 0 ? (
+              {pickerEntries.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>
-                  Keine {contactType === 'model' ? 'Models' : 'Chatter'} mit Telegram-ID hinterlegt.
+                  Keine Kontakte mit Telegram-ID hinterlegt.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {eligible.map(c => (
-                    <button key={c.id} onClick={() => {
-                      openChatThread(c.name, contactType)
+                  {pickerEntries.map(c => (
+                    <button key={`${c._type}-${c.id}`} onClick={() => {
+                      openChatThread(c.name, c._type)
                       setShowNewChatPicker(false)
                     }} style={{
                       padding: '10px 12px', borderRadius: 7,
                       background: 'transparent', border: '1px solid var(--border)',
                       color: 'var(--text-primary)', fontSize: 12, fontWeight: 600,
                       cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                    }}>{c.name}</button>
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      {isUnifiedPicker && (
+                        <span style={{
+                          fontSize: 8, padding: '1px 5px', borderRadius: 3,
+                          background: c._type === 'model' ? 'rgba(245,158,11,0.18)' : 'rgba(6,182,212,0.18)',
+                          color: c._type === 'model' ? '#f59e0b' : '#06b6d4',
+                          fontWeight: 700, letterSpacing: 0.3,
+                        }}>{c._type === 'model' ? 'M' : 'C'}</span>
+                      )}
+                      {c.name}
+                    </button>
                   ))}
                 </div>
               )}
