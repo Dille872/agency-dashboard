@@ -1426,13 +1426,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
             display: 'grid',
             gridTemplateColumns: isMobileChat ? '1fr' : '260px 1fr',
-            minHeight: isMobileChat ? '70vh' : 540,
-            maxHeight: isMobileChat ? '85vh' : 720,
+            height: isMobileChat ? '80vh' : 680,
           }}>
 
             {/* Linke Spalte: Thread-Liste (auf Mobile nur wenn KEIN Thread aktiv) */}
             {(!isMobileChat || !activeThreadName) && (
-            <div style={{ borderRight: isMobileChat ? 'none' : '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ borderRight: isMobileChat ? 'none' : '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
               {/* Such-Header + Neuer-Chat */}
               <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', gap: 6 }}>
@@ -1534,7 +1533,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               </div>
               )
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
                 {/* Thread-Header */}
                 <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
