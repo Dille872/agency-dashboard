@@ -177,6 +177,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [showNewChatPicker, setShowNewChatPicker] = useState(false)
   const [isMobileChat, setIsMobileChat] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
   const [chatTypeFilter, setChatTypeFilter] = useState('all') // 'all' | 'chatter' | 'model'
+  const [expandedMonths, setExpandedMonths] = useState({}) // {'2026-04': true} für Custom Verlauf Akkordeon
   const [unreadCount, setUnreadCount] = useState(0)
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
   const [replyText, setReplyText] = useState('')
@@ -2523,85 +2524,163 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       {/* CUSTOM VERLAUF */}
       {activeSection === 'content-verlauf' && (() => {
         const erledigte = contentRequests.filter(r => r.status === 'erledigt')
-        const totalRevenue = erledigte.reduce((s, r) => s + (r.price || 0), 0)
-        const byModel = erledigte.reduce((acc, r) => { acc[r.model_name] = (acc[r.model_name] || 0) + (r.price || 0); return acc }, {})
-        const byChatter = erledigte.reduce((acc, r) => { acc[r.chatter_name] = (acc[r.chatter_name] || 0) + (r.price || 0); return acc }, {})
+
+        // Gruppieren nach Monat: Schlüssel "YYYY-MM"
+        const byMonth = {}
+        for (const r of erledigte) {
+          if (!r.created_at) continue
+          const d = new Date(r.created_at)
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+          if (!byMonth[key]) byMonth[key] = []
+          byMonth[key].push(r)
+        }
+
+        // Aktueller Monat
+        const now = new Date()
+        const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+        // Sortiere Monatsschlüssel absteigend (neuester zuerst)
+        const monthKeys = Object.keys(byMonth).sort((a, b) => b.localeCompare(a))
+        const currentItems = byMonth[currentKey] || []
+        const pastKeys = monthKeys.filter(k => k !== currentKey)
+
+        const monthLabel = (key) => {
+          const [y, m] = key.split('-')
+          const months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+          return `${months[parseInt(m, 10) - 1]} ${y}`
+        }
+
+        const calcStats = (items) => {
+          const total = items.reduce((s, r) => s + (r.price || 0), 0)
+          const byModel = {}
+          const byChatter = {}
+          for (const r of items) {
+            const m = r.model_name || '—'
+            const c = r.chatter_name || '—'
+            if (!byModel[m]) byModel[m] = { count: 0, revenue: 0 }
+            byModel[m].count += 1
+            byModel[m].revenue += r.price || 0
+            if (!byChatter[c]) byChatter[c] = { count: 0, revenue: 0 }
+            byChatter[c].count += 1
+            byChatter[c].revenue += r.price || 0
+          }
+          const topModel = Object.entries(byModel).sort((a, b) => b[1].revenue - a[1].revenue)[0]
+          const topChatter = Object.entries(byChatter).sort((a, b) => b[1].revenue - a[1].revenue)[0]
+          return { total, byModel, byChatter, topModel, topChatter }
+        }
+
+        const renderTable = (items) => (
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>{['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Wunsch', 'Dringlichkeit', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {items.map(req => {
+                  const remainder = (req.price || 0) - (req.deposit || 0)
+                  const deadlineLabel = req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : req.deadline === 'week' ? '🗓 Diese Woche' : '—'
+                  const deadlineColor = req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981'
+                  return (
+                    <tr key={req.id}>
+                      <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
+                      <td style={{ ...tdS, fontWeight: 600, color: '#06b6d4' }}>{req.chatter_name}</td>
+                      <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
+                      <td style={tdS}>{req.content_type || '—'}</td>
+                      <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
+                      <td style={{ ...tdS, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.request_text}>{req.request_text || '—'}</td>
+                      <td style={{ ...tdS, color: deadlineColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{deadlineLabel}</td>
+                      <td style={{ ...tdS, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{req.price ? `$${req.price}` : '—'}</td>
+                      <td style={{ ...tdS, color: req.deposit_paid ? '#10b981' : '#f59e0b', fontFamily: 'monospace' }}>{req.deposit ? `$${req.deposit}${req.deposit_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
+                      <td style={{ ...tdS, color: req.remainder_paid ? '#10b981' : remainder > 0 ? '#ef4444' : 'var(--text-muted)', fontFamily: 'monospace' }}>{req.deposit && remainder > 0 ? `$${remainder}${req.remainder_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+
+        const renderStatsRow = (stats) => (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {Object.entries(stats.byModel).sort((a, b) => b[1].revenue - a[1].revenue).map(([name, v]) => (
+              <div key={`m-${name}`} style={{ padding: '4px 10px', background: 'rgba(167,139,250,0.1)', borderRadius: 6, border: '1px solid rgba(167,139,250,0.25)' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>{name}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>{v.count}×</span>
+                <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${v.revenue.toFixed(0)}</span>
+              </div>
+            ))}
+            {Object.entries(stats.byChatter).sort((a, b) => b[1].revenue - a[1].revenue).map(([name, v]) => (
+              <div key={`c-${name}`} style={{ padding: '4px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 6, border: '1px solid rgba(6,182,212,0.25)' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#06b6d4' }}>{name}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>{v.count}×</span>
+                <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${v.revenue.toFixed(0)}</span>
+              </div>
+            ))}
+          </div>
+        )
+
         return (
           <Card title={`Custom Content Verlauf (${erledigte.length})`}>
-            {/* Totals */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 16 }}>
-              <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Gesamt Umsatz</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>${totalRevenue.toFixed(2)}</div>
-              </div>
-              <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Anzahl</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{erledigte.length}</div>
-              </div>
-            </div>
-
-            {/* By Model */}
-            {Object.keys(byModel).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>Nach Model</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {Object.entries(byModel).sort((a, b) => b[1] - a[1]).map(([name, rev]) => (
-                    <div key={name} style={{ padding: '4px 10px', background: 'rgba(167,139,250,0.1)', borderRadius: 6, border: '1px solid rgba(167,139,250,0.25)' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>{name}</span>
-                      <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${rev.toFixed(0)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* By Chatter */}
-            {Object.keys(byChatter).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 700, marginBottom: 8 }}>Nach Chatter</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {Object.entries(byChatter).sort((a, b) => b[1] - a[1]).map(([name, rev]) => (
-                    <div key={name} style={{ padding: '4px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 6, border: '1px solid rgba(6,182,212,0.25)' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#06b6d4' }}>{name}</span>
-                      <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${rev.toFixed(0)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Table */}
             {erledigte.length === 0 ? (
               <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>Noch keine erledigten Anfragen</div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table>
-                  <thead>
-                    <tr>{['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Wunsch', 'Dringlichkeit', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {erledigte.map(req => {
-                      const remainder = (req.price || 0) - (req.deposit || 0)
-                      const deadlineLabel = req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : req.deadline === 'week' ? '🗓 Diese Woche' : '—'
-                      const deadlineColor = req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981'
-                      return (
-                        <tr key={req.id}>
-                          <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
-                          <td style={{ ...tdS, fontWeight: 600, color: '#06b6d4' }}>{req.chatter_name}</td>
-                          <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
-                          <td style={tdS}>{req.content_type || '—'}</td>
-                          <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
-                          <td style={{ ...tdS, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.request_text}>{req.request_text || '—'}</td>
-                          <td style={{ ...tdS, color: deadlineColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{deadlineLabel}</td>
-                          <td style={{ ...tdS, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{req.price ? `$${req.price}` : '—'}</td>
-                          <td style={{ ...tdS, color: req.deposit_paid ? '#10b981' : '#f59e0b', fontFamily: 'monospace' }}>{req.deposit ? `$${req.deposit}${req.deposit_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
-                          <td style={{ ...tdS, color: req.remainder_paid ? '#10b981' : remainder > 0 ? '#ef4444' : 'var(--text-muted)', fontFamily: 'monospace' }}>{req.deposit && remainder > 0 ? `$${remainder}${req.remainder_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Aktueller Monat — ausgeklappt */}
+                {currentItems.length > 0 && (() => {
+                  const stats = calcStats(currentItems)
+                  return (
+                    <div style={{ marginBottom: 24, padding: 14, background: 'rgba(124,58,237,0.06)', borderRadius: 10, border: '1px solid rgba(124,58,237,0.25)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: '#a78bfa' }}>🟣 {monthLabel(currentKey)}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>laufender Monat</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>
+                          {currentItems.length} Customs · <span style={{ color: '#10b981', fontFamily: 'monospace', fontWeight: 700 }}>${stats.total.toFixed(0)}</span>
+                        </span>
+                      </div>
+                      {renderStatsRow(stats)}
+                      {renderTable(currentItems)}
+                    </div>
+                  )
+                })()}
+
+                {/* Vergangene Monate — Akkordeon */}
+                {pastKeys.map(key => {
+                  const items = byMonth[key]
+                  const stats = calcStats(items)
+                  const isOpen = !!expandedMonths[key]
+                  return (
+                    <div key={key} style={{ marginBottom: 10, background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                      <div onClick={() => setExpandedMonths(prev => ({ ...prev, [key]: !prev[key] }))} style={{
+                        padding: '12px 14px', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                      }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>📅 {monthLabel(key)}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{items.length} Customs</span>
+                        <span style={{ fontSize: 12, color: '#10b981', fontFamily: 'monospace', fontWeight: 700 }}>${stats.total.toFixed(0)}</span>
+                        {stats.topModel && (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>
+                            🥇 Model: <span style={{ color: '#a78bfa', fontWeight: 600 }}>{stats.topModel[0]}</span> (${stats.topModel[1].revenue.toFixed(0)})
+                          </span>
+                        )}
+                        {stats.topChatter && (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            🥇 Chatter: <span style={{ color: '#06b6d4', fontWeight: 600 }}>{stats.topChatter[0]}</span> (${stats.topChatter[1].revenue.toFixed(0)})
+                          </span>
+                        )}
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>{isOpen ? '▲' : '▼'}</span>
+                      </div>
+                      {isOpen && (
+                        <div style={{ padding: '0 14px 14px', borderTop: '1px solid var(--border)' }}>
+                          <div style={{ marginTop: 12 }}>
+                            {renderStatsRow(stats)}
+                            {renderTable(items)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
             )}
           </Card>
         )
