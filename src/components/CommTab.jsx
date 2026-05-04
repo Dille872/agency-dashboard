@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, notifyOwner } from '../telegram'
 import Card from './Card'
@@ -167,6 +167,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [zoomTime, setZoomTime] = useState('')
 
   const [messages, setMessages] = useState([])
+  // Chat-Thread State (v2.8.3)
+  const [activeThreadName, setActiveThreadName] = useState(null) // ausgewählter Person-Name
+  const [chatInputText, setChatInputText] = useState('')
+  const [chatSendingTo, setChatSendingTo] = useState(false)
+  const [chatSearch, setChatSearch] = useState('')
+  const chatScrollRef = useRef(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
   const [replyText, setReplyText] = useState('')
@@ -225,6 +231,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   useEffect(() => {
     if (selectedModel) setModelMsgText(MODEL_TEMPLATES[modelMsgType]?.replace('{name}', selectedModel.name) || '')
   }, [modelMsgType, selectedModel])
+
+  // Auto-scroll im Chat-Thread bei neuer Nachricht
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    }
+  }, [activeThreadName, messages])
 
   useEffect(() => {
     const names = selectedChatters.size === 0 ? 'alle' : [...selectedChatters].join(', ')
@@ -525,6 +538,59 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (!msgIds || msgIds.length === 0) return
     await supabase.from('messages').update({ read: true }).in('id', msgIds)
     setMessages(prev => prev.map(m => msgIds.includes(m.id) ? { ...m, read: true } : m))
+  }
+
+  // Thread-spezifisch: alle eingehenden Nachrichten dieser Person als gelesen markieren
+  const openChatThread = async (personName, contactType) => {
+    setActiveThreadName(personName)
+    setChatInputText('')
+    // Alle in-messages dieser Person die ungelesen sind: read=true
+    const unreadIds = messages
+      .filter(m => m.model_name === personName && m.contact_type === contactType
+        && m.direction === 'in' && !m.read
+        && (m.message_type === null || m.message_type === undefined))
+      .map(m => m.id)
+    if (unreadIds.length > 0) {
+      await supabase.from('messages').update({ read: true }).in('id', unreadIds)
+      setMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, read: true } : m))
+    }
+  }
+
+  // Senden im aktiven Thread
+  const sendChatThreadMessage = async (contactType) => {
+    if (!activeThreadName || !chatInputText.trim() || chatSendingTo) return
+    const text = chatInputText.trim()
+    // Telegram-ID lookup
+    const contactsTable = contactType === 'model' ? 'models_contact' : 'chatters_contact'
+    const { data: contact } = await supabase.from(contactsTable)
+      .select('telegram_id, id').eq('name', activeThreadName).maybeSingle()
+    if (!contact?.telegram_id) {
+      alert(`${activeThreadName} hat keine Telegram-ID hinterlegt.`)
+      return
+    }
+    setChatSendingTo(true)
+    try {
+      await sendTelegramMessage(contact.telegram_id, text)
+      await supabase.from('messages').insert({
+        model_name: activeThreadName,
+        model_telegram_id: contact.telegram_id,
+        direction: 'out',
+        contact_type: contactType,
+        message_type: null, // null = reine Konversation
+        text,
+        status: 'sent',
+        sent_by: userName,
+      })
+      const lastContactedTable = contactType === 'model' ? 'models_contact' : 'chatters_contact'
+      await supabase.from(lastContactedTable)
+        .update({ last_contacted: new Date().toISOString() })
+        .eq('id', contact.id)
+      setChatInputText('')
+      await loadMessages()
+    } catch (e) {
+      alert('Fehler: ' + e.message)
+    }
+    setChatSendingTo(false)
   }
 
   const toggleChatter = (id) => {
@@ -864,13 +930,22 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadContentRequests()
   }
 
+  // v2.8.3: Tickets = Nachrichten MIT message_type (announcement, content_request, zoom, free, ...)
+  //         Chat    = Nachrichten OHNE message_type (reine Konversation)
+  const isTicket = (m) => m.message_type !== null && m.message_type !== undefined
+  const isChat = (m) => !isTicket(m)
+
   const inboxMessages = messages.filter(m => {
     if (m.direction !== 'in') return false
+    if (m.contact_type === 'unknown') return false
+    if (!isTicket(m)) return false
     if (section === 'models') return m.contact_type === 'model'
     if (section === 'chatters') return m.contact_type === 'chatter'
     return true
   })
   const historyMessages = messages.filter(m => {
+    if (m.contact_type === 'unknown') return false
+    if (!isTicket(m)) return false
     if (section === 'models') return m.contact_type === 'model'
     if (section === 'chatters') return m.contact_type === 'chatter'
     return true
@@ -888,7 +963,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
-          section === 'models' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model').length },
+          section === 'models' && { key: 'chat-models', label: 'Chat', badge: (() => {
+            const chatMsgs = messages.filter(m => m.contact_type === 'model' && (m.message_type === null || m.message_type === undefined))
+            const threads = new Set(chatMsgs.filter(m => m.direction === 'in' && !m.read).map(m => m.model_name))
+            return threads.size
+          })() },
+          section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
           section === 'models' && { key: 'history', label: 'Verlauf' },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: (() => {
             const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
@@ -903,7 +983,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           })() },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
           section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
-          section === 'chatters' && { key: 'nachrichten', label: 'Nachrichten', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter').length },
+          section === 'chatters' && { key: 'chat-chatters', label: 'Chat', badge: (() => {
+            const chatMsgs = messages.filter(m => m.contact_type === 'chatter' && (m.message_type === null || m.message_type === undefined))
+            const threads = new Set(chatMsgs.filter(m => m.direction === 'in' && !m.read).map(m => m.model_name))
+            return threads.size
+          })() },
+          section === 'chatters' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter' && m.message_type !== null && m.message_type !== undefined).length },
           section === 'chatters' && { key: 'history', label: 'Verlauf' },
         ].filter(Boolean).map(s => (
           <button key={s.key} onClick={() => {
@@ -1259,6 +1344,228 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           </Card>
         </div>
         </div>
+        )
+      })()}
+
+      {/* CHAT (WhatsApp-Style) — nur reine Konversation, kein message_type */}
+      {(activeSection === 'chat-models' || activeSection === 'chat-chatters') && (() => {
+        const contactType = activeSection === 'chat-models' ? 'model' : 'chatter'
+        const contactsList = contactType === 'model' ? models : chatters
+        // Alle Chat-Nachrichten dieser Section
+        const chatMsgs = messages.filter(m =>
+          m.contact_type === contactType && isChat(m) && m.contact_type !== 'unknown'
+        )
+        // Threads gruppieren nach model_name
+        const threadsMap = {}
+        for (const msg of chatMsgs) {
+          const name = msg.model_name
+          if (!name) continue
+          if (!threadsMap[name]) threadsMap[name] = []
+          threadsMap[name].push(msg)
+        }
+        // Liste sortieren nach jüngster Nachricht
+        const threadList = Object.entries(threadsMap)
+          .map(([name, msgs]) => {
+            const sorted = msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+            const last = sorted[sorted.length - 1]
+            const unreadCount = sorted.filter(m => m.direction === 'in' && !m.read).length
+            return { name, last, sorted, unreadCount }
+          })
+          .filter(t => !chatSearch || t.name.toLowerCase().includes(chatSearch.toLowerCase()))
+          .sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at))
+
+        const activeThread = activeThreadName
+          ? threadsMap[activeThreadName]?.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) || []
+          : []
+
+        const formatRelative = (ts) => {
+          const d = new Date(ts)
+          const now = new Date()
+          const diffMs = now - d
+          const today = now.toDateString() === d.toDateString()
+          const yest = new Date(now); yest.setDate(yest.getDate() - 1)
+          const isYest = yest.toDateString() === d.toDateString()
+          if (today) return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+          if (isYest) return 'Gestern'
+          if (diffMs < 7 * 86400000) return d.toLocaleDateString('de-DE', { weekday: 'short' })
+          return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+        }
+        const fullDateTime = (ts) => new Date(ts).toLocaleString('de-DE', {
+          day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
+        })
+
+        return (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', display: 'grid', gridTemplateColumns: '260px 1fr', minHeight: 540, maxHeight: 720 }}>
+
+            {/* Linke Spalte: Thread-Liste */}
+            <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              {/* Such-Header */}
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+                <input
+                  type="text"
+                  value={chatSearch}
+                  onChange={e => setChatSearch(e.target.value)}
+                  placeholder="Suchen…"
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '7px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                />
+              </div>
+
+              {/* Thread-Liste */}
+              <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                {threadList.length === 0 && (
+                  <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                    {chatSearch ? 'Keine Treffer' : 'Noch keine Konversationen'}
+                  </div>
+                )}
+                {threadList.map(thread => {
+                  const isActive = activeThreadName === thread.name
+                  return (
+                    <div
+                      key={thread.name}
+                      onClick={() => openChatThread(thread.name, contactType)}
+                      style={{
+                        padding: '10px 12px',
+                        borderBottom: '1px solid var(--border)',
+                        cursor: 'pointer',
+                        background: isActive ? 'rgba(124,58,237,0.08)' : 'transparent',
+                        borderLeft: isActive ? '3px solid #7c3aed' : '3px solid transparent',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                        <span style={{ fontSize: 12, fontWeight: thread.unreadCount > 0 ? 700 : 600, color: 'var(--text-primary)' }}>
+                          {thread.name}
+                        </span>
+                        <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{formatRelative(thread.last.created_at)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          fontSize: 11,
+                          color: thread.unreadCount > 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+                          fontWeight: thread.unreadCount > 0 ? 600 : 400,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1,
+                        }}>
+                          {thread.last.direction === 'out' ? 'Du: ' : ''}{thread.last.text}
+                        </span>
+                        {thread.unreadCount > 0 && (
+                          <span style={{
+                            fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                            background: '#7c3aed', color: '#fff', fontWeight: 700, flexShrink: 0,
+                          }}>{thread.unreadCount}</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Rechte Spalte: Aktiver Thread */}
+            {!activeThreadName ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 20 }}>
+                Wähle eine Konversation links aus
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {/* Thread-Header */}
+                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{activeThreadName}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{contactType === 'model' ? 'Model' : 'Chatter'}</div>
+                  </div>
+                  <button onClick={() => setActiveThreadName(null)} style={{
+                    fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
+                  }}>✕ Schließen</button>
+                </div>
+
+                {/* Verlauf */}
+                <div ref={chatScrollRef} style={{ flex: 1, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', minHeight: 0 }}>
+                  {activeThread.length === 0 && (
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, padding: 20 }}>
+                      Noch keine Nachrichten in diesem Thread.
+                    </div>
+                  )}
+                  {activeThread.map((msg, idx) => {
+                    const isOut = msg.direction === 'out'
+                    const prevMsg = idx > 0 ? activeThread[idx - 1] : null
+                    const showDateSeparator = !prevMsg ||
+                      new Date(prevMsg.created_at).toDateString() !== new Date(msg.created_at).toDateString()
+                    const dateSep = new Date(msg.created_at).toLocaleDateString('de-DE', {
+                      weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
+                    })
+                    return (
+                      <React.Fragment key={msg.id}>
+                        {showDateSeparator && (
+                          <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--text-tertiary)', margin: '8px 0 4px' }}>
+                            {dateSep}
+                          </div>
+                        )}
+                        <div style={{
+                          alignSelf: isOut ? 'flex-end' : 'flex-start',
+                          maxWidth: '70%',
+                        }}>
+                          <div style={{
+                            padding: '7px 11px',
+                            borderRadius: isOut ? '10px 10px 2px 10px' : '10px 10px 10px 2px',
+                            background: isOut ? 'rgba(124,58,237,0.18)' : 'var(--bg-card2)',
+                            color: isOut ? '#a78bfa' : 'var(--text-primary)',
+                            fontSize: 12, lineHeight: 1.4,
+                            border: isOut ? '1px solid rgba(124,58,237,0.3)' : '1px solid var(--border)',
+                            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                          }}>
+                            {msg.text}
+                          </div>
+                          <div style={{
+                            fontSize: 9, color: 'var(--text-muted)',
+                            textAlign: isOut ? 'right' : 'left',
+                            marginTop: 2,
+                          }}>
+                            {fullDateTime(msg.created_at)}
+                            {isOut && msg.sent_by ? ` · ${msg.sent_by}` : ''}
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    )
+                  })}
+                </div>
+
+                {/* Eingabefeld */}
+                <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <textarea
+                    value={chatInputText}
+                    onChange={e => setChatInputText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        sendChatThreadMessage(contactType)
+                      }
+                    }}
+                    placeholder={`Nachricht an ${activeThreadName}…`}
+                    style={{
+                      flex: 1, minHeight: 38, maxHeight: 120, resize: 'none',
+                      background: 'var(--bg-input)', border: '1px solid var(--border)',
+                      color: 'var(--text-primary)', padding: '9px 11px', borderRadius: 7,
+                      fontSize: 12, fontFamily: 'inherit', outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={() => sendChatThreadMessage(contactType)}
+                    disabled={chatSendingTo || !chatInputText.trim()}
+                    style={{
+                      padding: '10px 18px', borderRadius: 7,
+                      background: (chatSendingTo || !chatInputText.trim()) ? 'var(--border)' : '#7c3aed',
+                      color: '#fff', border: 'none', fontSize: 12, fontWeight: 700,
+                      cursor: (chatSendingTo || !chatInputText.trim()) ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {chatSendingTo ? '…' : '✈ Senden'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )
       })()}
 
