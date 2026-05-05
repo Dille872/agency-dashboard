@@ -215,7 +215,9 @@ export default function ScheduleTab({ session }) {
   }
 
   const checkShiftAlerts = async () => {
-    // Check every 5 minutes if a shift started 15 min ago and chatter is not online
+    // v2.9.3: Robustere Alert-Logik
+    // - Prüft sowohl online_status (Heartbeat) als auch shift_logs (aktiver Check-in)
+    // - Persistenter Spam-Schutz via alert_markers (1x pro chatter+shift+tag)
     const now = new Date()
     const todayIso = todayBerlin()
     const currentHour = now.getHours()
@@ -226,7 +228,7 @@ export default function ScheduleTab({ session }) {
     const { data: schedData } = await supabase.from('schedule').select('*').eq('week_start', isoDate(weekS)).single()
     if (!schedData) return
 
-    // Load online statuses
+    // Load online statuses (Heartbeat-basiert, max 60s alt)
     const { data: onlineData } = await supabase.from('online_status').select('*')
     const onlineMap = {}
     const cutoff = new Date(Date.now() - 60000)
@@ -234,17 +236,32 @@ export default function ScheduleTab({ session }) {
       if (new Date(s.last_seen) > cutoff) onlineMap[s.display_name] = s.shift_online
     }
 
+    // v2.9.3: Aktive Schicht-Logs (eingecheckt aber nicht ausgecheckt) — als Backup
+    // Heißt: Wer eingecheckt ist gilt als anwesend, auch wenn Heartbeat veraltet ist
+    // (z.B. Browser im Hintergrund, Tab-Throttling)
+    const { data: activeLogs } = await supabase.from('shift_logs').select('display_name').is('checked_out_at', null)
+    const checkedInLc = new Set((activeLogs || []).map(l => (l.display_name || '').trim().toLowerCase()))
+
+    // v2.9.3: Bereits gefeuerte Alerts heute laden — Spam-Schutz über Tabellen-Grenzen hinweg
+    const { data: alertMarkersToday } = await supabase
+      .from('alert_markers')
+      .select('alert_key')
+      .eq('alert_date', todayIso)
+      .eq('alert_type', 'no_show')
+    const alreadyAlerted = new Set((alertMarkersToday || []).map(m => m.alert_key))
+
     // Load shift times
     const shiftTimesData = schedData.shift_times || {}
     const assignments = schedData.assignments || {}
 
     // Get all chatters scheduled today
-    const alerted = new Set()
+    const alertedThisRun = new Set()
     for (const [key, val] of Object.entries(assignments)) {
       const parts = key.split('__')
       if (parts[1] !== todayIso || !val.chatter || val.chatter === '__FREI__') continue
       const chatterName = val.chatter
-      if (alerted.has(chatterName)) continue
+      const chatterLc = chatterName.trim().toLowerCase()
+      if (alertedThisRun.has(chatterName)) continue
 
       // Find shift start time
       const modelId = parts[0]
@@ -261,13 +278,31 @@ export default function ScheduleTab({ session }) {
       const shiftStartMins = shiftHour * 60 + shiftMin
       const nowMins = currentHour * 60 + currentMin
       if (nowMins >= shiftStartMins + 15 && nowMins < shiftStartMins + 20) {
-        // Shift started 15-20 min ago
-        if (!onlineMap[chatterName]) {
-          alerted.add(chatterName)
-          const msg = `⚠️ ${chatterName} hat ${shift}schicht aber ist noch nicht online! (${startTime} Uhr)`
-          await sendTelegramMessage(CHRIS_TG, msg)
-          await sendTelegramMessage(REY_TG, msg)
-        }
+        // v2.9.3: Mehrere Wege als anwesend zu zählen:
+        const isOnlineHeartbeat = !!onlineMap[chatterName]
+        const isCheckedIn = checkedInLc.has(chatterLc)
+        // Trainee/Co-Chatter zählt auch — wenn der eingecheckt ist, ist die Schicht abgedeckt
+        const traineeName = (val.trainee || '').trim().toLowerCase()
+        const traineeIsCheckedIn = traineeName && (checkedInLc.has(traineeName) || onlineMap[val.trainee])
+
+        if (isOnlineHeartbeat || isCheckedIn || traineeIsCheckedIn) continue
+
+        // v2.9.3: Spam-Schutz — pro Chatter+Schicht+Tag nur 1x
+        const alertKey = `${chatterName}_${shift}_${todayIso}`
+        if (alreadyAlerted.has(alertKey)) continue
+
+        alertedThisRun.add(chatterName)
+        const msg = `⚠️ ${chatterName} hat ${shift}schicht aber ist noch nicht online! (${startTime} Uhr)`
+        await sendTelegramMessage(CHRIS_TG, msg)
+        await sendTelegramMessage(REY_TG, msg)
+
+        // Marker schreiben damit's nicht nochmal feuert
+        await supabase.from('alert_markers').insert({
+          alert_key: alertKey,
+          alert_date: todayIso,
+          alert_type: 'no_show',
+          alerted_at: new Date().toISOString(),
+        })
       }
     }
   }
