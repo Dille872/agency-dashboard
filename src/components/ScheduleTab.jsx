@@ -268,7 +268,8 @@ export default function ScheduleTab({ session }) {
       // Find shift start time
       const modelId = parts[0]
       const shift = parts[2]
-      const timeStr = (shiftTimesData[`${modelId}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
+      // v2.9.7: Erst Cell-Override prüfen, dann Standard-Zeit
+      const timeStr = (val.time_override || shiftTimesData[`${modelId}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
       if (!timeStr) continue
 
       // Parse time like "08:00-14:00" or "08:00"
@@ -818,6 +819,9 @@ export default function ScheduleTab({ session }) {
                                 <div style={{ fontSize: 12, color: isCo ? '#f59e0b' : '#06b6d4', fontWeight: 600 }}>{isCo ? '👥' : '🎓'} mit {cell.trainee}</div>
                               )
                             })()}
+                            {cell.time_override && (
+                              <div style={{ fontSize: 10, color: '#f97316', marginTop: 2, fontFamily: 'monospace', fontWeight: 700 }}>⚠ {cell.time_override}</div>
+                            )}
                             {cell.note && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>{cell.note}</div>}
                           </div>
                         ) : (
@@ -1060,6 +1064,20 @@ export default function ScheduleTab({ session }) {
                                 </>
                                 )
                               })()}
+                              {/* v2.9.7: Zeit überschreiben für diesen Tag */}
+                              {cell.chatter && !isFrei && (
+                                <input value={cell.time_override || ''}
+                                  onChange={e => setCell(model.id, dayIso, shift, { ...cell, time_override: e.target.value || null })}
+                                  placeholder={(shiftTimes[`${model.id}__${shift}`] || '').replace(/\s*\(DE\)/g, '') || 'Zeit'}
+                                  onKeyDown={e => e.key === 'Enter' && setEditingCell(null)}
+                                  style={{
+                                    background: 'var(--bg-input)',
+                                    border: `1px solid ${cell.time_override ? '#f97316' : '#2e2e5a'}`,
+                                    color: cell.time_override ? '#f97316' : 'var(--text-muted)',
+                                    padding: '2px 4px', borderRadius: 4, fontSize: 9, fontFamily: 'monospace', outline: 'none', width: '100%',
+                                  }}
+                                />
+                              )}
                               <input value={cell.note || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
                                 placeholder="Notiz (optional)"
@@ -1113,6 +1131,9 @@ export default function ScheduleTab({ session }) {
                                   {isPending ? '! Klarung' : 'v'}
                                 </span>
                               </div>
+                              )}
+                              {!isFrei && cell.time_override && (
+                                <div style={{ fontSize: 9, color: '#f97316', marginTop: 2, fontFamily: 'monospace', fontWeight: 700 }}>⚠ {cell.time_override}</div>
                               )}
                               {!isFrei && cell.note && <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 2, lineHeight: 1.3 }}>{cell.note}</div>}
                               {!isFrei && (
@@ -1257,6 +1278,40 @@ export default function ScheduleTab({ session }) {
                     />
                   )}
                 </div>
+                )
+              })()}
+
+              {/* v2.9.7: Zeit überschreiben für diesen Tag */}
+              {cell.chatter && !isFrei && (() => {
+                const stdTime = (shiftTimes[`${editSheet.modelId}__${editSheet.shift}`] || '').replace(/\s*\(DE\)/g, '')
+                const hasOverride = !!cell.time_override
+                return (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <span>Zeit für diesen Tag</span>
+                      {hasOverride && (
+                        <button type="button" onClick={() => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, time_override: null })}
+                          style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                          ✕ zurücksetzen
+                        </button>
+                      )}
+                    </label>
+                    <input value={cell.time_override || ''}
+                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, time_override: e.target.value || null })}
+                      placeholder={stdTime ? `Standard: ${stdTime}` : '08:00-14:00'}
+                      style={{
+                        background: 'var(--bg-input)',
+                        border: `1px solid ${hasOverride ? '#f97316' : '#2e2e5a'}`,
+                        color: hasOverride ? '#f97316' : 'var(--text-primary)',
+                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', outline: 'none', width: '100%', boxSizing: 'border-box',
+                      }}
+                    />
+                    {hasOverride && (
+                      <div style={{ fontSize: 10, color: '#f97316', marginTop: 4 }}>
+                        ⚠ Diese Zeit gilt nur für diesen Tag. Standard: {stdTime || '—'}
+                      </div>
+                    )}
+                  </div>
                 )
               })()}
 

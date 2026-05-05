@@ -613,7 +613,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           const valChatterLc = (val.chatter || '').trim().toLowerCase()
           const valTraineeLc = (val.trainee || '').trim().toLowerCase()
           if (valChatterLc === myNameLc || valTraineeLc === myNameLc) {
-            const timeStr = (shiftTimes[`${parts[0]}__${parts[2]}`] || '').replace(/\s*\(DE\)/g, '')
+            // v2.9.7: Cell-Override hat Vorrang vor Standard-Zeit
+            const timeStr = (val.time_override || shiftTimes[`${parts[0]}__${parts[2]}`] || '').replace(/\s*\(DE\)/g, '')
             const startTimeStr = timeStr.split('-')[0]?.trim() || ''
             const [sh, sm] = startTimeStr.split(':').map(Number)
             const startMins = isNaN(sh) ? null : sh * 60 + (sm || 0)
@@ -743,7 +744,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           if (parts[1] !== todayIsoStr || val.chatter !== displayName) continue
           const modelId = parts[0]
           const shift = parts[2]
-          const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+          // v2.9.7: Cell-Override hat Vorrang vor Standard-Zeit
+          const timeStr = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
           if (!timeStr) continue
           const endStr = timeStr.split('-')[1]?.trim()
           if (!endStr) continue
@@ -1040,11 +1042,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           if (parts[1] === dayIso && parts[2] === shift && (valChatterLc === myNameLc || valTraineeLc === myNameLc)) {
             const modelId = parts[0]
             const modelObj = models.find(m => String(m.id) === String(modelId))
-            const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+            // v2.9.7: Cell-Override hat Vorrang
+            const isOverridden = !!val.time_override
+            const timeStr = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
             const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
             const asTrainee = valTraineeLc === myNameLc && valChatterLc !== myNameLc
             const traineeMode = val.trainee_mode || 'anlernen'
-            modelsInShift.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter })
+            modelsInShift.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter, isOverridden })
           }
         }
         if (modelsInShift.length > 0) {
@@ -1348,8 +1352,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                             <div style={{ fontSize: 12, fontWeight: 700, color: today ? '#10b981' : 'var(--text-primary)' }}>
                               {dayLabel}{today ? ' · Heute' : ''}
                             </div>
-                            <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>
+                            <div style={{ fontSize: 10, color: s.models[0]?.isOverridden ? '#f97316' : 'var(--text-secondary)', marginTop: 1, fontWeight: s.models[0]?.isOverridden ? 700 : 400 }}>
                               {s.shift}{s.models[0]?.localTime ? ` · ${s.models[0].localTime} (lokal)` : s.models[0]?.timeStr ? ` · ${s.models[0].timeStr} (DE)` : ''}
+                              {s.models[0]?.isOverridden && ' ⚠ abweichend'}
                             </div>
                           </div>
                         </div>
