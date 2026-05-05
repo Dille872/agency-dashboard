@@ -218,10 +218,12 @@ export default function ScheduleTab({ session }) {
     // v2.9.3: Robustere Alert-Logik
     // - Prüft sowohl online_status (Heartbeat) als auch shift_logs (aktiver Check-in)
     // - Persistenter Spam-Schutz via alert_markers (1x pro chatter+shift+tag)
+    // v2.9.4: Berlin-Zeit für Alert-Vergleiche (statt Browser-Zeit)
     const now = new Date()
     const todayIso = todayBerlin()
-    const currentHour = now.getHours()
-    const currentMin = now.getMinutes()
+    // Berlin-Stunde + Minute holen — nicht Browser-Zeit, sonst falscher Vergleich aus anderen Zeitzonen
+    const berlinTimeStr = now.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hour12: false })
+    const [currentHour, currentMin] = berlinTimeStr.split(':').map(Number)
 
     // Load today's schedule
     const weekS = getWeekStart(now)

@@ -2884,7 +2884,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     const diffH = diffMs ? Math.floor(diffMs / 3600000) : null
                     const diffM = diffMs ? Math.floor((diffMs % 3600000) / 60000) : null
                     const dauer = diffH !== null ? `${diffH}h ${diffM}m` : '—'
-                    const fmt = (d) => d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    // v2.9.4: Berlin-Zeit fix für alle Admins (egal wo sie sitzen)
+                    const fmt = (d) => d.toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
                     return (
                       <tr key={log.id}>
                         <td style={{ ...tdS, fontWeight: 700, color: 'var(--text-primary)' }}>{log.display_name}</td>
