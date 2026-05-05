@@ -575,7 +575,35 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       return
     }
 
-    const shiftToLog = shiftName || selectedShift || 'Manuell'
+    // v2.9.5: Schicht aus Plan ermitteln statt 'Manuell'
+    // Wenn shiftName/selectedShift explizit gewählt → die nehmen
+    // Sonst: heute eingeplant für eine Schicht? → die nehmen
+    let shiftToLog = shiftName || selectedShift
+    if (!shiftToLog) {
+      const todayBerlin = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+      const myNameLc = (displayName || '').trim().toLowerCase()
+      const foundShifts = new Set()
+      for (const sched of next7Schedules) {
+        const assignments = sched.assignments || {}
+        for (const [key, val] of Object.entries(assignments)) {
+          const parts = key.split('__')
+          if (parts[1] !== todayBerlin) continue
+          const valChatterLc = (val.chatter || '').trim().toLowerCase()
+          const valTraineeLc = (val.trainee || '').trim().toLowerCase()
+          if (valChatterLc === myNameLc || valTraineeLc === myNameLc) {
+            foundShifts.add(parts[2])
+          }
+        }
+      }
+      // Wenn genau 1 Schicht heute → die nehmen
+      // Wenn mehrere oder keine → Manuell (Fallback)
+      if (foundShifts.size === 1) {
+        shiftToLog = [...foundShifts][0]
+      } else {
+        shiftToLog = 'Manuell'
+      }
+    }
+
     const { data } = await supabase.from('shift_logs').insert({
       display_name: displayName,
       checked_in_at: new Date().toISOString(),
