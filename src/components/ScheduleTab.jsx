@@ -92,6 +92,7 @@ export default function ScheduleTab({ session }) {
   })
   const [models, setModels] = useState([])
   const [chatters, setChatters] = useState([])
+  const [admins, setAdmins] = useState([]) // v2.9.2: Admins für Co-Schicht-Dropdown
   const [schedule, setSchedule] = useState({})
   const [recurring, setRecurring] = useState({}) // modelId__dayOfWeek__shift → {chatter, note}
   const [dayNotes, setDayNotes] = useState({})
@@ -162,7 +163,7 @@ export default function ScheduleTab({ session }) {
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
-  useEffect(() => { loadModels(); loadChatters(); loadRecurring(); checkShiftAlerts(); loadAbsences(); loadActiveReminders() }, [])
+  useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); checkShiftAlerts(); loadAbsences(); loadActiveReminders() }, [])
   useEffect(() => {
     if (weekKey) {
       loadSchedule()
@@ -280,6 +281,11 @@ export default function ScheduleTab({ session }) {
   const loadChatters = async () => {
     const { data } = await supabase.from('chatters_contact').select('*').order('name')
     setChatters(data || [])
+  }
+  const loadAdmins = async () => {
+    // v2.9.2: Admins aus user_roles für Co-Schicht-Dropdown
+    const { data } = await supabase.from('user_roles').select('display_name').eq('role', 'admin')
+    setAdmins((data || []).map(r => r.display_name).filter(Boolean))
   }
   const loadRecurring = async () => {
     const { data } = await supabase.from('recurring_shifts').select('*')
@@ -965,17 +971,19 @@ export default function ScheduleTab({ session }) {
                                   return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
                                 })}
                               </select>
-                              {cell.chatter && !isFrei && (
+                              {cell.chatter && !isFrei && (() => {
+                                const mode = cell.trainee_mode || 'anlernen'
+                                return (
                                 <>
                                   <div style={{ display: 'flex', gap: 3 }}>
                                     {[
                                       { val: 'anlernen', icon: '🎓', color: '#06b6d4' },
                                       { val: 'co', icon: '👥', color: '#f59e0b' },
                                     ].map(opt => {
-                                      const active = (cell.trainee_mode || 'anlernen') === opt.val
+                                      const active = mode === opt.val
                                       return (
                                         <button key={opt.val} type="button"
-                                          onClick={ev => { ev.stopPropagation(); setCell(model.id, dayIso, shift, { ...cell, trainee_mode: opt.val }) }}
+                                          onClick={ev => { ev.stopPropagation(); setCell(model.id, dayIso, shift, { ...cell, trainee_mode: opt.val, trainee: null }) }}
                                           style={{
                                             flex: 1, padding: '1px 3px', borderRadius: 3,
                                             background: active ? `${opt.color}22` : 'transparent',
@@ -986,18 +994,35 @@ export default function ScheduleTab({ session }) {
                                       )
                                     })}
                                   </div>
-                                  <input value={cell.trainee || ''}
-                                    onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
-                                    placeholder="Zweiter Chatter (optional)"
-                                    style={{
-                                      background: 'var(--bg-input)',
-                                      border: `1px solid ${(cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4'}`,
-                                      color: (cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4',
-                                      padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
-                                    }}
-                                  />
+                                  {mode === 'co' ? (
+                                    <select value={cell.trainee || ''}
+                                      onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
+                                      style={{
+                                        background: 'var(--bg-input)', border: '1px solid #f59e0b', color: '#f59e0b',
+                                        padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
+                                      }}>
+                                      <option value="">— wählen —</option>
+                                      {chatters.filter(c => c.name !== cell.chatter).map(c => {
+                                        const absent = isAbsent(c.name, dayIso)
+                                        return <option key={`c-${c.id}`} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
+                                      })}
+                                      {admins.filter(a => a !== cell.chatter).map(a => (
+                                        <option key={`a-${a}`} value={a}>{a} (Admin)</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input value={cell.trainee || ''}
+                                      onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
+                                      placeholder="Name (auch externe)"
+                                      style={{
+                                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
+                                        padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
+                                      }}
+                                    />
+                                  )}
                                 </>
-                              )}
+                                )
+                              })()}
                               <input value={cell.note || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
                                 placeholder="Notiz (optional)"
@@ -1143,7 +1168,9 @@ export default function ScheduleTab({ session }) {
               </div>
 
               {/* Trainee / Co-Schicht */}
-              {cell.chatter && !isFrei && (
+              {cell.chatter && !isFrei && (() => {
+                const mode = cell.trainee_mode || 'anlernen'
+                return (
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Zweiter Chatter (optional)</label>
                   {/* Modus-Toggle */}
@@ -1152,10 +1179,10 @@ export default function ScheduleTab({ session }) {
                       { val: 'anlernen', icon: '🎓', label: 'Anlernen', color: '#06b6d4' },
                       { val: 'co', icon: '👥', label: 'Co-Schicht', color: '#f59e0b' },
                     ].map(opt => {
-                      const active = (cell.trainee_mode || 'anlernen') === opt.val
+                      const active = mode === opt.val
                       return (
                         <button key={opt.val} type="button"
-                          onClick={() => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee_mode: opt.val })}
+                          onClick={() => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee_mode: opt.val, trainee: null })}
                           style={{
                             flex: 1, padding: '6px 8px', borderRadius: 6,
                             background: active ? `${opt.color}22` : 'transparent',
@@ -1166,18 +1193,35 @@ export default function ScheduleTab({ session }) {
                       )
                     })}
                   </div>
-                  <input value={cell.trainee || ''}
-                    onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
-                    placeholder="Name eintragen"
-                    style={{
-                      background: 'var(--bg-input)',
-                      border: `1px solid ${(cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4'}`,
-                      color: (cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4',
-                      padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
-                    }}
-                  />
+                  {mode === 'co' ? (
+                    <select value={cell.trainee || ''}
+                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
+                      style={{
+                        background: 'var(--bg-input)', border: '1px solid #f59e0b', color: '#f59e0b',
+                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
+                      }}>
+                      <option value="">— wählen —</option>
+                      {chatters.filter(c => c.name !== cell.chatter).map(c => {
+                        const absent = isAbsent(c.name, editSheet.dayIso)
+                        return <option key={`c-${c.id}`} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
+                      })}
+                      {admins.filter(a => a !== cell.chatter).map(a => (
+                        <option key={`a-${a}`} value={a}>{a} (Admin)</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={cell.trainee || ''}
+                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
+                      placeholder="Name eintragen — auch externe ohne Account"
+                      style={{
+                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
+                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
+                      }}
+                    />
+                  )}
                 </div>
-              )}
+                )
+              })()}
 
               {/* Notiz */}
               <div style={{ marginBottom: 12 }}>

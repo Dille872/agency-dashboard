@@ -910,15 +910,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   // Get my shifts this week
   const myShifts = []
+  const myNameLc = (displayName || '').trim().toLowerCase()
   for (const day of weekDays) {
     const dayIso = isoDate(day)
     for (const shift of SHIFTS) {
       const modelsInShift = []
       for (const [key, val] of Object.entries(scheduleData)) {
         const parts = key.split('__')
-        if (parts[1] === dayIso && parts[2] === shift && (val.chatter === displayName || val.trainee === displayName)) {
+        const valChatterLc = (val.chatter || '').trim().toLowerCase()
+        const valTraineeLc = (val.trainee || '').trim().toLowerCase()
+        if (parts[1] === dayIso && parts[2] === shift && (valChatterLc === myNameLc || valTraineeLc === myNameLc)) {
           // Ich bin entweder Hauptchatter oder Trainee/Co-Chatter
-          const asTrainee = val.trainee === displayName && val.chatter !== displayName
+          const asTrainee = valTraineeLc === myNameLc && valChatterLc !== myNameLc
           modelsInShift.push({ ...val, _asTrainee: asTrainee })
         }
       }
@@ -944,12 +947,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         const modelsInShift = []
         for (const [key, val] of Object.entries(assignments)) {
           const parts = key.split('__')
-          if (parts[1] === dayIso && parts[2] === shift && (val.chatter === displayName || val.trainee === displayName)) {
+          const valChatterLc = (val.chatter || '').trim().toLowerCase()
+          const valTraineeLc = (val.trainee || '').trim().toLowerCase()
+          if (parts[1] === dayIso && parts[2] === shift && (valChatterLc === myNameLc || valTraineeLc === myNameLc)) {
             const modelId = parts[0]
             const modelObj = models.find(m => String(m.id) === String(modelId))
             const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
             const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
-            const asTrainee = val.trainee === displayName && val.chatter !== displayName
+            const asTrainee = valTraineeLc === myNameLc && valChatterLc !== myNameLc
             const traineeMode = val.trainee_mode || 'anlernen'
             modelsInShift.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter })
           }
