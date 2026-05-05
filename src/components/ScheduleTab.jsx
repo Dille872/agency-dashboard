@@ -101,10 +101,6 @@ export default function ScheduleTab({ session }) {
   const [editingShiftTime, setEditingShiftTime] = useState(null)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
-  const [showSendModal, setShowSendModal] = useState(false)
-  const [sendMode, setSendMode] = useState('all') // 'all' | 'selected'
-  const [selectedRecipients, setSelectedRecipients] = useState([])
-  const [isUpdate, setIsUpdate] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
   // Collapse pro Model — persistiert in Localstorage
@@ -489,36 +485,6 @@ export default function ScheduleTab({ session }) {
     }
   }
 
-  // Schicht zum Tausch ausschreiben (Admin-Anbot)
-  // requester_name = NULL als Marker für Admin-Anbot
-  const offerShift = async (modelId, dayIso, shift) => {
-    const model = models.find(m => m.id === modelId)
-    if (!model) return
-    // Schon ausgeschrieben?
-    const { data: existing } = await supabase
-      .from('shift_swaps')
-      .select('id')
-      .eq('shift_date', dayIso)
-      .eq('shift', shift)
-      .eq('model_name', model.name)
-      .in('status', ['offen', 'vorgeschlagen'])
-    if (existing && existing.length > 0) {
-      alert('Diese Schicht wurde bereits zum Tausch ausgeschrieben.')
-      return
-    }
-    const reason = prompt('Grund (optional, sichtbar für Chatter):') || null
-    const { error } = await supabase.from('shift_swaps').insert({
-      requester_name: null, // = Admin-Anbot
-      shift_date: dayIso,
-      shift,
-      model_name: model.name,
-      reason,
-      status: 'offen',
-    })
-    if (error) { alert('Fehler: ' + error.message); return }
-    alert('✓ Schicht ausgeschrieben. Chatter sehen das beim nächsten Login.')
-  }
-
   const sendReminder = async (modelId, dayIso, shift, chatterName, hoursBeforeStr) => {
     const hoursBefore = parseInt(hoursBeforeStr)
     setSendingReminder(true)
@@ -598,19 +564,11 @@ export default function ScheduleTab({ session }) {
     }
   }
 
-  // Generic: sendet an Liste von Chattern. updateMode=true → "AKTUALISIERTER" Header
-  const sendPlanTo = async (recipientNames, updateMode = false) => {
+  const sendPlanToAll = async () => {
     setSending(true)
-    const targetChatters = chatters.filter(c =>
-      c.telegram_id &&
-      (recipientNames === null || recipientNames.includes(c.name))
-    )
-    let sentCount = 0
-    for (const chatter of targetChatters) {
-      const headerLine = updateMode
-        ? `🔄 AKTUALISIERTER Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`
-        : `📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`
-      const lines = [headerLine]
+    for (const chatter of chatters) {
+      if (!chatter.telegram_id) continue
+      const lines = [`📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`]
       for (const day of weekDays) {
         const dayIso = isoDate(day)
         const dayShifts = []
@@ -631,41 +589,10 @@ export default function ScheduleTab({ session }) {
           lines.push('')
         }
       }
-      if (lines.length > 1) {
-        await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
-        sentCount++
-      }
+      if (lines.length > 1) await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
     }
     setSending(false)
-    return sentCount
-  }
-
-  // Bestehender Wrapper für Kompatibilität (wird nicht mehr direkt gebraucht, aber falls von woanders aufgerufen)
-  const sendPlanToAll = async () => {
-    const count = await sendPlanTo(null, false)
-    alert(`✓ Dienstplan an ${count} Chatter versendet!`)
-  }
-
-  // Modal-Aktion: sendet basierend auf sendMode
-  const confirmSend = async () => {
-    let count
-    if (sendMode === 'all') {
-      count = await sendPlanTo(null, isUpdate)
-    } else {
-      if (selectedRecipients.length === 0) { alert('Bitte mindestens einen Chatter auswählen.'); return }
-      count = await sendPlanTo(selectedRecipients, isUpdate)
-    }
-    setShowSendModal(false)
-    setSelectedRecipients([])
-    setIsUpdate(false)
-    setSendMode('all')
-    alert(`✓ Dienstplan an ${count} ${isUpdate ? '(als Update) ' : ''}versendet!`)
-  }
-
-  const toggleRecipient = (name) => {
-    setSelectedRecipients(prev =>
-      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
-    )
+    alert('✓ Dienstplan versendet!')
   }
 
   const prevWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d) }
@@ -695,7 +622,7 @@ export default function ScheduleTab({ session }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setShowSendModal(true)} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={sendPlanToAll} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {sending ? 'Sende...' : '✈ Plan versenden'}
           </button>
           <button onClick={autoGeneratePlan} disabled={autoPlanning} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -842,9 +769,12 @@ export default function ScheduleTab({ session }) {
                         ) : cell.chatter ? (
                           <div>
                             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
-                            {cell.trainee && (
-                              <div style={{ fontSize: 12, color: '#06b6d4', fontWeight: 600 }}>🎓 mit {cell.trainee}</div>
-                            )}
+                            {cell.trainee && (() => {
+                              const isCo = cell.trainee_mode === 'co'
+                              return (
+                                <div style={{ fontSize: 12, color: isCo ? '#f59e0b' : '#06b6d4', fontWeight: 600 }}>{isCo ? '👥' : '🎓'} mit {cell.trainee}</div>
+                              )
+                            })()}
                             {cell.note && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>{cell.note}</div>}
                           </div>
                         ) : (
@@ -1036,11 +966,37 @@ export default function ScheduleTab({ session }) {
                                 })}
                               </select>
                               {cell.chatter && !isFrei && (
-                                <input value={cell.trainee || ''}
-                                  onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
-                                  placeholder="🎓 Einarbeitung (optional) — Name eintragen"
-                                  style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}
-                                />
+                                <>
+                                  <div style={{ display: 'flex', gap: 3 }}>
+                                    {[
+                                      { val: 'anlernen', icon: '🎓', color: '#06b6d4' },
+                                      { val: 'co', icon: '👥', color: '#f59e0b' },
+                                    ].map(opt => {
+                                      const active = (cell.trainee_mode || 'anlernen') === opt.val
+                                      return (
+                                        <button key={opt.val} type="button"
+                                          onClick={ev => { ev.stopPropagation(); setCell(model.id, dayIso, shift, { ...cell, trainee_mode: opt.val }) }}
+                                          style={{
+                                            flex: 1, padding: '1px 3px', borderRadius: 3,
+                                            background: active ? `${opt.color}22` : 'transparent',
+                                            border: `1px solid ${active ? opt.color : '#2e2e5a'}`,
+                                            color: active ? opt.color : 'var(--text-muted)',
+                                            fontSize: 9, cursor: 'pointer', fontFamily: 'inherit',
+                                          }}>{opt.icon}</button>
+                                      )
+                                    })}
+                                  </div>
+                                  <input value={cell.trainee || ''}
+                                    onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
+                                    placeholder="Zweiter Chatter (optional)"
+                                    style={{
+                                      background: 'var(--bg-input)',
+                                      border: `1px solid ${(cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4'}`,
+                                      color: (cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4',
+                                      padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
+                                    }}
+                                  />
+                                </>
                               )}
                               <input value={cell.note || ''}
                                 onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
@@ -1067,10 +1023,7 @@ export default function ScheduleTab({ session }) {
                                   style={{ accentColor: '#7c3aed' }} />
                                 <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
                               </label>
-                              <div style={{ display: 'flex', gap: 4 }}>
-                                <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }} style={{ flex: 1, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>🔄 Ausschr.</button>
-                                <button onClick={() => setEditingCell(null)} style={{ flex: 1, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
-                              </div>
+                              <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
                             </div>
                           ) : cell.chatter ? (
                             <div style={{ flex: 1 }}>
@@ -1083,11 +1036,14 @@ export default function ScheduleTab({ session }) {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
                                   <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</span>
-                                  {isTrainee && (
-                                    <span style={{ fontSize: 10, color: '#06b6d4', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                      <span style={{ fontSize: 9 }}>🎓</span>{cell.trainee}
-                                    </span>
-                                  )}
+                                  {isTrainee && (() => {
+                                    const isCo = cell.trainee_mode === 'co'
+                                    return (
+                                      <span style={{ fontSize: 10, color: isCo ? '#f59e0b' : '#06b6d4', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                        <span style={{ fontSize: 9 }}>{isCo ? '👥' : '🎓'}</span>{cell.trainee}
+                                      </span>
+                                    )
+                                  })()}
                                 </div>
                                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
                                   background: isPending ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)',
@@ -1186,14 +1142,39 @@ export default function ScheduleTab({ session }) {
                 </select>
               </div>
 
-              {/* Trainee */}
+              {/* Trainee / Co-Schicht */}
               {cell.chatter && !isFrei && (
                 <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>🎓 Einarbeitung (optional)</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Zweiter Chatter (optional)</label>
+                  {/* Modus-Toggle */}
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                    {[
+                      { val: 'anlernen', icon: '🎓', label: 'Anlernen', color: '#06b6d4' },
+                      { val: 'co', icon: '👥', label: 'Co-Schicht', color: '#f59e0b' },
+                    ].map(opt => {
+                      const active = (cell.trainee_mode || 'anlernen') === opt.val
+                      return (
+                        <button key={opt.val} type="button"
+                          onClick={() => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee_mode: opt.val })}
+                          style={{
+                            flex: 1, padding: '6px 8px', borderRadius: 6,
+                            background: active ? `${opt.color}22` : 'transparent',
+                            border: `1px solid ${active ? opt.color : '#2e2e5a'}`,
+                            color: active ? opt.color : 'var(--text-muted)',
+                            fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                          }}>{opt.icon} {opt.label}</button>
+                      )
+                    })}
+                  </div>
                   <input value={cell.trainee || ''}
                     onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
-                    placeholder="Name eintragen — auch neue Chatter ohne Portal-Zugang"
-                    style={{ background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4', padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }}
+                    placeholder="Name eintragen"
+                    style={{
+                      background: 'var(--bg-input)',
+                      border: `1px solid ${(cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4'}`,
+                      color: (cell.trainee_mode || 'anlernen') === 'co' ? '#f59e0b' : '#06b6d4',
+                      padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
+                    }}
                   />
                 </div>
               )}
@@ -1235,11 +1216,6 @@ export default function ScheduleTab({ session }) {
 
               {/* Aktion */}
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button onClick={() => offerShift(editSheet.modelId, editSheet.dayIso, editSheet.shift)} style={{
-                  flex: 1, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)',
-                  color: '#f59e0b', borderRadius: 8, padding: '12px', fontSize: 13, fontWeight: 700,
-                  cursor: 'pointer', fontFamily: 'inherit',
-                }}>🔄 Ausschreiben</button>
                 <button onClick={() => {
                   setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { chatter: '', note: '', confirmed: true })
                   setEditSheet(null)
@@ -1378,114 +1354,6 @@ export default function ScheduleTab({ session }) {
           ↻ Als Vorlage für nächste Woche
         </button>
       </div>
-
-      {/* Send-Modal: Auswahl An alle / An ausgewählte + Update-Toggle */}
-      {showSendModal && (
-        <div onClick={() => !sending && setShowSendModal(false)} style={{
-          position: 'fixed', inset: 0, zIndex: 10000,
-          background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-        }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
-            padding: 20, maxWidth: 480, width: '100%',
-            maxHeight: '90vh', overflowY: 'auto',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Dienstplan versenden</div>
-              <button onClick={() => !sending && setShowSendModal(false)} style={{
-                background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', padding: 0,
-              }}>✕</button>
-            </div>
-
-            {/* Modus-Auswahl */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-              <button onClick={() => setSendMode('all')} style={{
-                flex: 1, padding: '8px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                background: sendMode === 'all' ? 'rgba(6,182,212,0.18)' : 'transparent',
-                color: sendMode === 'all' ? '#06b6d4' : 'var(--text-muted)',
-                border: `1px solid ${sendMode === 'all' ? '#06b6d4' : 'var(--border)'}`,
-              }}>An alle</button>
-              <button onClick={() => setSendMode('selected')} style={{
-                flex: 1, padding: '8px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                background: sendMode === 'selected' ? 'rgba(124,58,237,0.18)' : 'transparent',
-                color: sendMode === 'selected' ? '#a78bfa' : 'var(--text-muted)',
-                border: `1px solid ${sendMode === 'selected' ? '#7c3aed' : 'var(--border)'}`,
-              }}>An ausgewählte</button>
-            </div>
-
-            {/* Empfänger-Auswahl */}
-            {sendMode === 'selected' && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: 0.5 }}>
-                    EMPFÄNGER {selectedRecipients.length > 0 && <span style={{ color: '#a78bfa' }}>· {selectedRecipients.length} ausgewählt</span>}
-                  </div>
-                  {selectedRecipients.length > 0 && (
-                    <button onClick={() => setSelectedRecipients([])} style={{
-                      fontSize: 10, padding: '3px 8px', borderRadius: 5,
-                      background: 'transparent', border: '1px solid var(--border)',
-                      color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
-                    }}>Zurücksetzen</button>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {chatters.filter(c => c.telegram_id).map(c => {
-                    const active = selectedRecipients.includes(c.name)
-                    return (
-                      <button key={c.name} onClick={() => toggleRecipient(c.name)} style={{
-                        padding: '5px 11px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-                        fontWeight: 600, fontSize: 11,
-                        background: active ? 'rgba(124,58,237,0.18)' : 'transparent',
-                        color: active ? '#a78bfa' : 'var(--text-muted)',
-                        border: `1px solid ${active ? '#7c3aed' : 'var(--border)'}`,
-                      }}>{active ? '✓ ' : ''}{c.name}</button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Update-Toggle */}
-            <div style={{ marginBottom: 16, padding: 10, background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={isUpdate}
-                  onChange={e => setIsUpdate(e.target.checked)}
-                  style={{ width: 16, height: 16, cursor: 'pointer' }}
-                />
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>🔄 Als Update markieren</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Nachricht beginnt mit "AKTUALISIERTER Dienstplan ..."</div>
-                </div>
-              </label>
-            </div>
-
-            {/* Aktionen */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => !sending && setShowSendModal(false)} disabled={sending} style={{
-                flex: 1, padding: '10px', borderRadius: 7,
-                background: 'transparent', border: '1px solid var(--border)',
-                color: 'var(--text-muted)', fontSize: 12, fontWeight: 700,
-                cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-              }}>Abbrechen</button>
-              <button onClick={confirmSend} disabled={sending || (sendMode === 'selected' && selectedRecipients.length === 0)} style={{
-                flex: 2, padding: '10px', borderRadius: 7,
-                background: sending ? 'var(--border)' : '#06b6d4',
-                color: '#fff', border: 'none', fontSize: 13, fontWeight: 700,
-                cursor: (sending || (sendMode === 'selected' && selectedRecipients.length === 0)) ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-              }}>
-                {sending ? 'Sende...' : `✈ ${sendMode === 'all'
-                  ? `An alle senden (${chatters.filter(c => c.telegram_id).length})`
-                  : `An ${selectedRecipients.length} senden`}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -916,8 +916,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       const modelsInShift = []
       for (const [key, val] of Object.entries(scheduleData)) {
         const parts = key.split('__')
-        if (parts[1] === dayIso && parts[2] === shift && val.chatter === displayName) {
-          modelsInShift.push(val)
+        if (parts[1] === dayIso && parts[2] === shift && (val.chatter === displayName || val.trainee === displayName)) {
+          // Ich bin entweder Hauptchatter oder Trainee/Co-Chatter
+          const asTrainee = val.trainee === displayName && val.chatter !== displayName
+          modelsInShift.push({ ...val, _asTrainee: asTrainee })
         }
       }
       if (modelsInShift.length > 0) {
@@ -942,12 +944,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         const modelsInShift = []
         for (const [key, val] of Object.entries(assignments)) {
           const parts = key.split('__')
-          if (parts[1] === dayIso && parts[2] === shift && val.chatter === displayName) {
+          if (parts[1] === dayIso && parts[2] === shift && (val.chatter === displayName || val.trainee === displayName)) {
             const modelId = parts[0]
             const modelObj = models.find(m => String(m.id) === String(modelId))
             const timeStr = (times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
             const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
-            modelsInShift.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime })
+            const asTrainee = val.trainee === displayName && val.chatter !== displayName
+            const traineeMode = val.trainee_mode || 'anlernen'
+            modelsInShift.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter })
           }
         }
         if (modelsInShift.length > 0) {
@@ -1237,6 +1241,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   const today = isToday(s.day)
                   const past = s.day < new Date() && !today
                   const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                  // v2.9.0: Bin ich Trainee/Co bei mind. einem Model in dieser Schicht?
+                  const traineeEntry = s.models.find(m => m.asTrainee)
                   return (
                     <div key={i} style={{
                       padding: '10px 12px', background: today ? 'rgba(16,185,129,0.05)' : 'var(--bg-card2)',
@@ -1255,6 +1261,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {traineeEntry && (() => {
+                            const isCo = traineeEntry.traineeMode === 'co'
+                            return (
+                              <span style={{
+                                fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 700,
+                                background: isCo ? 'rgba(245,158,11,0.15)' : 'rgba(6,182,212,0.15)',
+                                color: isCo ? '#f59e0b' : '#06b6d4',
+                                border: `1px solid ${isCo ? 'rgba(245,158,11,0.3)' : 'rgba(6,182,212,0.3)'}`,
+                              }}>{isCo ? '👥 Co' : '🎓 Anlernen'} · mit {traineeEntry.mainChatter}</span>
+                            )
+                          })()}
                           {s.reminder && (
                             <span style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)', padding: '2px 7px', borderRadius: 4 }}>🔔</span>
                           )}
