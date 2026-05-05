@@ -559,75 +559,135 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // Backward-compat: alter Name wird beim Initial-Load referenziert
   const markMyMessagesRead = markAllMessagesRead
 
-  const checkIn = async (shiftName) => {
-    // Check if already logged in - prevent duplicate logs
-    const { data: existingLog } = await supabase
-      .from('shift_logs')
-      .select('id')
-      .eq('display_name', displayName)
-      .is('checked_out_at', null)
-      .maybeSingle()
-    if (existingLog) {
-      // Already logged in - just set state
-      setCurrentLogId(existingLog.id)
-      setIsOnline(true)
-      await sendHeartbeat(true)
-      return
-    }
+  const [isCheckingIn, setIsCheckingIn] = useState(false) // v2.9.6: Doppelklick-Schutz UI
+  const checkInLockRef = React.useRef(false) // v2.9.6: Race-Lock damit parallele Calls nicht durchgehen
 
-    // v2.9.5: Schicht aus Plan ermitteln statt 'Manuell'
-    // Wenn shiftName/selectedShift explizit gewählt → die nehmen
-    // Sonst: heute eingeplant für eine Schicht? → die nehmen
-    let shiftToLog = shiftName || selectedShift
-    if (!shiftToLog) {
-      const todayBerlin = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
-      const myNameLc = (displayName || '').trim().toLowerCase()
-      const foundShifts = new Set()
-      for (const sched of next7Schedules) {
-        const assignments = sched.assignments || {}
+  const checkIn = async (shiftName) => {
+    // v2.9.6: Race-Schutz — wenn schon ein Call läuft, abbrechen
+    if (checkInLockRef.current) return
+    checkInLockRef.current = true
+    setIsCheckingIn(true)
+    try {
+      // Check if already logged in - prevent duplicate logs
+      const { data: existingLog } = await supabase
+        .from('shift_logs')
+        .select('id')
+        .eq('display_name', displayName)
+        .is('checked_out_at', null)
+        .maybeSingle()
+      if (existingLog) {
+        // Already logged in - just set state
+        setCurrentLogId(existingLog.id)
+        setIsOnline(true)
+        await sendHeartbeat(true)
+        return
+      }
+
+      // v2.9.5/6: Schicht aus Plan ermitteln statt 'Manuell'
+      // - Daten direkt aus DB laden (vermeidet Race-Condition mit State der noch nicht geladen ist)
+      // - Wenn mehrere Schichten heute, die nehmen deren Startzeit am nächsten zur jetzigen Zeit ist
+      let shiftToLog = shiftName || selectedShift
+      if (!shiftToLog) {
+        const now = new Date()
+        const todayBerlin = now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+        const myNameLc = (displayName || '').trim().toLowerCase()
+        const berlinTimeStr = now.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hour12: false })
+        const [nowH, nowM] = berlinTimeStr.split(':').map(Number)
+        const nowMins = nowH * 60 + nowM
+
+        // Diese Woche aus DB laden (frische Daten, nicht aus State)
+        const dt = new Date(todayBerlin)
+        const day = dt.getDay()
+        const diff = dt.getDate() - day + (day === 0 ? -6 : 1)
+        const monday = new Date(dt.setDate(diff))
+        const weekStart = monday.toISOString().split('T')[0]
+        const { data: schedRow } = await supabase.from('schedule').select('*').eq('week_start', weekStart).maybeSingle()
+        const assignments = schedRow?.assignments || {}
+        const shiftTimes = schedRow?.shift_times || {}
+
+        // Alle Schicht-Einträge für mich heute sammeln
+        const myShiftsToday = []
         for (const [key, val] of Object.entries(assignments)) {
           const parts = key.split('__')
           if (parts[1] !== todayBerlin) continue
           const valChatterLc = (val.chatter || '').trim().toLowerCase()
           const valTraineeLc = (val.trainee || '').trim().toLowerCase()
           if (valChatterLc === myNameLc || valTraineeLc === myNameLc) {
-            foundShifts.add(parts[2])
+            const timeStr = (shiftTimes[`${parts[0]}__${parts[2]}`] || '').replace(/\s*\(DE\)/g, '')
+            const startTimeStr = timeStr.split('-')[0]?.trim() || ''
+            const [sh, sm] = startTimeStr.split(':').map(Number)
+            const startMins = isNaN(sh) ? null : sh * 60 + (sm || 0)
+            myShiftsToday.push({ shift: parts[2], modelId: parts[0], startMins })
           }
         }
-      }
-      // Wenn genau 1 Schicht heute → die nehmen
-      // Wenn mehrere oder keine → Manuell (Fallback)
-      if (foundShifts.size === 1) {
-        shiftToLog = [...foundShifts][0]
-      } else {
-        shiftToLog = 'Manuell'
-      }
-    }
 
-    const { data } = await supabase.from('shift_logs').insert({
-      display_name: displayName,
-      checked_in_at: new Date().toISOString(),
-      shift: shiftToLog,
-    }).select().single()
-    if (data) {
-      setCurrentLogId(data.id)
-      setCheckInTime(new Date())
+        const uniqueShifts = [...new Set(myShiftsToday.map(s => s.shift))]
+        if (uniqueShifts.length === 1) {
+          shiftToLog = uniqueShifts[0]
+        } else if (uniqueShifts.length > 1) {
+          // Mehrere — Schicht mit Startzeit am nächsten zur jetzigen Uhrzeit (im Fenster -4h bis +8h)
+          let best = null
+          let bestDiff = Infinity
+          for (const s of myShiftsToday) {
+            if (s.startMins == null) continue
+            const diff = nowMins - s.startMins
+            if (diff >= -240 && diff <= 480) {
+              if (Math.abs(diff) < bestDiff) {
+                bestDiff = Math.abs(diff)
+                best = s.shift
+              }
+            }
+          }
+          shiftToLog = best || 'Manuell'
+        } else {
+          shiftToLog = 'Manuell'
+        }
+      }
+
+      const { data } = await supabase.from('shift_logs').insert({
+        display_name: displayName,
+        checked_in_at: new Date().toISOString(),
+        shift: shiftToLog,
+      }).select().single()
+      if (data) {
+        setCurrentLogId(data.id)
+        setCheckInTime(new Date())
+      }
+      setIsOnline(true)
+      setSelectedShift('')
+      await sendHeartbeat(true)
+    } finally {
+      checkInLockRef.current = false
+      setIsCheckingIn(false)
     }
-    setIsOnline(true)
-    setSelectedShift('')
-    await sendHeartbeat(true)
   }
 
+  const [isCheckingOut, setIsCheckingOut] = useState(false) // v2.9.6: Doppelklick-Schutz
+  const checkOutLockRef = React.useRef(false)
+
   const checkOut = async () => {
-    if (currentLogId) {
-      await supabase.from('shift_logs').update({
-        checked_out_at: new Date().toISOString(),
-      }).eq('id', currentLogId)
+    if (checkOutLockRef.current) return
+    checkOutLockRef.current = true
+    setIsCheckingOut(true)
+    try {
+      if (currentLogId) {
+        await supabase.from('shift_logs').update({
+          checked_out_at: new Date().toISOString(),
+        }).eq('id', currentLogId)
+      }
+      // v2.9.6: Cleanup — falls aus irgendeinem Grund noch andere offene Logs für diesen User existieren, alle schließen
+      await supabase.from('shift_logs')
+        .update({ checked_out_at: new Date().toISOString() })
+        .eq('display_name', displayName)
+        .is('checked_out_at', null)
+      setIsOnline(false)
+      setCurrentLogId(null)
+      setCheckInTime(null)
+      await sendHeartbeat(false)
+    } finally {
+      checkOutLockRef.current = false
+      setIsCheckingOut(false)
     }
-    setIsOnline(false)
-    setCurrentLogId(null)
-    setCheckInTime(null)
-    await sendHeartbeat(false)
   }
 
   useEffect(() => {
@@ -1208,14 +1268,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       {todayShifts.map(s => <option key={s.shift} value={s.shift}>{s.shift} · {s.models.map(m => m.modelName || m).join(', ')}</option>)}
                     </select>
                   )}
-                  <button onClick={() => checkIn()} disabled={todayShifts.length > 1 && !selectedShift}
-                    style={{ background: todayShifts.length > 1 && !selectedShift ? 'var(--border)' : '#10b981', color: todayShifts.length > 1 && !selectedShift ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: todayShifts.length > 1 && !selectedShift ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                    ✓ {todayShifts.length === 1 ? `${todayShifts[0].shift} starten` : 'Schicht starten'}
+                  <button onClick={() => checkIn()} disabled={isCheckingIn || (todayShifts.length > 1 && !selectedShift)}
+                    style={{ background: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--border)' : '#10b981', color: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    {isCheckingIn ? '⏳ ...' : `✓ ${todayShifts.length === 1 ? `${todayShifts[0].shift} starten` : 'Schicht starten'}`}
                   </button>
                 </>
               ) : (
-                <button onClick={checkOut} style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  ✕ Schicht beenden
+                <button onClick={checkOut} disabled={isCheckingOut} style={{ background: isCheckingOut ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  {isCheckingOut ? '⏳ ...' : '✕ Schicht beenden'}
                 </button>
               )}
             </div>
