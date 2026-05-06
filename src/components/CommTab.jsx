@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
-import { sendTelegramMessage, notifyOwner } from '../telegram'
+import { sendTelegramMessage, sendTelegramPhoto, sendTelegramMediaGroup, notifyOwner } from '../telegram'
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
 
@@ -172,6 +172,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [activeThreadType, setActiveThreadType] = useState(null) // 'model' | 'chatter' (für unified chat)
   const [chatInputText, setChatInputText] = useState('')
   const [chatSendingTo, setChatSendingTo] = useState(false)
+  // v2.9.8: Bild-Anhänge im Chat
+  const [chatAttachments, setChatAttachments] = useState([]) // [{file, previewUrl, resizing, uploadedUrl}]
+  const [lightboxImage, setLightboxImage] = useState(null) // URL des aktuell vergrößerten Bildes
   const [chatSearch, setChatSearch] = useState('')
   const chatScrollRef = useRef(null)
   const [showNewChatPicker, setShowNewChatPicker] = useState(false)
@@ -597,9 +600,88 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   }
 
   // Senden im aktiven Thread
+  // v2.9.8: Bild auf max 1920px Kantenlänge runterskalieren (Canvas) — gibt Blob zurück
+  const resizeImage = (file, maxSize = 1920, quality = 0.85) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        let { width, height } = img
+        if (width <= maxSize && height <= maxSize) {
+          // Schon klein genug — original zurückgeben
+          fetch(URL.createObjectURL(file)).then(r => r.blob()).then(resolve).catch(reject)
+          return
+        }
+        const ratio = Math.min(maxSize / width, maxSize / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob)
+          else reject(new Error('Canvas toBlob fehlgeschlagen'))
+        }, 'image/jpeg', quality)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht geladen werden')) }
+      img.src = url
+    })
+  }
+
+  // v2.9.8: Bilder zur Chat-Eingabe hinzufügen (mit lokaler Preview)
+  const handleChatImageSelect = async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'))
+    if (files.length === 0) return
+    const newAttachments = files.map(f => ({
+      file: f,
+      previewUrl: URL.createObjectURL(f),
+      resizing: false,
+      uploadedUrl: null,
+    }))
+    setChatAttachments(prev => [...prev, ...newAttachments])
+  }
+
+  const removeChatAttachment = (idx) => {
+    setChatAttachments(prev => {
+      const att = prev[idx]
+      if (att?.previewUrl) URL.revokeObjectURL(att.previewUrl)
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
+  // v2.9.8: Bilder zu Supabase Storage hochladen, Public-URLs zurückgeben
+  const uploadChatAttachments = async () => {
+    if (chatAttachments.length === 0) return []
+    const urls = []
+    for (const att of chatAttachments) {
+      try {
+        const blob = await resizeImage(att.file, 1920, 0.85)
+        const ext = (att.file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+        const path = `chat/${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`
+        const { error: uploadErr } = await supabase.storage.from('chat-attachments').upload(path, blob, {
+          contentType: 'image/jpeg',
+          cacheControl: '31536000',
+        })
+        if (uploadErr) {
+          console.error('Upload-Fehler:', uploadErr)
+          continue
+        }
+        const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path)
+        if (pub?.publicUrl) urls.push(pub.publicUrl)
+      } catch (e) {
+        console.error('Resize/Upload fehlgeschlagen:', e)
+      }
+    }
+    return urls
+  }
+
   const sendChatThreadMessage = async (contactType) => {
-    if (!activeThreadName || !chatInputText.trim() || chatSendingTo) return
     const text = chatInputText.trim()
+    const hasImages = chatAttachments.length > 0
+    if (!activeThreadName || (!text && !hasImages) || chatSendingTo) return
     // Telegram-ID lookup
     const contactsTable = contactType === 'model' ? 'models_contact' : 'chatters_contact'
     const { data: contact } = await supabase.from(contactsTable)
@@ -610,18 +692,36 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
     setChatSendingTo(true)
     try {
-      // Telegram-Versand mit Status-Check
-      const tgResult = await sendTelegramMessage(contact.telegram_id, text)
+      // Bilder hochladen falls vorhanden
+      let imageUrls = []
+      if (hasImages) {
+        imageUrls = await uploadChatAttachments()
+        if (imageUrls.length === 0) {
+          alert('⚠ Bild-Upload fehlgeschlagen. Bitte erneut versuchen.')
+          setChatSendingTo(false)
+          return
+        }
+      }
+
+      // Telegram-Versand
+      let tgResult
+      if (imageUrls.length > 0) {
+        // Mit Bildern → sendPhoto (1) oder sendMediaGroup (mehrere)
+        tgResult = await sendTelegramMediaGroup(contact.telegram_id, imageUrls, text)
+      } else {
+        tgResult = await sendTelegramMessage(contact.telegram_id, text)
+      }
       const telegramOk = tgResult?.ok === true
       const errorReason = telegramOk ? null : (tgResult?.description || 'Unbekannter Fehler')
-      // DB-Eintrag mit korrektem Status
+      // DB-Eintrag mit korrektem Status + image_urls
       await supabase.from('messages').insert({
         model_name: activeThreadName,
         model_telegram_id: contact.telegram_id,
         direction: 'out',
         contact_type: contactType,
-        message_type: null, // null = reine Konversation
-        text,
+        message_type: null,
+        text: text || null,
+        image_urls: imageUrls.length > 0 ? imageUrls : null,
         status: telegramOk ? 'sent' : 'failed',
         sent_by: userName,
       })
@@ -629,9 +729,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       await supabase.from(lastContactedTable)
         .update({ last_contacted: new Date().toISOString() })
         .eq('id', contact.id)
+      // Aufräumen
       setChatInputText('')
+      // Preview-URLs revoken um Memory-Leak zu vermeiden
+      chatAttachments.forEach(a => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl) })
+      setChatAttachments([])
       await loadMessages()
-      // User klar informieren wenn's NICHT angekommen ist
       if (!telegramOk) {
         const friendly = errorReason.toLowerCase().includes('chat not found')
           ? `${activeThreadName} hat den Bot vermutlich blockiert oder gelöscht. Bitte um /start an @thirteen87agency_bot bitten.`
@@ -1610,7 +1713,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           maxWidth: '70%',
                         }}>
                           <div style={{
-                            padding: '7px 11px',
+                            padding: msg.image_urls && msg.image_urls.length > 0 ? '6px 6px 7px 6px' : '7px 11px',
                             borderRadius: isOut ? '10px 10px 2px 10px' : '10px 10px 10px 2px',
                             background: isOut ? 'rgba(124,58,237,0.18)' : 'var(--bg-card2)',
                             color: isOut ? '#a78bfa' : 'var(--text-primary)',
@@ -1618,7 +1721,36 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             border: isOut ? '1px solid rgba(124,58,237,0.3)' : '1px solid var(--border)',
                             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                           }}>
-                            {msg.text}
+                            {/* v2.9.8: Bilder anzeigen — Desktop nebeneinander, Mobile untereinander */}
+                            {msg.image_urls && msg.image_urls.length > 0 && (
+                              <div style={{
+                                display: 'flex',
+                                flexDirection: isMobileChat ? 'column' : 'row',
+                                flexWrap: 'wrap',
+                                gap: 4,
+                                marginBottom: msg.text ? 6 : 0,
+                              }}>
+                                {msg.image_urls.map((url, ii) => (
+                                  <img key={ii} src={url} alt="Anhang"
+                                    onClick={() => setLightboxImage(url)}
+                                    style={{
+                                      width: isMobileChat ? '100%' : 130,
+                                      height: isMobileChat ? 'auto' : 130,
+                                      maxHeight: isMobileChat ? 240 : 130,
+                                      objectFit: 'cover',
+                                      borderRadius: 6,
+                                      cursor: 'pointer',
+                                      display: 'block',
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            {msg.text && (
+                              <div style={{ padding: msg.image_urls && msg.image_urls.length > 0 ? '0 5px' : 0 }}>
+                                {msg.text}
+                              </div>
+                            )}
                           </div>
                           <div style={{
                             fontSize: 9, color: msg.status === 'failed' ? '#ef4444' : 'var(--text-muted)',
@@ -1635,8 +1767,39 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   })}
                 </div>
 
+                {/* v2.9.8: Bild-Preview-Reihe wenn Bilder ausgewählt */}
+                {chatAttachments.length > 0 && (
+                  <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap', background: 'rgba(124,58,237,0.04)' }}>
+                    {chatAttachments.map((att, idx) => (
+                      <div key={idx} style={{ position: 'relative', width: 64, height: 64, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        <img src={att.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <button onClick={() => removeChatAttachment(idx)} title="Entfernen" style={{
+                          position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%',
+                          background: 'rgba(0,0,0,0.7)', color: '#fff', border: 'none', cursor: 'pointer',
+                          fontSize: 11, lineHeight: 1, padding: 0, fontFamily: 'inherit',
+                        }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Eingabefeld */}
                 <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  {/* v2.9.8: Anhang-Button */}
+                  <label style={{
+                    padding: '9px 11px', borderRadius: 7,
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--text-muted)', fontSize: 16, cursor: chatSendingTo ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    opacity: chatSendingTo ? 0.5 : 1,
+                  }} title="Bilder anhängen">
+                    📎
+                    <input type="file" accept="image/*" multiple
+                      disabled={chatSendingTo}
+                      onChange={e => { handleChatImageSelect(e.target.files); e.target.value = '' }}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
                   <textarea
                     value={chatInputText}
                     onChange={e => setChatInputText(e.target.value)}
@@ -1646,7 +1809,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         sendChatThreadMessage(contactType)
                       }
                     }}
-                    placeholder={`Nachricht an ${activeThreadName}…`}
+                    placeholder={chatAttachments.length > 0 ? `Bildbeschreibung (optional)…` : `Nachricht an ${activeThreadName}…`}
                     style={{
                       flex: 1, minHeight: 38, maxHeight: 120, resize: 'none',
                       background: 'var(--bg-input)', border: '1px solid var(--border)',
@@ -1656,12 +1819,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   />
                   <button
                     onClick={() => sendChatThreadMessage(contactType)}
-                    disabled={chatSendingTo || !chatInputText.trim()}
+                    disabled={chatSendingTo || (!chatInputText.trim() && chatAttachments.length === 0)}
                     style={{
                       padding: '10px 18px', borderRadius: 7,
-                      background: (chatSendingTo || !chatInputText.trim()) ? 'var(--border)' : '#7c3aed',
+                      background: (chatSendingTo || (!chatInputText.trim() && chatAttachments.length === 0)) ? 'var(--border)' : '#7c3aed',
                       color: '#fff', border: 'none', fontSize: 12, fontWeight: 700,
-                      cursor: (chatSendingTo || !chatInputText.trim()) ? 'not-allowed' : 'pointer',
+                      cursor: (chatSendingTo || (!chatInputText.trim() && chatAttachments.length === 0)) ? 'not-allowed' : 'pointer',
                       fontFamily: 'inherit', whiteSpace: 'nowrap',
                     }}
                   >
@@ -2735,6 +2898,26 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           </Card>
         )
       })()}
+
+      {/* v2.9.8: Lightbox für Bild-Anhänge */}
+      {lightboxImage && (
+        <div onClick={() => setLightboxImage(null)} style={{
+          position: 'fixed', inset: 0, zIndex: 10001,
+          background: 'rgba(0,0,0,0.9)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', padding: 20,
+        }}>
+          <img src={lightboxImage} alt="Vergrößert" style={{
+            maxWidth: '95%', maxHeight: '95%', objectFit: 'contain',
+            borderRadius: 8, boxShadow: '0 0 40px rgba(0,0,0,0.5)',
+          }} />
+          <button onClick={(e) => { e.stopPropagation(); setLightboxImage(null) }} style={{
+            position: 'absolute', top: 16, right: 16, width: 36, height: 36, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.7)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
+            fontSize: 18, cursor: 'pointer', fontFamily: 'inherit',
+          }}>✕</button>
+        </div>
+      )}
 
       {/* EDIT-MODAL für Custom Content (nur Admins) */}
       {editingRequest && isAdminUser && (() => {
