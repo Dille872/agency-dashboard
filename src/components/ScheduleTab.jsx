@@ -163,7 +163,7 @@ export default function ScheduleTab({ session }) {
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
-  useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); checkShiftAlerts(); loadAbsences(); loadActiveReminders() }, [])
+  useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); loadAbsences(); loadActiveReminders() }, [])
   useEffect(() => {
     if (weekKey) {
       loadSchedule()
@@ -215,10 +215,15 @@ export default function ScheduleTab({ session }) {
   }
 
   const checkShiftAlerts = async () => {
-    // v2.9.3: Robustere Alert-Logik
-    // - Prüft sowohl online_status (Heartbeat) als auch shift_logs (aktiver Check-in)
-    // - Persistenter Spam-Schutz via alert_markers (1x pro chatter+shift+tag)
-    // v2.9.4: Berlin-Zeit für Alert-Vergleiche (statt Browser-Zeit)
+    // v3.0.0: DEAKTIVIERT — Schicht-Alerts kommen jetzt ausschließlich aus der Edge Function
+    // `shift-alert` (server-seitig, alle 5 Minuten via pg_cron).
+    // 
+    // Grund: Die Frontend-Version feuerte bei jedem Tab-Open jedes Admins. Mit mehreren
+    // Browser-Tabs gleichzeitig offen gab's Race-Conditions zwischen "Marker laden" und
+    // "Telegram senden" → Spam mit unterschiedlichem Wording ("noch nicht online!" vs
+    // "noch nicht eingecheckt!"). Edge Function alleine reicht — eine zentrale Quelle.
+    return
+    // ---- Alter Code unten (nicht mehr ausgeführt) ----
     const now = new Date()
     const todayIso = todayBerlin()
     // Berlin-Stunde + Minute holen — nicht Browser-Zeit, sonst falscher Vergleich aus anderen Zeitzonen
