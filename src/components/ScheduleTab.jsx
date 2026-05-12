@@ -104,6 +104,11 @@ export default function ScheduleTab({ session }) {
   const [sending, setSending] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
   const [conflictsOpen, setConflictsOpen] = useState(false)
+  // v3.1.0: Konflikt-Acknowledgements (gesehen) — persistiert in DB für alle Admins
+  const [conflictAcks, setConflictAcks] = useState(new Set()) // set of conflict_keys
+  // v3.1.0: Send-Modal für gezielte Chatter-Auswahl
+  const [sendModalOpen, setSendModalOpen] = useState(false)
+  const [sendSelection, setSendSelection] = useState(new Set()) // Set<chatter_id>
   // Collapse pro Model — persistiert in Localstorage
   const [collapsedModels, setCollapsedModels] = useState(() => {
     try {
@@ -163,7 +168,37 @@ export default function ScheduleTab({ session }) {
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
-  useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); loadAbsences(); loadActiveReminders() }, [])
+  useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); loadAbsences(); loadActiveReminders(); loadConflictAcks() }, [])
+
+  // v3.1.0: Konflikt-Acks aus DB laden (welche Doppel-Schichten wurden als gesehen markiert)
+  const loadConflictAcks = async () => {
+    try {
+      const { data } = await supabase.from('schedule_conflict_acks').select('conflict_key')
+      setConflictAcks(new Set((data || []).map(a => a.conflict_key)))
+    } catch (e) {
+      console.warn('loadConflictAcks failed:', e)
+    }
+  }
+
+  const toggleConflictAck = async (conflictKey) => {
+    if (conflictAcks.has(conflictKey)) {
+      // entacken: aus DB entfernen
+      try {
+        await supabase.from('schedule_conflict_acks').delete().eq('conflict_key', conflictKey)
+      } catch (e) { console.warn('unack failed', e) }
+      setConflictAcks(prev => {
+        const next = new Set(prev)
+        next.delete(conflictKey)
+        return next
+      })
+    } else {
+      // acken: in DB schreiben
+      try {
+        await supabase.from('schedule_conflict_acks').insert({ conflict_key: conflictKey, acked_by: session?.user?.email || 'admin' })
+      } catch (e) { console.warn('ack failed', e) }
+      setConflictAcks(prev => new Set([...prev, conflictKey]))
+    }
+  }
   useEffect(() => {
     if (weekKey) {
       loadSchedule()
@@ -613,6 +648,87 @@ export default function ScheduleTab({ session }) {
     }
   }
 
+  // v3.1.0: Doppel-Schicht-Detection — Chatter in 2+ verschiedenen Schichten am gleichen Tag
+  // Mapping: chatter+date → Set of shifts (Früh/Spät/Nacht)
+  const chatterShiftsByDay = {} // {"Max__2026-05-06": Set("Früh", "Spät")}
+  for (const day of weekDays) {
+    const dayIso = isoDate(day)
+    for (const shift of SHIFTS) {
+      for (const model of models) {
+        const cell = getCell(model.id, dayIso, shift)
+        if (!cell.chatter || cell.chatter === '__FREI__') continue
+        const key = `${cell.chatter}__${dayIso}`
+        if (!chatterShiftsByDay[key]) chatterShiftsByDay[key] = new Set()
+        chatterShiftsByDay[key].add(shift)
+      }
+    }
+  }
+  // Set für schnellen Lookup pro Zelle: welche (chatter, dayIso)-Kombis sind betroffen
+  const doppelSchichtKeys = new Set() // "{chatter}__{dayIso}"
+  for (const [key, shifts] of Object.entries(chatterShiftsByDay)) {
+    if (shifts.size >= 2) {
+      doppelSchichtKeys.add(key)
+      const [chatterName, dayIso] = key.split('__')
+      const dayObj = weekDays.find(d => isoDate(d) === dayIso)
+      const dayLabel = dayObj ? `${DAYS[weekDays.indexOf(dayObj)]} ${formatDate(dayObj)}` : dayIso
+      const conflictKey = `${chatterName}__${dayIso}` // identisch zu doppelSchichtKey-Format
+      conflicts.push({
+        type: 'doppel_schicht',
+        msg: `${chatterName} hat ${[...shifts].join(' + ')} am ${dayLabel}`,
+        chatterName,
+        dayIso,
+        shifts: [...shifts],
+        conflictKey,
+        acked: conflictAcks.has(conflictKey),
+      })
+    }
+  }
+
+  // v3.1.0: Sendet an die Chatter die im Modal ausgewählt sind
+  const sendPlanToSelected = async () => {
+    const selectedIds = sendSelection
+    if (selectedIds.size === 0) {
+      alert('Bitte mindestens einen Chatter auswählen.')
+      return
+    }
+    setSending(true)
+    let sent = 0
+    let skipped = 0
+    for (const chatter of chatters) {
+      if (!selectedIds.has(chatter.id)) continue
+      if (!chatter.telegram_id) { skipped++; continue }
+      const lines = [`📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`]
+      for (const day of weekDays) {
+        const dayIso = isoDate(day)
+        const dayShifts = []
+        for (const shift of SHIFTS) {
+          for (const model of models) {
+            const cell = getCell(model.id, dayIso, shift)
+            if (cell.chatter === chatter.name) {
+              const berlinTime = (cell.time_override || shiftTimes[`${model.id}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
+              const localTime = berlinTime ? convertTimeToLocal(berlinTime) : ''
+              const timeDisplay = localTime ? ` (${localTime} Ortszeit)` : ''
+              dayShifts.push(`  ${shift}${timeDisplay}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
+            }
+          }
+        }
+        if (dayShifts.length > 0) {
+          lines.push(`${DAYS[weekDays.indexOf(day)]} ${formatDate(day)}`)
+          lines.push(...dayShifts)
+          lines.push('')
+        }
+      }
+      if (lines.length > 1) {
+        await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
+        sent++
+      }
+    }
+    setSending(false)
+    setSendModalOpen(false)
+    setSendSelection(new Set())
+    alert(`✓ Dienstplan an ${sent} ${sent === 1 ? 'Chatter' : 'Chatter'} versendet${skipped > 0 ? ` (${skipped} ohne Telegram-ID übersprungen)` : ''}!`)
+  }
+
   const sendPlanToAll = async () => {
     setSending(true)
     for (const chatter of chatters) {
@@ -671,8 +787,8 @@ export default function ScheduleTab({ session }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={sendPlanToAll} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {sending ? 'Sende...' : '✈ Plan versenden'}
+          <button onClick={() => { setSendSelection(new Set(chatters.filter(c => c.telegram_id).map(c => c.id))); setSendModalOpen(true) }} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {sending ? 'Sende...' : '✈ Plan versenden...'}
           </button>
           <button onClick={autoGeneratePlan} disabled={autoPlanning} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {autoPlanning ? '⏳ Plane...' : '⚡ Auto-Plan'}
@@ -978,6 +1094,11 @@ export default function ScheduleTab({ session }) {
                       const cellId = getCellKey(model.id, dayIso, shift)
                       const isEditing = editingCell === cellId
                       const hasConflict = conflicts.some(c => c.type === 'unbesetzt' && c.modelId === model.id && c.dayIso === dayIso && c.shift === shift)
+                      // v3.1.0: Doppel-Schicht-Check für DIESE Zelle (Chatter hat 2+ Schichten am gleichen Tag)
+                      const doppelKey = cell.chatter && cell.chatter !== '__FREI__' ? `${cell.chatter}__${dayIso}` : null
+                      const isDoppelSchicht = doppelKey ? doppelSchichtKeys.has(doppelKey) : false
+                      const isDoppelAcked = doppelKey ? conflictAcks.has(doppelKey) : false
+                      const showDoppelWarn = isDoppelSchicht && !isDoppelAcked
                       const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1
                       const recurringKey = getRecurringKey(model.id, dayOfWeek, shift)
                       const isRecurring = !!recurring[recurringKey]
@@ -993,15 +1114,35 @@ export default function ScheduleTab({ session }) {
                       const isTrainee = !!cell.trainee && !isFrei
                       // Trainee-Style: cyan Background überlagert + cyan Border + cyan Glow
                       // Search hat Vorrang (gelb), aber wenn beides → kombinieren wir mit Border-cyan + Schatten-gelb
-                      const finalBg = isTrainee ? 'rgba(6,182,212,0.10)' : cellBg
-                      const finalBorder = isTrainee ? '#06b6d4' : cellBorder
-                      const finalBorderWidth = isTrainee ? 2 : 1
+                      let finalBg = isTrainee ? 'rgba(6,182,212,0.10)' : cellBg
+                      let finalBorder = isTrainee ? '#06b6d4' : cellBorder
+                      let finalBorderWidth = isTrainee ? 2 : 1
+                      // v3.1.0: Doppel-Schicht-Warnung — rote Border + roter Hintergrund. Hat Vorrang vor Trainee-Style.
+                      if (showDoppelWarn) {
+                        finalBg = 'rgba(239,68,68,0.14)'
+                        finalBorder = '#ef4444'
+                        finalBorderWidth = 2
+                      }
                       const searchBoxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
+                                              showDoppelWarn ? '0 0 12px rgba(239,68,68,0.5)' :
                                               isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
 
                       return (
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
                           style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: searchBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
+                          {/* v3.1.0: Doppel-Schicht-Badge — klickbar zum als-gesehen-markieren */}
+                          {showDoppelWarn && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleConflictAck(doppelKey) }}
+                              title={`${cell.chatter} hat mehrere Schichten an diesem Tag — Klick zum Bestätigen`}
+                              style={{
+                                position: 'absolute', top: -8, right: 6, fontSize: 9, fontWeight: 700,
+                                padding: '2px 7px', borderRadius: 3, background: '#ef4444', color: '#fff',
+                                letterSpacing: '0.04em', zIndex: 3, border: 'none', cursor: 'pointer',
+                                fontFamily: 'inherit', boxShadow: '0 2px 6px rgba(239,68,68,0.4)',
+                              }}
+                            >⚠ DOPPEL · ✓ gesehen</button>
+                          )}
                           {isTrainee && (
                             <div style={{ position: 'absolute', top: -8, left: 6, fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#06b6d4', color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>🎓 ANLERNEN</div>
                           )}
@@ -1495,6 +1636,107 @@ export default function ScheduleTab({ session }) {
           ↻ Als Vorlage für nächste Woche
         </button>
       </div>
+
+      {/* v3.1.0: Send-Modal mit Checkbox-Auswahl der Chatter */}
+      {sendModalOpen && (
+        <div onClick={() => !sending && setSendModalOpen(false)} style={{
+          position: 'fixed', inset: 0, zIndex: 10000,
+          background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12,
+            width: '100%', maxWidth: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Dienstplan versenden</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                KW {kw} ({formatDate(weekDays[0])} – {formatDate(weekDays[6])}) · An wen?
+              </div>
+            </div>
+
+            {/* Aktions-Buttons oben: Alle / Keine */}
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {sendSelection.size} von {chatters.filter(c => c.telegram_id).length} ausgewählt
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setSendSelection(new Set(chatters.filter(c => c.telegram_id).map(c => c.id)))} style={{
+                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)',
+                  fontSize: 10, padding: '4px 9px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+                }}>Alle</button>
+                <button onClick={() => setSendSelection(new Set())} style={{
+                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)',
+                  fontSize: 10, padding: '4px 9px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+                }}>Keine</button>
+              </div>
+            </div>
+
+            {/* Chatter-Liste mit Checkbox */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+              {chatters.map(chatter => {
+                const hasTg = !!chatter.telegram_id
+                const isSelected = sendSelection.has(chatter.id)
+                // Wie viele Schichten hat dieser Chatter diese Woche?
+                let shiftCount = 0
+                for (const day of weekDays) {
+                  const dayIso = isoDate(day)
+                  for (const shift of SHIFTS) {
+                    for (const model of models) {
+                      const c = getCell(model.id, dayIso, shift)
+                      if (c.chatter === chatter.name) shiftCount++
+                    }
+                  }
+                }
+                return (
+                  <label key={chatter.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px',
+                    cursor: hasTg ? 'pointer' : 'not-allowed',
+                    opacity: hasTg ? 1 : 0.4,
+                    borderBottom: '1px solid rgba(255,255,255,0.04)',
+                  }}>
+                    <input
+                      type="checkbox"
+                      disabled={!hasTg}
+                      checked={isSelected}
+                      onChange={e => {
+                        const next = new Set(sendSelection)
+                        if (e.target.checked) next.add(chatter.id)
+                        else next.delete(chatter.id)
+                        setSendSelection(next)
+                      }}
+                      style={{ width: 16, height: 16, accentColor: '#06b6d4' }}
+                    />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {chatter.name}
+                        {!hasTg && <span style={{ fontSize: 10, color: '#ef4444', marginLeft: 8 }}>· Keine Telegram-ID</span>}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        {shiftCount === 0 ? 'Keine Schichten diese Woche' : `${shiftCount} Schicht${shiftCount !== 1 ? 'en' : ''} diese Woche`}
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+
+            {/* Action-Buttons unten */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => !sending && setSendModalOpen(false)} disabled={sending} style={{
+                background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)',
+                fontSize: 12, padding: '8px 14px', borderRadius: 7, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Abbrechen</button>
+              <button onClick={sendPlanToSelected} disabled={sending || sendSelection.size === 0} style={{
+                background: sendSelection.size === 0 ? 'var(--border)' : '#06b6d4',
+                border: 'none', color: '#fff', fontSize: 12, fontWeight: 700,
+                padding: '8px 16px', borderRadius: 7,
+                cursor: (sending || sendSelection.size === 0) ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+              }}>{sending ? 'Sende...' : `✈ An ${sendSelection.size} senden`}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
