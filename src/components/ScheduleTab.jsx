@@ -1280,6 +1280,14 @@ export default function ScheduleTab({ session }) {
                                   style={{ accentColor: '#7c3aed' }} />
                                 <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
                               </label>
+                              {/* v3.1.2: Ausschreiben-Button im Edit-Bereich versteckt — wie früher */}
+                              {cell.chatter && !isFrei && (
+                                <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
+                                  title="Schicht zum Tausch ausschreiben — Chatter sehen sie als Pop-Up"
+                                  style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                                  🔄 Ausschreiben
+                                </button>
+                              )}
                               <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
                             </div>
                           ) : cell.chatter ? (
@@ -1332,18 +1340,10 @@ export default function ScheduleTab({ session }) {
                                     style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>X</button>
                                 </div>
                               ) : (
-                                <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
-                                  <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
-                                    style={{ flex: 1, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                    Erin
-                                  </button>
-                                  {/* v3.1.1: Schicht zum Tausch ausschreiben (wiederhergestellt aus v2.8.2) */}
-                                  <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
-                                    title="Schicht zum Tausch ausschreiben (Chatter sehen sie als Pop-Up)"
-                                    style={{ flex: 1, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 3, padding: '1px 5px', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                                    🔄 Ausschr.
-                                  </button>
-                                </div>
+                                <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
+                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Erin
+                                </button>
                               ))}
                             </div>
                           ) : (
