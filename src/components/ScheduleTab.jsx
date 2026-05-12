@@ -569,6 +569,37 @@ export default function ScheduleTab({ session }) {
     }
   }
 
+  // v3.1.1: Schicht zum Tausch ausschreiben (Admin-Anbot — wiederhergestellt aus v2.8.2)
+  // requester_name = NULL als Marker für Admin-Anbot
+  // Erscheint dann im ChatterPortal als Popup für andere Chatter zum Übernehmen
+  const offerShift = async (modelId, dayIso, shift) => {
+    const model = models.find(m => m.id === modelId)
+    if (!model) return
+    // Schon ausgeschrieben?
+    const { data: existing } = await supabase
+      .from('shift_swaps')
+      .select('id')
+      .eq('shift_date', dayIso)
+      .eq('shift', shift)
+      .eq('model_name', model.name)
+      .in('status', ['offen', 'vorgeschlagen'])
+    if (existing && existing.length > 0) {
+      alert('Diese Schicht wurde bereits zum Tausch ausgeschrieben.')
+      return
+    }
+    const reason = prompt('Grund (optional, sichtbar für Chatter):') || null
+    const { error } = await supabase.from('shift_swaps').insert({
+      requester_name: null, // = Admin-Anbot
+      shift_date: dayIso,
+      shift,
+      model_name: model.name,
+      reason,
+      status: 'offen',
+    })
+    if (error) { alert('Fehler: ' + error.message); return }
+    alert('✓ Schicht ausgeschrieben. Chatter sehen das beim nächsten Login.')
+  }
+
   const sendReminder = async (modelId, dayIso, shift, chatterName, hoursBeforeStr) => {
     const hoursBefore = parseInt(hoursBeforeStr)
     setSendingReminder(true)
@@ -1301,10 +1332,18 @@ export default function ScheduleTab({ session }) {
                                     style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>X</button>
                                 </div>
                               ) : (
-                                <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
-                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                  Erin
-                                </button>
+                                <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
+                                  <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
+                                    style={{ flex: 1, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                    Erin
+                                  </button>
+                                  {/* v3.1.1: Schicht zum Tausch ausschreiben (wiederhergestellt aus v2.8.2) */}
+                                  <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
+                                    title="Schicht zum Tausch ausschreiben (Chatter sehen sie als Pop-Up)"
+                                    style={{ flex: 1, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 3, padding: '1px 5px', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                                    🔄 Ausschr.
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           ) : (
@@ -1495,6 +1534,23 @@ export default function ScheduleTab({ session }) {
                   ↻ Wöchentlich {isRecurring ? '(aktiv)' : ''}
                 </span>
               </label>
+
+              {/* v3.1.1: Schicht ausschreiben (Mobile) — nur wenn ein Chatter eingetragen */}
+              {(() => {
+                const editCell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
+                if (!editCell.chatter || editCell.chatter === '__FREI__') return null
+                return (
+                  <button onClick={() => offerShift(editSheet.modelId, editSheet.dayIso, editSheet.shift)}
+                    style={{
+                      width: '100%', marginTop: 10,
+                      background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+                      border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8,
+                      padding: '11px', fontSize: 13, fontWeight: 700,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >🔄 Ausschreiben (Schicht zum Tausch anbieten)</button>
+                )
+              })()}
 
               {/* Aktion */}
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
