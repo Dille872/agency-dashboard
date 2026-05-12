@@ -1280,8 +1280,8 @@ export default function ScheduleTab({ session }) {
                                   style={{ accentColor: '#7c3aed' }} />
                                 <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
                               </label>
-                              {/* v3.1.2: Ausschreiben-Button im Edit-Bereich versteckt — wie früher */}
-                              {cell.chatter && !isFrei && (
+                              {/* v3.1.3: Ausschreiben — auch bei leerer Zelle erlaubt (nur __FREI__ ausnehmen) */}
+                              {!isFrei && (
                                 <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
                                   title="Schicht zum Tausch ausschreiben — Chatter sehen sie als Pop-Up"
                                   style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
@@ -1535,10 +1535,10 @@ export default function ScheduleTab({ session }) {
                 </span>
               </label>
 
-              {/* v3.1.1: Schicht ausschreiben (Mobile) — nur wenn ein Chatter eingetragen */}
+              {/* v3.1.3: Schicht ausschreiben (Mobile) — auch bei leerer Zelle, nur __FREI__ ausnehmen */}
               {(() => {
                 const editCell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
-                if (!editCell.chatter || editCell.chatter === '__FREI__') return null
+                if (editCell.chatter === '__FREI__') return null
                 return (
                   <button onClick={() => offerShift(editSheet.modelId, editSheet.dayIso, editSheet.shift)}
                     style={{
