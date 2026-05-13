@@ -545,10 +545,10 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       {/* ═══════════════ OBEN: Unified Alerts ═══════════════ */}
-      <Card title={chatterAlerts.length > 0
-        ? `🚨 Aufmerksamkeit nötig (${chatterAlerts.length})`
+      <Card title={(criticalCount + warningCount) > 0
+        ? `🚨 Aufmerksamkeit nötig (${criticalCount + warningCount})`
         : '✓ Alle Chatter auf Kurs'}>
-        {chatterAlerts.length === 0 ? (
+        {(criticalCount + warningCount) === 0 ? (
           <div style={{ color: 'var(--green)', fontSize: 13, padding: '4px 0' }}>
             Keine Chatter mit kritisch niedriger Effizienz oder Abwärtstrend.
           </div>
@@ -579,8 +579,6 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
                   desc: 'Revenue rückläufig — 3-Tage Trend oder schleichender Rückgang (5-Tage MA).' },
                 { key: 'stability', label: '🌊 Stabilität & Abhängigkeit', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Instabile Performance oder zu starke Whale-Abhängigkeit.' },
-                { key: 'positive', label: '✓ Gesunde Top-Chatter', color: 'var(--green)', bg: 'rgba(16,185,129,0.06)', defaultOpen: false,
-                  desc: 'Chatter mit stabilen, gesunden Werten — Vorbild-Performance.' },
               ]
               const byGroup = {}
               for (const a of chatterAlerts) {
@@ -665,6 +663,171 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             })()}
           </>
         )}
+      </Card>
+
+      {/* v3.6.0: Top-Performer-Karte (positives Gegenstück zur Alert-Sektion) */}
+      <Card title="⭐ Top-Performer">
+        {(() => {
+          // Helper: Chatter mit health berechnen
+          const enriched = rows.map(r => ({
+            ...r,
+            _health: computeChatterHealth(chatterSnapshots, r.name, selectedDate),
+          }))
+
+          // 1. Top Revenue heute (≥50 msg)
+          const topRevenue = enriched
+            .filter(r => (r.sentMessages || 0) >= 50)
+            .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
+            .slice(0, 3)
+
+          // 2. Effizienz-Champions: ≥$200/Std bei ≥90 min aktiv
+          const efficiency = enriched
+            .filter(r => (r.activeMinutes || 0) >= 90 && (r.revenuePerHour || 0) >= 200)
+            .sort((a, b) => (b.revenuePerHour || 0) - (a.revenuePerHour || 0))
+            .slice(0, 3)
+
+          // 3. Konstante Performer: Sustainability ≥75 + Consistency grün + ≥7 aktive Tage
+          const consistent = enriched
+            .filter(r => r._health.hasEnoughData
+              && r._health.sustainability.score !== null
+              && r._health.sustainability.score >= 75
+              && r._health.consistency.color === 'green'
+              && r._health.activeDays >= 7)
+            .sort((a, b) => (b._health.sustainability.score || 0) - (a._health.sustainability.score || 0))
+            .slice(0, 3)
+
+          // 4. Gesunde Top-Chatter: aus den health-warnings type === 'healthy'
+          const healthyChatters = enriched
+            .filter(r => r._health.hasEnoughData && r._health.warnings.some(w => w.type === 'healthy'))
+            .sort((a, b) => (b._health.sustainability.score || 0) - (a._health.sustainability.score || 0))
+            .slice(0, 3)
+
+          const groupCfg = [
+            {
+              key: 'top_revenue',
+              label: '⭐ Top Revenue heute',
+              desc: 'Die 3 Chatter mit dem höchsten Umsatz heute (mindestens 50 Nachrichten).',
+              items: topRevenue,
+              valueLabel: 'Revenue',
+              valueFn: (r) => formatMoney(r.revenue),
+              metaFn: (r) => `${(r.activeMinutes/60).toFixed(1)}h aktiv · ${formatMoney(r.revenuePerHour)}/Std`,
+            },
+            {
+              key: 'efficiency',
+              label: '💪 Effizienz-Champions',
+              desc: 'Höchste Stundenleistung ab $200/Std bei mindestens 90 Min Aktivität.',
+              items: efficiency,
+              valueLabel: '$/Std',
+              valueFn: (r) => formatMoney(r.revenuePerHour),
+              metaFn: (r) => `${formatMoney(r.revenue)} · ${(r.activeMinutes/60).toFixed(1)}h aktiv`,
+            },
+            {
+              key: 'consistent',
+              label: '🎯 Konstante Performer',
+              desc: 'Stabile Werte über 14 Tage: Sustainability ≥75, geringe Schwankung, mindestens 7 aktive Tage im Fenster.',
+              items: consistent,
+              valueLabel: 'Sustainability',
+              valueFn: (r) => r._health.sustainability.score + '/100',
+              metaFn: (r) => `${r._health.activeDays} aktive Tage · CV ${(r._health.consistency.cv * 100).toFixed(0)}%`,
+            },
+            {
+              key: 'healthy',
+              label: '✓ Gesunde Top-Chatter',
+              desc: 'Alles grün: gute Buy Rate, konstante Revenue, gesunde Sent/Bought-Ratio, kein Decline. Vorbild-Performance.',
+              items: healthyChatters,
+              valueLabel: 'Sustainability',
+              valueFn: (r) => r._health.sustainability.score + '/100',
+              metaFn: (r) => `Buy Rate ${r._health.buyRate.avg}% · Spam ${r._health.spam.ratio}`,
+            },
+          ]
+
+          const greenColor = 'var(--green)'
+          const greenBg = 'rgba(16,185,129,0.06)'
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {groupCfg.map(cfg => {
+                const items = cfg.items
+                const namePreview = items.slice(0, 3).map(i => i.name).join(' · ')
+                return (
+                  <details key={cfg.key} style={{
+                    border: `1px solid ${greenColor}33`,
+                    borderLeft: `3px solid ${greenColor}`,
+                    borderRadius: 6,
+                    background: greenBg,
+                  }}>
+                    <summary title={cfg.desc} style={{
+                      cursor: 'pointer',
+                      padding: '8px 12px',
+                      listStyle: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: greenColor,
+                    }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {cfg.label}
+                        <span style={{
+                          background: `${greenColor}22`, color: greenColor,
+                          padding: '1px 8px', borderRadius: 10,
+                          fontSize: 11, fontWeight: 700,
+                        }}>{items.length}</span>
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400, fontFamily: 'var(--font-mono)' }}>
+                        {items.length === 0 ? 'keine heute' : namePreview}
+                      </span>
+                    </summary>
+                    <div style={{ padding: '4px 12px 10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {items.length === 0 ? (
+                        <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '6px 10px', fontStyle: 'italic' }}>
+                          Heute kein Chatter in dieser Kategorie.
+                        </div>
+                      ) : items.map((r, idx) => (
+                        <div key={r.name + idx}
+                          title={cfg.desc}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '6px 10px',
+                            background: 'var(--bg-card)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 5,
+                          }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 700, color: greenColor,
+                            minWidth: 26, textAlign: 'center',
+                            background: `${greenColor}15`, borderRadius: 4,
+                            padding: '2px 0',
+                          }}>
+                            #{idx + 1}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90 }}>
+                            {r.name}
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
+                            {cfg.metaFn(r)}
+                          </span>
+                          <span style={{
+                            fontSize: 12, color: greenColor,
+                            background: `${greenColor}15`,
+                            border: `1px solid ${greenColor}33`,
+                            padding: '2px 10px', borderRadius: 4,
+                            whiteSpace: 'nowrap', fontWeight: 700,
+                            fontFamily: 'var(--font-mono)',
+                          }}>
+                            {cfg.valueFn(r)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )
+              })}
+            </div>
+          )
+        })()}
       </Card>
 
       {/* ═══════════════ UNTEN: Kollabierbar ═══════════════ */}
