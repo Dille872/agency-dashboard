@@ -5,6 +5,7 @@ import ExportTab from './ExportTab'
 
 const SECTIONS = [
   { key: 'team', label: 'Team' },
+  { key: 'guidelines', label: 'Guidelines' },
   { key: 'surveys', label: 'Umfragen' },
   { key: 'billing', label: 'Billing' },
   { key: 'export', label: 'Export' },
@@ -539,6 +540,9 @@ export default function SettingsTab() {
 
       {activeSection === 'billing' && <BillingTab />}
       {activeSection === 'export' && <ExportTab />}
+
+      {/* GUIDELINES — Admin-Editor (v3.2.0) */}
+      {activeSection === 'guidelines' && <GuidelinesEditor cardS={cardS} inputS={inputS} labelS={labelS} />}
 
       {/* SURVEYS */}
       {activeSection === 'surveys' && (
@@ -1149,6 +1153,331 @@ export default function SettingsTab() {
               </div>
             ))}
             {chatterAliases.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>Noch keine Zuordnungen</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ============================================================
+// v3.2.0: Guidelines Editor (Admin-Pflege)
+// Schwesterkomponente im ChatterPortal: Read-Only-Anzeige
+// ============================================================
+
+function GuidelinesEditor({ cardS, inputS, labelS }) {
+  const [guidelines, setGuidelines] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [savingOrder, setSavingOrder] = useState(false)
+
+  const loadGuidelines = async () => {
+    const { data } = await supabase.from('guidelines').select('*').order('order_index', { ascending: true })
+    setGuidelines(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadGuidelines() }, [])
+
+  const createGuideline = async () => {
+    if (!newTitle.trim() || creating) return
+    setCreating(true)
+    const maxOrder = guidelines.reduce((m, g) => Math.max(m, g.order_index || 0), 0)
+    const { data: user } = await supabase.auth.getUser()
+    await supabase.from('guidelines').insert({
+      title: newTitle.trim(),
+      content: '',
+      order_index: maxOrder + 1,
+      updated_by: user?.user?.email || 'admin',
+    })
+    setNewTitle('')
+    await loadGuidelines()
+    setCreating(false)
+  }
+
+  const updateGuideline = async (id, patch) => {
+    const { data: user } = await supabase.auth.getUser()
+    await supabase.from('guidelines').update({
+      ...patch,
+      updated_at: new Date().toISOString(),
+      updated_by: user?.user?.email || 'admin',
+    }).eq('id', id)
+    setGuidelines(prev => prev.map(g => g.id === id ? { ...g, ...patch } : g))
+  }
+
+  const deleteGuideline = async (id) => {
+    if (!confirm('Diese Guideline wirklich löschen?')) return
+    await supabase.from('guidelines').delete().eq('id', id)
+    await loadGuidelines()
+  }
+
+  const moveGuideline = async (id, direction) => {
+    if (savingOrder) return
+    const idx = guidelines.findIndex(g => g.id === id)
+    if (idx === -1) return
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= guidelines.length) return
+    setSavingOrder(true)
+    const a = guidelines[idx]
+    const b = guidelines[swapIdx]
+    // Order indizes tauschen
+    await supabase.from('guidelines').update({ order_index: b.order_index }).eq('id', a.id)
+    await supabase.from('guidelines').update({ order_index: a.order_index }).eq('id', b.id)
+    await loadGuidelines()
+    setSavingOrder(false)
+  }
+
+  if (loading) return <div style={{ color: 'var(--text-muted)', padding: 20, textAlign: 'center' }}>Laden…</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 780 }}>
+      <div style={cardS}>
+        <div style={labelS}>📖 Neue Guideline</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="text"
+            value={newTitle}
+            onChange={e => setNewTitle(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && createGuideline()}
+            placeholder="Titel (z.B. 'Listen erstellen bei OnlyFans')"
+            style={{ ...inputS, flex: 1 }}
+          />
+          <button onClick={createGuideline} disabled={creating || !newTitle.trim()} style={{
+            background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7,
+            padding: '7px 16px', fontSize: 12, fontWeight: 700,
+            cursor: (creating || !newTitle.trim()) ? 'not-allowed' : 'pointer',
+            opacity: (creating || !newTitle.trim()) ? 0.5 : 1,
+            fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }}>+ Erstellen</button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+          Nach dem Erstellen kannst du Inhalt + Bilder bearbeiten. Reihenfolge mit Pfeilen anpassen.
+          Markdown wird unterstützt: **fett**, *kursiv*, `code`, Listen mit - oder 1.
+        </div>
+      </div>
+
+      {guidelines.length === 0 && (
+        <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>
+          Noch keine Guidelines. Erstelle die erste oben.
+        </div>
+      )}
+
+      {guidelines.map((g, idx) => (
+        <GuidelineCard
+          key={g.id}
+          guideline={g}
+          isFirst={idx === 0}
+          isLast={idx === guidelines.length - 1}
+          onUpdate={(patch) => updateGuideline(g.id, patch)}
+          onDelete={() => deleteGuideline(g.id)}
+          onMoveUp={() => moveGuideline(g.id, 'up')}
+          onMoveDown={() => moveGuideline(g.id, 'down')}
+          cardS={cardS}
+          inputS={inputS}
+        />
+      ))}
+    </div>
+  )
+}
+
+function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveUp, onMoveDown, cardS, inputS }) {
+  const [expanded, setExpanded] = useState(false)
+  const [title, setTitle] = useState(guideline.title)
+  const [content, setContent] = useState(guideline.content || '')
+  const [savingText, setSavingText] = useState(false)
+  const [uploadingImages, setUploadingImages] = useState(false)
+
+  const imageUrls = guideline.image_urls || []
+  const MAX_IMAGES = 8
+
+  const saveText = async () => {
+    if (savingText) return
+    if (title === guideline.title && content === (guideline.content || '')) return
+    setSavingText(true)
+    await onUpdate({ title: title.trim() || 'Ohne Titel', content })
+    setSavingText(false)
+  }
+
+  // Resize-Helper (gleich wie im Chat-Modul)
+  const resizeImage = (file, maxSize = 1920, quality = 0.85) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        let { width, height } = img
+        if (width <= maxSize && height <= maxSize) {
+          fetch(URL.createObjectURL(file)).then(r => r.blob()).then(resolve).catch(reject)
+          return
+        }
+        const ratio = Math.min(maxSize / width, maxSize / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Canvas fail')), 'image/jpeg', quality)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img load')) }
+      img.src = url
+    })
+  }
+
+  const handleImageSelect = async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'))
+    if (files.length === 0) return
+    const available = MAX_IMAGES - imageUrls.length
+    if (available <= 0) {
+      alert(`Maximal ${MAX_IMAGES} Bilder pro Guideline. Lösche eines zuerst.`)
+      return
+    }
+    const toProcess = files.slice(0, available)
+    if (files.length > available) {
+      alert(`Nur die ersten ${available} Bilder werden hochgeladen (Limit: ${MAX_IMAGES}).`)
+    }
+    setUploadingImages(true)
+    const uploadedUrls = []
+    for (const file of toProcess) {
+      try {
+        const blob = await resizeImage(file, 1920, 0.85)
+        const path = `guideline_${guideline.id}/${Date.now()}_${Math.random().toString(36).slice(2, 9)}.jpg`
+        const { error: uploadErr } = await supabase.storage.from('guideline-images').upload(path, blob, {
+          contentType: 'image/jpeg',
+          cacheControl: '31536000',
+        })
+        if (uploadErr) { console.error('upload fail:', uploadErr); continue }
+        const { data: pub } = supabase.storage.from('guideline-images').getPublicUrl(path)
+        if (pub?.publicUrl) uploadedUrls.push(pub.publicUrl)
+      } catch (e) {
+        console.error('resize/upload error:', e)
+      }
+    }
+    if (uploadedUrls.length > 0) {
+      const newUrls = [...imageUrls, ...uploadedUrls]
+      await onUpdate({ image_urls: newUrls })
+    }
+    setUploadingImages(false)
+  }
+
+  const removeImage = async (idx) => {
+    if (!confirm('Bild aus Guideline entfernen?')) return
+    const newUrls = imageUrls.filter((_, i) => i !== idx)
+    await onUpdate({ image_urls: newUrls.length > 0 ? newUrls : null })
+  }
+
+  return (
+    <div style={{ ...cardS, padding: 0, overflow: 'hidden' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px',
+        background: 'rgba(124,58,237,0.04)',
+        borderBottom: expanded ? '1px solid var(--border)' : 'none',
+        cursor: 'pointer',
+      }} onClick={() => setExpanded(!expanded)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <button onClick={(e) => { e.stopPropagation(); onMoveUp() }} disabled={isFirst} style={{
+            background: 'transparent', border: 'none',
+            color: isFirst ? 'var(--border)' : 'var(--text-muted)',
+            cursor: isFirst ? 'not-allowed' : 'pointer',
+            fontSize: 10, padding: 0, lineHeight: 1,
+          }}>▲</button>
+          <button onClick={(e) => { e.stopPropagation(); onMoveDown() }} disabled={isLast} style={{
+            background: 'transparent', border: 'none',
+            color: isLast ? 'var(--border)' : 'var(--text-muted)',
+            cursor: isLast ? 'not-allowed' : 'pointer',
+            fontSize: 10, padding: 0, lineHeight: 1,
+          }}>▼</button>
+        </div>
+        <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+          📖 {guideline.title || 'Ohne Titel'}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+          {imageUrls.length > 0 && `📎 ${imageUrls.length}`}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{expanded ? '▼' : '▶'}</div>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Titel */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 5 }}>Titel</div>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onBlur={saveText}
+              style={inputS}
+            />
+          </div>
+
+          {/* Content */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 5 }}>
+              Inhalt (Markdown: **fett**, *kursiv*, `code`, - Listen)
+            </div>
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              onBlur={saveText}
+              placeholder="Schreib hier die Guideline-Inhalte. Beispiel:&#10;&#10;**Schritt 1:** Öffne die Lists-Übersicht&#10;**Schritt 2:** Klicke auf 'Neue Liste'&#10;&#10;- Punkt eins&#10;- Punkt zwei"
+              rows={8}
+              style={{ ...inputS, fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5 }}
+            />
+          </div>
+
+          {/* Bilder */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 5 }}>
+              Bilder ({imageUrls.length} / {MAX_IMAGES})
+            </div>
+            {imageUrls.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                {imageUrls.map((url, i) => (
+                  <div key={i} style={{ position: 'relative', width: 84, height: 84, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button onClick={() => removeImage(i)} title="Entfernen" style={{
+                      position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.7)', color: '#fff', border: 'none', cursor: 'pointer',
+                      fontSize: 11, lineHeight: 1, padding: 0, fontFamily: 'inherit',
+                    }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {imageUrls.length < MAX_IMAGES && (
+              <label style={{
+                display: 'inline-block', padding: '8px 14px', borderRadius: 7,
+                background: 'rgba(6,182,212,0.12)', color: '#06b6d4',
+                border: '1px solid rgba(6,182,212,0.3)', fontSize: 12, fontWeight: 700,
+                cursor: uploadingImages ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                opacity: uploadingImages ? 0.5 : 1,
+              }}>
+                {uploadingImages ? '⏳ Hochladen…' : '📎 Bilder hinzufügen'}
+                <input type="file" accept="image/*" multiple
+                  disabled={uploadingImages}
+                  onChange={e => { handleImageSelect(e.target.files); e.target.value = '' }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              {guideline.updated_at && `Zuletzt bearbeitet: ${new Date(guideline.updated_at).toLocaleString('de-DE')}`}
+              {guideline.updated_by && ` von ${guideline.updated_by}`}
+            </div>
+            <button onClick={onDelete} style={{
+              background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+              border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6,
+              padding: '6px 12px', fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>🗑 Löschen</button>
           </div>
         </div>
       )}

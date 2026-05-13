@@ -282,6 +282,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [showNewRequestForm, setShowNewRequestForm] = useState(false)
   // Content-Ideen
   const [contentIdeas, setContentIdeas] = useState([])
+  // v3.2.0: Guidelines (von Admin gepflegt, hier nur lesen)
+  const [guidelines, setGuidelines] = useState([])
+  const [guidelineLightbox, setGuidelineLightbox] = useState(null) // {url, all_urls, current_idx}
   const [showNewIdeaForm, setShowNewIdeaForm] = useState(false)
   const [newIdeaModel, setNewIdeaModel] = useState('')
   const [newIdeaText, setNewIdeaText] = useState('')
@@ -304,6 +307,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       models: true,
       content: true,
       ideas: true,
+      guidelines: true, // v3.2.0
       swap: true,
       stats: true,
       bot: true,
@@ -392,6 +396,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .gte('created_at', fourWeeksAgo.toISOString())
       .order('created_at', { ascending: false })
     setContentIdeas(data || [])
+  }
+
+  // v3.2.0: Guidelines laden (von Admin in Einstellungen gepflegt)
+  const loadGuidelines = async () => {
+    const { data } = await supabase.from('guidelines').select('*').order('order_index', { ascending: true })
+    setGuidelines(data || [])
   }
 
   const submitContentIdea = async () => {
@@ -716,6 +726,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     loadModels()
     loadContentRequests()
     loadContentIdeas()
+    loadGuidelines()
     loadMyReminders()
     loadMyAbsences()
     loadOnlineStatus()
@@ -996,7 +1007,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   // Reload when preview chatter changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (isPreview && displayName) { loadStats(); loadSchedule(); loadContentRequests(); loadModels() } }, [previewChatter])
+  useEffect(() => { if (isPreview && displayName) { loadStats(); loadSchedule(); loadContentRequests(); loadModels(); loadGuidelines() } }, [previewChatter])
 
   // Get my shifts this week
   const myShifts = []
@@ -2000,6 +2011,26 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )}
         </Collapsible>
 
+        {/* v3.2.0: Guidelines (von Admin in Einstellungen gepflegt) */}
+        <Collapsible isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon="📖" title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
+          {guidelines.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '12px 0', textAlign: 'center' }}>
+              Noch keine Guidelines hinterlegt.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {guidelines.map((g, idx) => (
+                <GuidelineView
+                  key={g.id}
+                  guideline={g}
+                  number={idx + 1}
+                  onImageClick={(url) => setGuidelineLightbox({ url, all_urls: g.image_urls || [], current_idx: (g.image_urls || []).indexOf(url) })}
+                />
+              ))}
+            </div>
+          )}
+        </Collapsible>
+
         {/* Schicht-Tausch */}
         <Collapsible isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
           <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
@@ -2090,8 +2121,169 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </div>
         )}
       </main>
+      {/* v3.2.0: Guideline-Bild Lightbox */}
+      {guidelineLightbox && (
+        <div onClick={() => setGuidelineLightbox(null)} style={{
+          position: 'fixed', inset: 0, zIndex: 10001,
+          background: 'rgba(0,0,0,0.92)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', padding: 20,
+        }}>
+          <img src={guidelineLightbox.url} alt="" style={{
+            maxWidth: '95%', maxHeight: '95%', objectFit: 'contain',
+            borderRadius: 8, boxShadow: '0 0 40px rgba(0,0,0,0.5)',
+          }} />
+          <button onClick={(e) => { e.stopPropagation(); setGuidelineLightbox(null) }} style={{
+            position: 'absolute', top: 16, right: 16, width: 40, height: 40, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.7)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
+            fontSize: 20, cursor: 'pointer', fontFamily: 'inherit',
+          }}>✕</button>
+          {guidelineLightbox.all_urls.length > 1 && (
+            <div style={{
+              position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '6px 14px', borderRadius: 14,
+              fontSize: 12, fontWeight: 600,
+            }}>
+              {guidelineLightbox.current_idx + 1} / {guidelineLightbox.all_urls.length}
+            </div>
+          )}
+        </div>
+      )}
       {!isPreview && displayName && <SurveyModal displayName={displayName} role="chatter" />}
       {!isPreview && displayName && <SwapModal displayName={displayName} />}
     </div>
   )
+}
+
+// ============================================================
+// v3.2.0: GuidelineView — Read-Only Anzeige für Chatter
+// (Editor ist in SettingsTab; hier nur Lesen)
+// ============================================================
+
+function GuidelineView({ guideline, number, onImageClick }) {
+  const [expanded, setExpanded] = useState(false)
+  const imageUrls = guideline.image_urls || []
+
+  return (
+    <div style={{
+      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
+    }}>
+      <div onClick={() => setExpanded(!expanded)} style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
+        cursor: 'pointer',
+        background: expanded ? 'rgba(6,182,212,0.04)' : 'transparent',
+        borderBottom: expanded ? '1px solid var(--border)' : 'none',
+      }}>
+        <div style={{
+          width: 26, height: 26, borderRadius: '50%',
+          background: 'rgba(6,182,212,0.15)', color: '#06b6d4',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 700, flexShrink: 0,
+        }}>{number}</div>
+        <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+          {guideline.title || 'Ohne Titel'}
+        </div>
+        {imageUrls.length > 0 && (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>📎 {imageUrls.length}</span>
+        )}
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{expanded ? '▼' : '▶'}</span>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: '12px 14px 14px 14px' }}>
+          {guideline.content && (
+            <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)', marginBottom: imageUrls.length > 0 ? 12 : 0 }}>
+              <MarkdownText text={guideline.content} />
+            </div>
+          )}
+          {imageUrls.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {imageUrls.map((url, i) => (
+                <img key={i} src={url} alt={`Beispiel ${i + 1}`}
+                  onClick={() => onImageClick(url)}
+                  style={{
+                    width: 110, height: 110, objectFit: 'cover', borderRadius: 6,
+                    cursor: 'pointer', border: '1px solid var(--border)',
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Schlanker Markdown-Renderer ohne externe Lib.
+// Unterstützt: **fett**, *kursiv*, `code`, unordered list (- oder *), ordered list (1.), Absätze.
+function MarkdownText({ text }) {
+  if (!text) return null
+
+  // Inline: **bold**, *italic*, `code` → tokens
+  const inlineRender = (line, lineKey) => {
+    const out = []
+    let remaining = line
+    let pos = 0
+    // Regex matched alle drei Patterns; wir gehen iterativ durch
+    const re = /(\*\*([^*]+?)\*\*)|(\*([^*]+?)\*)|(`([^`]+?)`)/
+    while (remaining.length > 0) {
+      const m = remaining.match(re)
+      if (!m) { out.push(<span key={`${lineKey}_${pos}`}>{remaining}</span>); break }
+      if (m.index > 0) out.push(<span key={`${lineKey}_${pos}_t`}>{remaining.slice(0, m.index)}</span>)
+      if (m[1]) out.push(<strong key={`${lineKey}_${pos}_b`}>{m[2]}</strong>)
+      else if (m[3]) out.push(<em key={`${lineKey}_${pos}_i`}>{m[4]}</em>)
+      else if (m[5]) out.push(<code key={`${lineKey}_${pos}_c`} style={{
+        background: 'rgba(124,58,237,0.12)', color: '#a78bfa',
+        padding: '1px 5px', borderRadius: 4, fontSize: 11,
+        fontFamily: 'ui-monospace, monospace',
+      }}>{m[6]}</code>)
+      remaining = remaining.slice(m.index + m[0].length)
+      pos++
+    }
+    return out
+  }
+
+  // Block-Parser
+  const lines = text.split('\n')
+  const blocks = []
+  let listBuffer = []
+  let listType = null // 'ul' | 'ol'
+
+  const flushList = () => {
+    if (listBuffer.length === 0) return
+    const items = listBuffer.map((line, i) => (
+      <li key={i} style={{ marginBottom: 3 }}>{inlineRender(line, `li_${blocks.length}_${i}`)}</li>
+    ))
+    blocks.push(listType === 'ol' ?
+      <ol key={blocks.length} style={{ margin: '6px 0', paddingLeft: 22 }}>{items}</ol> :
+      <ul key={blocks.length} style={{ margin: '6px 0', paddingLeft: 22 }}>{items}</ul>
+    )
+    listBuffer = []
+    listType = null
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd()
+    const ulMatch = line.match(/^[-*]\s+(.+)$/)
+    const olMatch = line.match(/^\d+\.\s+(.+)$/)
+    if (ulMatch) {
+      if (listType !== null && listType !== 'ul') flushList()
+      listType = 'ul'
+      listBuffer.push(ulMatch[1])
+    } else if (olMatch) {
+      if (listType !== null && listType !== 'ol') flushList()
+      listType = 'ol'
+      listBuffer.push(olMatch[1])
+    } else {
+      flushList()
+      if (line === '') {
+        blocks.push(<div key={blocks.length} style={{ height: 6 }} />)
+      } else {
+        blocks.push(<p key={blocks.length} style={{ margin: '4px 0' }}>{inlineRender(line, `p_${blocks.length}`)}</p>)
+      }
+    }
+  }
+  flushList()
+  return <>{blocks}</>
 }
