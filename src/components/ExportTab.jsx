@@ -107,10 +107,10 @@ export default function ExportTab() {
     // === STAMMDATEN: Models + Chatter ===
     if (include.people) {
       const models = await safeQuery('models_contact', () =>
-        supabase.from('models_contact').select('id, name, created_at').order('name')
+        supabase.from('models_contact').select('id, name, status, daily_revenue_target').order('name')
       )
       const chatters = await safeQuery('chatters_contact', () =>
-        supabase.from('chatters_contact').select('id, name, created_at').order('name')
+        supabase.from('chatters_contact').select('id, name, availability').order('name')
       )
       const modelAliases = await safeQuery('model_aliases', () =>
         supabase.from('model_aliases').select('model_name, csv_name, alias_label')
@@ -150,7 +150,7 @@ export default function ExportTab() {
     // === SCHICHTEN ===
     if (include.shifts) {
       const logs = await safeQuery('shift_logs', () =>
-        supabase.from('shift_logs').select('display_name, shift, checked_in_at, checked_out_at, auto_checkout')
+        supabase.from('shift_logs').select('display_name, shift, checked_in_at, checked_out_at, auto_checkout, model_names')
           .gte('checked_in_at', fromTs).lte('checked_in_at', toTs)
           .order('checked_in_at')
       )
@@ -174,10 +174,13 @@ export default function ExportTab() {
 
     // === ABWESENHEITEN ===
     if (include.absences) {
+      // absences hat date_from + date_to (Zeitraum), nicht single date
+      // Filter: alle Abwesenheiten deren Zeitraum sich mit unserem überschneidet
       const abs = await safeQuery('absences', () =>
         supabase.from('absences').select('*')
-          .gte('absence_date', from).lte('absence_date', to)
-          .order('absence_date')
+          .lte('date_from', to)
+          .gte('date_to', from)
+          .order('date_from')
       )
       result.abwesenheiten = abs.data
       if (abs.error) errors.absences = abs.error
@@ -203,7 +206,7 @@ export default function ExportTab() {
     // === DIENSTPLAN (Schedule) ===
     if (include.schedule) {
       const sched = await safeQuery('schedule', () =>
-        supabase.from('schedule').select('week_start, status, assignments, shift_times, updated_at')
+        supabase.from('schedule').select('week_start, status, assignments, shift_times, day_notes')
           .gte('week_start', from).lte('week_start', to)
           .order('week_start')
       )
@@ -264,8 +267,8 @@ export default function ExportTab() {
     if (include.calendar) {
       const cal = await safeQuery('model_calendar', () =>
         supabase.from('model_calendar').select('*')
-          .gte('event_date', from).lte('event_date', to)
-          .order('event_date')
+          .gte('due_date', from).lte('due_date', to)
+          .order('due_date')
       )
       result.content_kalender = cal.data
       if (cal.error) errors.calendar = cal.error
