@@ -458,21 +458,71 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
       if (!health.hasEnoughData) continue
       for (const w of health.warnings) {
         // Dedup: gleicher Chatter + gleicher Warning-Typ nicht doppelt
-        if (alerts.find(a => a.name === r.name && a.tag === w.label)) continue
-        let headline = ''
-        if (w.type === 'fan_burnout') headline = `Sent PPVs steigen, Buy Rate fällt · ${health.spam.ratio} Sent/Bought · ${health.buyRate.avg}% Buy Rate`
-        else if (w.type === 'whale_carry') headline = `Avg $${health.whale.avgPPV}/PPV · nur ${health.whale.avgBought} Bought/Tag`
-        else if (w.type === 'unstable') headline = `Revenue-Schwankung ${(health.consistency.cv * 100).toFixed(0)}% (Std/Avg)`
-        else if (w.type === 'healthy') headline = `Sustainability ${health.sustainability.score} · stabil über ${health.activeDays} Tage`
-        else if (w.type === 'spam_risk') headline = `${health.spam.ratio} Sent/Bought Ratio · nur ${health.buyRate.avg}% Buy Rate`
-        else if (w.type === 'silent_decline') headline = `Revenue rückläufig (5-Tage MA) trotz ${health.activeDays}d Aktivität`
+        let labelDe = '', explain = '', group = 'stability', headline = ''
+        if (w.type === 'fan_burnout') {
+          labelDe = 'Fan-Burnout'
+          group = 'critical_health'
+          explain = 'Sent PPVs steigen stark, aber Buy Rate fällt. Hinweis dass Fans genervt sind und weniger kaufen.'
+          headline = `Sent PPVs steigen, Buy Rate fällt · ${health.spam.ratio} Sent/Bought · ${health.buyRate.avg}% Buy Rate`
+        }
+        else if (w.type === 'whale_carry') {
+          labelDe = 'Whale-Abhängigkeit'
+          group = 'stability'
+          explain = 'Hohe Umsätze nur von wenigen Großkäufern. Ø über $80/PPV bei <5 Käufen/Tag — Risiko wenn der Whale weg ist.'
+          headline = `Ø $${health.whale.avgPPV}/PPV · nur ${health.whale.avgBought} Bought/Tag`
+        }
+        else if (w.type === 'unstable') {
+          labelDe = 'Instabile Performance'
+          group = 'stability'
+          explain = 'Revenue schwankt stark zwischen den Tagen (Standardabweichung > 60% vom Durchschnitt).'
+          headline = `Revenue-Schwankung ${(health.consistency.cv * 100).toFixed(0)}% (Std/Avg)`
+        }
+        else if (w.type === 'healthy') {
+          labelDe = 'Gesunder Top-Chatter'
+          group = 'positive'
+          explain = 'Stabile Werte über mehrere Tage: gute Buy Rate, konstante Revenue, gesunde Sent/Bought-Ratio. Vorbild-Performance.'
+          headline = `Sustainability ${health.sustainability.score} · stabil über ${health.activeDays} Tage`
+        }
+        else if (w.type === 'spam_risk') {
+          labelDe = 'Spam-Risiko'
+          group = 'critical_health'
+          explain = 'Verhältnis Sent zu Bought über 4. Chatter sendet viel mehr PPVs als gekauft werden — Fans könnten genervt sein.'
+          headline = `${health.spam.ratio} Sent/Bought Ratio · nur ${health.buyRate.avg}% Buy Rate`
+        }
+        else if (w.type === 'silent_decline') {
+          labelDe = 'Schleichender Rückgang'
+          group = 'trend'
+          explain = 'Revenue 5-Tage-Durchschnitt seit mehreren Tagen rückläufig — trotz konstanter Aktivität.'
+          headline = `Revenue rückläufig (5-Tage MA) trotz ${health.activeDays}d Aktivität`
+        }
+        if (alerts.find(a => a.name === r.name && a.tag === labelDe)) continue
 
         alerts.push({
           severity: w.severity,
           name: r.name,
           headline,
-          tag: w.label,
+          tag: labelDe,
+          group,
+          explain,
         })
+      }
+    }
+
+    // Auch bestehende Alerts mit group + explain anreichern (damit Gruppierung funktioniert)
+    for (const a of alerts) {
+      if (a.group) continue // neue health alerts haben schon
+      if (a.tag && a.tag.includes('< $100/Std')) {
+        a.group = 'under_min'
+        a.explain = 'Chatter liegt unter $100/Std an mehreren Tagen in Folge. Stundenleistung dauerhaft schwach.'
+      } else if (a.tag === 'Schwacher Tag') {
+        a.group = 'under_min'
+        a.explain = 'Heute deutlich unter $100/Std bei ausreichend Aktivität. Einzelner schwacher Tag (noch kein Streak).'
+      } else if (a.tag === '3-Tage-Abwärtstrend') {
+        a.group = 'trend'
+        a.explain = 'Revenue ist über die letzten 3 Tage rückläufig. Beobachten ob es weitergeht.'
+      } else {
+        a.group = 'stability'
+        a.explain = ''
       }
     }
 
@@ -490,26 +540,6 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
   const criticalCount = chatterAlerts.filter(a => a.severity === 'critical').length
   const warningCount = chatterAlerts.filter(a => a.severity === 'warning').length
-
-  // Inline Collapsible
-  const Collapsible = ({ title, defaultOpen = false, children }) => {
-    const [open, setOpen] = useState(defaultOpen)
-    return (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-        <button onClick={() => setOpen(o => !o)} style={{
-          width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
-          padding: '12px 16px', cursor: 'pointer', color: 'var(--text-muted)',
-          fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          fontFamily: 'inherit'
-        }}>
-          <span>{title}</span>
-          <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>{open ? '▼' : '▶'}</span>
-        </button>
-        {open && <div style={{ padding: '0 16px 16px 16px' }}>{children}</div>}
-      </div>
-    )
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -538,33 +568,101 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
                 )}
               </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {chatterAlerts.map(a => {
-                const isCrit = a.severity === 'critical'
-                const isPositive = a.severity === 'positive'
-                const bg = isPositive ? 'rgba(16,185,129,0.06)' : isCrit ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)'
-                const border = isPositive ? 'rgba(16,185,129,0.25)' : isCrit ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'
-                const borderLeft = isPositive ? 'var(--green)' : isCrit ? 'var(--red)' : 'var(--yellow)'
-                return (
-                  <div key={a.name + a.tag} style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '8px 12px', background: bg,
-                    border: `1px solid ${border}`, borderLeft: `3px solid ${borderLeft}`,
-                    borderRadius: 6,
-                  }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90 }}>
-                      {a.name}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
-                      {a.headline}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                      {a.tag}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+            {/* v3.5.0: Gruppierte Alert-Anzeige (Option A) */}
+            {(() => {
+              const groupConfig = [
+                { key: 'critical_health', label: '🚨 Kritisch (Health)', color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
+                  desc: 'Fan-Burnout und Spam-Risiko – Chatter-Verhalten gefährdet Fan-Beziehung.' },
+                { key: 'under_min', label: '⚠ Performance unter Minimum', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: true,
+                  desc: 'Chatter unter $100/Std an einem oder mehreren Tagen.' },
+                { key: 'trend', label: '📉 Abwärtstrend', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                  desc: 'Revenue rückläufig — 3-Tage Trend oder schleichender Rückgang (5-Tage MA).' },
+                { key: 'stability', label: '🌊 Stabilität & Abhängigkeit', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                  desc: 'Instabile Performance oder zu starke Whale-Abhängigkeit.' },
+                { key: 'positive', label: '✓ Gesunde Top-Chatter', color: 'var(--green)', bg: 'rgba(16,185,129,0.06)', defaultOpen: false,
+                  desc: 'Chatter mit stabilen, gesunden Werten — Vorbild-Performance.' },
+              ]
+              const byGroup = {}
+              for (const a of chatterAlerts) {
+                const g = a.group || 'stability'
+                if (!byGroup[g]) byGroup[g] = []
+                byGroup[g].push(a)
+              }
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {groupConfig.map(cfg => {
+                    const items = byGroup[cfg.key] || []
+                    if (items.length === 0) return null
+                    // Namen-Vorschau im Header
+                    const namePreview = [...new Set(items.map(i => i.name))].slice(0, 4).join(' · ')
+                    const moreCount = [...new Set(items.map(i => i.name))].length - 4
+                    return (
+                      <details key={cfg.key} open={cfg.defaultOpen} style={{
+                        border: `1px solid ${cfg.color}33`,
+                        borderLeft: `3px solid ${cfg.color}`,
+                        borderRadius: 6,
+                        background: cfg.bg,
+                      }}>
+                        <summary title={cfg.desc} style={{
+                          cursor: 'pointer',
+                          padding: '8px 12px',
+                          listStyle: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 10,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: cfg.color,
+                        }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {cfg.label}
+                            <span style={{
+                              background: `${cfg.color}22`, color: cfg.color,
+                              padding: '1px 8px', borderRadius: 10,
+                              fontSize: 11, fontWeight: 700,
+                            }}>{items.length}</span>
+                          </span>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400, fontFamily: 'var(--font-mono)' }}>
+                            {namePreview}{moreCount > 0 ? ` +${moreCount}` : ''}
+                          </span>
+                        </summary>
+                        <div style={{ padding: '4px 12px 10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {items.map((a, idx) => (
+                            <div key={a.name + a.tag + idx}
+                              title={a.explain || ''}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 12,
+                                padding: '6px 10px',
+                                background: 'var(--bg-card)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 5,
+                                cursor: a.explain ? 'help' : 'default',
+                              }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90 }}>
+                                {a.name}
+                              </span>
+                              <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
+                                {a.headline}
+                              </span>
+                              <span style={{
+                                fontSize: 11, color: cfg.color,
+                                background: `${cfg.color}15`,
+                                border: `1px solid ${cfg.color}33`,
+                                padding: '2px 8px', borderRadius: 4,
+                                whiteSpace: 'nowrap', fontWeight: 600,
+                              }}>
+                                {a.tag}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </>
         )}
       </Card>
@@ -765,6 +863,28 @@ function HealthSubScore({ label, score, color, detail }) {
         </span>
       </div>
       <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>{detail}</div>
+    </div>
+  )
+}
+
+// v3.4.0 fix: Collapsible NICHT innerhalb der Main-Component definieren
+// (sonst wird der State bei jedem Parent-Re-Render zurückgesetzt = zugeklappt
+// wenn expandedHealth in einer Health-Zelle aktiviert wird)
+function Collapsible({ title, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
+        padding: '12px 16px', cursor: 'pointer', color: 'var(--text-muted)',
+        fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        fontFamily: 'inherit'
+      }}>
+        <span>{title}</span>
+        <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>{open ? '▼' : '▶'}</span>
+      </button>
+      {open && <div style={{ padding: '0 16px 16px 16px' }}>{children}</div>}
     </div>
   )
 }
