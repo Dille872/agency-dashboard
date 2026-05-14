@@ -2,6 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 import { getTheme, setTheme, initTheme } from './theme'
 import { APP_VERSION } from './version'
+import {
+  Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
+  TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
+  Eye, ArrowLeftRight,
+} from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
@@ -26,6 +31,9 @@ export default function App() {
   const [needsPassword, setNeedsPassword] = useState(false)
 
   const [activeTab, setActiveTab] = useState('models')
+  // v3.9.0: Mobile + Dropdown
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [businessDate, setBusinessDate] = useState(todayISO())
   const [modelSnapshots, setModelSnapshots] = useState([])
   const [chatterSnapshots, setChatterSnapshots] = useState([])
@@ -423,107 +431,252 @@ export default function App() {
         </div>
         {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {[
-              { key: 'models', label: '🎬 Models' },
-              { key: 'chatters', label: '👥 Chatters' },
-              { key: 'briefing', label: '📊 Briefing' },
-              { key: 'divider1' },
-              { key: 'notes', label: '📝 Notizen', badge: unreadNotes },
-              { key: 'todos', label: '✓ ToDos', badge: openTodos },
-              { key: 'models-comm', label: '🎨 Creator', badge: unreadModelChanges },
-              { key: 'chatters-comm', label: '🔄 Crew', badge: openSwaps },
-              { key: 'chat', label: '💬 Chat', badge: unreadChat },
-              { key: 'divider2' },
-              { key: 'performance', label: '📈 Performance' },
-              { key: 'schedule', label: '📅 Dienstplan' },
-              { key: 'social', label: '🌐 Social' },
-              { key: 'divider3' },
-              { key: 'settings', label: '⚙ Einstellungen' },
-            ].filter(tab => tab.key.startsWith('divider') || canAccess(tab.key)).map(tab => {
-              if (tab.key.startsWith('divider')) return (
-                <div key={tab.key} style={{ width: 1.5, height: 28, background: 'linear-gradient(to bottom, transparent, #f59e0b, transparent)', margin: '0 2px' }} />
+          {/* v3.9.0: Desktop-Tabs */}
+          <div className="tabs-desktop" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+            {(() => {
+              const TABS_PRIMARY = [
+                { key: 'models', label: 'Models', Icon: Film },
+                { key: 'chatters', label: 'Chatters', Icon: Users },
+                { key: 'briefing', label: 'Briefing', Icon: BarChart3 },
+                { divider: true },
+                { key: 'models-comm', label: 'Creator', Icon: Palette, badge: unreadModelChanges },
+                { key: 'chatters-comm', label: 'Crew', Icon: RefreshCw, badge: openSwaps },
+                { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: unreadChat },
+                { divider: true },
+                { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
+                { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
+              ]
+              const TABS_MORE = [
+                { key: 'notes', label: 'Notizen', Icon: FileText, badge: unreadNotes },
+                { key: 'todos', label: 'ToDos', Icon: CheckSquare, badge: openTodos },
+                { key: 'performance', label: 'Performance', Icon: TrendingUp },
+                { key: 'social', label: 'Social', Icon: Globe },
+              ]
+              const visiblePrimary = TABS_PRIMARY.filter(t => t.divider || canAccess(t.key))
+              const visibleMore = TABS_MORE.filter(t => canAccess(t.key))
+              const moreBadgeSum = visibleMore.reduce((s, t) => s + (t.badge || 0), 0)
+              const isMoreActive = visibleMore.some(t => t.key === activeTab)
+
+              const renderTab = (tab) => (
+                <button key={tab.key} onClick={() => {
+                  setActiveTab(tab.key)
+                  setMoreOpen(false)
+                  if (tab.key === 'models-comm') setUnreadModelChanges(0)
+                  if (tab.key === 'chatters-comm') setOpenSwaps(0)
+                  if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
+                }} style={{
+                  padding: '6px 12px', borderRadius: 8,
+                  background: activeTab === tab.key ? '#7c3aed' : 'transparent',
+                  color: activeTab === tab.key ? '#fff' : (tab.badge > 0 ? '#f59e0b' : 'var(--text-secondary)'),
+                  fontWeight: 600, fontSize: 13, transition: 'all 0.15s',
+                  border: `1px solid ${activeTab === tab.key ? '#7c3aed' : (tab.badge > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)')}`,
+                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                  fontFamily: 'inherit',
+                }}>
+                  <tab.Icon size={14} strokeWidth={2.2} />
+                  <span>{tab.label}</span>
+                  {tab.badge > 0 && activeTab !== tab.key && (
+                    <span style={{
+                      background: '#f59e0b', color: '#000', fontSize: 10,
+                      fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4,
+                    }}>{tab.badge}</span>
+                  )}
+                </button>
               )
+
               return (
-              <button key={tab.key} onClick={() => {
-                setActiveTab(tab.key)
-                if (tab.key === 'nachrichten') setUnreadMessages(0)
-                if (tab.key === 'models-comm') setUnreadModelChanges(0)
-                if (tab.key === 'chatters-comm') setOpenSwaps(0)
-                if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
-              }} style={{
-                padding: '6px 14px', borderRadius: 8,
-                background: activeTab === tab.key ? '#7c3aed' : 'transparent',
-                color: activeTab === tab.key ? '#fff' : tab.badge > 0 ? '#f59e0b' : 'var(--text-secondary)',
-                fontWeight: 600, fontSize: 13, transition: 'all 0.15s',
-                border: `1px solid ${activeTab === tab.key ? '#7c3aed' : tab.badge > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-              }}>
-                {tab.label}
-                {tab.badge > 0 && activeTab !== tab.key && (
-                  <span style={{
-                    background: '#f59e0b', color: '#000', fontSize: 10,
-                    fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4,
-                  }}>{tab.badge}</span>
-                )}
-              </button>
-            )})}
+                <>
+                  {visiblePrimary.map((tab, i) => tab.divider ? (
+                    <div key={`d_${i}`} style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+                  ) : renderTab(tab))}
+                  {/* Mehr ▼ Dropdown */}
+                  {visibleMore.length > 0 && (
+                    <div style={{ position: 'relative' }}>
+                      <button onClick={() => setMoreOpen(v => !v)} style={{
+                        padding: '6px 12px', borderRadius: 8,
+                        background: isMoreActive ? '#7c3aed' : (moreOpen ? 'rgba(124,58,237,0.1)' : 'transparent'),
+                        color: isMoreActive ? '#fff' : (moreBadgeSum > 0 ? '#f59e0b' : 'var(--text-secondary)'),
+                        fontWeight: 600, fontSize: 13,
+                        border: `1px solid ${isMoreActive ? '#7c3aed' : (moreBadgeSum > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)')}`,
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit',
+                      }}>
+                        <MoreHorizontal size={14} strokeWidth={2.2} />
+                        <span>Mehr</span>
+                        {moreBadgeSum > 0 && !isMoreActive && (
+                          <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4 }}>{moreBadgeSum}</span>
+                        )}
+                        <span style={{ fontSize: 9, opacity: 0.7 }}>{moreOpen ? '▲' : '▼'}</span>
+                      </button>
+                      {moreOpen && (
+                        <>
+                          <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+                          <div style={{
+                            position: 'absolute', top: 'calc(100% + 4px)', right: 0,
+                            background: 'var(--bg-card)', border: '1px solid var(--border)',
+                            borderRadius: 8, padding: 4, minWidth: 180, zIndex: 999,
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                            display: 'flex', flexDirection: 'column', gap: 2,
+                          }}>
+                            {visibleMore.map(tab => (
+                              <button key={tab.key} onClick={() => {
+                                setActiveTab(tab.key); setMoreOpen(false)
+                                if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
+                              }} style={{
+                                padding: '8px 12px', borderRadius: 6,
+                                background: activeTab === tab.key ? 'rgba(124,58,237,0.15)' : 'transparent',
+                                color: activeTab === tab.key ? '#a78bfa' : (tab.badge > 0 ? '#f59e0b' : 'var(--text-primary)'),
+                                fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                                fontFamily: 'inherit', width: '100%',
+                              }}>
+                                <tab.Icon size={14} strokeWidth={2.2} />
+                                <span style={{ flex: 1 }}>{tab.label}</span>
+                                {tab.badge > 0 && (
+                                  <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{tab.badge}</span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
-          <button onClick={() => setViewMode('chatter')} style={{
-            fontSize: 11, padding: '5px 10px', borderRadius: 6,
+
+          {/* v3.9.0: Mobile Burger */}
+          <button className="tabs-mobile-btn" onClick={() => setMobileMenuOpen(true)} style={{
+            display: 'none', padding: '6px 10px', borderRadius: 8,
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit',
+            alignItems: 'center', gap: 6,
+          }}>
+            <MoreHorizontal size={16} />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Menü</span>
+          </button>
+
+          <button onClick={() => setViewMode('chatter')} title="Chatter-Ansicht" style={{
+            fontSize: 12, padding: '6px 10px', borderRadius: 6,
             background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
             color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
-          }}>Chatter-Ansicht</button>
-          <button onClick={() => setViewMode('model')} style={{
-            fontSize: 11, padding: '5px 10px', borderRadius: 6,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>
+            <Eye size={13} />
+            <span className="hide-mobile">Chatter</span>
+          </button>
+          <button onClick={() => setViewMode('model')} title="Model-Ansicht" style={{
+            fontSize: 12, padding: '6px 10px', borderRadius: 6,
             background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
             color: '#f59e0b', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
-          }}>Model-Ansicht</button>
-          <button onClick={handleLogout} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>
+            <Eye size={13} />
+            <span className="hide-mobile">Model</span>
+          </button>
+          <button onClick={handleLogout} title="Abmelden" style={{
             fontSize: 12, padding: '5px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',
             color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>↩</button>
-          <button onClick={toggleTheme} style={{
-            fontSize: 16, padding: '5px 10px', borderRadius: 6,
+          <button onClick={toggleTheme} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'} style={{
+            padding: '5px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',
             color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
-            {theme === 'dark' ? '☀' : '☾'}
+            display: 'inline-flex', alignItems: 'center',
+          }}>
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
           </button>
         </div>
       </header>
 
-      {/* ── TOOLBAR ── */}
+      {/* v3.9.0: Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div onClick={() => setMobileMenuOpen(false)} style={{
+          position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            position: 'absolute', top: 0, right: 0, bottom: 0,
+            background: 'var(--bg-card)', width: 'min(280px, 80vw)',
+            borderLeft: '1px solid var(--border)', padding: 16,
+            display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Navigation</span>
+              <button onClick={() => setMobileMenuOpen(false)} style={{
+                background: 'transparent', border: 'none', color: 'var(--text-muted)',
+                fontSize: 20, cursor: 'pointer', padding: 4, fontFamily: 'inherit',
+              }}>✕</button>
+            </div>
+            {[
+              { key: 'models', label: 'Models', Icon: Film },
+              { key: 'chatters', label: 'Chatters', Icon: Users },
+              { key: 'briefing', label: 'Briefing', Icon: BarChart3 },
+              { key: 'notes', label: 'Notizen', Icon: FileText, badge: unreadNotes },
+              { key: 'todos', label: 'ToDos', Icon: CheckSquare, badge: openTodos },
+              { key: 'models-comm', label: 'Creator', Icon: Palette, badge: unreadModelChanges },
+              { key: 'chatters-comm', label: 'Crew', Icon: RefreshCw, badge: openSwaps },
+              { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: unreadChat },
+              { key: 'performance', label: 'Performance', Icon: TrendingUp },
+              { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
+              { key: 'social', label: 'Social', Icon: Globe },
+              { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
+            ].filter(t => canAccess(t.key)).map(tab => (
+              <button key={tab.key} onClick={() => {
+                setActiveTab(tab.key); setMobileMenuOpen(false)
+                if (tab.key === 'models-comm') setUnreadModelChanges(0)
+                if (tab.key === 'chatters-comm') setOpenSwaps(0)
+                if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
+              }} style={{
+                padding: '10px 12px', borderRadius: 6,
+                background: activeTab === tab.key ? '#7c3aed' : 'transparent',
+                color: activeTab === tab.key ? '#fff' : (tab.badge > 0 ? '#f59e0b' : 'var(--text-primary)'),
+                fontWeight: 600, fontSize: 14, border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                fontFamily: 'inherit', width: '100%',
+              }}>
+                <tab.Icon size={16} strokeWidth={2.2} />
+                <span style={{ flex: 1 }}>{tab.label}</span>
+                {tab.badge > 0 && (
+                  <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{tab.badge}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── TOOLBAR (v3.9.0: kompakter) ── */}
       <div style={{
         background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
-        padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap',
+        padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
       }}>
         {/* Date controls */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Business Date</label>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <label style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Business Date</label>
             <input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} />
           </div>
           {allDates.length > 0 && (
             <select value={businessDate} onChange={e => setBusinessDate(e.target.value)} style={{
               background: 'var(--bg-input)', border: '1px solid var(--border)',
-              color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 8,
-              fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', outline: 'none', maxWidth: 140, marginTop: 18,
+              color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6,
+              fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', outline: 'none', maxWidth: 130, marginTop: 12,
             }}>
               {allDates.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           )}
           {(currentModelSnap || currentChatterSnap) && (
             <button onClick={() => deleteDay(businessDate)} style={{
-              padding: '7px 10px', background: 'transparent', marginTop: 18,
+              padding: '5px 9px', background: 'transparent', marginTop: 12,
               border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
-              borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
             }} title={`Tag ${businessDate} löschen`}>🗑 Tag löschen</button>
           )}
         </div>
-        {/* Uploads */}
-        <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
+        {/* Uploads (UploadBox-Komponente bleibt unverändert) */}
+        <div className="upload-row-compact" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
           <UploadBox
             label="Daily Model"
             onFile={handleModelUpload}
@@ -538,8 +691,8 @@ export default function App() {
           />
         </div>
         {/* Version only */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, marginLeft: 'auto' }}>
+          <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
         </div>
       </div>
 

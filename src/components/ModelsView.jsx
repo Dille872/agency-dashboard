@@ -677,14 +677,59 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* ═══════════════ OBEN: BÄM-Block — immer sichtbar ═══════════════ */}
 
-      {/* KPI Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-        <KpiCard label="Revenue heute" value={formatMoney(totalRev)} delta={revDelta} accent />
-        <KpiCard label="Top Model" value={topModel?.creator || '—'} sub={topModel ? formatMoney(topModel.revenue) : ''} />
-        <KpiCard label="Worst Model" value={worstModel?.creator || '—'} sub={worstModel ? formatMoney(worstModel.revenue) : ''} />
-        <KpiCard label="Revenue Chatters" value={formatMoney(totalChatterRev)} delta={chatterRevDelta} />
-        <KpiCard label="Top Chatter" value={topChatter?.name || '—'} sub={topChatter ? formatMoney(topChatter.revenue) : ''} />
-        <KpiCard label="Worst Chatter" value={worstChatter?.name || '—'} sub={worstChatter ? formatMoney(worstChatter.revenue) : ''} />
+      {/* v3.9.0: KPI Row Redesigned — Revenue gross mit Sparkline links + 5 kleine Karten rechts */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) 2fr', gap: 12 }} className="kpi-redesigned">
+        {/* Hero Card: Revenue heute + Sparkline */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(124,58,237,0.04))',
+          border: '1px solid rgba(124,58,237,0.3)',
+          borderRadius: 10, padding: '14px 16px',
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          minHeight: 110,
+        }}>
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Revenue heute</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
+              <span style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                {formatMoney(totalRev)}
+              </span>
+              {revDelta !== null && revDelta !== 0 && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: revDelta > 0 ? 'var(--green)' : 'var(--red)' }}>
+                  {revDelta > 0 ? '▲' : '▼'} {Math.abs(revDelta).toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>vs. Vortag</div>
+          </div>
+          {/* Sparkline der letzten 7 Tage */}
+          {(() => {
+            const dailyTotals = last7.map(s => (s.rows || []).reduce((sum, r) => sum + (r.revenue || 0), 0))
+            if (dailyTotals.length < 2) return null
+            const max = Math.max(...dailyTotals, 1)
+            const min = Math.min(...dailyTotals)
+            const range = max - min || 1
+            const points = dailyTotals.map((v, i) => {
+              const x = (i / (dailyTotals.length - 1)) * 100
+              const y = 100 - ((v - min) / range) * 80 - 10
+              return `${x},${y}`
+            }).join(' ')
+            return (
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: 32, marginTop: 6 }}>
+                <polyline points={points} fill="none" stroke="rgba(124,58,237,0.8)" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+                <polyline points={`0,100 ${points} 100,100`} fill="rgba(124,58,237,0.12)" stroke="none" />
+              </svg>
+            )
+          })()}
+        </div>
+
+        {/* 5 KPI Cards in 2x3 Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+          <MiniKpi label="Top Model" value={topModel?.creator || '—'} sub={topModel ? formatMoney(topModel.revenue) : ''} color="#10b981" />
+          <MiniKpi label="Worst Model" value={worstModel?.creator || '—'} sub={worstModel ? formatMoney(worstModel.revenue) : ''} color="#ef4444" />
+          <MiniKpi label="Revenue Chatters" value={formatMoney(totalChatterRev)} sub={chatterRevDelta !== null && chatterRevDelta !== 0 ? `${chatterRevDelta > 0 ? '+' : ''}${chatterRevDelta.toFixed(1)}% vs. Vortag` : 'vs. Vortag'} subColor={chatterRevDelta > 0 ? 'var(--green)' : chatterRevDelta < 0 ? 'var(--red)' : 'var(--text-muted)'} />
+          <MiniKpi label="Top Chatter" value={topChatter?.name || '—'} sub={topChatter ? formatMoney(topChatter.revenue) : ''} color="#06b6d4" />
+          <MiniKpi label="Worst Chatter" value={worstChatter?.name || '—'} sub={worstChatter ? formatMoney(worstChatter.revenue) : ''} color="#f59e0b" />
+        </div>
       </div>
 
       {/* v3.7.0: Aufmerksamkeit-Alert gruppiert mit Tooltips */}
@@ -1210,6 +1255,35 @@ function ModelSubScore({ label, score, color, detail }) {
         </span>
       </div>
       <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>{detail}</div>
+    </div>
+  )
+}
+
+// v3.9.0: Kompaktes KPI-Card-Element für die Sekundär-Reihe
+function MiniKpi({ label, value, sub, color, subColor }) {
+  return (
+    <div style={{
+      background: 'var(--bg-card)',
+      border: `1px solid ${color ? color + '33' : 'var(--border)'}`,
+      borderRadius: 8, padding: '8px 10px',
+      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      minHeight: 48,
+    }}>
+      <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 13, fontWeight: 700, color: color || 'var(--text-primary)',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        marginTop: 2,
+      }} title={value}>
+        {value}
+      </div>
+      {sub && (
+        <div style={{ fontSize: 10, color: subColor || 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>
+          {sub}
+        </div>
+      )}
     </div>
   )
 }

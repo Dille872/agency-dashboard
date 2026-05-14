@@ -7,6 +7,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      /* v3.9.0: Mobile Responsive */
+      @media (max-width: 768px) {
+        .tabs-desktop { display: none !important; }
+        .tabs-mobile-btn { display: inline-flex !important; }
+        .hide-mobile { display: none !important; }
+        .kpi-redesigned { grid-template-columns: 1fr !important; }
+        .upload-row-compact { width: 100%; }
+      }
+      @media (min-width: 769px) {
+        .tabs-mobile-btn { display: none !important; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
