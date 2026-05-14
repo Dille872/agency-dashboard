@@ -159,6 +159,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   const [chatters, setChatters] = useState([])
   const [selectedChatters, setSelectedChatters] = useState(new Set())
+  // v3.12.0: Single-Select für Detail-Ansicht im Chatters-Sub-Tab (separat vom Multi-Select-Set)
+  const [selectedChatter, setSelectedChatter] = useState(null)
   const [chatterMsgType, setChatterMsgType] = useState('announcement')
   const [chatterMsgText, setChatterMsgText] = useState('')
   const [sendingChatter, setSendingChatter] = useState(false)
@@ -385,6 +387,53 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (!confirm('Ankündigung wirklich löschen?')) return
     await supabase.from('announcements').delete().eq('id', id)
     loadAnnouncements()
+  }
+
+  // v3.12.0: Helper für Pinnwand-Item-Darstellung (wiederverwendet im Chatters-Sub-Tab)
+  const renderAnnouncementItem = (ann, now, onDelete) => {
+    const isExpired = ann.expires_at && new Date(ann.expires_at) < now
+    const archivedFor = Array.isArray(ann.archived_for) ? ann.archived_for : []
+    return (
+      <div key={ann.id} style={{
+        padding: '9px 11px',
+        background: 'var(--bg-card2)',
+        borderRadius: 7,
+        border: `1px solid ${isExpired ? 'var(--border)' : 'rgba(124,58,237,0.3)'}`,
+        opacity: isExpired ? 0.5 : 1,
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+      }}>
+        <span style={{ fontSize: 17, flexShrink: 0 }}>{ann.emoji}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4 }}>{ann.text}</div>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'monospace', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <span>Von {ann.created_by}</span>
+            <span>·</span>
+            <span>{new Date(ann.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+            {ann.expires_at && (
+              <>
+                <span>·</span>
+                <span style={{ color: isExpired ? '#ef4444' : 'var(--text-muted)' }}>
+                  {isExpired ? 'Abgelaufen' : 'Läuft ab'}: {new Date(ann.expires_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </>
+            )}
+            {archivedFor.length > 0 && (
+              <>
+                <span>·</span>
+                <span title={archivedFor.join(', ')} style={{ color: '#10b981', cursor: 'help' }}>
+                  ✓ Gelesen von {archivedFor.length}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <button onClick={() => onDelete(ann.id)} title="Löschen" style={{
+          fontSize: 10, padding: '3px 8px', borderRadius: 5,
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+          color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+        }}>✕</button>
+      </div>
+    )
   }
 
   const loadModels = async () => {
@@ -1198,7 +1247,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             const interested = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id))
             return interested.size
           })() },
-          section === 'chatters' && { key: 'pinnwand', label: `📌 Pinnwand${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length > 0 ? ` (${announcements.filter(a => !a.expires_at || new Date(a.expires_at) > new Date()).length})` : ''}` },
           section === 'chatters' && { key: 'swaps', label: (() => {
             const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
             const cnt = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id)).size
@@ -1215,7 +1263,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             if (s.key === 'content-requests') loadContentRequests()
             if (s.key === 'content-verlauf') loadContentRequests()
             if (s.key === 'content-ideas') loadContentIdeas()
-            if (s.key === 'chatters') { /* already loaded */ }
+            if (s.key === 'chatters') { loadAnnouncements() }
             if (s.key === 'swaps') loadSwaps()
             if (s.key === 'stats' || s.key === 'shiftlog') loadShiftLogs()
             if (s.key === 'pinnwand') loadAnnouncements()
@@ -1470,40 +1518,23 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           )}
 
           {/* Quick-Info Pinnwand */}
-          {activeAnnCount > 0 && (
-            <div style={{ marginBottom: 16, background: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.2)', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 16 }}>📌</span>
-                <span style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>
-                  {activeAnnCount} aktive Ankündigung{activeAnnCount !== 1 ? 'en' : ''} an alle Chatter
-                </span>
-              </div>
-              <button onClick={() => setActiveSection('pinnwand')} style={{
-                fontSize: 11, padding: '4px 10px', borderRadius: 6,
-                background: 'transparent', border: '1px solid rgba(124,58,237,0.3)',
-                color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600
-              }}>Verwalten →</button>
-            </div>
-          )}
+          {/* v3.12.0: "Verwalten →" Hinweis entfernt — Pinnwand ist jetzt direkt rechts integriert */}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
           <Card title="Chatters">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
               {chatters.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Chatters angelegt</div>}
               {chatters.map(chatter => {
-                const isSelected = selectedChatters.has(chatter.id)
+                const isSelected = selectedChatter?.id === chatter.id
                 return (
                   <div key={chatter.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                    <div onClick={() => toggleChatter(chatter.id)} style={{
+                    <div onClick={() => setSelectedChatter(isSelected ? null : chatter)} style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: showAvailability === chatter.name ? '8px 8px 0 0' : 8,
                       border: `1px solid ${isSelected ? '#06b6d4' : 'var(--border)'}`,
                       cursor: 'pointer', transition: 'border-color 0.15s',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSelected ? '#06b6d4' : 'var(--border-bright)'}`, background: isSelected ? '#06b6d4' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {isSelected && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-                        </div>
                         <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #06b6d433, #7c3aed33)', border: '1px solid #2e2e5a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#06b6d4', flexShrink: 0 }}>
                           {chatter.name[0]}
                         </div>
@@ -1591,78 +1622,147 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             }
           </Card>
 
-          <Card title="Nachricht senden">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 12, color: selectedChatters.size === 0 ? '#f59e0b' : '#10b981', fontWeight: 600 }}>
-                {selectedChatters.size === 0
-                  ? `An alle ${chatters.filter(c => c.telegram_id).length} Chatters`
-                  : `An ${selectedChatters.size} ausgewählte Chatters`}
+          {/* v3.12.0: Pinnwand (ersetzt "Nachricht senden" Card, war vorher eigener Sub-Tab) */}
+          <Card title={selectedChatter ? `📌 Pinnwand · ${selectedChatter.name}` : '📌 Pinnwand'}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Ankündigungen für alle Chatter — werden im ChatterPortal oben angezeigt.
+                Max. 2 aktive Posts gleichzeitig oben. Chatter können einzelne Posts archivieren.
               </div>
-              {selectedChatters.size > 0 && (
-                <button onClick={() => setSelectedChatters(new Set())} style={{ alignSelf: 'flex-start', background: 'transparent', border: '1px solid #2e2e5a', color: 'var(--text-secondary)', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Auswahl aufheben
+
+              {/* Neue Ankündigung */}
+              {!showAnnForm ? (
+                <button onClick={() => setShowAnnForm(true)} style={{
+                  alignSelf: 'flex-start', fontSize: 12, padding: '6px 14px', borderRadius: 7,
+                  background: '#7c3aed', border: 'none', color: '#fff',
+                  cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                }}>
+                  + Neue Ankündigung
                 </button>
-              )}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {CHATTER_MSG_TYPES.map(t => (
-                  <button key={t.key} onClick={() => setChatterMsgType(t.key)} style={{
-                    fontSize: 11, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
-                    background: chatterMsgType === t.key ? 'rgba(6,182,212,0.2)' : 'transparent',
-                    border: `1px solid ${chatterMsgType === t.key ? '#06b6d4' : 'var(--border)'}`,
-                    color: chatterMsgType === t.key ? '#06b6d4' : 'var(--text-muted)',
-                    fontFamily: 'inherit', fontWeight: 600,
-                  }}>{t.label}</button>
-                ))}
-              </div>
-              {/* Zoom date/time picker */}
-              {chatterMsgType === 'zoom' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Datum</label>
-                      <input type="date" value={zoomDate} onChange={e => setZoomDate(e.target.value)}
-                        style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                        Uhrzeit
-                        <span style={{ color: '#7c3aed', marginLeft: 4 }}>
-                          ({Intl.DateTimeFormat().resolvedOptions().timeZone})
-                        </span>
-                      </label>
-                      <input type="time" value={zoomTime} onChange={e => setZoomTime(e.target.value)}
-                        style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+              ) : (
+                <div style={{ background: 'var(--bg-card2)', border: '1px solid #7c3aed', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Emoji:</label>
+                    <input type="text" value={newAnnEmoji} onChange={e => setNewAnnEmoji(e.target.value)} maxLength={2}
+                      style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: 5, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: 44, textAlign: 'center' }} />
+                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                      {['📌', '⚽', '📢', '🎯', '⚡', '🎬', '🚨', '🎉', '📋'].map(e => (
+                        <button key={e} type="button" onClick={() => setNewAnnEmoji(e)} style={{
+                          fontSize: 14, padding: '3px 7px', borderRadius: 5, cursor: 'pointer',
+                          background: newAnnEmoji === e ? 'rgba(124,58,237,0.2)' : 'transparent',
+                          border: `1px solid ${newAnnEmoji === e ? '#7c3aed' : 'var(--border)'}`,
+                        }}>{e}</button>
+                      ))}
                     </div>
                   </div>
-                  {zoomDate && zoomTime && (() => {
-                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-                    const tzEncoded = encodeURIComponent(tz)
-                    const d = zoomDate.replace(/-/g, '')
-                    const t = zoomTime.replace(':', '') + '00'
-                    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${d}T${t}/${d}T${t}&ctz=${tzEncoded}&details=Team+Zoom+Call+Thirteen+87`
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 7 }}>
-                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>📅 Kalender-Link wird automatisch an die Nachricht angehängt</span>
-                        <a href={calUrl} target="_blank" rel="noopener noreferrer"
-                          style={{ fontSize: 11, color: '#10b981', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}
-                          onClick={e => e.stopPropagation()}>
-                          Vorschau ↗
-                        </a>
-                      </div>
-                    )
-                  })()}
+                  <textarea
+                    value={newAnnText}
+                    onChange={e => setNewAnnText(e.target.value)}
+                    placeholder="z.B. 'Heute 20:30 Zoom Call' oder 'Fußball heute Abend 😄'"
+                    style={{
+                      width: '100%', minHeight: 70, background: 'var(--bg-input)', border: '1px solid var(--border)',
+                      color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6, fontSize: 12,
+                      fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box',
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>Läuft ab:</label>
+                    <input type="datetime-local" value={newAnnExpiresAt} onChange={e => setNewAnnExpiresAt(e.target.value)}
+                      style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit', outline: 'none' }} />
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(optional)</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                    <button onClick={postAnnouncement} disabled={!newAnnText.trim()} style={{
+                      fontSize: 12, padding: '6px 14px', borderRadius: 6,
+                      background: newAnnText.trim() ? '#7c3aed' : 'var(--border)',
+                      border: 'none', color: '#fff', cursor: newAnnText.trim() ? 'pointer' : 'not-allowed',
+                      fontFamily: 'inherit', fontWeight: 600,
+                    }}>
+                      Posten
+                    </button>
+                    <button onClick={() => { setShowAnnForm(false); setNewAnnText(''); setNewAnnEmoji('📌'); setNewAnnExpiresAt('') }} style={{
+                      fontSize: 12, padding: '6px 14px', borderRadius: 6,
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
+                    }}>
+                      Abbrechen
+                    </button>
+                  </div>
                 </div>
               )}
-              <textarea value={chatterMsgText} onChange={e => setChatterMsgText(e.target.value)} rows={4}
-                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none' }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>✈ Jeder bekommt eine separate Nachricht</div>
-                <button onClick={sendChatterMessage} disabled={sendingChatter || !chatterMsgText.trim()} style={{
-                  background: chatterMsgText.trim() ? 'linear-gradient(135deg, #06b6d4, #0891b2)' : 'var(--border)',
-                  color: chatterMsgText.trim() ? '#fff' : 'var(--text-muted)',
-                  border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                }}>{sendingChatter ? 'Senden...' : `An ${selectedChatters.size === 0 ? 'alle' : selectedChatters.size} senden`}</button>
-              </div>
+
+              {/* Liste der Ankündigungen */}
+              {(() => {
+                if (announcements.length === 0) {
+                  return (
+                    <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
+                      Noch keine Ankündigungen
+                    </div>
+                  )
+                }
+                const now = new Date()
+                // Falls Chatter ausgewählt → zwei Sektionen, sonst alle
+                if (selectedChatter) {
+                  const ungeleseneAktive = announcements.filter(a => {
+                    const isExpired = a.expires_at && new Date(a.expires_at) < now
+                    if (isExpired) return false
+                    const archivedFor = Array.isArray(a.archived_for) ? a.archived_for : []
+                    return !archivedFor.includes(selectedChatter.name)
+                  })
+                  const gelesene = announcements.filter(a => {
+                    const archivedFor = Array.isArray(a.archived_for) ? a.archived_for : []
+                    return archivedFor.includes(selectedChatter.name)
+                  })
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {/* Reset-Link */}
+                      <button onClick={() => setSelectedChatter(null)} style={{
+                        alignSelf: 'flex-start',
+                        background: 'transparent', border: 'none', color: 'var(--text-muted)',
+                        fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                        padding: 0,
+                      }}>← Alle Ankündigungen anzeigen</button>
+
+                      {/* Ungelesene */}
+                      <div>
+                        <div style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 6 }}>
+                          ⚪ Ungelesen für {selectedChatter.name} ({ungeleseneAktive.length})
+                        </div>
+                        {ungeleseneAktive.length === 0 ? (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 0', fontStyle: 'italic' }}>
+                            {selectedChatter.name} hat alle aktiven Ankündigungen gelesen.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {ungeleseneAktive.map(ann => renderAnnouncementItem(ann, now, deleteAnnouncement))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Gelesene */}
+                      {gelesene.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 10, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 6 }}>
+                            ✓ Gelesen von {selectedChatter.name} ({gelesene.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {gelesene.map(ann => renderAnnouncementItem(ann, now, deleteAnnouncement))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                // Default-Modus: Alle anzeigen
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 2 }}>
+                      Alle Ankündigungen ({announcements.length})
+                    </div>
+                    {announcements.map(ann => renderAnnouncementItem(ann, now, deleteAnnouncement))}
+                  </div>
+                )
+              })()}
             </div>
           </Card>
         </div>
