@@ -178,6 +178,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [chatSearch, setChatSearch] = useState('')
   const chatScrollRef = useRef(null)
   const [showNewChatPicker, setShowNewChatPicker] = useState(false)
+  // v3.10.0: Massennachrichten im Chat-Tab
+  const [newChatMode, setNewChatMode] = useState('single') // 'single' | 'broadcast'
+  const [broadcastRecipientType, setBroadcastRecipientType] = useState('chatter') // 'chatter' | 'model'
+  const [broadcastSelected, setBroadcastSelected] = useState(new Set()) // Set of contact ids
+  const [broadcastMsgType, setBroadcastMsgType] = useState('announcement')
+  const [broadcastText, setBroadcastText] = useState('')
+  const [broadcastZoomDate, setBroadcastZoomDate] = useState('')
+  const [broadcastZoomTime, setBroadcastZoomTime] = useState('')
+  const [broadcastSending, setBroadcastSending] = useState(false)
   const [isMobileChat, setIsMobileChat] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
   const [chatTypeFilter, setChatTypeFilter] = useState('all') // 'all' | 'chatter' | 'model'
   const [expandedMonths, setExpandedMonths] = useState({}) // {'2026-04': true} für Custom Verlauf Akkordeon
@@ -446,6 +455,70 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadMessages(); loadChatters()
     setSendingChatter(false)
     alert(`✓ Nachricht an ${sent} Chatter gesendet`)
+  }
+
+  // v3.10.0: Massennachricht aus dem Chat-Tab
+  // Sendet an alle/ausgewählte Chatter ODER Models (nie gemischt)
+  // - Schreibt in messages mit is_broadcast=true und sent_by=userName
+  // - Sendet via Telegram an jeden Empfänger
+  // - Bei bestehender Konversation → wird automatisch in den existierenden Chat-Thread eingehängt
+  //   (weil Chat-Logik nach model_name + contact_type gruppiert)
+  const sendBroadcast = async () => {
+    if (!broadcastText.trim()) return
+    setBroadcastSending(true)
+
+    const contactList = broadcastRecipientType === 'chatter' ? chatters : models
+    const targets = broadcastSelected.size > 0
+      ? contactList.filter(c => broadcastSelected.has(c.id))
+      : contactList.filter(c => c.telegram_id)
+
+    // Build calendar link for zoom
+    let calLink = ''
+    if (broadcastMsgType === 'zoom' && broadcastZoomDate && broadcastZoomTime) {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const d = broadcastZoomDate.replace(/-/g, '')
+      const t = broadcastZoomTime.replace(':', '') + '00'
+      calLink = `\n\n📅 Zum Kalender hinzufügen:\nhttps://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${d}T${t}/${d}T${t}&ctz=${encodeURIComponent(tz)}&details=Team+Zoom+Call`
+    }
+
+    let sent = 0
+    for (const recipient of targets) {
+      if (!recipient.telegram_id) continue
+      const personalText = broadcastText.replace('{name}', recipient.name) + calLink
+      try {
+        await sendTelegramMessage(recipient.telegram_id, personalText)
+        await supabase.from('messages').insert({
+          model_name: recipient.name,
+          model_telegram_id: recipient.telegram_id,
+          direction: 'out',
+          contact_type: broadcastRecipientType,
+          message_type: broadcastMsgType,
+          text: personalText,
+          status: 'sent',
+          sent_by: userName,
+          is_broadcast: true,
+        })
+        // last_contacted aktualisieren
+        const tableName = broadcastRecipientType === 'chatter' ? 'chatters_contact' : 'models_contact'
+        await supabase.from(tableName).update({ last_contacted: new Date().toISOString() }).eq('id', recipient.id)
+        sent++
+      } catch (e) {
+        console.error('Broadcast send failed for', recipient.name, e)
+      }
+    }
+    // Reset
+    setBroadcastText('')
+    setBroadcastSelected(new Set())
+    setBroadcastZoomDate('')
+    setBroadcastZoomTime('')
+    setBroadcastMsgType('announcement')
+    setShowNewChatPicker(false)
+    setNewChatMode('single')
+    loadMessages()
+    if (broadcastRecipientType === 'chatter') loadChatters()
+    else loadModels()
+    setBroadcastSending(false)
+    alert(`✓ Massennachricht an ${sent} ${broadcastRecipientType === 'chatter' ? 'Chatter' : 'Models'} gesendet`)
   }
 
   const addModel = async (name, tgId) => {
@@ -1761,6 +1834,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             {fullDateTime(msg.created_at)}
                             {isOut && msg.sent_by ? ` · ${msg.sent_by}` : ''}
                           </div>
+                          {/* v3.10.0: Broadcast-Marker */}
+                          {msg.is_broadcast && (
+                            <div style={{
+                              fontSize: 9, color: '#f59e0b', fontWeight: 600,
+                              textAlign: isOut ? 'right' : 'left',
+                              marginTop: 1,
+                              display: 'flex', alignItems: 'center', gap: 3,
+                              justifyContent: isOut ? 'flex-end' : 'flex-start',
+                            }}>
+                              📢 Massennachricht · Admin
+                            </div>
+                          )}
                         </div>
                       </React.Fragment>
                     )
@@ -1841,60 +1926,234 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       {showNewChatPicker && (activeSection === 'chat-models' || activeSection === 'chat-chatters' || activeSection === 'chat-unified') && (() => {
         const isUnifiedPicker = activeSection === 'chat-unified'
         const pickerContactType = activeSection === 'chat-models' ? 'model' : activeSection === 'chat-chatters' ? 'chatter' : null
-        // Liste: in unified beide, sonst nur einer
+        // Liste für Single-Chat: in unified beide, sonst nur einer
         const pickerEntries = isUnifiedPicker
           ? [
               ...chatters.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'chatter' })),
               ...models.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'model' })),
             ].sort((a, b) => a.name.localeCompare(b.name))
           : (pickerContactType === 'model' ? models : chatters).filter(c => c.telegram_id).map(c => ({ ...c, _type: pickerContactType }))
+
+        // Empfängerliste für Broadcast (basierend auf broadcastRecipientType)
+        const broadcastContactList = broadcastRecipientType === 'chatter'
+          ? chatters.filter(c => c.telegram_id)
+          : models.filter(c => c.telegram_id)
+        const broadcastTargetCount = broadcastSelected.size > 0 ? broadcastSelected.size : broadcastContactList.length
+
+        const closeModal = () => {
+          setShowNewChatPicker(false)
+          setNewChatMode('single')
+          setBroadcastText('')
+          setBroadcastSelected(new Set())
+          setBroadcastZoomDate('')
+          setBroadcastZoomTime('')
+        }
+
         return (
-          <div onClick={() => setShowNewChatPicker(false)} style={{
+          <div onClick={closeModal} style={{
             position: 'fixed', inset: 0, zIndex: 10000,
             background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
           }}>
             <div onClick={e => e.stopPropagation()} style={{
               background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
-              padding: 18, maxWidth: 420, width: '100%', maxHeight: '80vh', overflowY: 'auto',
+              padding: 18, maxWidth: newChatMode === 'broadcast' ? 560 : 420, width: '100%', maxHeight: '85vh', overflowY: 'auto',
               boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {isUnifiedPicker ? 'Neuer Chat' : `Neuer Chat mit ${pickerContactType === 'model' ? 'Model' : 'Chatter'}`}
+                  {newChatMode === 'broadcast' ? 'Neue Massennachricht' : (isUnifiedPicker ? 'Neuer Chat' : `Neuer Chat mit ${pickerContactType === 'model' ? 'Model' : 'Chatter'}`)}
                 </div>
-                <button onClick={() => setShowNewChatPicker(false)} style={{
+                <button onClick={closeModal} style={{
                   background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', padding: 0,
                 }}>✕</button>
               </div>
-              {pickerEntries.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>
-                  Keine Kontakte mit Telegram-ID hinterlegt.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {pickerEntries.map(c => (
-                    <button key={`${c._type}-${c.id}`} onClick={() => {
-                      openChatThread(c.name, c._type)
-                      setShowNewChatPicker(false)
-                    }} style={{
-                      padding: '10px 12px', borderRadius: 7,
-                      background: 'transparent', border: '1px solid var(--border)',
-                      color: 'var(--text-primary)', fontSize: 12, fontWeight: 600,
-                      cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                    }}>
-                      {isUnifiedPicker && (
-                        <span style={{
-                          fontSize: 8, padding: '1px 5px', borderRadius: 3,
-                          background: c._type === 'model' ? 'rgba(245,158,11,0.18)' : 'rgba(6,182,212,0.18)',
-                          color: c._type === 'model' ? '#f59e0b' : '#06b6d4',
-                          fontWeight: 700, letterSpacing: 0.3,
-                        }}>{c._type === 'model' ? 'M' : 'C'}</span>
+
+              {/* Mode-Tabs */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 14, padding: 3, background: 'var(--bg-input)', borderRadius: 8 }}>
+                <button onClick={() => setNewChatMode('single')} style={{
+                  flex: 1, padding: '7px 10px', borderRadius: 5,
+                  background: newChatMode === 'single' ? 'rgba(124,58,237,0.18)' : 'transparent',
+                  color: newChatMode === 'single' ? '#a78bfa' : 'var(--text-muted)',
+                  border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                }}>💬 Neuer Chat</button>
+                <button onClick={() => setNewChatMode('broadcast')} style={{
+                  flex: 1, padding: '7px 10px', borderRadius: 5,
+                  background: newChatMode === 'broadcast' ? 'rgba(245,158,11,0.18)' : 'transparent',
+                  color: newChatMode === 'broadcast' ? '#f59e0b' : 'var(--text-muted)',
+                  border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                }}>📢 Massennachricht</button>
+              </div>
+
+              {/* SINGLE CHAT MODE */}
+              {newChatMode === 'single' && (
+                pickerEntries.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>
+                    Keine Kontakte mit Telegram-ID hinterlegt.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {pickerEntries.map(c => (
+                      <button key={`${c._type}-${c.id}`} onClick={() => {
+                        openChatThread(c.name, c._type)
+                        closeModal()
+                      }} style={{
+                        padding: '10px 12px', borderRadius: 7,
+                        background: 'transparent', border: '1px solid var(--border)',
+                        color: 'var(--text-primary)', fontSize: 12, fontWeight: 600,
+                        cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }}>
+                        {isUnifiedPicker && (
+                          <span style={{
+                            fontSize: 8, padding: '1px 5px', borderRadius: 3,
+                            background: c._type === 'model' ? 'rgba(245,158,11,0.18)' : 'rgba(6,182,212,0.18)',
+                            color: c._type === 'model' ? '#f59e0b' : '#06b6d4',
+                            fontWeight: 700, letterSpacing: 0.3,
+                          }}>{c._type === 'model' ? 'M' : 'C'}</span>
+                        )}
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* BROADCAST MODE */}
+              {newChatMode === 'broadcast' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Empfänger-Typ */}
+                  <div>
+                    <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, display: 'block', marginBottom: 6 }}>An:</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => { setBroadcastRecipientType('chatter'); setBroadcastSelected(new Set()) }} style={{
+                        flex: 1, padding: '8px 12px', borderRadius: 6,
+                        background: broadcastRecipientType === 'chatter' ? 'rgba(6,182,212,0.18)' : 'transparent',
+                        color: broadcastRecipientType === 'chatter' ? '#06b6d4' : 'var(--text-muted)',
+                        border: `1px solid ${broadcastRecipientType === 'chatter' ? '#06b6d4' : 'var(--border)'}`,
+                        fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                      }}>Chatter ({chatters.filter(c => c.telegram_id).length})</button>
+                      <button onClick={() => { setBroadcastRecipientType('model'); setBroadcastSelected(new Set()) }} style={{
+                        flex: 1, padding: '8px 12px', borderRadius: 6,
+                        background: broadcastRecipientType === 'model' ? 'rgba(245,158,11,0.18)' : 'transparent',
+                        color: broadcastRecipientType === 'model' ? '#f59e0b' : 'var(--text-muted)',
+                        border: `1px solid ${broadcastRecipientType === 'model' ? '#f59e0b' : 'var(--border)'}`,
+                        fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                      }}>Models ({models.filter(c => c.telegram_id).length})</button>
+                    </div>
+                  </div>
+
+                  {/* Empfänger-Auswahl: Alle vs. Auswahl */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                        Empfänger ({broadcastTargetCount})
+                      </label>
+                      {broadcastSelected.size > 0 && (
+                        <button onClick={() => setBroadcastSelected(new Set())} style={{
+                          background: 'transparent', border: '1px solid var(--border)',
+                          color: 'var(--text-muted)', borderRadius: 5, padding: '2px 8px',
+                          fontSize: 10, cursor: 'pointer', fontFamily: 'inherit',
+                        }}>Alle</button>
                       )}
-                      {c.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: broadcastSelected.size === 0 ? '#10b981' : '#f59e0b', fontWeight: 600, marginBottom: 6 }}>
+                      {broadcastSelected.size === 0
+                        ? `→ Sendet an alle ${broadcastContactList.length} ${broadcastRecipientType === 'chatter' ? 'Chatter' : 'Models'}`
+                        : `→ Sendet an ${broadcastSelected.size} ausgewählte`}
+                    </div>
+                    <div style={{
+                      maxHeight: 140, overflowY: 'auto',
+                      border: '1px solid var(--border)', borderRadius: 6, padding: 6,
+                      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 3,
+                    }}>
+                      {broadcastContactList.map(c => {
+                        const checked = broadcastSelected.has(c.id)
+                        return (
+                          <label key={c.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '4px 6px', borderRadius: 4,
+                            background: checked ? 'rgba(124,58,237,0.1)' : 'transparent',
+                            cursor: 'pointer', fontSize: 11,
+                          }}>
+                            <input type="checkbox" checked={checked} onChange={(e) => {
+                              const next = new Set(broadcastSelected)
+                              if (e.target.checked) next.add(c.id)
+                              else next.delete(c.id)
+                              setBroadcastSelected(next)
+                            }} style={{ cursor: 'pointer' }} />
+                            <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Nachrichtentyp */}
+                  <div>
+                    <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, display: 'block', marginBottom: 6 }}>Typ:</label>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {CHATTER_MSG_TYPES.map(t => (
+                        <button key={t.key} onClick={() => setBroadcastMsgType(t.key)} style={{
+                          fontSize: 11, padding: '6px 12px', borderRadius: 5, cursor: 'pointer',
+                          background: broadcastMsgType === t.key ? 'rgba(124,58,237,0.18)' : 'transparent',
+                          border: `1px solid ${broadcastMsgType === t.key ? '#7c3aed' : 'var(--border)'}`,
+                          color: broadcastMsgType === t.key ? '#a78bfa' : 'var(--text-muted)',
+                          fontFamily: 'inherit', fontWeight: 600,
+                        }}>{t.label}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Zoom: Datum + Zeit */}
+                  {broadcastMsgType === 'zoom' && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Datum</label>
+                        <input type="date" value={broadcastZoomDate} onChange={e => setBroadcastZoomDate(e.target.value)}
+                          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 9px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Uhrzeit</label>
+                        <input type="time" value={broadcastZoomTime} onChange={e => setBroadcastZoomTime(e.target.value)}
+                          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 9px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Text */}
+                  <div>
+                    <label style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, display: 'block', marginBottom: 6 }}>Nachricht:</label>
+                    <textarea value={broadcastText} onChange={e => setBroadcastText(e.target.value)}
+                      placeholder={`Hi {name}, kurze Info vom Team:\n\n…`}
+                      rows={4}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        background: 'var(--bg-input)', border: '1px solid var(--border)',
+                        color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6,
+                        fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical',
+                      }} />
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Tipp: <code style={{ background: 'var(--bg-card2)', padding: '1px 4px', borderRadius: 3 }}>{'{name}'}</code> wird durch den jeweiligen Empfänger-Namen ersetzt.
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
+                    <button onClick={closeModal} style={{
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--text-muted)', borderRadius: 6, padding: '8px 16px',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>Abbrechen</button>
+                    <button onClick={sendBroadcast} disabled={broadcastSending || !broadcastText.trim() || broadcastTargetCount === 0} style={{
+                      background: broadcastSending || !broadcastText.trim() ? 'var(--border)' : '#7c3aed',
+                      color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px',
+                      fontSize: 12, fontWeight: 700, cursor: broadcastSending || !broadcastText.trim() ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', opacity: broadcastSending || !broadcastText.trim() ? 0.6 : 1,
+                    }}>
+                      {broadcastSending ? '⏳ Sende…' : `📢 An ${broadcastTargetCount} senden`}
                     </button>
-                  ))}
+                  </div>
                 </div>
               )}
             </div>
