@@ -425,19 +425,19 @@ export default function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {[
-              { key: 'models', label: 'Models' },
-              { key: 'chatters', label: 'Chatters' },
+              { key: 'models', label: '🎬 Models' },
+              { key: 'chatters', label: '👥 Chatters' },
               { key: 'briefing', label: '📊 Briefing' },
               { key: 'divider1' },
-              { key: 'notes', label: 'Notizen', badge: unreadNotes },
-              { key: 'todos', label: 'ToDos', badge: openTodos },
-              { key: 'models-comm', label: 'Creator', badge: unreadModelChanges },
-              { key: 'chatters-comm', label: 'Crew', badge: openSwaps },
+              { key: 'notes', label: '📝 Notizen', badge: unreadNotes },
+              { key: 'todos', label: '✓ ToDos', badge: openTodos },
+              { key: 'models-comm', label: '🎨 Creator', badge: unreadModelChanges },
+              { key: 'chatters-comm', label: '🔄 Crew', badge: openSwaps },
               { key: 'chat', label: '💬 Chat', badge: unreadChat },
               { key: 'divider2' },
-              { key: 'performance', label: 'Performance' },
-              { key: 'schedule', label: 'Dienstplan' },
-              { key: 'social', label: 'Social' },
+              { key: 'performance', label: '📈 Performance' },
+              { key: 'schedule', label: '📅 Dienstplan' },
+              { key: 'social', label: '🌐 Social' },
               { key: 'divider3' },
               { key: 'settings', label: '⚙ Einstellungen' },
             ].filter(tab => tab.key.startsWith('divider') || canAccess(tab.key)).map(tab => {
