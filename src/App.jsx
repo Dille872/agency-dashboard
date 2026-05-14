@@ -5,6 +5,7 @@ import { APP_VERSION } from './version'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
+import BriefingView from './components/BriefingView'
 import NotesTab from './components/NotesTab'
 import CommTab from './components/CommTab'
 import ScheduleTab from './components/ScheduleTab'
@@ -426,6 +427,7 @@ export default function App() {
             {[
               { key: 'models', label: 'Models' },
               { key: 'chatters', label: 'Chatters' },
+              { key: 'briefing', label: '📊 Briefing' },
               { key: 'divider1' },
               { key: 'notes', label: 'Notizen', badge: unreadNotes },
               { key: 'todos', label: 'ToDos', badge: openTodos },
@@ -555,6 +557,8 @@ export default function App() {
           <ModelsView selectedDate={businessDate} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} onDateChange={setBusinessDate} />
         ) : activeTab === 'chatters' ? (
           <ChattersView selectedDate={businessDate} chatterSnapshots={chatterSnapshots} onDateChange={setBusinessDate} />
+        ) : activeTab === 'briefing' ? (
+          <BriefingView modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'notes' ? (
           <NotesTab session={session} />
         ) : activeTab === 'nachrichten' ? (
