@@ -1189,7 +1189,6 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[
           (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => !a.read).length > 0) ? 1 : 0 },
-          section === 'models' && { key: 'modelboards', label: `Boards${modelBoardActivity.filter(a => !a.read).length > 0 ? ` (${modelBoardActivity.filter(a => !a.read).length})` : ''}` },
           section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
@@ -1211,7 +1210,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         ].filter(Boolean).map(s => (
           <button key={s.key} onClick={() => {
             setActiveSection(s.key)
-            if (s.key === 'models') { /* already loaded */ }
+            if (s.key === 'models') { loadModelBoardActivity() }
             if (s.key === 'modelboards') { loadModelBoardActivity(); models.forEach(m => loadModelBoard(m.name)) }
             if (s.key === 'content-requests') loadContentRequests()
             if (s.key === 'content-verlauf') loadContentRequests()
@@ -1244,7 +1243,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           <Card title="Models">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
               {models.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Models angelegt</div>}
-              {models.map(model => (
+              {models.map(model => {
+                // v3.11.0: Board-Activity Counts
+                const modelActivities = modelBoardActivity.filter(a => a.model_name === model.name)
+                const unreadBoardCount = modelActivities.filter(a => !a.read).length
+                return (
                 <div key={model.id} onClick={() => setSelectedModel(model)} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8,
@@ -1256,7 +1259,21 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       {model.name[0]}
                     </div>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{model.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {model.name}
+                        {unreadBoardCount > 0 && (
+                          <span title={`${unreadBoardCount} ungelesene Board-Änderungen`} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 3,
+                            background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+                            border: '1px solid rgba(245,158,11,0.35)',
+                            fontSize: 10, fontWeight: 700,
+                            padding: '1px 6px', borderRadius: 4,
+                          }}>
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f59e0b' }} />
+                            {unreadBoardCount}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
                         {(() => {
                           const s = model.status || 'unknown'
@@ -1277,7 +1294,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{model.last_contacted ? formatTime(model.last_contacted) : '—'}</div>
                 </div>
-              ))}
+                )
+              })}
             </div>
             {showAddModel
               ? <AddContactForm type="model" onSave={addModel} onCancel={() => setShowAddModel(false)} isOwner={isOwner} />
@@ -1285,40 +1303,126 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             }
           </Card>
 
-          <Card title="Nachricht senden">
-            {!selectedModel ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>← Model auswählen</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>An: {selectedModel.name}</div>
-                  <button onClick={() => setSelectedModel(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>✕</button>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {MODEL_MSG_TYPES.map(t => (
-                    <button key={t.key} onClick={() => setModelMsgType(t.key)} style={{
-                      fontSize: 11, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
-                      background: modelMsgType === t.key ? 'rgba(124,58,237,0.2)' : 'transparent',
-                      border: `1px solid ${modelMsgType === t.key ? '#7c3aed' : 'var(--border)'}`,
-                      color: modelMsgType === t.key ? '#a78bfa' : 'var(--text-muted)',
-                      fontFamily: 'inherit', fontWeight: 600,
-                    }}>{t.label}</button>
-                  ))}
-                </div>
-                <textarea value={modelMsgText} onChange={e => setModelMsgText(e.target.value)} rows={4}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none' }} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    {selectedModel.telegram_id ? '✈ via Telegram' : <span style={{ color: '#ef4444' }}>Kein Telegram</span>}
+          {/* v3.11.0: Board-Activity Feed (ersetzt "Nachricht senden") */}
+          <Card title={selectedModel ? `Board-Aktivität · ${selectedModel.name}` : 'Letzte Board-Änderungen'}>
+            {(() => {
+              const filtered = selectedModel
+                ? modelBoardActivity.filter(a => a.model_name === selectedModel.name)
+                : modelBoardActivity
+              const sorted = [...filtered].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              const displayed = sorted.slice(0, 20)
+              const unreadInList = sorted.filter(a => !a.read).length
+
+              if (modelBoardActivity.length === 0) {
+                return (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>
+                    Noch keine Board-Änderungen.<br />
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.7 }}>
+                      Hier erscheinen Änderungen die Models in ihrem Board machen (Videos, Einschränkungen, NoGos, Reisen, Regeln).
+                    </span>
                   </div>
-                  <button onClick={sendModelMessage} disabled={sendingModel || !modelMsgText.trim() || !selectedModel.telegram_id} style={{
-                    background: modelMsgText.trim() && selectedModel.telegram_id ? 'linear-gradient(135deg, #7c3aed, #4f46e5)' : 'var(--border)',
-                    color: modelMsgText.trim() && selectedModel.telegram_id ? '#fff' : 'var(--text-muted)',
-                    border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                  }}>{sendingModel ? 'Senden...' : 'Senden'}</button>
+                )
+              }
+              if (filtered.length === 0) {
+                return (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>
+                    Keine Änderungen für {selectedModel?.name}.
+                  </div>
+                )
+              }
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {/* Header-Aktionen */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, gap: 8 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {selectedModel ? (
+                        <>
+                          {filtered.length} Änderung{filtered.length === 1 ? '' : 'en'}
+                          {unreadInList > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · {unreadInList} ungelesen</span>}
+                          {' · '}
+                          <button onClick={() => setSelectedModel(null)} style={{
+                            background: 'transparent', border: 'none', color: 'var(--text-muted)',
+                            fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                            padding: 0,
+                          }}>Alle Models anzeigen</button>
+                        </>
+                      ) : (
+                        <>
+                          {modelBoardActivity.length} Änderungen gesamt
+                          {unreadInList > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · {unreadInList} ungelesen</span>}
+                        </>
+                      )}
+                    </div>
+                    {unreadInList > 0 && (
+                      <button onClick={async () => {
+                        const ids = displayed.filter(a => !a.read).map(a => a.id)
+                        if (ids.length === 0) return
+                        if (selectedModel) {
+                          await supabase.from('model_board_activity').update({ read: true }).eq('model_name', selectedModel.name).eq('read', false)
+                        } else {
+                          await supabase.from('model_board_activity').update({ read: true }).eq('read', false)
+                        }
+                        setModelBoardActivity(prev => prev.map(a =>
+                          selectedModel ? (a.model_name === selectedModel.name ? { ...a, read: true } : a) : { ...a, read: true }
+                        ))
+                      }} style={{
+                        background: 'transparent', border: '1px solid var(--border)',
+                        color: 'var(--text-muted)', borderRadius: 5, padding: '3px 9px',
+                        fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                        whiteSpace: 'nowrap',
+                      }}>Als gelesen</button>
+                    )}
+                  </div>
+                  {/* Liste */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 480, overflowY: 'auto' }}>
+                    {displayed.map(a => (
+                      <div key={a.id} style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 8,
+                        padding: '8px 10px',
+                        background: a.read ? 'var(--bg-card2)' : 'rgba(245,158,11,0.06)',
+                        borderRadius: 7,
+                        border: `1px solid ${a.read ? 'var(--border)' : 'rgba(245,158,11,0.2)'}`,
+                      }}>
+                        {!selectedModel && (
+                          <div style={{
+                            width: 22, height: 22, borderRadius: '50%',
+                            background: 'rgba(245,158,11,0.15)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 10, fontWeight: 700, color: '#f59e0b', flexShrink: 0,
+                          }}>{a.model_name[0]}</div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, lineHeight: 1.4 }}>
+                            {!selectedModel && (
+                              <span style={{ fontWeight: 700, color: '#f59e0b' }}>{a.model_name} </span>
+                            )}
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                              hat <b style={{ color: 'var(--text-primary)' }}>{a.category}</b> {a.action}
+                            </span>
+                          </div>
+                          {a.details && (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, wordBreak: 'break-word' }}>
+                              {a.details}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                          {!a.read && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />}
+                          <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                            {new Date(a.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {sorted.length > 20 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0 4px', fontStyle: 'italic' }}>
+                      {sorted.length - 20} weitere ältere Änderungen…
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </Card>
         </div>
       )}
