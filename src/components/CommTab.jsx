@@ -2786,13 +2786,39 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       <div style={{ marginBottom: 10 }}>
                         <textarea value={editTextValue} onChange={e => setEditTextValue(e.target.value)} rows={3}
                           style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6, fontSize: 12, resize: 'vertical', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        {/* v3.13.0: Preis + Anzahlung gleich mit-editierbar */}
+                        <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'flex-end', flexWrap: 'wrap', padding: '8px 10px', background: 'var(--bg-card)', borderRadius: 6 }}>
+                          <div>
+                            <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Gesamt $</label>
+                            <input type="number" step="any" value={editPrice} onChange={e => setEditPrice(e.target.value)}
+                              placeholder="0"
+                              style={{ width: 90, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '4px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit', outline: 'none' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Anzahlung $</label>
+                            <input type="number" step="any" value={editDeposit} onChange={e => setEditDeposit(e.target.value)}
+                              placeholder="0"
+                              style={{ width: 90, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '4px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit', outline: 'none' }} />
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', alignSelf: 'center' }}>
+                            (leer = nichts ändern)
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                           <button onClick={async () => {
-                            await supabase.from('content_requests').update({
+                            const updatePayload = {
                               edited_text: editTextValue.trim(),
                               edited_by: displayName || session?.user?.email?.split('@')[0] || 'Admin',
                               edited_at: new Date().toISOString(),
-                            }).eq('id', req.id)
+                            }
+                            // v3.13.0: nur überschreiben wenn auch was eingetragen wurde
+                            if (editPrice !== '' && editPrice !== null && editPrice !== undefined) {
+                              updatePayload.price = parseFloat(editPrice) || 0
+                            }
+                            if (editDeposit !== '' && editDeposit !== null && editDeposit !== undefined) {
+                              updatePayload.deposit = parseFloat(editDeposit) || 0
+                            }
+                            await supabase.from('content_requests').update(updatePayload).eq('id', req.id)
                             setEditingText(null); loadContentRequests()
                           }} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 4, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
                           <button onClick={() => setEditingText(null)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
@@ -2809,7 +2835,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
                             {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
                           </span>}
-                          <button onClick={() => { setEditingText(req.id); setEditTextValue(req.edited_text || req.request_text) }}
+                          <button onClick={() => {
+                            setEditingText(req.id)
+                            setEditTextValue(req.edited_text || req.request_text)
+                            // v3.13.0: vorhandene Beträge in Edit-Felder vorausfüllen
+                            setEditPrice(req.price ? String(req.price) : '')
+                            setEditDeposit(req.deposit ? String(req.deposit) : '')
+                          }}
                             style={{ marginLeft: 'auto', fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ Text bearbeiten</button>
                         </div>
                         {req.edited_text && (
