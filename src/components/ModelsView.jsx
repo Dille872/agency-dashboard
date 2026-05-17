@@ -623,30 +623,39 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       if (!r.health.hasEnoughData) continue
       for (const w of r.health.warnings) {
         let group = 'stability', headline = '', explain = ''
+        // v3.14.0: severityScore für Sortierung innerhalb der Gruppe (höher = kritischer)
+        let severityScore = 0
         if (w.type === 'fan_burnout') {
           group = 'critical_health'
           explain = 'Message Revenue steigt stark, aber Käuferbasis schrumpft. Hinweis dass Fans genervt sind und weniger kaufen.'
           headline = `Message-Revenue steigt, Käuferzahl sinkt`
+          severityScore = 1000 // Fan-Burnout = höchste Priorität in critical_health
         } else if (w.type === 'whale_risk') {
           group = 'critical_health'
           explain = 'Sehr hoher Avg Chat Value bei wenigen Käufen. Account ist von wenigen Whales abhängig — Risiko wenn ein Whale weg ist.'
           headline = `Ø $${r.health.whale.avgChatValue}/Chat · ${r.health.whale.avgSellingChats} Käufer/Tag`
+          severityScore = r.health.whale.avgChatValue || 0 // höher = kritischer
         } else if (w.type === 'chatter_dep') {
           group = 'dependency'
           explain = 'Ein einzelner Chatter macht über 60% der Schichten für diesen Account. Risiko bei Ausfall/Wechsel.'
           headline = `${r.health.chatterDep.topChatter}: ${r.health.chatterDep.topPct}% aller Schichten`
+          severityScore = r.health.chatterDep.topPct || 0 // höher % = kritischer
         } else if (w.type === 'unstable_rev') {
           group = 'stability'
           explain = 'Tagesrevenue schwankt stark (Standardabweichung > 50% vom Durchschnitt).'
           headline = `Schwankung ${(r.health.stability.cv * 100).toFixed(0)}% (Std/Avg)`
+          severityScore = (r.health.stability.cv || 0) * 100 // höhere Schwankung = kritischer
         } else if (w.type === 'fan_quality') {
           group = 'fan_quality'
           explain = 'Käuferbasis schrumpft oder zu wenige Stammkäufer. Recurring/New-Ratio + sellingChats deuten auf schwache Fan-Bindung.'
           headline = `${r.health.fanQuality.avgChats} Käufer/Tag · Recurring ${r.health.fanQuality.recurringRatio !== null ? (r.health.fanQuality.recurringRatio * 100).toFixed(0) + '%' : '—'}`
+          // Niedrigere Fan-Quality-Score = kritischer. Da Score 0-100, invertieren: 100 - score
+          severityScore = 100 - (r.health.fanQuality.score || 0)
         } else if (w.type === 'healthy') {
           group = 'positive'
           explain = 'Stabile Revenue, gesunde Fan-Qualität, keine Whale-Abhängigkeit. Vorbild-Account.'
           headline = `Sustainability ${r.health.sustainability.score} · stabil über ${r.health.activeDays} Tage`
+          severityScore = r.health.sustainability.score || 0
         }
         if (alerts.find(a => a.name === r.creator && a.tag === w.label)) continue
         alerts.push({
@@ -656,6 +665,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
           tag: w.label,
           group,
           explain,
+          severityScore,
         })
       }
     }
@@ -776,6 +786,8 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                 if (!byGroup[g]) byGroup[g] = []
                 byGroup[g].push(a)
               }
+              // v3.14.0: Innerhalb jeder Gruppe nach severityScore sortieren (kritischste oben)
+              Object.values(byGroup).forEach(arr => arr.sort((a, b) => (b.severityScore || 0) - (a.severityScore || 0)))
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {groupConfig.map(cfg => {
@@ -812,11 +824,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                             }}>
                               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 130 }}>{a.name}</span>
                               <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{a.headline}</span>
-                              <span style={{
-                                fontSize: 11, color: cfg.color, background: `${cfg.color}15`,
-                                border: `1px solid ${cfg.color}33`, padding: '2px 8px', borderRadius: 4,
-                                whiteSpace: 'nowrap', fontWeight: 600,
-                              }}>{a.tag}</span>
+                              {/* v3.14.0: Tag-Label rechts entfernt — Kategorie ist schon im Gruppen-Header */}
                             </div>
                           ))}
                         </div>
