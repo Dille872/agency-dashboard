@@ -108,6 +108,30 @@ export default function ScheduleTab({ session }) {
   const [conflictAcks, setConflictAcks] = useState(new Set()) // set of conflict_keys
   // v3.1.0: Send-Modal für gezielte Chatter-Auswahl
   const [sendModalOpen, setSendModalOpen] = useState(false)
+  // v3.15.0: Versand-Historie (Audit-Log)
+  const [logModalOpen, setLogModalOpen] = useState(false)
+  const [sendLog, setSendLog] = useState([])
+  const [logExpandedId, setLogExpandedId] = useState(null)
+  const [logLoading, setLogLoading] = useState(false)
+
+  // v3.15.0: Sender-Namen aus Session ableiten (gleiches Mapping wie CommTab)
+  const getSenderName = () => {
+    const email = session?.user?.email || ''
+    const map = { 'dillemc@hotmail.com': 'Chris' }
+    return map[email] || email.split('@')[0] || 'Admin'
+  }
+
+  // v3.15.0: Versand-Historie laden (neueste zuerst, max 50)
+  const loadSendLog = async () => {
+    setLogLoading(true)
+    const { data, error } = await supabase
+      .from('schedule_send_log')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(50)
+    if (!error) setSendLog(data || [])
+    setLogLoading(false)
+  }
   const [sendSelection, setSendSelection] = useState(new Set()) // Set<chatter_id>
   // Collapse pro Model — persistiert in Localstorage
   const [collapsedModels, setCollapsedModels] = useState(() => {
@@ -725,6 +749,8 @@ export default function ScheduleTab({ session }) {
     setSending(true)
     let sent = 0
     let skipped = 0
+    const sentToNames = [] // v3.15.0: für Logging
+    let sampleMessage = '' // v3.15.0: erste Nachricht als Vorschau speichern
     for (const chatter of chatters) {
       if (!selectedIds.has(chatter.id)) continue
       if (!chatter.telegram_id) { skipped++; continue }
@@ -750,8 +776,32 @@ export default function ScheduleTab({ session }) {
         }
       }
       if (lines.length > 1) {
-        await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
+        const msgText = lines.join('\n')
+        await sendTelegramMessage(chatter.telegram_id, msgText)
         sent++
+        sentToNames.push(chatter.name)
+        if (!sampleMessage) sampleMessage = msgText // erste Nachricht als Beispiel
+      }
+    }
+    // v3.15.0: Im Audit-Log speichern
+    if (sent > 0 || skipped > 0) {
+      const totalSelected = selectedIds.size
+      const allChattersWithTg = chatters.filter(c => c.telegram_id).length
+      // 'plan_full' wenn alle TG-fähigen Chatter ausgewählt, sonst 'plan_partial'
+      const actionType = totalSelected >= allChattersWithTg ? 'plan_full' : 'plan_partial'
+      try {
+        await supabase.from('schedule_send_log').insert({
+          sent_by: getSenderName(),
+          action_type: actionType,
+          week_start: isoDate(weekDays[0]),
+          kw: kw,
+          recipients_count: sent,
+          recipients_skipped: skipped,
+          recipient_names: sentToNames,
+          message_text: sampleMessage,
+        })
+      } catch (e) {
+        console.error('Failed to log send:', e)
       }
     }
     setSending(false)
@@ -762,8 +812,12 @@ export default function ScheduleTab({ session }) {
 
   const sendPlanToAll = async () => {
     setSending(true)
+    let sent = 0
+    let skipped = 0
+    const sentToNames = []
+    let sampleMessage = ''
     for (const chatter of chatters) {
-      if (!chatter.telegram_id) continue
+      if (!chatter.telegram_id) { skipped++; continue }
       const lines = [`📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`]
       for (const day of weekDays) {
         const dayIso = isoDate(day)
@@ -785,7 +839,30 @@ export default function ScheduleTab({ session }) {
           lines.push('')
         }
       }
-      if (lines.length > 1) await sendTelegramMessage(chatter.telegram_id, lines.join('\n'))
+      if (lines.length > 1) {
+        const msgText = lines.join('\n')
+        await sendTelegramMessage(chatter.telegram_id, msgText)
+        sent++
+        sentToNames.push(chatter.name)
+        if (!sampleMessage) sampleMessage = msgText
+      }
+    }
+    // v3.15.0: Log
+    if (sent > 0 || skipped > 0) {
+      try {
+        await supabase.from('schedule_send_log').insert({
+          sent_by: getSenderName(),
+          action_type: 'plan_full',
+          week_start: isoDate(weekDays[0]),
+          kw: kw,
+          recipients_count: sent,
+          recipients_skipped: skipped,
+          recipient_names: sentToNames,
+          message_text: sampleMessage,
+        })
+      } catch (e) {
+        console.error('Failed to log send:', e)
+      }
     }
     setSending(false)
     alert('✓ Dienstplan versendet!')
@@ -821,6 +898,13 @@ export default function ScheduleTab({ session }) {
           <button onClick={() => { setSendSelection(new Set(chatters.filter(c => c.telegram_id).map(c => c.id))); setSendModalOpen(true) }} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {sending ? 'Sende...' : '✈ Plan versenden...'}
           </button>
+          {/* v3.15.0: Verlauf-Button (kompakt, nur Icon) */}
+          <button onClick={() => { setLogModalOpen(true); loadSendLog() }} title="Versand-Verlauf anzeigen" style={{
+            background: 'transparent', color: 'var(--text-muted)',
+            border: '1px solid var(--border)', borderRadius: 7,
+            padding: '7px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}>📜</button>
           <button onClick={autoGeneratePlan} disabled={autoPlanning} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {autoPlanning ? '⏳ Plane...' : '⚡ Auto-Plan'}
           </button>
@@ -1280,14 +1364,6 @@ export default function ScheduleTab({ session }) {
                                   style={{ accentColor: '#7c3aed' }} />
                                 <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
                               </label>
-                              {/* v3.1.3: Ausschreiben — auch bei leerer Zelle erlaubt (nur __FREI__ ausnehmen) */}
-                              {!isFrei && (
-                                <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
-                                  title="Schicht zum Tausch ausschreiben — Chatter sehen sie als Pop-Up"
-                                  style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                                  🔄 Ausschreiben
-                                </button>
-                              )}
                               <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
                             </div>
                           ) : cell.chatter ? (
@@ -1340,10 +1416,18 @@ export default function ScheduleTab({ session }) {
                                     style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>X</button>
                                 </div>
                               ) : (
-                                <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
-                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                  Erin
-                                </button>
+                                <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
+                                  <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
+                                    style={{ flex: 1, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                    Erin
+                                  </button>
+                                  {/* v3.1.1: Schicht zum Tausch ausschreiben (wiederhergestellt aus v2.8.2) */}
+                                  <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
+                                    title="Schicht zum Tausch ausschreiben (Chatter sehen sie als Pop-Up)"
+                                    style={{ flex: 1, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 3, padding: '1px 5px', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                                    🔄 Ausschr.
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           ) : (
@@ -1535,10 +1619,10 @@ export default function ScheduleTab({ session }) {
                 </span>
               </label>
 
-              {/* v3.1.3: Schicht ausschreiben (Mobile) — auch bei leerer Zelle, nur __FREI__ ausnehmen */}
+              {/* v3.1.1: Schicht ausschreiben (Mobile) — nur wenn ein Chatter eingetragen */}
               {(() => {
                 const editCell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
-                if (editCell.chatter === '__FREI__') return null
+                if (!editCell.chatter || editCell.chatter === '__FREI__') return null
                 return (
                   <button onClick={() => offerShift(editSheet.modelId, editSheet.dayIso, editSheet.shift)}
                     style={{
@@ -1789,6 +1873,130 @@ export default function ScheduleTab({ session }) {
                 padding: '8px 16px', borderRadius: 7,
                 cursor: (sending || sendSelection.size === 0) ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
               }}>{sending ? 'Sende...' : `✈ An ${sendSelection.size} senden`}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v3.15.0: Versand-Verlauf Modal */}
+      {logModalOpen && (
+        <div onClick={() => { setLogModalOpen(false); setLogExpandedId(null) }} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+          zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
+            maxWidth: 720, width: '100%', maxHeight: '85vh', overflow: 'hidden',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>📜 Versand-Verlauf</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Letzte 50 Sendungen (neueste zuerst)</div>
+              </div>
+              <button onClick={() => { setLogModalOpen(false); setLogExpandedId(null) }} style={{
+                background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', padding: 0,
+              }}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, padding: 12 }}>
+              {logLoading ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, padding: 30 }}>Lade…</div>
+              ) : sendLog.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, padding: 30, lineHeight: 1.6 }}>
+                  Noch keine Sendungen geloggt.<br />
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>
+                    Sobald jemand den Plan via Telegram verschickt, erscheint der Eintrag hier.
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {sendLog.map(log => {
+                    const isExpanded = logExpandedId === log.id
+                    const dt = new Date(log.sent_at)
+                    const dateStr = dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                    const timeStr = dt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+                    const typeLabel = log.action_type === 'plan_full' ? 'Plan an alle'
+                      : log.action_type === 'plan_partial' ? 'Plan (Auswahl)'
+                      : log.action_type === 'update' ? 'Update'
+                      : 'Sendung'
+                    const typeColor = log.action_type === 'plan_full' ? '#06b6d4'
+                      : log.action_type === 'plan_partial' ? '#a78bfa'
+                      : log.action_type === 'update' ? '#f59e0b'
+                      : '#64748b'
+                    return (
+                      <div key={log.id} style={{
+                        border: '1px solid var(--border)', borderRadius: 7,
+                        background: isExpanded ? 'var(--bg-card2)' : 'transparent',
+                      }}>
+                        <div onClick={() => setLogExpandedId(isExpanded ? null : log.id)} style={{
+                          padding: '8px 12px', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                        }}>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                            background: `${typeColor}18`, color: typeColor, whiteSpace: 'nowrap',
+                          }}>{typeLabel}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                            {dateStr} · {timeStr}
+                          </span>
+                          {log.kw && (
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>KW {log.kw}</span>
+                          )}
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            an {log.recipients_count} {log.recipients_count === 1 ? 'Person' : 'Personen'}
+                            {log.recipients_skipped > 0 && (
+                              <span style={{ color: '#f59e0b' }}> · {log.recipients_skipped} ohne TG</span>
+                            )}
+                          </span>
+                          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            {log.sent_by}
+                          </span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</span>
+                        </div>
+                        {isExpanded && (
+                          <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--border)' }}>
+                            {log.recipient_names && log.recipient_names.length > 0 && (
+                              <div style={{ marginTop: 10 }}>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 4 }}>
+                                  Empfänger ({log.recipient_names.length})
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                  {log.recipient_names.join(', ')}
+                                </div>
+                              </div>
+                            )}
+                            {log.message_text && (
+                              <div style={{ marginTop: 12 }}>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 4 }}>
+                                  Nachricht (Vorschau)
+                                </div>
+                                <pre style={{
+                                  fontSize: 11, color: 'var(--text-primary)',
+                                  background: 'var(--bg-card)', padding: '8px 10px',
+                                  borderRadius: 5, border: '1px solid var(--border)',
+                                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                                  fontFamily: 'inherit', margin: 0, maxHeight: 240, overflowY: 'auto',
+                                }}>{log.message_text}</pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <button onClick={loadSendLog} disabled={logLoading} style={{
+                background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)',
+                fontSize: 11, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+              }}>↻ Aktualisieren</button>
+              <button onClick={() => { setLogModalOpen(false); setLogExpandedId(null) }} style={{
+                background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)',
+                fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Schließen</button>
             </div>
           </div>
         </div>
