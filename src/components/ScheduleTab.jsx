@@ -749,8 +749,8 @@ export default function ScheduleTab({ session }) {
     setSending(true)
     let sent = 0
     let skipped = 0
-    const sentToNames = [] // v3.15.0: für Logging
-    let sampleMessage = '' // v3.15.0: erste Nachricht als Vorschau speichern
+    const sentToNames = []     // v3.15.0
+    let sampleMessage = ''     // v3.15.0
     for (const chatter of chatters) {
       if (!selectedIds.has(chatter.id)) continue
       if (!chatter.telegram_id) { skipped++; continue }
@@ -780,15 +780,13 @@ export default function ScheduleTab({ session }) {
         await sendTelegramMessage(chatter.telegram_id, msgText)
         sent++
         sentToNames.push(chatter.name)
-        if (!sampleMessage) sampleMessage = msgText // erste Nachricht als Beispiel
+        if (!sampleMessage) sampleMessage = msgText
       }
     }
-    // v3.15.0: Im Audit-Log speichern
+    // v3.15.0: Audit-Log
     if (sent > 0 || skipped > 0) {
-      const totalSelected = selectedIds.size
       const allChattersWithTg = chatters.filter(c => c.telegram_id).length
-      // 'plan_full' wenn alle TG-fähigen Chatter ausgewählt, sonst 'plan_partial'
-      const actionType = totalSelected >= allChattersWithTg ? 'plan_full' : 'plan_partial'
+      const actionType = selectedIds.size >= allChattersWithTg ? 'plan_full' : 'plan_partial'
       try {
         await supabase.from('schedule_send_log').insert({
           sent_by: getSenderName(),
@@ -814,8 +812,8 @@ export default function ScheduleTab({ session }) {
     setSending(true)
     let sent = 0
     let skipped = 0
-    const sentToNames = []
-    let sampleMessage = ''
+    const sentToNames = []     // v3.15.0
+    let sampleMessage = ''     // v3.15.0
     for (const chatter of chatters) {
       if (!chatter.telegram_id) { skipped++; continue }
       const lines = [`📋 Dienstplan KW ${kw} (${formatDate(weekDays[0])} – ${formatDate(weekDays[6])})\n`]
@@ -847,7 +845,7 @@ export default function ScheduleTab({ session }) {
         if (!sampleMessage) sampleMessage = msgText
       }
     }
-    // v3.15.0: Log
+    // v3.15.0: Audit-Log
     if (sent > 0 || skipped > 0) {
       try {
         await supabase.from('schedule_send_log').insert({
@@ -1364,6 +1362,14 @@ export default function ScheduleTab({ session }) {
                                   style={{ accentColor: '#7c3aed' }} />
                                 <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
                               </label>
+                              {/* v3.1.3: Ausschreiben — auch bei leerer Zelle erlaubt (nur __FREI__ ausnehmen) */}
+                              {!isFrei && (
+                                <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
+                                  title="Schicht zum Tausch ausschreiben — Chatter sehen sie als Pop-Up"
+                                  style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                                  🔄 Ausschreiben
+                                </button>
+                              )}
                               <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
                             </div>
                           ) : cell.chatter ? (
@@ -1416,18 +1422,10 @@ export default function ScheduleTab({ session }) {
                                     style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>X</button>
                                 </div>
                               ) : (
-                                <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
-                                  <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
-                                    style={{ flex: 1, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                    Erin
-                                  </button>
-                                  {/* v3.1.1: Schicht zum Tausch ausschreiben (wiederhergestellt aus v2.8.2) */}
-                                  <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
-                                    title="Schicht zum Tausch ausschreiben (Chatter sehen sie als Pop-Up)"
-                                    style={{ flex: 1, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 3, padding: '1px 5px', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                                    🔄 Ausschr.
-                                  </button>
-                                </div>
+                                <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
+                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Erin
+                                </button>
                               ))}
                             </div>
                           ) : (
@@ -1619,10 +1617,10 @@ export default function ScheduleTab({ session }) {
                 </span>
               </label>
 
-              {/* v3.1.1: Schicht ausschreiben (Mobile) — nur wenn ein Chatter eingetragen */}
+              {/* v3.1.3: Schicht ausschreiben (Mobile) — auch bei leerer Zelle, nur __FREI__ ausnehmen */}
               {(() => {
                 const editCell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
-                if (!editCell.chatter || editCell.chatter === '__FREI__') return null
+                if (editCell.chatter === '__FREI__') return null
                 return (
                   <button onClick={() => offerShift(editSheet.modelId, editSheet.dayIso, editSheet.shift)}
                     style={{
