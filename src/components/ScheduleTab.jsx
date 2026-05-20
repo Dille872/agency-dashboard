@@ -893,21 +893,17 @@ export default function ScheduleTab({ session }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {/* v3.15.2: Verlauf-Button — links neben Plan versenden, optisch komplementär zum cyan Send-Button */}
+          {/* v3.15.3: Verlauf-Button — passend zu anderen Buttons (kein Emoji, nur Text) */}
           <button onClick={() => { setLogModalOpen(true); loadSendLog() }} title="Versand-Verlauf anzeigen" style={{
             background: 'rgba(6,182,212,0.06)',
             color: '#06b6d4',
             border: '1px solid rgba(6,182,212,0.2)',
             borderRadius: 7,
-            padding: '7px 12px',
+            padding: '7px 14px',
             fontSize: 12, fontWeight: 600,
             cursor: 'pointer', fontFamily: 'inherit',
-            display: 'inline-flex', alignItems: 'center', gap: 6,
             whiteSpace: 'nowrap',
-          }}>
-            <span style={{ fontSize: 13, opacity: 0.85 }}>📜</span>
-            <span>Verlauf</span>
-          </button>
+          }}>Verlauf</button>
           <button onClick={() => { setSendSelection(new Set(chatters.filter(c => c.telegram_id).map(c => c.id))); setSendModalOpen(true) }} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {sending ? 'Sende...' : '✈ Plan versenden...'}
           </button>
@@ -1898,7 +1894,7 @@ export default function ScheduleTab({ session }) {
           }}>
             <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>📜 Versand-Verlauf</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Versand-Verlauf</div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Letzte 50 Sendungen (neueste zuerst)</div>
               </div>
               <button onClick={() => { setLogModalOpen(false); setLogExpandedId(null) }} style={{
