@@ -1759,24 +1759,54 @@ export default function ScheduleTab({ session }) {
           </div>
           <span style={{ color: 'var(--text-muted)' }}>· Klick auf Zelle zum Bearbeiten</span>
         </div>
-        <button onClick={async () => {
-          if (!window.confirm(`Plan auf KW ${kw + 1} übertragen?`)) return
-          const next = new Date(weekStart); next.setDate(next.getDate() + 7)
-          const nextKey = isoDate(next)
-          const newA = {}
-          for (const [key, val] of Object.entries(schedule)) {
-            const parts = key.split('__')
-            const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
-            newA[`${parts[0]}__${isoDate(d)}__${parts[2]}`] = val
-          }
-          const { data: ex } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
-          if (ex) await supabase.from('schedule').update({ assignments: newA, shift_times: shiftTimes }).eq('week_start', nextKey)
-          else await supabase.from('schedule').insert({ week_start: nextKey, assignments: newA, shift_times: shiftTimes })
-          setWeekStart(next)
-          alert(`✓ Plan auf KW ${kw + 1} übertragen!`)
-        }} style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-          ↻ Als Vorlage für nächste Woche
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={async () => {
+            if (!window.confirm(`Plan auf KW ${kw + 1} übertragen?`)) return
+            const next = new Date(weekStart); next.setDate(next.getDate() + 7)
+            const nextKey = isoDate(next)
+            const newA = {}
+            for (const [key, val] of Object.entries(schedule)) {
+              const parts = key.split('__')
+              const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
+              newA[`${parts[0]}__${isoDate(d)}__${parts[2]}`] = val
+            }
+            const { data: ex } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
+            if (ex) await supabase.from('schedule').update({ assignments: newA, shift_times: shiftTimes }).eq('week_start', nextKey)
+            else await supabase.from('schedule').insert({ week_start: nextKey, assignments: newA, shift_times: shiftTimes })
+            setWeekStart(next)
+            alert(`✓ Plan auf KW ${kw + 1} übertragen!`)
+          }} style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            ↻ Als Vorlage für nächste Woche
+          </button>
+          {/* v3.16.0: Vorlage übertragen + alle Schichten auf "Klärung nötig" setzen */}
+          <button onClick={async () => {
+            if (!window.confirm(`Plan auf KW ${kw + 1} übertragen und alle Schichten auf "Klärung nötig" setzen?`)) return
+            const next = new Date(weekStart); next.setDate(next.getDate() + 7)
+            const nextKey = isoDate(next)
+            const newA = {}
+            for (const [key, val] of Object.entries(schedule)) {
+              const parts = key.split('__')
+              const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
+              const newKey = `${parts[0]}__${isoDate(d)}__${parts[2]}`
+              // Freischichten unverändert lassen — die brauchen keine Klärung
+              if (val && val.chatter === '__FREI__') {
+                newA[newKey] = val
+              } else if (val && val.chatter) {
+                // Besetzte Schicht: gleiche Zuweisung, aber confirmed: false
+                newA[newKey] = { ...val, confirmed: false }
+              } else {
+                newA[newKey] = val
+              }
+            }
+            const { data: ex } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
+            if (ex) await supabase.from('schedule').update({ assignments: newA, shift_times: shiftTimes }).eq('week_start', nextKey)
+            else await supabase.from('schedule').insert({ week_start: nextKey, assignments: newA, shift_times: shiftTimes })
+            setWeekStart(next)
+            alert(`✓ Plan auf KW ${kw + 1} übertragen — alle Schichten auf "Klärung nötig"!`)
+          }} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            ↻ Vorlage + alles auf Klärung
+          </button>
+        </div>
       </div>
 
       {/* v3.1.0: Send-Modal mit Checkbox-Auswahl der Chatter */}
