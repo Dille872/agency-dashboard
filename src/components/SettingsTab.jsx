@@ -492,7 +492,7 @@ export default function SettingsTab() {
   const addModelAlias = async () => {
     if (!newMA.model_name || !newMA.csv_name.trim()) return
     await supabase.from('model_aliases').insert({ model_name: newMA.model_name, csv_name: newMA.csv_name, alias_label: newMA.alias_label })
-    if (newMA.telegram_id) await supabase.from('models_contact').update({ telegram_id: newMA.telegram_id }).eq('name', newMA.model_name)
+    if (newMA.telegram_id) await supabase.from('models_contact').update({ telegram_id: newMA.telegram_id.trim() }).eq('name', newMA.model_name)
     setNewMA({ model_name: '', csv_name: '', alias_label: '', telegram_id: '' }); loadModelAliases()
   }
 
@@ -517,7 +517,7 @@ export default function SettingsTab() {
   const addChatterAlias = async () => {
     if (!newCA.chatter_name || !newCA.csv_name.trim()) return
     await supabase.from('chatter_aliases').insert(newCA)
-    if (newCA.telegram_id) await supabase.from('chatters_contact').update({ telegram_id: newCA.telegram_id }).eq('name', newCA.chatter_name)
+    if (newCA.telegram_id) await supabase.from('chatters_contact').update({ telegram_id: newCA.telegram_id.trim() }).eq('name', newCA.chatter_name)
     setNewCA({ chatter_name: '', csv_name: '', telegram_id: '' }); loadChatterAliases()
   }
 
@@ -1076,7 +1076,7 @@ export default function SettingsTab() {
                   {m.telegram_id && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>· TG: {m.telegram_id}</span>}
                   <button onClick={async () => {
                     const id = prompt(`Telegram ID für ${m.name}:`, m.telegram_id || '')
-                    if (id !== null) { await supabase.from('models_contact').update({ telegram_id: id || null }).eq('name', m.name); loadModels() }
+                    if (id !== null) { await supabase.from('models_contact').update({ telegram_id: id.trim() || null }).eq('name', m.name); loadModels() }
                   }} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ TG</button>
                   <button onClick={() => toggleInSchedule(m.name, m.in_schedule !== false)}
                     title={m.in_schedule === false ? 'Aktivieren: Model wird wieder im Dienstplan angezeigt' : 'Deaktivieren: Model verschwindet aus dem Dienstplan'}
