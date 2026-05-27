@@ -167,6 +167,7 @@ export default function ScheduleTab({ session }) {
   const [activeReminders, setActiveReminders] = useState({}) // cellKey → true
   const [absences, setAbsences] = useState([]) // [{id, chatter_name, date_from, date_to, reason}]
   const [showAbsences, setShowAbsences] = useState(false)
+  const [showExpiredAbsences, setShowExpiredAbsences] = useState(false)
   const [newAbsenceName, setNewAbsenceName] = useState('')
   const [newAbsenceFrom, setNewAbsenceFrom] = useState('')
   const [newAbsenceTo, setNewAbsenceTo] = useState('')
@@ -1686,7 +1687,7 @@ export default function ScheduleTab({ session }) {
         <div onClick={() => setShowAbsences(!showAbsences)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', cursor: 'pointer', background: 'var(--bg-card2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>🚫 Abwesenheiten</span>
-            {absences.length > 0 && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>{absences.length}</span>}
+            {absences.filter(a => a.date_to >= new Date().toISOString().slice(0,10)).length > 0 && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>{absences.filter(a => a.date_to >= new Date().toISOString().slice(0,10)).length}</span>}
           </div>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{showAbsences ? '▲' : '▼'}</span>
         </div>
@@ -1726,20 +1727,40 @@ export default function ScheduleTab({ session }) {
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Keine Abwesenheiten eingetragen</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {absences.map(a => (
-                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: '3px solid #ef4444' }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#ef4444' }}>{a.chatter_name}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                        {new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} – {new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
-                      </span>
-                      {a.reason && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{a.reason}</span>}
-                    </div>
-                    <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
-                      onMouseEnter={e => e.target.style.color = '#ef4444'}
-                      onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
-                  </div>
-                ))}
+                {(() => {
+                  const today = new Date().toISOString().slice(0, 10)
+                  const active = absences.filter(a => a.date_to >= today)
+                  const expired = absences.filter(a => a.date_to < today)
+                  const visible = showExpiredAbsences ? absences : active
+                  return (
+                    <>
+                      {visible.map(a => {
+                        const isExpired = a.date_to < today
+                        return (
+                          <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${isExpired ? '#6b7280' : '#ef4444'}`, opacity: isExpired ? 0.6 : 1 }}>
+                            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: isExpired ? 'var(--text-muted)' : '#ef4444' }}>{a.chatter_name}</span>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                {new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} – {new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                              </span>
+                              {isExpired && <span style={{ fontSize: 10, color: '#6b7280', background: 'rgba(107,114,128,0.15)', padding: '1px 7px', borderRadius: 4 }}>Abgelaufen</span>}
+                              {a.reason && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{a.reason}</span>}
+                            </div>
+                            <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
+                              onMouseEnter={e => e.target.style.color = '#ef4444'}
+                              onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
+                          </div>
+                        )
+                      })}
+                      {expired.length > 0 && (
+                        <button onClick={() => setShowExpiredAbsences(!showExpiredAbsences)}
+                          style={{ background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 7, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', marginTop: 2 }}>
+                          {showExpiredAbsences ? '▲ Abgelaufene ausblenden' : `▼ ${expired.length} abgelaufene anzeigen`}
+                        </button>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
             )}
           </div>

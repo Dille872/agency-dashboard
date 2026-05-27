@@ -142,6 +142,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [newPrice, setNewPrice] = useState('')
+  const [newDate, setNewDate] = useState('')
   const [editingItem, setEditingItem] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -363,9 +364,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     if (!newTitle.trim()) return
     setSaving(true)
     const items = board[category] || []
-    await supabase.from('model_board').insert({ model_name: displayName, category, title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null, sort_order: items.length })
+    await supabase.from('model_board').insert({ model_name: displayName, category, title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null, date: newDate || null, sort_order: items.length })
     await logActivity('hinzugefügt', category, newTitle.trim())
-    setNewTitle(''); setNewContent(''); setNewPrice(''); setAddingCat(null)
+    setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setAddingCat(null)
     await loadBoard(); setSaving(false)
   }
 
@@ -378,9 +379,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const saveBoardEdit = async () => {
     if (!editingItem) return
     setSaving(true)
-    await supabase.from('model_board').update({ title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null }).eq('id', editingItem.id)
+    await supabase.from('model_board').update({ title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null, date: newDate || null }).eq('id', editingItem.id)
     await logActivity('bearbeitet', editingItem.category, newTitle.trim())
-    setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice('')
+    setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate('')
     await loadBoard(); setSaving(false)
   }
 
@@ -1094,22 +1095,35 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       <div style={{ ...itemS, border: '1px solid #7c3aed' }}>
                         <input value={newTitle} onChange={e => setNewTitle(e.target.value)} style={{ ...inputS, marginBottom: 6 }} placeholder="Titel" />
                         <input value={newContent} onChange={e => setNewContent(e.target.value)} style={{ ...inputS, marginBottom: 6 }} placeholder="Beschreibung" />
-                        <input value={newPrice} onChange={e => setNewPrice(e.target.value)} style={{ ...inputS, marginBottom: 8 }} placeholder="Preis" />
+                        <input value={newPrice} onChange={e => setNewPrice(e.target.value)} style={{ ...inputS, marginBottom: 6 }} placeholder="Preis" />
+                        {cat.key === 'reise' && (
+                          <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{ ...inputS, marginBottom: 6 }} />
+                        )}
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={saveBoardEdit} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
                           <button onClick={() => setEditingItem(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
                         </div>
                       </div>
                     ) : (
-                      <div style={itemS}>
+                      <div style={{ ...itemS, opacity: cat.key === 'reise' && item.date && item.date < new Date().toISOString().slice(0,10) ? 0.55 : 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{item.title}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{item.title}</div>
+                              {cat.key === 'reise' && item.date && (() => {
+                                const expired = item.date < new Date().toISOString().slice(0,10)
+                                return (
+                                  <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, fontWeight: 700, background: expired ? 'rgba(239,68,68,0.15)' : 'rgba(6,182,212,0.15)', color: expired ? '#ef4444' : '#06b6d4' }}>
+                                    {expired ? '⚠ Abgelaufen' : '✓ Aktuell'} · {new Date(item.date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                  </span>
+                                )
+                              })()}
+                            </div>
                             {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.4 }}>{item.content}</div>}
                             {item.price && <div style={{ fontSize: 12, fontWeight: 700, color: cat.color, marginTop: 4 }}>{item.price}</div>}
                           </div>
                           <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-                            <button onClick={() => { setEditingItem(item); setNewTitle(item.title); setNewContent(item.content || ''); setNewPrice(item.price || '') }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>✎</button>
+                            <button onClick={() => { setEditingItem(item); setNewTitle(item.title); setNewContent(item.content || ''); setNewPrice(item.price || ''); setNewDate(item.date || '') }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>✎</button>
                             <button onClick={() => deleteBoardItem(item)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
                               onMouseEnter={e => e.target.style.color = '#ef4444'} onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
                           </div>
@@ -1122,14 +1136,20 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                   <div style={{ ...itemS, border: '1px solid #7c3aed' }}>
                     <input value={newTitle} onChange={e => setNewTitle(e.target.value)} style={{ ...inputS, marginBottom: 6 }} placeholder="Titel *" autoFocus />
                     <input value={newContent} onChange={e => setNewContent(e.target.value)} style={{ ...inputS, marginBottom: 6 }} placeholder="Beschreibung (optional)" />
-                    <input value={newPrice} onChange={e => setNewPrice(e.target.value)} style={{ ...inputS, marginBottom: 8 }} placeholder="Preis (optional)" />
+                    <input value={newPrice} onChange={e => setNewPrice(e.target.value)} style={{ ...inputS, marginBottom: cat.key === 'reise' ? 6 : 8 }} placeholder="Preis (optional)" />
+                    {cat.key === 'reise' && (
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Datum (optional)</label>
+                        <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={inputS} />
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => addBoardItem(cat.key)} disabled={saving || !newTitle.trim()} style={{ background: newTitle.trim() ? '#7c3aed' : 'var(--border)', color: newTitle.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Hinzufügen</button>
-                      <button onClick={() => { setAddingCat(null); setNewTitle(''); setNewContent(''); setNewPrice('') }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                      <button onClick={() => { setAddingCat(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate('') }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => { setAddingCat(cat.key); setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice('') }}
+                  <button onClick={() => { setAddingCat(cat.key); setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate('') }}
                     style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 8, padding: '7px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
                     + Hinzufügen
                   </button>
