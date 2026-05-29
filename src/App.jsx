@@ -46,6 +46,7 @@ export default function App() {
   const [openTodos, setOpenTodos] = useState(0)
   const [unreadChat, setUnreadChat] = useState(0)
   const [userRole, setUserRole] = useState(null)
+  const [accountBlocked, setAccountBlocked] = useState(null) // v3.18.0: {status, note} wenn stillgelegt/offboarded
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
   const [theme, setThemeState] = useState(() => initTheme())
@@ -107,6 +108,14 @@ export default function App() {
       // (mario.stegmeir vs Mario). Wenn kein display_name in user_roles → Eintrag fehlt.
       const name = data?.display_name
       if (data && name) {
+        // v3.18.0: Account-Status prüfen — stillgelegte/offboardete User dürfen nicht ins Dashboard
+        if (data.status === 'suspended' || data.status === 'offboarded') {
+          setAccountBlocked({ status: data.status, note: data.status_note || null })
+          setUserRole(data.role) // damit der Lade-Screen endet
+          setUserDisplayName(name)
+          return // kein online_status-Heartbeat für gesperrte User
+        }
+        setAccountBlocked(null)
         const roles = data.roles && data.roles.length > 0 ? data.roles : [data.role]
         setUserRole(data.role)
         setUserRoles(roles)
@@ -338,6 +347,34 @@ export default function App() {
   )
 
   if (!session) return <LoginPage />
+
+  // v3.18.0: Zugang gesperrt (stillgelegt / offboarded)
+  if (accountBlocked) {
+    const suspended = accountBlocked.status === 'suspended'
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'var(--font-sans)' }}>
+        <div style={{ maxWidth: 420, textAlign: 'center', background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 16, padding: '36px 32px' }}>
+          <div style={{ fontSize: 40, marginBottom: 14 }}>{suspended ? '⏸️' : '📦'}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>
+            {suspended ? 'Zugang vorübergehend stillgelegt' : 'Zugang deaktiviert'}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: accountBlocked.note ? 14 : 24 }}>
+            {suspended
+              ? 'Dein Konto ist aktuell pausiert. Bitte wende dich an deine Agentur-Leitung, wenn du wieder einsteigen möchtest.'
+              : 'Dein Konto wurde deaktiviert. Bei Fragen wende dich bitte an deine Agentur-Leitung.'}
+          </div>
+          {accountBlocked.note && (
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', background: 'var(--bg-card2)', border: '1px solid #1e1e3a', borderRadius: 8, padding: '10px 12px', marginBottom: 24 }}>
+              „{accountBlocked.note}"
+            </div>
+          )}
+          <button onClick={handleLogout} style={{ padding: '10px 22px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Abmelden
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (needsPassword) return <SetPasswordPage onDone={() => setNeedsPassword(false)} />
 

@@ -382,7 +382,9 @@ export default function ScheduleTab({ session }) {
     setModels(data || [])
   }
   const loadChatters = async () => {
-    const { data } = await supabase.from('chatters_contact').select('*').order('name')
+    // v3.18.0: Nur aktive Chatter im Dienstplan (active != false).
+    // Bestehende ohne Flag (NULL) gelten als aktiv. Stillgelegte/offboardete werden ausgeblendet.
+    const { data } = await supabase.from('chatters_contact').select('*').or('active.is.null,active.eq.true').order('name')
     setChatters(data || [])
   }
   const loadAdmins = async () => {

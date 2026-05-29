@@ -232,14 +232,17 @@ export default function SettingsTab() {
   }
   const [offboardingUser, setOffboardingUser] = useState(null)
   const [offboardStep, setOffboardStep] = useState('confirm') // confirm | exporting | done
+  // v3.18.0: Status-Verwaltung (stilllegen / offboarden / reaktivieren) statt Hard-Delete
+  const [statusNote, setStatusNote] = useState('')
+  const [statusBusy, setStatusBusy] = useState(false)
 
   const startOffboarding = (user) => {
     setOffboardingUser(user)
+    setStatusNote('')
     setOffboardStep('confirm')
   }
 
   const exportUserData = async (user) => {
-    setOffboardStep('exporting')
     const name = user.display_name
     const role = user.role
     const exportData = { name, role, exported_at: new Date().toISOString() }
@@ -285,43 +288,51 @@ export default function SettingsTab() {
     a.download = `${name}_export_${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
-    setOffboardStep('done')
   }
 
-  const deleteUserData = async (user) => {
+  // v3.18.0: Status setzen (active | suspended | offboarded).
+  // WICHTIG: Es werden KEINE Daten gelöscht. Wir markieren nur den Account-Status
+  // (steuert Login) und blenden die Person aus der aktiven Dienstplan-Auswahl aus.
+  // Alle historischen Daten (Schichtnotizen, Logs, Umsätze) bleiben vollständig erhalten.
+  const setUserStatus = async (user, newStatus, note) => {
     const name = user.display_name
     const role = user.role
-    if (!confirm(`ACHTUNG: Alle Daten von "${name}" werden unwiderruflich gelöscht. Fortfahren?`)) return
+    setStatusBusy(true)
+    try {
+      // 1) Account-Status in user_roles (blockiert/erlaubt Login)
+      const { error } = await supabase.from('user_roles').update({
+        status: newStatus,
+        status_note: note || null,
+        status_changed_at: new Date().toISOString(),
+      }).eq('user_id', user.user_id)
+      if (error) throw error
 
-    if (role === 'model') {
-      await Promise.all([
-        supabase.from('model_board').delete().eq('model_name', name),
-        supabase.from('model_board_activity').delete().eq('model_name', name),
-        supabase.from('model_calendar').delete().eq('model_name', name),
-        supabase.from('model_videos').delete().eq('model_name', name),
-        supabase.from('custom_content').delete().eq('model_name', name),
-        supabase.from('content_requests').delete().eq('model_name', name),
-        supabase.from('model_aliases').delete().eq('model_name', name),
-        supabase.from('models_contact').delete().eq('name', name),
-        supabase.from('online_status').delete().eq('display_name', name),
-      ])
-    } else if (role === 'chatter') {
-      await Promise.all([
-        supabase.from('chatters_contact').delete().eq('name', name),
-        supabase.from('shift_logs').delete().eq('display_name', name),
-        supabase.from('online_status').delete().eq('display_name', name),
-        supabase.from('reminders').delete().eq('chatter_name', name),
-        supabase.from('absences').delete().eq('chatter_name', name),
-        supabase.from('chatter_aliases').delete().eq('chatter_name', name),
-        supabase.from('content_requests').delete().eq('chatter_name', name),
-        supabase.from('notes').delete().ilike('text', `%${name}%`),
-      ])
+      // 2) Aus aktiver Planung aus-/einblenden (NICHT löschen)
+      const showInPlan = newStatus === 'active'
+      if (role === 'model') {
+        await supabase.from('models_contact').update({ in_schedule: showInPlan }).eq('name', name)
+      } else if (role === 'chatter') {
+        await supabase.from('chatters_contact').update({ active: showInPlan }).eq('name', name)
+      }
+
+      // 3) Live-Status nicht mehr als "online" führen, wenn inaktiv
+      if (!showInPlan) {
+        await supabase.from('online_status').update({ shift_online: false }).eq('display_name', name)
+      }
+    } catch (e) {
+      alert('Fehler beim Status-Update: ' + (e.message || e))
+      setStatusBusy(false)
+      return
     }
-
-    // Remove from user_roles
-    await supabase.from('user_roles').delete().eq('user_id', user.user_id)
+    setStatusBusy(false)
     setOffboardingUser(null)
-    loadUsers()
+    setStatusNote('')
+    loadUsers(); loadModels(); loadChatters()
+  }
+
+  const reactivateUser = async (user) => {
+    if (!confirm(`${user.display_name} wieder aktivieren?\n\nLogin wird wieder freigeschaltet und die Person erscheint wieder im Dienstplan. Daten bleiben unverändert.`)) return
+    await setUserStatus(user, 'active', null)
   }
 
   const loadBotMessages = async () => {
@@ -384,96 +395,6 @@ export default function SettingsTab() {
     if (!confirm(`${name} wirklich entfernen?`)) return
     await supabase.from('user_roles').delete().eq('user_id', userId)
     loadUsers()
-  }
-
-  const offboardUser = async (userId, name, role) => {
-    if (!confirm(`Offboarding für ${name} starten?\n\nDies exportiert alle Daten und löscht dann alles aus dem System.`)) return
-
-    setOffboarding(name)
-
-    try {
-      // Collect all data for export
-      const exportData = { name, role, exportedAt: new Date().toISOString() }
-
-      if (role === 'model') {
-        const [{ data: board }, { data: snaps }, { data: videos }, { data: calendar }, { data: cc }] = await Promise.all([
-          supabase.from('model_board').select('*').eq('model_name', name),
-          supabase.from('model_snapshots').select('business_date, rows').order('business_date'),
-          supabase.from('model_videos').select('*').eq('model_name', name),
-          supabase.from('model_calendar').select('*').eq('model_name', name),
-          supabase.from('custom_content').select('*').eq('model_name', name),
-        ])
-        // Filter snapshots for this model
-        const modelSnaps = (snaps || []).map(s => ({
-          date: s.business_date,
-          data: (s.rows || []).filter(r => (r.creator || r.name || '').toLowerCase().includes(name.toLowerCase()))
-        })).filter(s => s.data.length > 0)
-
-        exportData.board = board || []
-        exportData.snapshots = modelSnaps
-        exportData.videos = videos || []
-        exportData.calendar = calendar || []
-        exportData.customContent = cc || []
-      } else if (role === 'chatter') {
-        const [{ data: snaps }, { data: shiftLogs }, { data: notes }] = await Promise.all([
-          supabase.from('chatter_snapshots').select('business_date, rows').order('business_date'),
-          supabase.from('shift_logs').select('*').eq('display_name', name),
-          supabase.from('notes').select('*').ilike('text', `%${name}%`),
-        ])
-        const chatterSnaps = (snaps || []).map(s => ({
-          date: s.business_date,
-          data: (s.rows || []).filter(r => (r.name || '').toLowerCase() === name.toLowerCase())
-        })).filter(s => s.data.length > 0)
-
-        exportData.snapshots = chatterSnaps
-        exportData.shiftLogs = shiftLogs || []
-        exportData.notes = notes || []
-      }
-
-      // Download JSON
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `offboarding_${name.replace(/\s/g, '_')}_${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-
-      // Wait a moment then delete
-      await new Promise(r => setTimeout(r, 1000))
-
-      if (confirm(`Export fertig! Jetzt alle Daten von ${name} löschen?`)) {
-        if (role === 'model') {
-          await Promise.all([
-            supabase.from('model_board').delete().eq('model_name', name),
-            supabase.from('model_videos').delete().eq('model_name', name),
-            supabase.from('model_calendar').delete().eq('model_name', name),
-            supabase.from('custom_content').delete().eq('model_name', name),
-            supabase.from('model_board_activity').delete().eq('model_name', name),
-            supabase.from('models_contact').delete().eq('name', name),
-            supabase.from('model_aliases').delete().eq('model_name', name),
-            supabase.from('content_requests').delete().eq('model_name', name),
-          ])
-        } else if (role === 'chatter') {
-          await Promise.all([
-            supabase.from('shift_logs').delete().eq('display_name', name),
-            supabase.from('online_status').delete().eq('display_name', name),
-            supabase.from('chatters_contact').delete().eq('name', name),
-            supabase.from('chatter_aliases').delete().eq('chatter_name', name),
-            supabase.from('reminders').delete().eq('chatter_name', name),
-            supabase.from('absences').delete().eq('chatter_name', name),
-            supabase.from('content_requests').delete().eq('chatter_name', name),
-          ])
-        }
-        // Remove from user_roles
-        await supabase.from('user_roles').delete().eq('user_id', userId)
-        alert(`${name} wurde vollständig aus dem System entfernt.`)
-        loadUsers()
-      }
-    } catch (e) {
-      alert('Fehler beim Offboarding: ' + e.message)
-    }
-    setOffboarding(null)
   }
 
   const saveBotMessage = async (key, value) => {
@@ -874,10 +795,10 @@ export default function SettingsTab() {
             </div>
           </div>
 
-          {/* Mitglieder */}
+          {/* Mitglieder (aktiv) */}
           <div style={cardS}>
-            <div style={labelS}>Aktuelle Mitglieder ({users.length})</div>
-            {users.map(u => {
+            <div style={labelS}>Aktuelle Mitglieder ({users.filter(u => (u.status || 'active') === 'active').length})</div>
+            {users.filter(u => (u.status || 'active') === 'active').map(u => {
               const rc = ROLES.find(r => r.key === u.role)
               const color = rc?.color || '#555580'
               return (
@@ -896,7 +817,7 @@ export default function SettingsTab() {
                         return <span key={r} style={{ fontSize: 10, fontWeight: 700, color: rc2?.color || color, background: (rc2?.color || color) + '22', padding: '2px 8px', borderRadius: 4 }}>{rc2?.label || r}</span>
                       })}
                       <button onClick={() => setEditingRole(editingRole === u.user_id ? null : u.user_id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
-                      <button onClick={() => startOffboarding(u)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', fontFamily: 'inherit' }}>Offboard</button>
+                      <button onClick={() => startOffboarding(u)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', fontFamily: 'inherit' }}>Status…</button>
                     </div>
                   </div>
                   {editingRole === u.user_id && (
@@ -922,57 +843,95 @@ export default function SettingsTab() {
               )
             })}
           </div>
+
+          {/* v3.18.0: History / Archiv — stillgelegte & offboardete Mitglieder. Daten bleiben erhalten. */}
+          {users.some(u => u.status && u.status !== 'active') && (
+            <div style={cardS}>
+              <div style={labelS}>History / Archiv ({users.filter(u => u.status && u.status !== 'active').length})</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Login gesperrt und aus dem Dienstplan ausgeblendet. Alle Daten (Schichtnotizen, Logs, Umsätze) bleiben erhalten und können jederzeit reaktiviert werden.
+              </div>
+              {users.filter(u => u.status && u.status !== 'active').map(u => {
+                const rc = ROLES.find(r => r.key === u.role)
+                const color = rc?.color || '#555580'
+                const isSuspended = u.status === 'suspended'
+                const stColor = isSuspended ? '#f59e0b' : '#ef4444'
+                const stLabel = isSuspended ? 'Stillgelegt' : 'Offboarded'
+                const changed = u.status_changed_at ? new Date(u.status_changed_at).toLocaleDateString('de-DE') : null
+                return (
+                  <div key={u.user_id} style={{ marginBottom: 6, padding: '9px 12px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a', opacity: 0.92 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color, filter: 'grayscale(0.4)' }}>{(u.display_name || '?')[0]}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{u.display_name}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map(r => ROLES.find(x => x.key === r)?.label || r).join(', ')}
+                            {changed ? ` · seit ${changed}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: stColor, background: stColor + '22', padding: '2px 8px', borderRadius: 4 }}>{stLabel}</span>
+                        <button onClick={() => exportUserData(u)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>↓ Export</button>
+                        <button onClick={() => reactivateUser(u)} disabled={statusBusy} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', cursor: statusBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↺ Reaktivieren</button>
+                      </div>
+                    </div>
+                    {u.status_note && (
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6, paddingLeft: 38, fontStyle: 'italic' }}>„{u.status_note}"</div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* OFFBOARDING MODAL */}
+      {/* STATUS-VERWALTUNG MODAL (v3.18.0) — Stilllegen / Offboarden, kein Löschen */}
       {offboardingUser && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 20 }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 14, padding: '28px 32px', width: '100%', maxWidth: 420 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#ef4444' }}>{offboardingUser.display_name[0]}</div>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 14, padding: '28px 32px', width: '100%', maxWidth: 440 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#a78bfa' }}>{offboardingUser.display_name[0]}</div>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{offboardingUser.display_name} offboarden</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{offboardingUser.display_name} verwalten</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{offboardingUser.role}</div>
               </div>
             </div>
 
-            {offboardStep === 'confirm' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  Empfohlen: Erst Daten exportieren, dann löschen.
-                </div>
-                <button onClick={() => exportUserData(offboardingUser)} style={{ padding: '10px', borderRadius: 8, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  1. Daten exportieren (JSON)
-                </button>
-                <button onClick={() => deleteUserData(offboardingUser)} style={{ padding: '10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  2. Alle Daten löschen
-                </button>
-                <button onClick={() => setOffboardingUser(null)} style={{ padding: '8px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Abbrechen
-                </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Login wird gesperrt und die Person aus dem Dienstplan ausgeblendet. <strong style={{ color: 'var(--text-primary)' }}>Es werden keine Daten gelöscht</strong> — alles bleibt in der History und kann jederzeit reaktiviert werden.
               </div>
-            )}
 
-            {offboardStep === 'exporting' && (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
-                Export wird vorbereitet...
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 5 }}>Notiz (optional)</div>
+                <input
+                  type="text"
+                  value={statusNote}
+                  onChange={e => setStatusNote(e.target.value)}
+                  placeholder="z.B. Pause bis September, Elternzeit, …"
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+                />
               </div>
-            )}
 
-            {offboardStep === 'done' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ fontSize: 13, color: '#10b981', textAlign: 'center', padding: '10px 0' }}>
-                  Export erfolgreich heruntergeladen!
-                </div>
-                <button onClick={() => deleteUserData(offboardingUser)} style={{ padding: '10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Jetzt alle Daten löschen
-                </button>
-                <button onClick={() => setOffboardingUser(null)} style={{ padding: '8px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Später löschen
-                </button>
-              </div>
-            )}
+              <button onClick={() => exportUserData(offboardingUser)} style={{ padding: '10px', borderRadius: 8, background: 'transparent', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.4)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                ↓ Daten-Backup exportieren (JSON)
+              </button>
+
+              <div style={{ height: 1, background: '#1e1e3a', margin: '2px 0' }} />
+
+              <button onClick={() => setUserStatus(offboardingUser, 'suspended', statusNote)} disabled={statusBusy} style={{ padding: '10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', fontSize: 13, fontWeight: 700, cursor: statusBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: statusBusy ? 0.5 : 1 }}>
+                ⏸ Stilllegen (temporär)
+              </button>
+              <button onClick={() => setUserStatus(offboardingUser, 'offboarded', statusNote)} disabled={statusBusy} style={{ padding: '10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: 13, fontWeight: 700, cursor: statusBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: statusBusy ? 0.5 : 1 }}>
+                📦 Offboarden (ins Archiv)
+              </button>
+              <button onClick={() => { setOffboardingUser(null); setStatusNote('') }} style={{ padding: '8px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Abbrechen
+              </button>
+            </div>
           </div>
         </div>
       )}
