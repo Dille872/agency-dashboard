@@ -62,7 +62,7 @@ function getAuthorColor(name) {
   return authorColors[name]
 }
 
-export default function NotesTab({ session }) {
+export default function NotesTab({ session, userDisplayName }) {
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterAuthor, setFilterAuthor] = useState('')
@@ -70,7 +70,8 @@ export default function NotesTab({ session }) {
   const [openDays, setOpenDays] = useState({})
   const [newNote, setNewNote] = useState('')
   const [sending, setSending] = useState(false)
-  const displayName = session?.user?.email?.split('@')[0] || 'Admin'
+  // v3.20.0: echten Namen aus user_roles bevorzugen (Email-Fallback erzeugte Doubletten)
+  const displayName = userDisplayName || session?.user?.email?.split('@')[0] || 'Admin'
 
   useEffect(() => { loadNotes() }, [])
 

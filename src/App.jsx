@@ -750,7 +750,7 @@ export default function App() {
         ) : activeTab === 'briefing' ? (
           <BriefingView modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'notes' ? (
-          <NotesTab session={session} />
+          <NotesTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'nachrichten' ? (
           <CommTab key="nachrichten" session={session} section="nachrichten" displayName={userDisplayName} />
         ) : activeTab === 'models-comm' ? (
@@ -768,7 +768,7 @@ export default function App() {
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (
-          <ScheduleTab session={session} />
+          <ScheduleTab session={session} userDisplayName={userDisplayName} />
         )}
       </main>
     </div>

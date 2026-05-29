@@ -80,7 +80,7 @@ function getKW(date) {
   return Math.ceil(((d - onejan) / 86400000 + onejan.getDay() + 1) / 7)
 }
 
-export default function ScheduleTab({ session }) {
+export default function ScheduleTab({ session, userDisplayName }) {
   const [weekStart, setWeekStart] = useState(() => {
     // Restore last viewed week from sessionStorage
     const saved = sessionStorage.getItem('scheduleWeek')
@@ -115,10 +115,11 @@ export default function ScheduleTab({ session }) {
   const [logLoading, setLogLoading] = useState(false)
 
   // v3.15.0: Sender-Namen aus Session ableiten (gleiches Mapping wie CommTab)
+  // v3.20.0: echten Namen aus user_roles bevorzugen (Email-Fallback erzeugte Doubletten)
   const getSenderName = () => {
     const email = session?.user?.email || ''
     const map = { 'dillemc@hotmail.com': 'Chris' }
-    return map[email] || email.split('@')[0] || 'Admin'
+    return userDisplayName || map[email] || email.split('@')[0] || 'Admin'
   }
 
   // v3.15.0: Versand-Historie laden (neueste zuerst, max 50)

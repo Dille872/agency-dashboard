@@ -148,7 +148,8 @@ function ModelAliasManager({ models }) {
 
 export default function CommTab({ session, section = 'nachrichten', displayName = '' }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
-  const userName = getDisplayName(session?.user?.email)
+  // v3.20.0: echten Namen (displayName-Prop aus user_roles) bevorzugen; Email nur als Notnagel
+  const userName = displayName || getDisplayName(session?.user?.email)
 
   const [models, setModels] = useState([])
   const [selectedModel, setSelectedModel] = useState(null)
