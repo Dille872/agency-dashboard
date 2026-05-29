@@ -3055,7 +3055,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     {/* Action-Buttons */}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
                       {req.status !== 'angefragt' && req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
-                        <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt + TG</button>
+                        <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Anfragen + TG</button>
                       )}
                       {req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
                         <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 11, padding: '5px 14px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Bestätigen + TG</button>
