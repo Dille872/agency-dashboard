@@ -1802,7 +1802,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
                 const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
                 const remainder = (req.price || 0) - (req.deposit || 0)
-                const totalPaid = (req.deposit_paid ? (req.deposit || 0) : 0) + (req.remainder_paid ? remainder : 0)
+                // v3.20.1: Ohne Anzahlungs-Split (deposit = 0) gilt deposit_paid als KOMPLETT bezahlt
+                // — gleiche Logik wie Admin-/Creator-Ansicht (CommTab) und ModelPortal.
+                // Vorher: deposit_paid × deposit (=0) ergab fälschlich "Nichts bezahlt".
+                const hasDeposit = (req.deposit || 0) > 0
+                const totalPaid = hasDeposit
+                  ? (req.deposit_paid ? (req.deposit || 0) : 0) + (req.remainder_paid ? remainder : 0)
+                  : (req.deposit_paid ? (req.price || 0) : 0)
                 const fullyPaid = req.price > 0 && totalPaid >= req.price
                 const nothingPaid = req.price > 0 && totalPaid === 0
                 const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
