@@ -148,8 +148,7 @@ function ModelAliasManager({ models }) {
 
 export default function CommTab({ session, section = 'nachrichten', displayName = '' }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
-  // v3.20.0: echten Namen (displayName-Prop aus user_roles) bevorzugen; Email nur als Notnagel
-  const userName = displayName || getDisplayName(session?.user?.email)
+  const userName = getDisplayName(session?.user?.email)
 
   const [models, setModels] = useState([])
   const [selectedModel, setSelectedModel] = useState(null)
@@ -1179,6 +1178,31 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     // Telegram an Chatter über Status-Wechsel (egal welcher Status)
     if (req && (status === 'angefragt' || status === 'bestaetigt' || status === 'erledigt' || status === 'abgelehnt')) {
       await notifyChatterStatusChange(req, status)
+    }
+
+    // v3.21.0: Bei "Angefragt" das Model per Telegram fragen, ob es den Content macht
+    if (status === 'angefragt' && req) {
+      const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).maybeSingle()
+      if (modelData?.telegram_id) {
+        const deadlineText = req.deadline === 'asap' ? 'So schnell wie möglich' : req.deadline === 'hours' ? 'In den nächsten Stunden' : req.deadline === 'days' ? '1-2 Tage' : req.deadline === 'week' ? 'Diese Woche' : ''
+        const remainder = (req.price || 0) - (req.deposit || 0)
+        let payLine = ''
+        if (req.price > 0) {
+          if (req.deposit > 0 && remainder > 0) {
+            const depTxt = req.deposit_paid ? `${req.deposit}$ ✓` : `${req.deposit}$ (offen)`
+            const restTxt = req.remainder_paid ? `${remainder}$ ✓` : `${remainder}$ nach Lieferung`
+            payLine = `\n💰 Gesamt: ${req.price}$ — Anzahlung ${depTxt} · Rest ${restTxt}`
+          } else if (req.deposit_paid || req.remainder_paid) {
+            payLine = `\n💰 ${req.price}$ ✓ vollständig bezahlt`
+          } else {
+            payLine = `\n💰 ${req.price}$ — offen`
+          }
+        }
+        const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
+        const text = req.edited_text || req.request_text
+        const msg = `<b>📥 Neue Content-Anfrage für dich</b>\n\n${text}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
+        await sendTelegramMessage(modelData.telegram_id, msg)
+      }
     }
 
     if (status === 'bestaetigt' && req) {
@@ -3031,7 +3055,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     {/* Action-Buttons */}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
                       {req.status !== 'angefragt' && req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
-                        <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt</button>
+                        <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Angefragt + TG</button>
                       )}
                       {req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
                         <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 11, padding: '5px 14px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Bestätigen + TG</button>
