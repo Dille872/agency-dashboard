@@ -391,12 +391,6 @@ export default function SettingsTab() {
     loadUsers()
   }
 
-  const deleteUser = async (userId, name) => {
-    if (!confirm(`${name} wirklich entfernen?`)) return
-    await supabase.from('user_roles').delete().eq('user_id', userId)
-    loadUsers()
-  }
-
   const saveBotMessage = async (key, value) => {
     setSavingMsg(true)
     await supabase.from('bot_settings').upsert({ key, value }, { onConflict: 'key' })
