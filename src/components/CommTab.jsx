@@ -167,6 +167,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [showAddChatter, setShowAddChatter] = useState(false)
   const [zoomDate, setZoomDate] = useState('')
   const [zoomTime, setZoomTime] = useState('')
+  // v3.22.0: Custom-Content Karten ein-/ausklappen. null = Default (ASAP/Neu offen).
+  const [expandedReqs, setExpandedReqs] = useState(null)
+  const toggleReqExpanded = (id) => setExpandedReqs(prev => {
+    const base = prev === null
+      ? new Set(contentRequests.filter(r => r.deadline === 'asap' || r.status === 'neu').map(r => r.id))
+      : new Set(prev)
+    base.has(id) ? base.delete(id) : base.add(id)
+    return base
+  })
 
   const [messages, setMessages] = useState([])
   // Chat-Thread State (v2.8.3)
@@ -2774,10 +2783,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 const nothingPaid = req.price > 0 && totalPaid === 0
                 const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
                 const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
+                // v3.22.0: Default offen nur bei ASAP oder Neu; manuelles Set hat Vorrang.
+                const defaultOpen = req.deadline === 'asap' || req.status === 'neu'
+                const isExpanded = expandedReqs === null ? defaultOpen : expandedReqs.has(req.id)
+                const payDot = req.price > 0 ? (fullyPaid ? '#10b981' : partiallyPaid ? '#f59e0b' : '#ef4444') : null
+                const payDotLabel = fullyPaid ? '✓ bezahlt' : partiallyPaid ? paidPct + '% bezahlt' : 'offen'
                 return (
                   <div key={req.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
-                    {/* Header: Model + Kunde + Chatter | Preis + Datum */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                    {/* Header: Model + Kunde + Chatter | Preis + Datum — v3.22.0 klickbar */}
+                    <div onClick={() => toggleReqExpanded(req.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0, cursor: 'pointer' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         {/* Badges */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
@@ -2798,14 +2812,24 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        {req.price > 0 && <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>${req.price}</div>}
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                          {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexShrink: 0 }}>
+                        <div style={{ textAlign: 'right' }}>
+                          {req.price > 0 && <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>${req.price}</div>}
+                          {payDot && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end', marginTop: 2 }}>
+                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: payDot, display: 'inline-block' }} />
+                              <span style={{ fontSize: 10, color: payDot, fontWeight: 600 }}>{payDotLabel}</span>
+                            </div>
+                          )}
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+                            {new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} {new Date(req.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
                         </div>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13, transition: 'transform 0.2s', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', marginTop: 2 }}>▼</span>
                       </div>
                     </div>
 
+                    {isExpanded && (<>
                     {/* Beschreibung */}
                     {editingText === req.id ? (
                       <div style={{ marginBottom: 10 }}>
@@ -3067,6 +3091,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
                       )}
                     </div>
+                    </>)}
                   </div>
                 )
               })}
