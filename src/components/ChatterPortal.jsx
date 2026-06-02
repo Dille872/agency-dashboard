@@ -703,9 +703,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   useEffect(() => {
     if (isPreview) {
-      supabase.from('chatters_contact').select('name').order('name').then(({ data }) => {
-        setAllChatters(data || [])
-        if (data && data.length > 0) setPreviewChatter(data[0].name)
+      supabase.from('chatters_contact').select('name, active').order('name').then(({ data }) => {
+        const list = (data || []).filter(c => c.active !== false)
+        setAllChatters(list)
+        if (list.length > 0) setPreviewChatter(list[0].name)
       })
     }
   }, [isPreview])
@@ -862,6 +863,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const { data } = await supabase.from('models_contact').select('*').order('name')
     setModels(data || [])
   }
+
+  // v3.23.0: offboardete/stillgelegte Models nicht mehr in Auswahl-Dropdowns anbieten
+  const activeModels = models.filter(m => m.active !== false)
 
   const loadSchedule = async () => {
     const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey).maybeSingle()
@@ -1508,7 +1512,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                         ))
                       : null
                     }
-                    {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                    {activeModels.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1670,7 +1674,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <select value={newRequestModel} onChange={e => setNewRequestModel(e.target.value)}
                   style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
                   <option value="">— wählen —</option>
-                  {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  {activeModels.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                 </select>
               </div>
               <div>
@@ -1913,7 +1917,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <select value={newIdeaModel} onChange={e => setNewIdeaModel(e.target.value)}
                     style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
                     <option value="">— wählen —</option>
-                    {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                    {activeModels.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                   </select>
                 </div>
                 <div>

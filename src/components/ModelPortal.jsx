@@ -217,9 +217,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
   useEffect(() => {
     if (isPreview) {
-      supabase.from('models_contact').select('name').order('name').then(({ data }) => {
-        setAllModels(data || [])
-        if (data && data.length > 0) setPreviewModel(data[0].name)
+      supabase.from('models_contact').select('name, active').order('name').then(({ data }) => {
+        const list = (data || []).filter(m => m.active !== false)
+        setAllModels(list)
+        if (list.length > 0) setPreviewModel(list[0].name)
       })
     }
   }, [isPreview])

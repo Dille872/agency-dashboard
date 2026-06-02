@@ -126,7 +126,7 @@ function ModelAliasManager({ models }) {
           <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Model</label>
           <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ ...inputS }}>
             <option value="">— wählen —</option>
-            {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+            {models.filter(m => m.active !== false).map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
           </select>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -459,6 +459,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     setUnreadCount((data || []).filter(m => m.direction === 'in' && !m.read).length)
   }
 
+  // v3.23.0: Stillgelegte/offboardete Personen aus AUSWAHL-Listen ausblenden.
+  // active === false  -> ausgeblendet (offboarded/suspended). NULL/true -> aktiv.
+  // WICHTIG: Nur für die Auswahl neuer Chats/Empfänger. Bestehende Threads &
+  // History bleiben über die vollen Listen (models/chatters) erhalten.
+  const activeModels = models.filter(m => m.active !== false)
+  const activeChatters = chatters.filter(c => c.active !== false)
+
 
   const sendModelMessage = async () => {
     if (!selectedModel || !modelMsgText.trim() || !selectedModel.telegram_id) return
@@ -481,8 +488,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (!chatterMsgText.trim()) return
     setSendingChatter(true)
     const targets = selectedChatters.size > 0
-      ? chatters.filter(c => selectedChatters.has(c.id))
-      : chatters.filter(c => c.telegram_id)
+      ? activeChatters.filter(c => selectedChatters.has(c.id))
+      : activeChatters.filter(c => c.telegram_id)
 
     // Build calendar link for zoom
     let calLink = ''
@@ -525,7 +532,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (!broadcastText.trim()) return
     setBroadcastSending(true)
 
-    const contactList = broadcastRecipientType === 'chatter' ? chatters : models
+    const contactList = broadcastRecipientType === 'chatter' ? activeChatters : activeModels
     const targets = broadcastSelected.size > 0
       ? contactList.filter(c => broadcastSelected.has(c.id))
       : contactList.filter(c => c.telegram_id)
@@ -1324,8 +1331,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
           <Card title="Models">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-              {models.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Models angelegt</div>}
-              {models.map(model => {
+              {activeModels.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Models angelegt</div>}
+              {activeModels.map(model => {
                 // v3.11.0: Board-Activity Counts
                 const modelActivities = modelBoardActivity.filter(a => a.model_name === model.name)
                 const unreadBoardCount = modelActivities.filter(a => !a.read).length
@@ -1557,8 +1564,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
           <Card title="Chatters">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-              {chatters.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Chatters angelegt</div>}
-              {chatters.map(chatter => {
+              {activeChatters.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Chatters angelegt</div>}
+              {activeChatters.map(chatter => {
                 const isSelected = selectedChatter?.id === chatter.id
                 return (
                   <div key={chatter.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -2167,15 +2174,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         // Liste für Single-Chat: in unified beide, sonst nur einer
         const pickerEntries = isUnifiedPicker
           ? [
-              ...chatters.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'chatter' })),
-              ...models.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'model' })),
+              ...activeChatters.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'chatter' })),
+              ...activeModels.filter(c => c.telegram_id).map(c => ({ ...c, _type: 'model' })),
             ].sort((a, b) => a.name.localeCompare(b.name))
-          : (pickerContactType === 'model' ? models : chatters).filter(c => c.telegram_id).map(c => ({ ...c, _type: pickerContactType }))
+          : (pickerContactType === 'model' ? activeModels : activeChatters).filter(c => c.telegram_id).map(c => ({ ...c, _type: pickerContactType }))
 
         // Empfängerliste für Broadcast (basierend auf broadcastRecipientType)
+        // v3.23.0: nur aktive Empfänger (offboardete/stillgelegte raus)
         const broadcastContactList = broadcastRecipientType === 'chatter'
-          ? chatters.filter(c => c.telegram_id)
-          : models.filter(c => c.telegram_id)
+          ? activeChatters.filter(c => c.telegram_id)
+          : activeModels.filter(c => c.telegram_id)
         const broadcastTargetCount = broadcastSelected.size > 0 ? broadcastSelected.size : broadcastContactList.length
 
         const closeModal = () => {
@@ -2270,14 +2278,14 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         color: broadcastRecipientType === 'chatter' ? '#06b6d4' : 'var(--text-muted)',
                         border: `1px solid ${broadcastRecipientType === 'chatter' ? '#06b6d4' : 'var(--border)'}`,
                         fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                      }}>Chatter ({chatters.filter(c => c.telegram_id).length})</button>
+                      }}>Chatter ({activeChatters.filter(c => c.telegram_id).length})</button>
                       <button onClick={() => { setBroadcastRecipientType('model'); setBroadcastSelected(new Set()) }} style={{
                         flex: 1, padding: '8px 12px', borderRadius: 6,
                         background: broadcastRecipientType === 'model' ? 'rgba(245,158,11,0.18)' : 'transparent',
                         color: broadcastRecipientType === 'model' ? '#f59e0b' : 'var(--text-muted)',
                         border: `1px solid ${broadcastRecipientType === 'model' ? '#f59e0b' : 'var(--border)'}`,
                         fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                      }}>Models ({models.filter(c => c.telegram_id).length})</button>
+                      }}>Models ({activeModels.filter(c => c.telegram_id).length})</button>
                     </div>
                   </div>
 
@@ -4030,7 +4038,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
           {/* Model buttons */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {models.map(m => (
+            {activeModels.map(m => (
               <button key={m.id} onClick={() => { setSelectedBoardModel(selectedBoardModel === m.name ? null : m.name); loadModelBoard(m.name) }}
                 style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
                   background: selectedBoardModel === m.name ? '#f59e0b' : 'transparent',

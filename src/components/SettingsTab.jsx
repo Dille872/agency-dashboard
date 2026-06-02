@@ -307,10 +307,13 @@ export default function SettingsTab() {
       }).eq('user_id', user.user_id)
       if (error) throw error
 
-      // 2) Aus aktiver Planung aus-/einblenden (NICHT löschen)
+      // 2) Aus aktiver Planung/Auswahl aus-/einblenden (NICHT löschen)
+      //    v3.23.0: Models bekommen ein eigenes 'active'-Flag (analog zu chatters_contact).
+      //    'in_schedule' bleibt davon unberührt — das ist weiterhin der manuelle
+      //    "im Dienstplan / nicht im Plan"-Schalter und hat nichts mit Offboarding zu tun.
       const showInPlan = newStatus === 'active'
       if (role === 'model') {
-        await supabase.from('models_contact').update({ in_schedule: showInPlan }).eq('name', name)
+        await supabase.from('models_contact').update({ active: showInPlan }).eq('name', name)
       } else if (role === 'chatter') {
         await supabase.from('chatters_contact').update({ active: showInPlan }).eq('name', name)
       }

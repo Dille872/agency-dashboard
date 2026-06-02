@@ -379,7 +379,12 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const loadModels = async () => {
     // Nur Models laden die im Dienstplan auftauchen sollen (in_schedule != false)
     // Bestehende Models ohne den Flag (NULL) werden auch geladen — gilt als "an"
-    const { data } = await supabase.from('models_contact').select('*').or('in_schedule.is.null,in_schedule.eq.true').order('name')
+    // v3.23.0: zusätzlich offboardete/stillgelegte Models ausblenden (active != false).
+    //   in_schedule = manueller "nicht im Plan"-Schalter, active = Offboarding — getrennt.
+    const { data } = await supabase.from('models_contact').select('*')
+      .or('in_schedule.is.null,in_schedule.eq.true')
+      .or('active.is.null,active.eq.true')
+      .order('name')
     setModels(data || [])
   }
   const loadChatters = async () => {

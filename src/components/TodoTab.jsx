@@ -42,8 +42,9 @@ export default function TodoTab({ session, userDisplayName }) {
   }
 
   const loadAdmins = async () => {
-    const { data: roleData } = await supabase.from('user_roles').select('display_name, role').order('display_name')
-    const admins = (roleData || []).filter(u => u.display_name && ['admin', 'manager'].includes(u.role))
+    const { data: roleData } = await supabase.from('user_roles').select('display_name, role, status').order('display_name')
+    // v3.23.0: stillgelegte/offboardete Admins/Manager nicht mehr zuweisbar (bestehende Todos behalten den Namen)
+    const admins = (roleData || []).filter(u => u.display_name && ['admin', 'manager'].includes(u.role) && u.status !== 'suspended' && u.status !== 'offboarded')
     const names = [...new Set(admins.map(u => u.display_name))]
     setAdminNames(names)
 

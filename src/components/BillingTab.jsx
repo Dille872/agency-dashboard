@@ -49,8 +49,8 @@ export default function BillingTab() {
     const monthEnd = nextY + '-' + String(nextM).padStart(2, '0') + '-01'
 
     const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
-      supabase.from('models_contact').select('name').order('name'),
-      supabase.from('chatters_contact').select('name').order('name'),
+      supabase.from('models_contact').select('name, active').order('name'),
+      supabase.from('chatters_contact').select('name, active').order('name'),
       supabase.from('billing_settings').select('*'),
       supabase.from('model_aliases').select('*'),
       supabase.from('model_snapshots').select('rows,business_date').gte('business_date', monthStart).lt('business_date', monthEnd),
@@ -163,7 +163,7 @@ export default function BillingTab() {
 
       {section === 'models' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {models.map(model => {
+          {models.filter(model => model.active !== false || modelRev(model.name).total > 0).map(model => {
             const s = getSetting(model.name, 'model')
             const rev = modelRev(model.name)
             const isEdit = editing && editing.name === model.name && editing.type === 'model'
@@ -244,7 +244,7 @@ export default function BillingTab() {
 
       {section === 'chatters' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {chatters.map(chatter => {
+          {chatters.filter(chatter => chatter.active !== false || chatterRev(chatter.name).total > 0).map(chatter => {
             const s = getSetting(chatter.name, 'chatter')
             const rev = chatterRev(chatter.name)
             const isEdit = editing && editing.name === chatter.name && editing.type === 'chatter'
