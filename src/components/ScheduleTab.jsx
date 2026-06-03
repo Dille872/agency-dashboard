@@ -772,8 +772,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
             const cell = getCell(model.id, dayIso, shift)
             if (cell.chatter === chatter.name) {
               const berlinTime = (cell.time_override || shiftTimes[`${model.id}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
-              const localTime = berlinTime ? convertTimeToLocal(berlinTime) : ''
-              const timeDisplay = localTime ? ` (${localTime} Ortszeit)` : ''
+              // v3.24.0: Zeit direkt in DE-Zeit anzeigen. KEIN convertTimeToLocal mehr —
+              // das rechnete auf die Browser-Zeitzone des Senders um (Zypern = +1),
+              // wodurch ALLE Chatter den Plan +1h verschoben bekamen.
+              const timeDisplay = berlinTime ? ` (${berlinTime} Uhr DE)` : ''
               dayShifts.push(`  ${shift}${timeDisplay}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
             }
           }
@@ -834,8 +836,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
             const cell = getCell(model.id, dayIso, shift)
             if (cell.chatter === chatter.name) {
               const berlinTime = (shiftTimes[`${model.id}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
-              const localTime = berlinTime ? convertTimeToLocal(berlinTime) : ''
-              const timeDisplay = localTime ? ` (${localTime} Ortszeit)` : ''
+              // v3.24.0: Zeit direkt in DE-Zeit anzeigen. KEIN convertTimeToLocal mehr —
+              // das rechnete auf die Browser-Zeitzone des Senders um (Zypern = +1),
+              // wodurch ALLE Chatter den Plan +1h verschoben bekamen.
+              const timeDisplay = berlinTime ? ` (${berlinTime} Uhr DE)` : ''
               dayShifts.push(`  ${shift}${timeDisplay}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
             }
           }
