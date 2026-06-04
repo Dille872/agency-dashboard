@@ -95,7 +95,10 @@ export default function SettingsTab() {
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
   const loadModels = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id, in_schedule').order('name'); setModels(data || []) }
-  const loadChatters = async () => { const { data } = await supabase.from('chatters_contact').select('name').order('name'); setChatters(data || []) }
+  // v3.24.1: stillgelegte Chatter (active === false) global ausblenden.
+  // Wirkt auf alle Stellen, die `chatters` nutzen: Chatter-CSV-Liste, "Neue Zuordnung"-Dropdown
+  // und Umfrage-Empfänger. active === null gilt weiterhin als aktiv (neu angelegte Chatter ohne Flag).
+  const loadChatters = async () => { const { data } = await supabase.from('chatters_contact').select('name, active').order('name'); setChatters((data || []).filter(c => c.active !== false)) }
   const loadModelAliases = async () => { const { data } = await supabase.from('model_aliases').select('*').order('model_name'); setModelAliases(data || []) }
   const loadModelTelegramIds = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id'); return data || [] }
   const loadChatterAliases = async () => { const { data } = await supabase.from('chatter_aliases').select('*').order('chatter_name'); setChatterAliases(data || []) }
