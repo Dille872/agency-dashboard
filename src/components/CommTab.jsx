@@ -2039,7 +2039,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             border: isOut ? '1px solid rgba(124,58,237,0.3)' : '1px solid var(--border)',
                             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                           }}>
-                            {/* v2.9.8: Bilder anzeigen — Desktop nebeneinander, Mobile untereinander */}
+                            {/* v3.25.0: Anhänge anzeigen — Bild/Video/Audio/Datei je nach Typ */}
                             {msg.image_urls && msg.image_urls.length > 0 && (
                               <div style={{
                                 display: 'flex',
@@ -2048,20 +2048,62 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                 gap: 4,
                                 marginBottom: msg.text ? 6 : 0,
                               }}>
-                                {msg.image_urls.map((url, ii) => (
-                                  <img key={ii} src={url} alt="Anhang"
-                                    onClick={() => setLightboxImage(url)}
-                                    style={{
-                                      width: isMobileChat ? '100%' : 130,
-                                      height: isMobileChat ? 'auto' : 130,
-                                      maxHeight: isMobileChat ? 240 : 130,
-                                      objectFit: 'cover',
-                                      borderRadius: 6,
-                                      cursor: 'pointer',
-                                      display: 'block',
-                                    }}
-                                  />
-                                ))}
+                                {msg.image_urls.map((url, ii) => {
+                                  const cleanUrl = (url || '').split('?')[0].toLowerCase()
+                                  const isVideo = /\.(mp4|mov|webm|m4v)$/.test(cleanUrl)
+                                  const isAudio = /\.(ogg|oga|mp3|m4a|wav)$/.test(cleanUrl)
+                                  const isImage = /\.(jpg|jpeg|png|webp|gif|heic)$/.test(cleanUrl)
+                                  if (isVideo) {
+                                    return (
+                                      <video key={ii} src={url} controls
+                                        style={{
+                                          width: isMobileChat ? '100%' : 180,
+                                          maxHeight: isMobileChat ? 280 : 180,
+                                          borderRadius: 6,
+                                          display: 'block',
+                                          background: '#000',
+                                        }}
+                                      />
+                                    )
+                                  }
+                                  if (isAudio) {
+                                    return (
+                                      <audio key={ii} src={url} controls
+                                        style={{ width: isMobileChat ? '100%' : 220, display: 'block' }}
+                                      />
+                                    )
+                                  }
+                                  if (isImage) {
+                                    return (
+                                      <img key={ii} src={url} alt="Anhang"
+                                        onClick={() => setLightboxImage(url)}
+                                        style={{
+                                          width: isMobileChat ? '100%' : 130,
+                                          height: isMobileChat ? 'auto' : 130,
+                                          maxHeight: isMobileChat ? 240 : 130,
+                                          objectFit: 'cover',
+                                          borderRadius: 6,
+                                          cursor: 'pointer',
+                                          display: 'block',
+                                        }}
+                                      />
+                                    )
+                                  }
+                                  // Sonstige Datei (z.B. PDF) → Download-Chip
+                                  const fileName = decodeURIComponent((cleanUrl.split('/').pop() || 'Datei'))
+                                  return (
+                                    <a key={ii} href={url} target="_blank" rel="noopener noreferrer"
+                                      style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        padding: '8px 10px', borderRadius: 6,
+                                        background: 'var(--bg-card)', border: '1px solid var(--border)',
+                                        color: 'var(--text-primary)', textDecoration: 'none', fontSize: 11,
+                                      }}
+                                    >
+                                      📎 {fileName}
+                                    </a>
+                                  )
+                                })}
                               </div>
                             )}
                             {msg.text && (

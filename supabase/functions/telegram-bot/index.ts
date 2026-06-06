@@ -122,6 +122,79 @@ async function forwardToAdmins(senderName: string, senderType: string, text: str
   for (const adminId of ADMIN_IDS) await tg(adminId, msg)
 }
 
+// ── Helper: eingehende Medien aus Telegram-Message extrahieren (v3.25.0) ──
+function extractMedia(m: any): { fileId: string; kind: string } | null {
+  if (Array.isArray(m.photo) && m.photo.length > 0) {
+    // höchste Auflösung = letztes Element des photo-Arrays
+    return { fileId: m.photo[m.photo.length - 1].file_id, kind: 'photo' }
+  }
+  if (m.video) return { fileId: m.video.file_id, kind: 'video' }
+  if (m.animation) return { fileId: m.animation.file_id, kind: 'gif' }
+  if (m.video_note) return { fileId: m.video_note.file_id, kind: 'video_note' }
+  if (m.voice) return { fileId: m.voice.file_id, kind: 'voice' }
+  if (m.audio) return { fileId: m.audio.file_id, kind: 'audio' }
+  if (m.document) return { fileId: m.document.file_id, kind: 'document' }
+  return null
+}
+
+// ── Helper: Telegram-Datei herunterladen + dauerhaft in Supabase Storage ablegen (v3.25.0) ──
+// Gibt eine permanente Public-URL zurück (oder null bei Fehler).
+// Achtung: Telegram Bot-API kann nur Dateien bis ~20 MB herunterladen.
+async function downloadTelegramFile(fileId: string): Promise<string | null> {
+  try {
+    const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId }),
+    })
+    const fileJson = await fileRes.json()
+    const filePath = fileJson?.result?.file_path
+    if (!filePath) { console.error('getFile ohne file_path (evtl. >20MB):', JSON.stringify(fileJson)); return null }
+
+    const dl = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`)
+    if (!dl.ok) { console.error('Telegram-Download fehlgeschlagen:', dl.status); return null }
+    const bytes = new Uint8Array(await dl.arrayBuffer())
+
+    const ext = (filePath.split('.').pop() || 'bin').toLowerCase()
+    const ctMap: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic',
+      mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', m4v: 'video/mp4',
+      ogg: 'audio/ogg', oga: 'audio/ogg', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav',
+      pdf: 'application/pdf',
+    }
+    const contentType = ctMap[ext] || 'application/octet-stream'
+
+    const storagePath = `inbound/${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`
+    const up = await fetch(`${SUPABASE_URL}/storage/v1/object/chat-attachments/${storagePath}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': contentType,
+        'cache-control': 'max-age=31536000',
+      },
+      body: bytes,
+    })
+    if (!up.ok) { console.error('Storage-Upload fehlgeschlagen:', up.status, await up.text()); return null }
+
+    return `${SUPABASE_URL}/storage/v1/object/public/chat-attachments/${storagePath}`
+  } catch (e) {
+    console.error('downloadTelegramFile error:', e)
+    return null
+  }
+}
+
+// ── Helper: Absender (Model / Chatter / Unbekannt) auflösen (v3.25.0) ──
+async function resolveSender(fromId: string, m: any): Promise<{ type: 'model' | 'chatter' | 'unknown'; name: string }> {
+  const modelArr = await q('models_contact', `?telegram_id=eq.${fromId}&limit=1`)
+  const modelData = Array.isArray(modelArr) ? modelArr[0] : null
+  if (modelData) return { type: 'model', name: modelData.name }
+  const chatterArr = await q('chatters_contact', `?telegram_id=eq.${fromId}&limit=1`)
+  const chatterData = Array.isArray(chatterArr) ? chatterArr[0] : null
+  if (chatterData) return { type: 'chatter', name: chatterData.name }
+  return { type: 'unknown', name: m.from.first_name || m.from.username || `Unknown_${fromId}` }
+}
+
 // ── Helper: Schichten heute für Chatter ──
 async function getChatterShiftsToday(chatterName: string, todayIso: string) {
   const scheds = await q('schedule', '?status=eq.live&order=week_start.desc&limit=1')
@@ -184,6 +257,51 @@ serve(async (req) => {
     const fromId = String(msg.from.id)
     const text = (msg.text || '').trim()
     const lower = text.toLowerCase()
+
+    // ── EINGEHENDE MEDIEN (Foto/Video/GIF/Datei/Sprachnachricht) — v3.25.0 ──
+    // Muss VOR der /start-Prüfung stehen, da Medien-Nachrichten kein msg.text haben
+    // und sonst als leere Nachricht behandelt + verworfen würden.
+    const media = extractMedia(msg)
+    if (media) {
+      const sender = await resolveSender(fromId, msg)
+      const caption = (msg.caption || '').trim()
+      const kindLabel: Record<string, string> = {
+        photo: '📷 Bild', video: '🎬 Video', gif: '🎬 GIF', video_note: '🎬 Videonachricht',
+        voice: '🎤 Sprachnachricht', audio: '🎵 Audio', document: '📎 Datei',
+      }
+      const label = kindLabel[media.kind] || '📎 Anhang'
+      const url = await downloadTelegramFile(media.fileId)
+
+      if (!url) {
+        // Download fehlgeschlagen (z.B. Datei >20 MB) → Platzhalter speichern statt lautlos verwerfen
+        await ins('messages', {
+          model_name: sender.name,
+          model_telegram_id: fromId,
+          direction: 'in',
+          contact_type: sender.type,
+          text: caption ? `[${label} konnte nicht geladen werden] ${caption}` : `[${label} konnte nicht geladen werden]`,
+          status: 'received',
+          read: false,
+        })
+        for (const adminId of ADMIN_IDS) await tg(adminId, `⚠️ ${label} von <b>${sender.name}</b> konnte nicht geladen werden (evtl. größer als 20 MB).`)
+        await tg(fromId, '⚠️ Dein Anhang konnte leider nicht verarbeitet werden (max. 20 MB pro Datei). Bitte kleiner senden.')
+        return new Response('ok')
+      }
+
+      await ins('messages', {
+        model_name: sender.name,
+        model_telegram_id: fromId,
+        direction: 'in',
+        contact_type: sender.type,
+        text: caption || null,
+        image_urls: [url],
+        status: 'received',
+        read: false,
+      })
+      await forwardToAdmins(sender.name, sender.type, `${label}${caption ? `: ${caption}` : ''}`, fromId)
+      await tg(fromId, '✅ Danke! Dein Anhang wurde an das Team weitergeleitet — wir melden uns bei dir.')
+      return new Response('ok')
+    }
 
     // ── /start: rolle erkennen + welcome ──
     if (!text || text === '/start') {
