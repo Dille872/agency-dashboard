@@ -12,6 +12,8 @@ const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
 
 const ADMIN_TZ = 'Europe/Berlin'
+// v3.25.1: Lokale Zeitzone des Browsers (z.B. Asia/Bangkok bei Chattern im Ausland)
+const LOCAL_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ADMIN_TZ } catch { return ADMIN_TZ } })()
 
 function getTimezoneOffset(dateStr, tz) {
   try {
@@ -20,6 +22,42 @@ function getTimezoneOffset(dateStr, tz) {
     const tzMs = new Date(d.toLocaleString('en-US', { timeZone: tz })).getTime()
     return Math.round((tzMs - utcMs) / 60000)
   } catch { return 0 }
+}
+
+// v3.25.1: Laufzeit-unabhängiger UTC-Offset (Minuten) einer Instant in einer Zeitzone.
+// Nutzt Intl.formatToParts + Date.UTC, daher korrekt egal in welcher TZ der Browser läuft.
+function tzOffsetMinutes(instant, tz) {
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    const p = Object.fromEntries(dtf.formatToParts(instant).map(x => [x.type, x.value]))
+    return Math.round((Date.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second) - instant.getTime()) / 60000)
+  } catch { return 0 }
+}
+
+// v3.25.1: Berliner Wanduhr (Plandatum + Stunde:Minute) -> echter UTC-Zeitpunkt
+function berlinWallToInstant(dayIso, h, m) {
+  const [y, mo, d] = (dayIso || '').split('-').map(Number)
+  if (!y || !mo || !d) return null
+  const naive = Date.UTC(y, mo - 1, d, h || 0, m || 0, 0)
+  let inst = new Date(naive)
+  for (let i = 0; i < 2; i++) inst = new Date(naive - tzOffsetMinutes(inst, ADMIN_TZ) * 60000)
+  return inst
+}
+
+// v3.25.1: Reale Start/End-Instants einer Schicht aus Berlin-Plandatum + DE-Zeit ("HH:MM-HH:MM").
+// Korrekt über Mitternacht und für jede Zeitzone -> Basis für zeitzonen-sicheren Check-in.
+function shiftWindowInstants(dayIso, deTimeStr) {
+  if (!dayIso || !deTimeStr) return null
+  const [a, b] = deTimeStr.split('-').map(t => t && t.trim())
+  if (!a || !b) return null
+  const [sh, sm] = a.split(':').map(Number)
+  const [eh, em] = b.split(':').map(Number)
+  if (isNaN(sh) || isNaN(eh)) return null
+  const start = berlinWallToInstant(dayIso, sh, sm)
+  let end = berlinWallToInstant(dayIso, eh, em)
+  if (!start || !end) return null
+  if ((eh * 60 + (em || 0)) <= (sh * 60 + (sm || 0))) end = new Date(end.getTime() + 86400000)
+  return { start, end }
 }
 
 function convertTimeToLocal(timeStr) {
@@ -1036,64 +1074,65 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
   }
 
-  // Get my shifts next 7 days from all loaded schedules
-  const next7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() + i)
-    return d
-  })
+  // v3.25.1: Schichten der nächsten 7 Tage INSTANT-basiert aufbauen (zeitzonen-korrekt,
+  // auch über Mitternacht). Früher wurde nach String-Gleichheit von Berlin-Plandatum und
+  // lokalem Kalendertag gebucket — dadurch fiel z.B. die Nachtschicht eines Chatters in
+  // Thailand an seinem echten Schichttag aus der Liste und der Check-in war "weg".
+  const nowMsN7 = Date.now()
+  const horizonMsN7 = nowMsN7 + 7 * 24 * 60 * 60 * 1000
   const myNext7Shifts = []
-  for (const day of next7Days) {
-    const dayIso = isoDate(day)
-    for (const sched of next7Schedules) {
-      const assignments = sched.assignments || {}
-      const times = sched.shift_times || {}
-      for (const shift of SHIFTS) {
-        const modelsInShift = []
-        for (const [key, val] of Object.entries(assignments)) {
-          const parts = key.split('__')
-          const valChatterLc = (val.chatter || '').trim().toLowerCase()
-          const valTraineeLc = (val.trainee || '').trim().toLowerCase()
-          if (parts[1] === dayIso && parts[2] === shift && (valChatterLc === myNameLc || valTraineeLc === myNameLc)) {
-            const modelId = parts[0]
-            const modelObj = models.find(m => String(m.id) === String(modelId))
-            // v2.9.7: Cell-Override hat Vorrang
-            const isOverridden = !!val.time_override
-            const timeStr = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
-            const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
-            const asTrainee = valTraineeLc === myNameLc && valChatterLc !== myNameLc
-            const traineeMode = val.trainee_mode || 'anlernen'
-            modelsInShift.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter, isOverridden })
-          }
-        }
-        if (modelsInShift.length > 0) {
-          const reminder = myReminders.find(r => r.shift_date === dayIso && r.shift === shift)
-          // Check if shift end time has passed for today
-          const firstModel = modelsInShift[0]
-          const timeStr = firstModel.timeStr || ''
-          const endTimeStr = timeStr.split('-')[1]?.trim()
-          let isExpired = false
-          if (dayIso === todayIso && endTimeStr) {
-            const [endH, endM] = endTimeStr.split(':').map(Number)
-            const now = new Date()
-            const endTime = new Date()
-            endTime.setHours(endH, endM, 0, 0)
-            // Handle overnight shifts (end time < start time means next day)
-            const startTimeStr = timeStr.split('-')[0]?.trim()
-            const [startH] = startTimeStr ? startTimeStr.split(':').map(Number) : [0]
-            if (endH < startH) endTime.setDate(endTime.getDate() + 1)
-            isExpired = now > endTime
-          }
-          if (!isExpired) {
-            myNext7Shifts.push({ day, dayIso, shift, models: modelsInShift, reminder })
-          }
-        }
-      }
+  for (const sched of next7Schedules) {
+    const assignments = sched.assignments || {}
+    const times = sched.shift_times || {}
+    // Meine Zuweisungen nach (Berlin-Plandatum + Schicht) gruppieren
+    const groups = {}
+    for (const [key, val] of Object.entries(assignments)) {
+      const parts = key.split('__')
+      const berlinDate = parts[1], shift = parts[2], modelId = parts[0]
+      if (!SHIFTS.includes(shift)) continue
+      const valChatterLc = (val.chatter || '').trim().toLowerCase()
+      const valTraineeLc = (val.trainee || '').trim().toLowerCase()
+      if (valChatterLc !== myNameLc && valTraineeLc !== myNameLc) continue
+      const modelObj = models.find(m => String(m.id) === String(modelId))
+      // v2.9.7: Cell-Override hat Vorrang
+      const isOverridden = !!val.time_override
+      const timeStr = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+      const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
+      const asTrainee = valTraineeLc === myNameLc && valChatterLc !== myNameLc
+      const traineeMode = val.trainee_mode || 'anlernen'
+      const gkey = `${berlinDate}__${shift}`
+      const g = groups[gkey] || (groups[gkey] = { berlinDate, shift, timeStr, models: [] })
+      if (!g.timeStr && timeStr) g.timeStr = timeStr
+      g.models.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter, isOverridden })
+    }
+    for (const g of Object.values(groups)) {
+      const window = shiftWindowInstants(g.berlinDate, g.timeStr)
+      const startMs = window ? window.start.getTime() : new Date(g.berlinDate + 'T00:00:00').getTime()
+      const endMs = window ? window.end.getTime() : startMs + 24 * 60 * 60 * 1000
+      if (endMs < nowMsN7) continue            // schon vorbei -> raus (ersetzt altes isExpired)
+      if (startMs > horizonMsN7) continue       // weiter als 7 Tage in der Zukunft -> raus
+      const reminder = myReminders.find(r => r.shift_date === g.berlinDate && r.shift === g.shift)
+      // Anzeige-Tag/Datum aus dem REALEN (lokalen) Start-Zeitpunkt ableiten
+      const dayIso = window ? window.start.toLocaleDateString('sv-SE', { timeZone: LOCAL_TZ }) : g.berlinDate
+      const dayObj = new Date(dayIso + 'T00:00:00')
+      myNext7Shifts.push({ day: dayObj, dayIso, berlinDate: g.berlinDate, shift: g.shift, models: g.models, reminder, window })
     }
   }
+  myNext7Shifts.sort((a, b) => (a.window ? a.window.start.getTime() : a.day.getTime()) - (b.window ? b.window.start.getTime() : b.day.getTime()))
 
-  // Today's shifts - use next7 schedules (covers week boundary)
-  const todayShifts = myNext7Shifts.filter(s => s.dayIso === todayIso)
+  // v3.25.1: "Heute"/Check-in = lokaler Kalendertag ODER innerhalb des realen Schicht-Fensters
+  // (-4h vor Start bis Ende). Für Berlin-Chatter unverändert (lokaler Tag = Berliner Tag),
+  // fixt zusätzlich den Fall "über Berliner Mitternacht" (auch für Berlin-Nachtschichten).
+  const localTodayIso = new Date().toLocaleDateString('sv-SE', { timeZone: LOCAL_TZ })
+  const CHECKIN_PRE_MS = 4 * 60 * 60 * 1000
+  const todayShifts = myNext7Shifts.filter(s => {
+    if (s.dayIso === localTodayIso) return true
+    if (s.window) {
+      const n = Date.now()
+      return n >= s.window.start.getTime() - CHECKIN_PRE_MS && n <= s.window.end.getTime()
+    }
+    return false
+  })
 
   // Monthly revenue
   const currentMonth = new Date().toISOString().slice(0, 7)
@@ -1273,7 +1312,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                {new Date(todayIso + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                {new Date().toLocaleDateString('de-DE', { timeZone: LOCAL_TZ, day: '2-digit', month: '2-digit', year: 'numeric' })}
                 {checkInTime && ` · Eingecheckt: ${checkInTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`}
               </div>
             </div>
@@ -1287,7 +1326,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       {todayShifts.map(s => <option key={s.shift} value={s.shift}>{s.shift} · {s.models.map(m => m.modelName || m).join(', ')}</option>)}
                     </select>
                   )}
-                  <button onClick={() => checkIn()} disabled={isCheckingIn || (todayShifts.length > 1 && !selectedShift)}
+                  <button onClick={() => checkIn(todayShifts.length === 1 ? todayShifts[0].shift : selectedShift)} disabled={isCheckingIn || (todayShifts.length > 1 && !selectedShift)}
                     style={{ background: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--border)' : '#10b981', color: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                     {isCheckingIn ? '⏳ ...' : `✓ ${todayShifts.length === 1 ? `${todayShifts[0].shift} starten` : 'Schicht starten'}`}
                   </button>
@@ -1342,7 +1381,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           ))}
         </div>
 
-        <Collapsible isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={myNext7Shifts.filter(s => s.dayIso === todayIso).length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
+        <Collapsible isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={todayShifts.length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
           {/* My Shifts – next 7 days */}
           <div>
             {myNext7Shifts.length === 0 ? (
@@ -1350,9 +1389,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {myNext7Shifts.map((s, i) => {
-                  const today = isToday(s.day)
-                  const past = s.day < new Date() && !today
-                  const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                  // v3.25.1: Label/Heute aus realem (lokalem) Schicht-Zeitpunkt statt Berlin-Plandatum
+                  const today = s.dayIso === localTodayIso
+                  const past = s.window ? Date.now() > s.window.end.getTime() : (s.day < new Date() && !today)
+                  const dayLabel = s.window
+                    ? s.window.start.toLocaleDateString('de-DE', { timeZone: LOCAL_TZ, weekday: 'short', day: '2-digit', month: '2-digit' })
+                    : s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
                   // v2.9.0: Bin ich Trainee/Co bei mind. einem Model in dieser Schicht?
                   const traineeEntry = s.models.find(m => m.asTrainee)
                   return (
