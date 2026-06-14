@@ -81,7 +81,7 @@ serve(async (req) => {
         'Authorization': `Bearer ${SERVICE_KEY}`,
         'Prefer': 'return=minimal',
       },
-      body: JSON.stringify({ user_id: userId, role, display_name }),
+      body: JSON.stringify({ user_id: userId, role, display_name, roles: [role] }),
     })
 
     if (!rolesResp.ok) return json({ error: 'Role insert failed' }, 400)
