@@ -117,3 +117,8 @@ th { text-align: left; }
   [style*="minmax(320px"] { grid-template-columns: 1fr !important; }
   [style*="minmax(340px"] { grid-template-columns: 1fr !important; }
 }
+
+/* v3.32.0: Mini-KPI-Karten auf Mobile in 2 Spalten (überschreibt globale 1fr-Stapelung) */
+@media (max-width: 768px) {
+  .kpi-mini-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}

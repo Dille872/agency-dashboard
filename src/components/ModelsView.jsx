@@ -740,7 +740,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
         </div>
 
         {/* 5 KPI Cards in 2x3 Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }} className="kpi-mini-grid">
           <MiniKpi label="Top Model" value={topModel?.creator || '—'} sub={topModel ? formatMoney(topModel.revenue) : ''} color="#10b981" />
           <MiniKpi label="Worst Model" value={worstModel?.creator || '—'} sub={worstModel ? formatMoney(worstModel.revenue) : ''} color="#ef4444" />
           <MiniKpi label="Revenue Chatters" value={formatMoney(totalChatterRev)} sub={chatterRevDelta !== null && chatterRevDelta !== 0 ? `${chatterRevDelta > 0 ? '+' : ''}${chatterRevDelta.toFixed(1)}% vs. Vortag` : 'vs. Vortag'} subColor={chatterRevDelta > 0 ? 'var(--green)' : chatterRevDelta < 0 ? 'var(--red)' : 'var(--text-muted)'} />
@@ -1298,22 +1298,21 @@ function MiniKpi({ label, value, sub, color, subColor }) {
     <div style={{
       background: 'var(--bg-card)',
       border: `1px solid ${color ? color + '33' : 'var(--border)'}`,
-      borderRadius: 8, padding: '8px 10px',
-      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      borderRadius: 8, padding: '10px 12px',
+      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
       minHeight: 48,
     }}>
       <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
         {label}
       </div>
       <div style={{
-        fontSize: 13, fontWeight: 700, color: color || 'var(--text-primary)',
+        fontSize: 14, fontWeight: 700, color: color || 'var(--text-primary)',
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        marginTop: 2,
       }} title={value}>
         {value}
       </div>
       {sub && (
-        <div style={{ fontSize: 10, color: subColor || 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>
+        <div style={{ fontSize: 11, color: subColor || 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
           {sub}
         </div>
       )}
