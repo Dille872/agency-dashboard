@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 /**
- * SwapModal v3.27.0 — offene Schichten / Anbote für Chatter.
- * - 3 Reaktionen pro Anbot: "Übernehmen" / "Vielleicht" / "Ablehnen"
+ * SwapModal v3.27.0 — offene Schichten / Angebote für Chatter.
+ * - 3 Reaktionen pro Angebot: "Übernehmen" / "Vielleicht" / "Ablehnen"
  * - Bleibt status='offen' egal welche Reaktion → Admin entscheidet final
- * - Sobald reagiert, verschwindet das Anbot für diesen Chatter
+ * - Sobald reagiert, verschwindet das Angebot für diesen Chatter
  * - NEU: target='frei' → nur Chatter, die an dem Tag NICHT in dieser Schicht
- *        eingeteilt sind, sehen das Anbot (Dienstplan-Abgleich)
+ *        eingeteilt sind, sehen das Angebot (Dienstplan-Abgleich)
  * - NEU: Blöcke (mehrere Models mit gemeinsamer block_id) erscheinen als EINE
  *        Karte; eine Reaktion gilt für den ganzen Block
  */
@@ -62,8 +62,8 @@ export default function SwapModal({ displayName }) {
       swaps.filter(s => s.block_id && reactedSet.has(s.id)).map(s => s.block_id)
     )
 
-    // "Frei"-Filter: für target='frei'-Anbote prüfen, ob ich in DIESER Schicht
-    // an dem Tag schon im Dienstplan stehe → dann sehe ich das Anbot nicht.
+    // "Frei"-Filter: für target='frei'-Angebote prüfen, ob ich in DIESER Schicht
+    // an dem Tag schon im Dienstplan stehe → dann sehe ich das Angebot nicht.
     const freiOffers = swaps.filter(s => s.target === 'frei')
     const busySet = new Set() // `${dayIso}__${shift}` wo ICH eingeteilt bin
     if (freiOffers.length > 0) {
@@ -118,7 +118,7 @@ export default function SwapModal({ displayName }) {
 
   if (loading || dismissed || offers.length === 0) return null
 
-  // In Anzeige-Items gruppieren: Blöcke zusammen, Einzel-Anbote einzeln
+  // In Anzeige-Items gruppieren: Blöcke zusammen, Einzel-Angebote einzeln
   const blocks = new Map()
   const items = [] // { type:'single', offer } | { type:'block', id, rows }
   for (const o of offers) {

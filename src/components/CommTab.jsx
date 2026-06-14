@@ -1053,7 +1053,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     // 1. Gewählter: bekommt Bestätigung
     await tgToChatter(chatterName, `✓ Du übernimmst die Schicht: ${shiftLabel}`)
 
-    // 2. Anfragender (falls Chatter-Anfrage, nicht Admin-Anbot): bekommt Bestätigung
+    // 2. Anfragender (falls Chatter-Anfrage, nicht Admin-Angebot): bekommt Bestätigung
     if (swap.requester_name && swap.requester_name !== chatterName) {
       await tgToChatter(swap.requester_name, `✓ Deine Schicht-Anfrage wurde geklärt: ${shiftLabel}\nDie Schicht wird übernommen.`)
     }
@@ -1118,9 +1118,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadSwaps()
   }
 
-  // Admin-eigene Stornierung (nur eigener Admin-Anbote, also requester_name=NULL)
+  // Admin-eigene Stornierung (nur eigener Admin-Angebote, also requester_name=NULL)
   const cancelAdminOffer = async (id) => {
-    if (!confirm('Schicht-Anbot zurücknehmen?')) return
+    if (!confirm('Schicht-Angebot zurücknehmen?')) return
 
     // Vor dem Delete: Reagierer ermitteln, um sie zu benachrichtigen
     const { data: swap } = await supabase.from('shift_swaps').select('*').eq('id', id).maybeSingle()
@@ -1193,7 +1193,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   const cancelAdminOfferBlock = async (rows) => {
     if (!rows.length) return
-    if (!confirm(`Block-Anbot zurücknehmen (${blockModelsLabel(rows)})?`)) return
+    if (!confirm(`Block-Angebot zurücknehmen (${blockModelsLabel(rows)})?`)) return
     const ids = rows.map(r => r.id)
     const interested = blockInterested(rows, null)
     const { error } = await supabase.from('shift_swaps').delete()
@@ -4014,7 +4014,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           {swaps.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {(() => {
                 const today = new Date().toISOString().slice(0, 10)
                 const allEntries = groupSwaps(swaps)
@@ -4038,13 +4038,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   : 'var(--border)'
 
                 return (
-                  <div key={entry.key} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${borderColor}` }}>
+                  <div key={entry.key} style={{ padding: '11px 14px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${borderColor}` }}>
                     {/* Header */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: reactions.length > 0 || swap.status !== 'offen' ? 12 : 0 }}>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
                           {isAdminOffer ? (
-                            <span style={{ color: '#06b6d4' }}>📢 Admin-Anbot</span>
+                            <span style={{ color: '#06b6d4' }}>📢 Admin-Angebot</span>
                           ) : (
                             <span style={{ color: '#a78bfa' }}>{swap.requester_name}</span>
                           )}

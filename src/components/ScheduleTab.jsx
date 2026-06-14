@@ -93,7 +93,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   })
   const [models, setModels] = useState([])
   const [blockOffer, setBlockOffer] = useState(null) // v3.27.0: { dayIso, shift, presetModelId } | null
-  const [openSwaps, setOpenSwaps] = useState([]) // v3.28.0: offene Anbote/Anfragen für Dienstplan-Markierung
+  const [openSwaps, setOpenSwaps] = useState([]) // v3.28.0: offene Angebote/Anfragen für Dienstplan-Markierung
   const [chatters, setChatters] = useState([])
   const [admins, setAdmins] = useState([]) // v2.9.2: Admins für Co-Schicht-Dropdown
   const [schedule, setSchedule] = useState({})
@@ -432,7 +432,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setRecurring(map)
   }
 
-  // v3.28.0: offene Schicht-Anbote/-Anfragen laden (für Dienstplan-Markierung)
+  // v3.28.0: offene Schicht-Angebote/-Anfragen laden (für Dienstplan-Markierung)
   const loadOpenSwaps = async () => {
     const { data } = await supabase
       .from('shift_swaps')
@@ -644,7 +644,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     }
   }
 
-  // v3.27.0: Ausschreiben läuft jetzt über BlockOfferModal (Einzel- oder Block-Anbot
+  // v3.27.0: Ausschreiben läuft jetzt über BlockOfferModal (Einzel- oder Block-Angebot
   // mit Zielgruppe). Die alte offerShift-Funktion wurde entfernt.
 
   const sendReminder = async (modelId, dayIso, shift, chatterName, hoursBeforeStr) => {
@@ -902,7 +902,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   })
 
   // v3.28.0: Lookup für Dienstplan-Markierung. Key: `${model_name}__${dayIso}__${shift}`
-  // Admin-Anbot (requester_name=null) hat Vorrang in der Anzeige, falls beides existiert.
+  // Admin-Angebot (requester_name=null) hat Vorrang in der Anzeige, falls beides existiert.
   const openSwapMap = {}
   for (const s of openSwaps) {
     const key = `${s.model_name}__${s.shift_date}__${s.shift}`
@@ -1096,7 +1096,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                     <div key={shift} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
                       style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: cellBgF, border: `${cellBorderWidthF}px solid ${cellBorderF}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: cellBoxShadowF }}>
                       {showSwap && (
-                        <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 10, right: isTrainee ? 10 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
+                        <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Angebot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 10, right: isTrainee ? 10 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
                           {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH'}
                         </div>
                       )}
@@ -1317,7 +1317,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
                           style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
                           {showSwap && (
-                            <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 6, right: isTrainee ? 6 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
+                            <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Angebot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 6, right: isTrainee ? 6 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
                               {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH'}
                             </div>
                           )}

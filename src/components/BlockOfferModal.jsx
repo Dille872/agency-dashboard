@@ -5,7 +5,7 @@ import { supabase } from '../supabase'
  * BlockOfferModal v3.27.0
  * Schicht ausschreiben — einzeln oder als Block (mehrere Models zusammen).
  * - Zielgruppe: "alle" oder "frei" (nur Chatter, die zu der Zeit NICHT eingeteilt sind)
- * - 1 Model  -> normales Anbot (block_id = null)
+ * - 1 Model  -> normales Angebot (block_id = null)
  * - >1 Model -> Block: alle Zeilen teilen sich eine block_id; ein Chatter übernimmt den ganzen Block
  *
  * Props:
@@ -67,7 +67,7 @@ export default function BlockOfferModal({ preset, models = [], shifts = [], onCl
     const blockLabel = names.length > 1 ? (label.trim() || `${shift}-Block`) : null
 
     const rows = names.map(name => ({
-      requester_name: null, // = Admin-Anbot
+      requester_name: null, // = Admin-Angebot
       shift_date: dayIso,
       shift,
       model_name: name,
@@ -171,7 +171,7 @@ export default function BlockOfferModal({ preset, models = [], shifts = [], onCl
         )}
 
         {/* Zielgruppe */}
-        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Wer sieht das Anbot?</label>
+        <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Wer sieht das Angebot?</label>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           {[
             { v: 'alle', t: '👥 Alle Chatter' },
