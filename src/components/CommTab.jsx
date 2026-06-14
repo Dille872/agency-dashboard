@@ -249,7 +249,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadAnnouncements()
     // Load section-specific data
     if (section === 'models') { loadContentRequests(); loadModelBoardActivity(); loadContentIdeas() }
-    if (section === 'chatters') { loadShiftLogs(); loadSwaps() }
+    if (section === 'chatters') { loadShiftLogs(); loadSwaps(); loadNewAbsences() }
     setTimeout(loadOnlineStatuses, 3000) // reload after heartbeat sent
     const interval = setInterval(() => {
       loadMessages()
@@ -968,6 +968,35 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   const [swapReactions, setSwapReactions] = useState([]) // [{swap_id, chatter_name, reaction, created_at}]
 
+  // v3.30.0: neue Abwesenheiten von Chattern (für "Zu erledigen"-Chip)
+  const [newAbsences, setNewAbsences] = useState([])
+  const loadNewAbsences = async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const { data } = await supabase.from('absences')
+      .select('*')
+      .eq('source', 'chatter')
+      .eq('seen_by_admin', false)
+      .gte('date_to', today)
+      .order('date_from')
+    setNewAbsences(data || [])
+  }
+  const ackNewAbsences = async () => {
+    if (newAbsences.length === 0) return
+    const SH = ['Früh', 'Spät', 'Nacht']
+    const lines = newAbsences.map(a => {
+      const f = new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+      const t = a.date_to !== a.date_from ? '–' + new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''
+      const scope = (a.available_shifts && a.available_shifts.length)
+        ? ' (' + SH.filter(s => !a.available_shifts.includes(s)).join('/') + ' weg)'
+        : ' (ganzer Tag)'
+      return `• ${a.chatter_name}: ${f}${t}${scope}${a.reason ? ' – ' + a.reason : ''}`
+    }).join('\n')
+    alert('Neue Abwesenheiten von Chattern:\n\n' + lines + '\n\nDetails im Dienstplan unter "Abwesenheiten".')
+    const ids = newAbsences.map(a => a.id)
+    await supabase.from('absences').update({ seen_by_admin: true }).in('id', ids)
+    loadNewAbsences()
+  }
+
   const loadSwaps = async () => {
     const { data } = await supabase.from('shift_swaps').select('*').order('created_at', { ascending: false })
     setSwaps(data || [])
@@ -1645,6 +1674,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const attentionItems = []
         if (reactedSwapsCount > 0) attentionItems.push({ icon: '↻', text: `${reactedSwapsCount} Schicht${reactedSwapsCount === 1 ? '' : 'en'} mit Reaktionen — du musst zuweisen`, color: '#a78bfa', action: 'swaps' })
         if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
+        if (newAbsences.length > 0) attentionItems.push({ icon: '📅', text: `${newAbsences.length} neue Abwesenheit${newAbsences.length === 1 ? '' : 'en'} von Chattern`, color: '#ef4444', onClick: ackNewAbsences })
 
         // v3.28.2: Hex -> rgba für dezente Chip-Akzente
         const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})` }
@@ -1656,7 +1686,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Zu erledigen</span>
               {attentionItems.map((item, i) => (
-                <button key={i} onClick={() => setActiveSection(item.action)} style={{
+                <button key={i} onClick={() => item.onClick ? item.onClick() : setActiveSection(item.action)} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 7,
                   padding: '6px 12px', borderRadius: 999,
                   background: hexA(item.color, 0.10), border: `1px solid ${hexA(item.color, 0.30)}`,

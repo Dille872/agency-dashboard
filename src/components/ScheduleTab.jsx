@@ -270,6 +270,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
       date_to: newAbsenceTo,
       reason: newAbsenceReason || 'Abwesend',
       available_shifts: (avail && avail.length) ? avail : null,
+      source: 'admin',
+      seen_by_admin: true,
     })
     setNewAbsenceName(''); setNewAbsenceFrom(''); setNewAbsenceTo(''); setNewAbsenceReason(''); setNewAbsenceShifts([])
     loadAbsences()

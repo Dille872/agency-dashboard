@@ -985,6 +985,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       date_to: newAbsenceDate,
       reason: newAbsenceReason || 'Nicht verfügbar',
       available_shifts: (avail && avail.length) ? avail : null,
+      source: 'chatter',
     })
     setNewAbsenceDate('')
     setNewAbsenceReason('')
