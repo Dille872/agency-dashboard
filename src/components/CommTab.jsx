@@ -1219,6 +1219,24 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     return entries
   }
 
+  // v3.28.3: Swaps als Einheiten zählen — ein Block (gleiche block_id) zählt als 1
+  const swapUnitKey = (s) => s.block_id || ('id:' + s.id)
+  const openSwapUnitCount = () => {
+    const open = swaps.filter(s => s.status === 'offen')
+    return new Set(open.map(swapUnitKey)).size
+  }
+  const reactedSwapUnitCount = () => {
+    const open = swaps.filter(s => s.status === 'offen')
+    const byId = new Map(open.map(s => [s.id, s]))
+    const units = new Set()
+    for (const r of swapReactions) {
+      if (r.reaction === 'abgelehnt') continue
+      const s = byId.get(r.swap_id)
+      if (s) units.add(swapUnitKey(s))
+    }
+    return units.size
+  }
+
   const [contentRequests, setContentRequests] = useState([])
   const [unreadRequests, setUnreadRequests] = useState(0)
   const [editingPayment, setEditingPayment] = useState(null) // req.id
@@ -1389,14 +1407,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
           section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
-          (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: (() => {
-            const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
-            const interested = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id))
-            return interested.size
-          })() },
+          (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: reactedSwapUnitCount() },
           section === 'chatters' && { key: 'swaps', label: (() => {
-            const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
-            const cnt = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id)).size
+            const cnt = reactedSwapUnitCount()
             return `Schicht-Tausch${cnt > 0 ? ` (${cnt})` : ''}`
           })() },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
@@ -1627,9 +1640,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         // Aufmerksamkeits-Items berechnen
         const now = new Date()
         const activeAnnCount = announcements.filter(a => !a.expires_at || new Date(a.expires_at) > now).length
-        const openSwapsCount = swaps.filter(s => s.status === 'offen').length
-        const openSwapIds = new Set(swaps.filter(s => s.status === 'offen').map(s => s.id))
-        const reactedSwapsCount = new Set(swapReactions.filter(r => r.reaction !== 'abgelehnt' && openSwapIds.has(r.swap_id)).map(r => r.swap_id)).size
+        const openSwapsCount = openSwapUnitCount()
+        const reactedSwapsCount = reactedSwapUnitCount()
         const unreadOutMsgs = messages.filter(m => m.direction === 'out' && m.contact_type === 'chatter' && !m.read_at)
         // Out-Messages älter als 24h ungelesen = möglicherweise problematisch
         const oldUnreadOut = unreadOutMsgs.filter(m => new Date(m.created_at) < new Date(Date.now() - 24*60*60*1000))

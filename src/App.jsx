@@ -217,11 +217,13 @@ export default function App() {
     setOpenTodos(unreadTodoCount)
 
     // Open swaps: nur ungelesene (seen_by_admin=false) zählen + Chatter-Tickets
-    const { count: swapCount } = await supabase
-      .from('shift_swaps').select('*', { count: 'exact', head: true })
+    // v3.28.3: Blöcke (gleiche block_id) als 1 zählen statt jede Model-Zeile
+    const { data: openSwapRows } = await supabase
+      .from('shift_swaps').select('id, block_id')
       .eq('status', 'offen')
       .eq('seen_by_admin', false)
-    setOpenSwaps((swapCount || 0) + (chatterTicketCount || 0))
+    const swapCount = new Set((openSwapRows || []).map(s => s.block_id || ('id:' + s.id))).size
+    setOpenSwaps(swapCount + (chatterTicketCount || 0))
   }
 
   const loadAllData = async () => {
