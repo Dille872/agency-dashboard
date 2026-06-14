@@ -313,6 +313,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [myAbsences, setMyAbsences] = useState([])
   const [newAbsenceDate, setNewAbsenceDate] = useState('')
   const [newAbsenceReason, setNewAbsenceReason] = useState('')
+  const [newAbsenceShifts, setNewAbsenceShifts] = useState([]) // v3.29.0: leer = ganzer Tag, sonst nur diese Schichten verfügbar
   const [next7Schedules, setNext7Schedules] = useState([])
   const [absentLoading, setAbsentLoading] = useState(false)
   const [announcements, setAnnouncements] = useState([])
@@ -980,9 +981,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       date_from: newAbsenceDate,
       date_to: newAbsenceDate,
       reason: newAbsenceReason || 'Nicht verfügbar',
+      available_shifts: newAbsenceShifts.length ? newAbsenceShifts : null,
     })
     setNewAbsenceDate('')
     setNewAbsenceReason('')
+    setNewAbsenceShifts([])
     await loadMyAbsences()
     setAbsentLoading(false)
     alert('✓ Abwesenheit eingetragen!')
@@ -1467,11 +1470,30 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   + Eintragen
                 </button>
               </div>
+              <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Verfügbar:</span>
+                <button type="button" onClick={() => setNewAbsenceShifts([])}
+                  style={{ padding: '5px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    background: newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.15)' : 'var(--bg-input)',
+                    color: newAbsenceShifts.length === 0 ? '#ef4444' : 'var(--text-muted)',
+                    border: `1px solid ${newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.4)' : '#2e2e5a'}` }}>Ganzer Tag weg</button>
+                {SHIFTS.map(s => {
+                  const on = newAbsenceShifts.includes(s)
+                  return (
+                    <button key={s} type="button"
+                      onClick={() => setNewAbsenceShifts(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
+                      style={{ padding: '5px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                        background: on ? 'rgba(16,185,129,0.15)' : 'var(--bg-input)',
+                        color: on ? '#10b981' : 'var(--text-muted)',
+                        border: `1px solid ${on ? 'rgba(16,185,129,0.4)' : '#2e2e5a'}` }}>{on ? '✓ ' : ''}{s}</button>
+                  )
+                })}
+              </div>
               {myAbsences.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {myAbsences.map(a => (
                     <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
-                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {a.reason}</span>
+                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {a.reason}{(a.available_shifts && a.available_shifts.length) ? ` · nur ${a.available_shifts.join('/')}` : ''}</span>
                       <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                     </div>
                   ))}

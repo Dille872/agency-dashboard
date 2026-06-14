@@ -176,6 +176,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const [newAbsenceFrom, setNewAbsenceFrom] = useState('')
   const [newAbsenceTo, setNewAbsenceTo] = useState('')
   const [newAbsenceReason, setNewAbsenceReason] = useState('')
+  const [newAbsenceShifts, setNewAbsenceShifts] = useState([]) // v3.29.0: leer = ganzer Tag, sonst nur diese Schichten verfügbar
 
   // Mobile + Suche + Bottom-Sheet
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
@@ -265,8 +266,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
       date_from: newAbsenceFrom,
       date_to: newAbsenceTo,
       reason: newAbsenceReason || 'Abwesend',
+      available_shifts: newAbsenceShifts.length ? newAbsenceShifts : null,
     })
-    setNewAbsenceName(''); setNewAbsenceFrom(''); setNewAbsenceTo(''); setNewAbsenceReason('')
+    setNewAbsenceName(''); setNewAbsenceFrom(''); setNewAbsenceTo(''); setNewAbsenceReason(''); setNewAbsenceShifts([])
     loadAbsences()
   }
 
@@ -275,8 +277,24 @@ export default function ScheduleTab({ session, userDisplayName }) {
     loadAbsences()
   }
 
-  const isAbsent = (chatterName, dayIso) => {
-    return absences.some(a => a.chatter_name === chatterName && dayIso >= a.date_from && dayIso <= a.date_to)
+  // v3.29.0: schicht-genau. available_shifts NULL/leer = ganzer Tag abwesend;
+  // sonst nur verfügbar für die gelisteten Schichten (= abwesend für alle anderen).
+  const isAbsent = (chatterName, dayIso, shift) => {
+    return absences.some(a => {
+      if (a.chatter_name !== chatterName) return false
+      if (dayIso < a.date_from || dayIso > a.date_to) return false
+      const avail = a.available_shifts
+      if (!avail || avail.length === 0) return true   // ganzer Tag
+      if (!shift) return false                         // ohne Schicht-Kontext zählt Teil-Abwesenheit nicht als ganztägig
+      return !avail.includes(shift)
+    })
+  }
+
+  // Label für den Umfang einer Abwesenheit
+  const absenceScopeLabel = (a) => {
+    const avail = a.available_shifts
+    if (!avail || avail.length === 0) return 'ganzer Tag'
+    return 'nur ' + avail.join('/')
   }
 
   const checkShiftAlerts = async () => {
@@ -527,7 +545,13 @@ export default function ScheduleTab({ session, userDisplayName }) {
           if (recurring[recurringKey]?.chatter) {
             const chatterName = recurring[recurringKey].chatter
             // Check not absent
-            const isAbsent = (absData || []).some(a => a.chatter_name === chatterName && dayIso >= a.date_from && dayIso <= a.date_to)
+            const isAbsent = (absData || []).some(a => {
+              if (a.chatter_name !== chatterName) return false
+              if (dayIso < a.date_from || dayIso > a.date_to) return false
+              const avail = a.available_shifts
+              if (!avail || avail.length === 0) return true
+              return !avail.includes(shift)
+            })
             if (!isAbsent) {
               newSchedule[cellKey] = { chatter: chatterName, note: recurring[recurringKey].note || '', isRecurring: true }
               continue
@@ -1040,7 +1064,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const isFrei = cell.chatter === '__FREI__'
                   const confirmed = cell.confirmed !== false
                   const isPending = cell.chatter && !isFrei && !confirmed
-                  const isChatterAbsent = cell.chatter && !isFrei ? isAbsent(cell.chatter, dayIso) : false
+                  const isChatterAbsent = cell.chatter && !isFrei ? isAbsent(cell.chatter, dayIso, shift) : false
                   const isSearchMatch = cellMatchesSearch(cell)
                   const isTrainee = !!cell.trainee && !isFrei
                   const timeStr = shiftTimes[`${model.id}__${shift}`]
@@ -1249,7 +1273,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1
                       const recurringKey = getRecurringKey(model.id, dayOfWeek, shift)
                       const isRecurring = !!recurring[recurringKey]
-                      const isChatterAbsent = cell.chatter ? isAbsent(cell.chatter, dayIso) : false
+                      const isChatterAbsent = cell.chatter ? isAbsent(cell.chatter, dayIso, shift) : false
                       const isFrei = cell.chatter === '__FREI__'
                       const confirmed = cell.confirmed !== false
                       const isPending = cell.chatter && !isFrei && !confirmed
@@ -1316,7 +1340,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                 <option value="">— leer —</option>
                                 <option value="__FREI__">✓ Freischicht</option>
                                 {chatters.map(c => {
-                                  const absent = isAbsent(c.name, dayIso)
+                                  const absent = isAbsent(c.name, dayIso, shift)
                                   return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
                                 })}
                               </select>
@@ -1352,7 +1376,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                       }}>
                                       <option value="">— wählen —</option>
                                       {chatters.filter(c => c.name !== cell.chatter).map(c => {
-                                        const absent = isAbsent(c.name, dayIso)
+                                        const absent = isAbsent(c.name, dayIso, shift)
                                         return <option key={`c-${c.id}`} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
                                       })}
                                       {admins.filter(a => a !== cell.chatter).map(a => (
@@ -1535,7 +1559,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   <option value="">— leer —</option>
                   <option value="__FREI__">✓ Freischicht</option>
                   {chatters.map(c => {
-                    const absent = isAbsent(c.name, editSheet.dayIso)
+                    const absent = isAbsent(c.name, editSheet.dayIso, editSheet.shift)
                     return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
                   })}
                 </select>
@@ -1576,7 +1600,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       }}>
                       <option value="">— wählen —</option>
                       {chatters.filter(c => c.name !== cell.chatter).map(c => {
-                        const absent = isAbsent(c.name, editSheet.dayIso)
+                        const absent = isAbsent(c.name, editSheet.dayIso, editSheet.shift)
                         return <option key={`c-${c.id}`} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
                       })}
                       {admins.filter(a => a !== cell.chatter).map(a => (
@@ -1762,6 +1786,27 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   placeholder="z.B. Urlaub, Krank..."
                   style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
               </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Verfügbar (sonst ganzer Tag weg)</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button type="button" onClick={() => setNewAbsenceShifts([])}
+                    style={{ padding: '6px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                      background: newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.15)' : 'var(--bg-input)',
+                      color: newAbsenceShifts.length === 0 ? '#ef4444' : 'var(--text-muted)',
+                      border: `1px solid ${newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>Ganzer Tag</button>
+                  {SHIFTS.map(s => {
+                    const on = newAbsenceShifts.includes(s)
+                    return (
+                      <button key={s} type="button"
+                        onClick={() => setNewAbsenceShifts(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
+                        style={{ padding: '6px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                          background: on ? 'rgba(16,185,129,0.15)' : 'var(--bg-input)',
+                          color: on ? '#10b981' : 'var(--text-muted)',
+                          border: `1px solid ${on ? 'rgba(16,185,129,0.4)' : 'var(--border)'}` }}>{on ? '✓ ' : ''}{s}</button>
+                    )
+                  })}
+                </div>
+              </div>
               <button onClick={addAbsence} disabled={!newAbsenceName || !newAbsenceFrom || !newAbsenceTo}
                 style={{ background: newAbsenceName && newAbsenceFrom && newAbsenceTo ? '#ef4444' : 'var(--border)', color: newAbsenceName && newAbsenceFrom && newAbsenceTo ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                 + Eintragen
@@ -1788,6 +1833,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                 {new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} – {new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
                               </span>
                               {isExpired && <span style={{ fontSize: 10, color: '#6b7280', background: 'rgba(107,114,128,0.15)', padding: '1px 7px', borderRadius: 4 }}>Abgelaufen</span>}
+                              <span style={{ fontSize: 10, color: (!a.available_shifts || a.available_shifts.length === 0) ? '#ef4444' : '#10b981', background: (!a.available_shifts || a.available_shifts.length === 0) ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', padding: '1px 7px', borderRadius: 4, fontWeight: 600 }}>{absenceScopeLabel(a)}</span>
                               {a.reason && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{a.reason}</span>}
                             </div>
                             <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
