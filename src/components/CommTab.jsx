@@ -1209,6 +1209,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         e.reactions = swapReactions.filter(r => r.swap_id === e.rep.id)
       }
     }
+    // v3.28.1: nach Datum sortieren — offene zuerst, dann chronologisch
+    entries.sort((a, b) => {
+      const aOpen = a.rep.status === 'offen' ? 0 : 1
+      const bOpen = b.rep.status === 'offen' ? 0 : 1
+      if (aOpen !== bOpen) return aOpen - bOpen
+      return (a.rep.shift_date || '').localeCompare(b.rep.shift_date || '')
+    })
     return entries
   }
 

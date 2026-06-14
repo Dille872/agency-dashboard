@@ -1083,21 +1083,20 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const boxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
                                     isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
 
-                  // v3.28.0: ausgeschriebene Schicht markieren (Admin orange, Chatter lila)
+                  // v3.28.1: ausgeschriebene Schicht dezent markieren (leichtes Lila, kein Leuchten)
                   const swapHere = openSwapMap[`${model.name}__${dayIso}__${shift}`]
-                  const swapColor = swapHere ? (swapHere.isAdminOffer ? '#f59e0b' : '#a78bfa') : null
-                  const showSwap = swapHere && !isChatterAbsent
-                  const cellBgF = showSwap ? (swapHere.isAdminOffer ? 'rgba(245,158,11,0.18)' : 'rgba(167,139,250,0.18)') : bg
-                  const cellBorderF = showSwap ? swapColor : border
-                  const cellBorderWidthF = showSwap ? 2 : borderWidth
-                  const cellBoxShadowF = (showSwap && !isSearchMatch) ? `0 0 0 1px ${swapColor}, 0 0 8px ${swapHere.isAdminOffer ? 'rgba(245,158,11,0.35)' : 'rgba(167,139,250,0.35)'}` : boxShadow
+                  const showSwap = swapHere && !isChatterAbsent && !isSearchMatch
+                  const cellBgF = showSwap ? 'rgba(167,139,250,0.13)' : bg
+                  const cellBorderF = showSwap ? 'rgba(167,139,250,0.55)' : border
+                  const cellBorderWidthF = showSwap ? 1 : borderWidth
+                  const cellBoxShadowF = boxShadow
 
                   return (
                     <div key={shift} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
                       style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: cellBgF, border: `${cellBorderWidthF}px solid ${cellBorderF}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: cellBoxShadowF }}>
                       {showSwap && (
-                        <div style={{ position: 'absolute', top: -8, right: 10, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, background: swapColor, color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>
-                          {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH ANGEFRAGT'}
+                        <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -7, right: 8, fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(167,139,250,0.9)', color: '#fff', zIndex: 2 }}>
+                          {swapHere.isAdminOffer ? '🔄' : '↔'}
                         </div>
                       )}
                       {isTrainee && (
@@ -1303,23 +1302,21 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                               showDoppelWarn ? '0 0 12px rgba(239,68,68,0.5)' :
                                               isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
 
-                      // v3.28.0: ausgeschriebene Schicht markieren (Admin orange, Chatter lila).
-                      // Rote Warnungen (Abwesend/Doppel) und Suche behalten Vorrang.
+                      // v3.28.1: ausgeschriebene Schicht dezent markieren (leichtes Lila).
+                      // Rote Warnungen (Abwesend/Doppel) und die Namens-Suche behalten Vorrang.
                       const swapHere = openSwapMap[`${model.name}__${dayIso}__${shift}`]
-                      const swapColor = swapHere ? (swapHere.isAdminOffer ? '#f59e0b' : '#a78bfa') : null
-                      const showSwap = swapHere && !isChatterAbsent && !showDoppelWarn
+                      const showSwap = swapHere && !isChatterAbsent && !showDoppelWarn && !isSearchMatch
                       if (showSwap) {
-                        finalBg = swapHere.isAdminOffer ? 'rgba(245,158,11,0.18)' : 'rgba(167,139,250,0.18)'
-                        finalBorder = swapColor
-                        finalBorderWidth = 2
+                        finalBg = 'rgba(167,139,250,0.13)'
+                        finalBorder = 'rgba(167,139,250,0.55)'
                       }
-                      const finalBoxShadow = (showSwap && !isSearchMatch) ? `0 0 0 1px ${swapColor}` : searchBoxShadow
+                      const finalBoxShadow = searchBoxShadow
 
                       return (
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
                           style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
                           {showSwap && (
-                            <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -7, right: 6, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: swapColor, color: '#fff', zIndex: 2 }}>
+                            <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -7, right: 6, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(167,139,250,0.9)', color: '#fff', zIndex: 2 }}>
                               {swapHere.isAdminOffer ? '🔄' : '↔'}
                             </div>
                           )}

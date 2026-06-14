@@ -132,7 +132,7 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
     if (!displayName) return
     const { data } = await supabase.from('shift_swaps').select('*')
       .eq('requester_name', displayName)
-      .order('created_at', { ascending: false })
+      .order('shift_date', { ascending: true })
       .limit(10)
     setMySwaps(data || [])
   }
