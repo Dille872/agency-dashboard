@@ -970,6 +970,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   // v3.30.0: neue Abwesenheiten von Chattern (für "Zu erledigen"-Chip)
   const [newAbsences, setNewAbsences] = useState([])
+  const [showOldSwaps, setShowOldSwaps] = useState(false) // v3.30.1: alte/erledigte Tausch-Einträge ausblenden
   const loadNewAbsences = async () => {
     const today = new Date().toISOString().slice(0, 10)
     const { data } = await supabase.from('absences')
@@ -4014,7 +4015,14 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {groupSwaps(swaps).map(entry => {
+              {(() => {
+                const today = new Date().toISOString().slice(0, 10)
+                const allEntries = groupSwaps(swaps)
+                const isOld = (e) => e.rep.status !== 'offen' && e.rep.shift_date < today
+                const oldCount = allEntries.filter(isOld).length
+                const visible = showOldSwaps ? allEntries : allEntries.filter(e => !isOld(e))
+                return (<>
+              {visible.map(entry => {
                 const swap = entry.rep
                 const blockRows = entry.rows
                 const isAdminOffer = !swap.requester_name
@@ -4126,6 +4134,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   </div>
                 )
               })}
+                {oldCount > 0 && (
+                  <button onClick={() => setShowOldSwaps(!showOldSwaps)} style={{ background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 7, padding: '7px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', marginTop: 2 }}>
+                    {showOldSwaps ? '▲ Ältere/abgeschlossene ausblenden' : `▼ ${oldCount} ältere/abgeschlossene anzeigen`}
+                  </button>
+                )}
+                </>)
+              })()}
             </div>
           )}
         </Card>
