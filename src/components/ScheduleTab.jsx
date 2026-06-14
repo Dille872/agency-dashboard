@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
+import BlockOfferModal from './BlockOfferModal'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -91,6 +92,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     return getWeekStart(new Date())
   })
   const [models, setModels] = useState([])
+  const [blockOffer, setBlockOffer] = useState(null) // v3.27.0: { dayIso, shift, presetModelId } | null
   const [chatters, setChatters] = useState([])
   const [admins, setAdmins] = useState([]) // v2.9.2: Admins für Co-Schicht-Dropdown
   const [schedule, setSchedule] = useState({})
@@ -889,6 +891,16 @@ export default function ScheduleTab({ session, userDisplayName }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* v3.27.0: Ausschreiben-/Block-Modal */}
+      {blockOffer && (
+        <BlockOfferModal
+          preset={blockOffer}
+          models={models}
+          shifts={SHIFTS}
+          onClose={() => setBlockOffer(null)}
+          onDone={() => setBlockOffer(null)}
+        />
+      )}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1381,8 +1393,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
                               </label>
                               {/* v3.1.3: Ausschreiben — auch bei leerer Zelle erlaubt (nur __FREI__ ausnehmen) */}
                               {!isFrei && (
-                                <button onClick={(e) => { e.stopPropagation(); offerShift(model.id, dayIso, shift) }}
-                                  title="Schicht zum Tausch ausschreiben — Chatter sehen sie als Pop-Up"
+                                <button onClick={(e) => { e.stopPropagation(); setBlockOffer({ dayIso, shift, presetModelId: model.id }) }}
+                                  title="Schicht zum Tausch ausschreiben — einzeln oder als Block, an alle oder nur Freie"
                                   style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
                                   🔄 Ausschreiben
                                 </button>
@@ -1639,7 +1651,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                 const editCell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
                 if (editCell.chatter === '__FREI__') return null
                 return (
-                  <button onClick={() => offerShift(editSheet.modelId, editSheet.dayIso, editSheet.shift)}
+                  <button onClick={() => setBlockOffer({ dayIso: editSheet.dayIso, shift: editSheet.shift, presetModelId: editSheet.modelId })}
                     style={{
                       width: '100%', marginTop: 10,
                       background: 'rgba(245,158,11,0.12)', color: '#f59e0b',

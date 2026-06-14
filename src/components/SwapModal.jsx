@@ -2,14 +2,30 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 /**
- * SwapModal v2 - 3 Reaktionen pro offene Schicht.
- * - "Übernehmen" / "Vielleicht" / "Ablehnen"
- * - Schicht bleibt status='offen' egal welche Reaktion → Admin entscheidet
- * - Sobald Chatter reagiert hat, taucht die Schicht für ihn nicht mehr im Popup auf
- * - Bei status != 'offen' (vergeben) sieht ohnehin niemand mehr was
+ * SwapModal v3.27.0 — offene Schichten / Anbote für Chatter.
+ * - 3 Reaktionen pro Anbot: "Übernehmen" / "Vielleicht" / "Ablehnen"
+ * - Bleibt status='offen' egal welche Reaktion → Admin entscheidet final
+ * - Sobald reagiert, verschwindet das Anbot für diesen Chatter
+ * - NEU: target='frei' → nur Chatter, die an dem Tag NICHT in dieser Schicht
+ *        eingeteilt sind, sehen das Anbot (Dienstplan-Abgleich)
+ * - NEU: Blöcke (mehrere Models mit gemeinsamer block_id) erscheinen als EINE
+ *        Karte; eine Reaktion gilt für den ganzen Block
  */
+
+// Montag der Woche zu einem ISO-Datum (gleiche Logik wie ScheduleTab.getWeekStart)
+function weekStartIso(dateIso) {
+  const d = new Date(dateIso + 'T00:00:00')
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dd}`
+}
+
 export default function SwapModal({ displayName }) {
-  const [offers, setOffers] = useState([])
+  const [offers, setOffers] = useState([]) // flache, bereits gefilterte Liste von shift_swaps
   const [submitting, setSubmitting] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -33,6 +49,7 @@ export default function SwapModal({ displayName }) {
       setOffers([]); setLoading(false); return
     }
 
+    // Eigene Reaktionen laden
     const ids = swaps.map(s => s.id)
     const { data: myReactions } = await supabase
       .from('swap_reactions')
@@ -40,24 +57,52 @@ export default function SwapModal({ displayName }) {
       .in('swap_id', ids)
       .eq('chatter_name', displayName)
     const reactedSet = new Set((myReactions || []).map(r => r.swap_id))
-
-    // Filtern: eigene Anfrage raus + bereits reagiert raus
-    const filtered = swaps.filter(s =>
-      s.requester_name !== displayName &&
-      !reactedSet.has(s.id)
+    // Blöcke, in denen ich schon irgendeine Zeile beantwortet habe → komplett ausblenden
+    const reactedBlockIds = new Set(
+      swaps.filter(s => s.block_id && reactedSet.has(s.id)).map(s => s.block_id)
     )
+
+    // "Frei"-Filter: für target='frei'-Anbote prüfen, ob ich in DIESER Schicht
+    // an dem Tag schon im Dienstplan stehe → dann sehe ich das Anbot nicht.
+    const freiOffers = swaps.filter(s => s.target === 'frei')
+    const busySet = new Set() // `${dayIso}__${shift}` wo ICH eingeteilt bin
+    if (freiOffers.length > 0) {
+      const weeks = [...new Set(freiOffers.map(s => weekStartIso(s.shift_date)))]
+      const { data: scheds } = await supabase
+        .from('schedule')
+        .select('week_start, assignments')
+        .in('week_start', weeks)
+      for (const row of scheds || []) {
+        const assignments = row.assignments || {}
+        for (const [key, val] of Object.entries(assignments)) {
+          if (!val || !val.chatter || val.chatter === '__FREI__') continue
+          if (val.chatter !== displayName) continue
+          // key = `${model}__${dayIso}__${shift}`
+          const parts = key.split('__')
+          if (parts.length < 3) continue
+          busySet.add(`${parts[1]}__${parts[2]}`)
+        }
+      }
+    }
+
+    const filtered = swaps.filter(s => {
+      if (s.requester_name === displayName) return false          // eigene Anfrage
+      if (reactedSet.has(s.id)) return false                       // schon reagiert (Einzel)
+      if (s.block_id && reactedBlockIds.has(s.block_id)) return false // Block schon reagiert
+      if (s.target === 'frei' && busySet.has(`${s.shift_date}__${s.shift}`)) return false // nicht frei
+      return true
+    })
+
     setOffers(filtered)
     setLoading(false)
   }
 
-  const react = async (swapId, reaction) => {
-    if (submitting) return // Double-Click-Schutz
+  // swapIds: ein oder mehrere (Block) IDs
+  const react = async (swapIds, reaction) => {
+    if (submitting) return
     setSubmitting(true)
-    const { error } = await supabase.from('swap_reactions').insert({
-      swap_id: swapId,
-      chatter_name: displayName,
-      reaction,
-    })
+    const rows = swapIds.map(id => ({ swap_id: id, chatter_name: displayName, reaction }))
+    const { error } = await supabase.from('swap_reactions').insert(rows)
     if (error) {
       const isDuplicate = error.code === '23505' || /duplicate|unique/i.test(error.message || '')
       if (!isDuplicate) {
@@ -65,18 +110,57 @@ export default function SwapModal({ displayName }) {
         setSubmitting(false)
         return
       }
-      // Falls Duplicate: Reaktion existiert schon, einfach aus Liste entfernen
     }
-    setOffers(prev => prev.filter(o => o.id !== swapId))
+    const idSet = new Set(swapIds)
+    setOffers(prev => prev.filter(o => !idSet.has(o.id)))
     setSubmitting(false)
   }
 
   if (loading || dismissed || offers.length === 0) return null
 
+  // In Anzeige-Items gruppieren: Blöcke zusammen, Einzel-Anbote einzeln
+  const blocks = new Map()
+  const items = [] // { type:'single', offer } | { type:'block', id, rows }
+  for (const o of offers) {
+    if (o.block_id) {
+      if (!blocks.has(o.block_id)) {
+        const entry = { type: 'block', id: o.block_id, rows: [] }
+        blocks.set(o.block_id, entry)
+        items.push(entry)
+      }
+      blocks.get(o.block_id).rows.push(o)
+    } else {
+      items.push({ type: 'single', offer: o })
+    }
+  }
+
   const fmtDate = (iso) => {
     const d = new Date(iso + 'T00:00:00')
     return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
   }
+
+  const ReactionButtons = ({ ids }) => (
+    <div style={{ display: 'flex', gap: 6 }}>
+      <button onClick={() => react(ids, 'uebernehmen')} disabled={submitting} style={{
+        flex: 1, padding: '7px 4px', borderRadius: 6,
+        background: 'rgba(16,185,129,0.15)', color: '#10b981',
+        border: '1px solid rgba(16,185,129,0.4)',
+        fontSize: 11, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+      }}>✓ Übernehmen</button>
+      <button onClick={() => react(ids, 'vielleicht')} disabled={submitting} style={{
+        flex: 1, padding: '7px 4px', borderRadius: 6,
+        background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+        border: '1px solid rgba(245,158,11,0.35)',
+        fontSize: 11, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+      }}>? Vielleicht</button>
+      <button onClick={() => react(ids, 'abgelehnt')} disabled={submitting} style={{
+        flex: 1, padding: '7px 4px', borderRadius: 6,
+        background: 'transparent', color: 'rgba(239,68,68,0.7)',
+        border: '1px solid rgba(239,68,68,0.3)',
+        fontSize: 11, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+      }}>✕ Ablehnen</button>
+    </div>
+  )
 
   return (
     <div style={{
@@ -86,19 +170,15 @@ export default function SwapModal({ displayName }) {
     }}>
       <div style={{
         background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
-        padding: 20, maxWidth: 480, width: '100%',
-        maxHeight: '90vh', overflowY: 'auto',
+        padding: 20, maxWidth: 480, width: '100%', maxHeight: '90vh', overflowY: 'auto',
         boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{
-            fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5,
-            background: 'rgba(245,158,11,0.18)', color: '#f59e0b',
-          }}>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5, background: 'rgba(245,158,11,0.18)', color: '#f59e0b' }}>
             🔄 OFFENE SCHICHTEN
           </span>
           <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-            {offers.length} Angebot{offers.length !== 1 ? 'e' : ''}
+            {items.length} Angebot{items.length !== 1 ? 'e' : ''}
           </span>
         </div>
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 14px' }}>
@@ -106,48 +186,62 @@ export default function SwapModal({ displayName }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
-          {offers.map(o => (
-            <div key={o.id} style={{
-              padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8,
-              border: '1px solid rgba(245,158,11,0.25)',
-            }}>
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {fmtDate(o.shift_date)} · {o.shift}
+          {items.map(item => {
+            if (item.type === 'block') {
+              const first = item.rows[0]
+              const names = item.rows.map(r => r.model_name)
+              const ids = item.rows.map(r => r.id)
+              return (
+                <div key={item.id} style={{
+                  padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8,
+                  border: '1px solid rgba(124,58,237,0.35)',
+                }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(124,58,237,0.2)', color: '#a78bfa' }}>
+                        📦 BLOCK
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {fmtDate(first.shift_date)} · {first.shift}
+                      </span>
+                    </div>
+                    {first.block_label && (
+                      <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 2 }}>{first.block_label}</div>
+                    )}
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>
+                      Models (zusammen): <strong>{names.join(' + ')}</strong>
+                      <> · <span style={{ color: '#06b6d4' }}>vom Admin</span></>
+                    </div>
+                    {first.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>{first.reason}</div>}
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Du übernimmst alle {names.length} Models zusammen.
+                    </div>
+                  </div>
+                  <ReactionButtons ids={ids} />
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Model: {o.model_name}
-                  {o.requester_name && <> · von <span style={{ color: '#a78bfa' }}>{o.requester_name}</span></>}
-                  {!o.requester_name && <> · <span style={{ color: '#06b6d4' }}>vom Admin</span></>}
+              )
+            }
+            const o = item.offer
+            return (
+              <div key={o.id} style={{
+                padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8,
+                border: '1px solid rgba(245,158,11,0.25)',
+              }}>
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {fmtDate(o.shift_date)} · {o.shift}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Model: {o.model_name}
+                    {o.requester_name && <> · von <span style={{ color: '#a78bfa' }}>{o.requester_name}</span></>}
+                    {!o.requester_name && <> · <span style={{ color: '#06b6d4' }}>vom Admin</span></>}
+                  </div>
+                  {o.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>{o.reason}</div>}
                 </div>
-                {o.reason && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>{o.reason}</div>}
+                <ReactionButtons ids={[o.id]} />
               </div>
-
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => react(o.id, 'uebernehmen')} disabled={submitting} style={{
-                  flex: 1, padding: '7px 4px', borderRadius: 6,
-                  background: 'rgba(16,185,129,0.15)', color: '#10b981',
-                  border: '1px solid rgba(16,185,129,0.4)',
-                  fontSize: 11, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                }}>✓ Übernehmen</button>
-                <button onClick={() => react(o.id, 'vielleicht')} disabled={submitting} style={{
-                  flex: 1, padding: '7px 4px', borderRadius: 6,
-                  background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
-                  border: '1px solid rgba(245,158,11,0.35)',
-                  fontSize: 11, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                }}>? Vielleicht</button>
-                <button onClick={() => react(o.id, 'abgelehnt')} disabled={submitting} style={{
-                  flex: 1, padding: '7px 4px', borderRadius: 6,
-                  background: 'transparent', color: 'rgba(239,68,68,0.7)',
-                  border: '1px solid rgba(239,68,68,0.3)',
-                  fontSize: 11, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                }}>✕ Ablehnen</button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <button onClick={() => setDismissed(true)} disabled={submitting} style={{
