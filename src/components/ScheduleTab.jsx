@@ -615,36 +615,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
     }
   }
 
-  // v3.1.1: Schicht zum Tausch ausschreiben (Admin-Anbot — wiederhergestellt aus v2.8.2)
-  // requester_name = NULL als Marker für Admin-Anbot
-  // Erscheint dann im ChatterPortal als Popup für andere Chatter zum Übernehmen
-  const offerShift = async (modelId, dayIso, shift) => {
-    const model = models.find(m => m.id === modelId)
-    if (!model) return
-    // Schon ausgeschrieben?
-    const { data: existing } = await supabase
-      .from('shift_swaps')
-      .select('id')
-      .eq('shift_date', dayIso)
-      .eq('shift', shift)
-      .eq('model_name', model.name)
-      .in('status', ['offen', 'vorgeschlagen'])
-    if (existing && existing.length > 0) {
-      alert('Diese Schicht wurde bereits zum Tausch ausgeschrieben.')
-      return
-    }
-    const reason = prompt('Grund (optional, sichtbar für Chatter):') || null
-    const { error } = await supabase.from('shift_swaps').insert({
-      requester_name: null, // = Admin-Anbot
-      shift_date: dayIso,
-      shift,
-      model_name: model.name,
-      reason,
-      status: 'offen',
-    })
-    if (error) { alert('Fehler: ' + error.message); return }
-    alert('✓ Schicht ausgeschrieben. Chatter sehen das beim nächsten Login.')
-  }
+  // v3.27.0: Ausschreiben läuft jetzt über BlockOfferModal (Einzel- oder Block-Anbot
+  // mit Zielgruppe). Die alte offerShift-Funktion wurde entfernt.
 
   const sendReminder = async (modelId, dayIso, shift, chatterName, hoursBeforeStr) => {
     const hoursBefore = parseInt(hoursBeforeStr)
