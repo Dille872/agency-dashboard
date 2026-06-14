@@ -1113,6 +1113,105 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadSwaps()
   }
 
+  // ---- v3.27.0: Block-Aktionen (mehrere shift_swaps-Zeilen mit gemeinsamer block_id) ----
+  const blockModelsLabel = (rows) => rows.map(r => r.model_name).join(' + ')
+
+  // Interessenten über alle Block-Zeilen, dedupliziert pro Chatter (außer abgelehnt)
+  const blockInterested = (rows, exclude) => {
+    const idSet = new Set(rows.map(r => r.id))
+    const seen = new Map()
+    for (const r of swapReactions) {
+      if (!idSet.has(r.swap_id)) continue
+      if (r.reaction === 'abgelehnt') continue
+      if (exclude && r.chatter_name === exclude) continue
+      if (!seen.has(r.chatter_name)) seen.set(r.chatter_name, r)
+    }
+    return [...seen.values()]
+  }
+
+  const blockShiftLabel = (rows) => {
+    const first = rows[0]
+    const dateLabel = new Date(first.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+    return `${dateLabel} · ${first.shift} · ${blockModelsLabel(rows)}`
+  }
+
+  const assignSwapBlockTo = async (rows, chatterName) => {
+    if (!rows.length || !chatterName) return
+    if (!confirm(`Block an ${chatterName} vergeben (${blockModelsLabel(rows)})?`)) return
+    let ok = 0
+    for (const r of rows) {
+      const { count } = await safeUpdateSwapStatus(r.id, { status: 'angenommen', accepted_by: chatterName })
+      if (count) ok++
+    }
+    if (ok === 0) { alert('Dieser Block wurde inzwischen schon vergeben oder abgeschlossen.\nLade neu.'); loadSwaps(); return }
+    const shiftLabel = blockShiftLabel(rows)
+    await tgToChatter(chatterName, `✓ Du übernimmst den Block: ${shiftLabel}`)
+    for (const r of blockInterested(rows, chatterName)) {
+      await tgToChatter(r.chatter_name, `Der Block wurde an jemand anderen vergeben. Danke fürs Angebot.\n${shiftLabel}`)
+    }
+    loadSwaps()
+  }
+
+  const resetSwapBlockToOpen = async (rows) => {
+    if (!rows.length) return
+    if (!confirm('Block wieder als offen ausschreiben?')) return
+    const ids = rows.map(r => r.id)
+    await supabase.from('shift_swaps').update({ status: 'offen', accepted_by: null }).in('id', ids)
+    await supabase.from('swap_reactions').delete().in('swap_id', ids).in('reaction', ['uebernehmen', 'vielleicht'])
+    loadSwaps()
+  }
+
+  const cancelAdminOfferBlock = async (rows) => {
+    if (!rows.length) return
+    if (!confirm(`Block-Anbot zurücknehmen (${blockModelsLabel(rows)})?`)) return
+    const ids = rows.map(r => r.id)
+    const interested = blockInterested(rows, null)
+    const { error } = await supabase.from('shift_swaps').delete()
+      .in('id', ids).is('requester_name', null).eq('status', 'offen')
+    if (error) { alert('Fehler: ' + error.message); return }
+    if (interested.length > 0) {
+      const shiftLabel = blockShiftLabel(rows)
+      for (const r of interested) {
+        await tgToChatter(r.chatter_name, `ℹ Block-Angebot wurde zurückgezogen.\n${shiftLabel}`)
+      }
+    }
+    loadSwaps()
+  }
+
+  // Swaps in Anzeige-Einträge gruppieren: Block-Zeilen (gleiche block_id) zusammen
+  const groupSwaps = (list) => {
+    const blocks = new Map()
+    const entries = []
+    for (const swap of list) {
+      if (swap.block_id) {
+        if (!blocks.has(swap.block_id)) {
+          const entry = { key: 'block-' + swap.block_id, isBlock: true, rows: [], rep: swap }
+          blocks.set(swap.block_id, entry)
+          entries.push(entry)
+        }
+        blocks.get(swap.block_id).rows.push(swap)
+      } else {
+        entries.push({ key: 'swap-' + swap.id, isBlock: false, rows: [swap], rep: swap })
+      }
+    }
+    // Pro Eintrag: modelsLabel + (deduplizierte) Reaktionen berechnen
+    for (const e of entries) {
+      e.modelsLabel = e.isBlock ? blockModelsLabel(e.rows) : e.rep.model_name
+      if (e.isBlock) {
+        const idSet = new Set(e.rows.map(r => r.id))
+        const seen = new Map()
+        for (const r of swapReactions) {
+          if (!idSet.has(r.swap_id)) continue
+          if (!seen.has(r.chatter_name)) seen.set(r.chatter_name, r)
+        }
+        e.reactions = [...seen.values()]
+      } else {
+        e.reactions = swapReactions.filter(r => r.swap_id === e.rep.id)
+      }
+    }
+    return entries
+  }
+
   const [contentRequests, setContentRequests] = useState([])
   const [unreadRequests, setUnreadRequests] = useState(0)
   const [editingPayment, setEditingPayment] = useState(null) // req.id
@@ -3870,10 +3969,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Keine Tausch-Anfragen</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {swaps.map(swap => {
+              {groupSwaps(swaps).map(entry => {
+                const swap = entry.rep
+                const blockRows = entry.rows
                 const isAdminOffer = !swap.requester_name
                 const dateLabel = new Date(swap.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
-                const reactions = swapReactions.filter(r => r.swap_id === swap.id)
+                const reactions = entry.reactions
                 const wantTake = reactions.filter(r => r.reaction === 'uebernehmen')
                 const maybe = reactions.filter(r => r.reaction === 'vielleicht')
                 const declined = reactions.filter(r => r.reaction === 'abgelehnt')
@@ -3884,7 +3985,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   : 'var(--border)'
 
                 return (
-                  <div key={swap.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${borderColor}` }}>
+                  <div key={entry.key} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, border: `1px solid ${borderColor}` }}>
                     {/* Header */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: reactions.length > 0 || swap.status !== 'offen' ? 12 : 0 }}>
                       <div style={{ minWidth: 0, flex: 1 }}>
@@ -3894,10 +3995,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           ) : (
                             <span style={{ color: '#a78bfa' }}>{swap.requester_name}</span>
                           )}
+                          {entry.isBlock && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(124,58,237,0.2)', color: '#a78bfa' }}>📦 BLOCK · {blockRows.length}</span>}
                           {' · '}{swap.shift}schicht · {dateLabel}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                          Model: {swap.model_name}{swap.reason ? ` · ${swap.reason}` : ''}
+                          {entry.isBlock ? 'Models' : 'Model'}: {entry.modelsLabel}{entry.isBlock && swap.block_label ? ` · ${swap.block_label}` : ''}{swap.reason ? ` · ${swap.reason}` : ''}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3910,13 +4012,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         </span>
 
                         {swap.status === 'offen' && isAdminOffer && (
-                          <button onClick={() => cancelAdminOffer(swap.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: 'rgba(239,68,68,0.7)', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Zurücknehmen</button>
+                          <button onClick={() => entry.isBlock ? cancelAdminOfferBlock(blockRows) : cancelAdminOffer(swap.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: 'rgba(239,68,68,0.7)', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Zurücknehmen</button>
                         )}
                         {swap.status === 'offen' && !isAdminOffer && (
                           <button onClick={() => closeSwap(swap)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Abschließen</button>
                         )}
                         {swap.status === 'angenommen' && (
-                          <button onClick={() => resetSwapToOpen(swap.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↺ Wieder offen</button>
+                          <button onClick={() => entry.isBlock ? resetSwapBlockToOpen(blockRows) : resetSwapToOpen(swap.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↺ Wieder offen</button>
                         )}
                       </div>
                     </div>
@@ -3933,7 +4035,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             <div style={{ fontSize: 10, color: '#10b981', fontWeight: 700, marginBottom: 4 }}>✓ Wollen übernehmen ({wantTake.length})</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                               {wantTake.map(r => (
-                                <button key={r.id} onClick={() => assignSwapTo(swap, r.chatter_name)} style={{
+                                <button key={r.id} onClick={() => entry.isBlock ? assignSwapBlockTo(blockRows, r.chatter_name) : assignSwapTo(swap, r.chatter_name)} style={{
                                   fontSize: 11, padding: '4px 10px', borderRadius: 5,
                                   background: 'rgba(16,185,129,0.12)', color: '#10b981',
                                   border: '1px solid rgba(16,185,129,0.35)',
@@ -3949,7 +4051,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginBottom: 4 }}>? Vielleicht ({maybe.length})</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                               {maybe.map(r => (
-                                <button key={r.id} onClick={() => assignSwapTo(swap, r.chatter_name)} style={{
+                                <button key={r.id} onClick={() => entry.isBlock ? assignSwapBlockTo(blockRows, r.chatter_name) : assignSwapTo(swap, r.chatter_name)} style={{
                                   fontSize: 11, padding: '4px 10px', borderRadius: 5,
                                   background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
                                   border: '1px solid rgba(245,158,11,0.3)',
