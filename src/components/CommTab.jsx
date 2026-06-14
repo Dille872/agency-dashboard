@@ -1642,13 +1642,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const activeAnnCount = announcements.filter(a => !a.expires_at || new Date(a.expires_at) > now).length
         const openSwapsCount = openSwapUnitCount()
         const reactedSwapsCount = reactedSwapUnitCount()
-        const unreadOutMsgs = messages.filter(m => m.direction === 'out' && m.contact_type === 'chatter' && !m.read_at)
-        // Out-Messages älter als 24h ungelesen = möglicherweise problematisch
-        const oldUnreadOut = unreadOutMsgs.filter(m => new Date(m.created_at) < new Date(Date.now() - 24*60*60*1000))
         const attentionItems = []
         if (reactedSwapsCount > 0) attentionItems.push({ icon: '↻', text: `${reactedSwapsCount} Schicht${reactedSwapsCount === 1 ? '' : 'en'} mit Reaktionen — du musst zuweisen`, color: '#a78bfa', action: 'swaps' })
         if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
-        if (oldUnreadOut.length > 0) attentionItems.push({ icon: '⏳', text: `${oldUnreadOut.length} Nachrichten >24h ungelesen`, color: '#ef4444', action: 'history' })
 
         // v3.28.2: Hex -> rgba für dezente Chip-Akzente
         const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})` }
