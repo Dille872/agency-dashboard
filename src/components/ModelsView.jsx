@@ -307,6 +307,13 @@ function computeModelHealth(modelSnapshots, creatorName, selectedDate, chatterSh
 
 export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapshots, onDateChange }) {
   const [aliases, setAliases] = useState([])
+  // v3.31.0: kompakte/gestapelte Alert-Zeilen auf Mobile
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   const [targets, setTargets] = useState({}) // { model_name: daily_target }
   const [editingTarget, setEditingTarget] = useState(null)
   const [targetInput, setTargetInput] = useState('')
@@ -816,17 +823,35 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                           </span>
                         </summary>
                         <div style={{ padding: '4px 12px 10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {items.map((a, idx) => (
+                          {items.map((a, idx) => {
+                            // v3.31.0: Headline am letzten " · " splitten → hinterer Teil rechtsbündig (Mono),
+                            // füllt die rechte Hälfte. Ohne " · " bleibt alles links.
+                            const segs = (a.headline || '').split(' · ')
+                            const rightVal = segs.length > 1 ? segs.pop() : null
+                            const leftText = segs.join(' · ')
+                            if (isMobile) {
+                              return (
+                                <div key={a.name + a.tag + idx} title={a.explain || ''} style={{
+                                  display: 'flex', flexDirection: 'column', gap: 2, padding: '7px 10px',
+                                  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 5,
+                                }}>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{a.name}</span>
+                                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.35 }}>{a.headline}</span>
+                                </div>
+                              )
+                            }
+                            return (
                             <div key={a.name + a.tag + idx} title={a.explain || ''} style={{
-                              display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px',
+                              display: 'flex', alignItems: 'center', gap: 12, padding: '5px 10px',
                               background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 5,
                               cursor: a.explain ? 'help' : 'default',
                             }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 130 }}>{a.name}</span>
-                              <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{a.headline}</span>
-                              {/* v3.14.0: Tag-Label rechts entfernt — Kategorie ist schon im Gruppen-Header */}
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 120, flexShrink: 0 }}>{a.name}</span>
+                              <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, minWidth: 0 }}>{leftText}</span>
+                              {rightVal && <span style={{ fontSize: 12, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', flexShrink: 0, opacity: 0.9 }}>{rightVal}</span>}
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </details>
                     )

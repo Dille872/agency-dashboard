@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Card from './Card'
 import RevenueTrendChart from './RevenueTrendChart'
 import RankingBar from './RankingBar'
@@ -278,6 +278,13 @@ function scoreBg(color) {
 export default function ChattersView({ selectedDate, chatterSnapshots, onDateChange }) {
   // v3.4.0: aufgeklappte Health-Detail-Row
   const [expandedHealth, setExpandedHealth] = useState(null)
+  // v3.31.0: kompakte/gestapelte Alert-Zeilen auf Mobile
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   const currentSnap = chatterSnapshots.find(s => s.businessDate === selectedDate)
   const allRows = currentSnap?.rows || []
   // Only chatters who sent messages and are not deleted users
@@ -626,7 +633,27 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
                           </span>
                         </summary>
                         <div style={{ padding: '4px 12px 10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {items.map((a, idx) => (
+                          {items.map((a, idx) => {
+                            if (isMobile) {
+                              return (
+                                <div key={a.name + a.tag + idx} title={a.explain || ''} style={{
+                                  display: 'flex', flexDirection: 'column', gap: 3,
+                                  padding: '7px 10px',
+                                  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 5,
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{a.name}</span>
+                                    <span style={{
+                                      fontSize: 10, color: cfg.color, background: `${cfg.color}15`,
+                                      border: `1px solid ${cfg.color}33`, padding: '1px 7px', borderRadius: 4,
+                                      whiteSpace: 'nowrap', fontWeight: 600, flexShrink: 0,
+                                    }}>{a.tag}</span>
+                                  </div>
+                                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.35 }}>{a.headline}</span>
+                                </div>
+                              )
+                            }
+                            return (
                             <div key={a.name + a.tag + idx}
                               title={a.explain || ''}
                               style={{
@@ -637,10 +664,10 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
                                 borderRadius: 5,
                                 cursor: a.explain ? 'help' : 'default',
                               }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 90, flexShrink: 0 }}>
                                 {a.name}
                               </span>
-                              <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>
+                              <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, minWidth: 0 }}>
                                 {a.headline}
                               </span>
                               <span style={{
@@ -648,12 +675,13 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
                                 background: `${cfg.color}15`,
                                 border: `1px solid ${cfg.color}33`,
                                 padding: '2px 8px', borderRadius: 4,
-                                whiteSpace: 'nowrap', fontWeight: 600,
+                                whiteSpace: 'nowrap', fontWeight: 600, flexShrink: 0,
                               }}>
                                 {a.tag}
                               </span>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </details>
                     )
