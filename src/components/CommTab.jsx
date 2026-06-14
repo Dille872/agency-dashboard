@@ -1638,29 +1638,29 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
         if (oldUnreadOut.length > 0) attentionItems.push({ icon: '⏳', text: `${oldUnreadOut.length} Nachrichten >24h ungelesen`, color: '#ef4444', action: 'history' })
 
+        // v3.28.2: Hex -> rgba für dezente Chip-Akzente
+        const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})` }
+
         return (
         <div>
-          {/* Aufmerksamkeits-Banner */}
+          {/* Aufmerksamkeits-Chips (v3.28.2) */}
           {attentionItems.length > 0 && (
-            <div style={{ marginBottom: 16, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: '10px 14px' }}>
-              <div style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 6 }}>
-                🚨 Aufmerksamkeit
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {attentionItems.map((item, i) => (
-                  <button key={i} onClick={() => setActiveSection(item.action)} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                    background: 'transparent', border: '1px solid transparent',
-                    borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-                    transition: 'background 0.1s'
-                  }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,158,11,0.08)'}
-                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <span style={{ fontSize: 14 }}>{item.icon}</span>
-                    <span style={{ fontSize: 13, color: item.color, fontWeight: 600, flex: 1, textAlign: 'left' }}>{item.text}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>→</span>
-                  </button>
-                ))}
-              </div>
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Zu erledigen</span>
+              {attentionItems.map((item, i) => (
+                <button key={i} onClick={() => setActiveSection(item.action)} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 7,
+                  padding: '6px 12px', borderRadius: 999,
+                  background: hexA(item.color, 0.10), border: `1px solid ${hexA(item.color, 0.30)}`,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  transition: 'background 0.12s',
+                }} onMouseEnter={e => e.currentTarget.style.background = hexA(item.color, 0.18)}
+                   onMouseLeave={e => e.currentTarget.style.background = hexA(item.color, 0.10)}>
+                  <span style={{ fontSize: 13 }}>{item.icon}</span>
+                  <span style={{ fontSize: 12.5, color: 'var(--text-primary)', fontWeight: 600 }}>{item.text}</span>
+                  <span style={{ fontSize: 11, color: item.color, marginLeft: 1 }}>→</span>
+                </button>
+              ))}
             </div>
           )}
 
