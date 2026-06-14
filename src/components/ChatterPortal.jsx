@@ -976,12 +976,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const addAbsence = async () => {
     if (!newAbsenceDate) return
     setAbsentLoading(true)
+    // newAbsenceShifts = Schichten, an denen man WEG ist.
+    // Gespeichert wird die Verfügbarkeit = alle Schichten außer den abwesenden.
+    const avail = newAbsenceShifts.length ? SHIFTS.filter(s => !newAbsenceShifts.includes(s)) : null
     await supabase.from('absences').insert({
       chatter_name: displayName,
       date_from: newAbsenceDate,
       date_to: newAbsenceDate,
       reason: newAbsenceReason || 'Nicht verfügbar',
-      available_shifts: newAbsenceShifts.length ? newAbsenceShifts : null,
+      available_shifts: (avail && avail.length) ? avail : null,
     })
     setNewAbsenceDate('')
     setNewAbsenceReason('')
@@ -1471,21 +1474,21 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 </button>
               </div>
               <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Verfügbar:</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Weg an:</span>
                 <button type="button" onClick={() => setNewAbsenceShifts([])}
                   style={{ padding: '5px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                     background: newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.15)' : 'var(--bg-input)',
                     color: newAbsenceShifts.length === 0 ? '#ef4444' : 'var(--text-muted)',
-                    border: `1px solid ${newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.4)' : '#2e2e5a'}` }}>Ganzer Tag weg</button>
+                    border: `1px solid ${newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.4)' : '#2e2e5a'}` }}>Ganzer Tag</button>
                 {SHIFTS.map(s => {
                   const on = newAbsenceShifts.includes(s)
                   return (
                     <button key={s} type="button"
                       onClick={() => setNewAbsenceShifts(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
                       style={{ padding: '5px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                        background: on ? 'rgba(16,185,129,0.15)' : 'var(--bg-input)',
-                        color: on ? '#10b981' : 'var(--text-muted)',
-                        border: `1px solid ${on ? 'rgba(16,185,129,0.4)' : '#2e2e5a'}` }}>{on ? '✓ ' : ''}{s}</button>
+                        background: on ? 'rgba(239,68,68,0.18)' : 'var(--bg-input)',
+                        color: on ? '#ef4444' : 'var(--text-muted)',
+                        border: `1px solid ${on ? 'rgba(239,68,68,0.45)' : '#2e2e5a'}` }}>{on ? '✕ ' : ''}{s}</button>
                   )
                 })}
               </div>
@@ -1493,7 +1496,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {myAbsences.map(a => (
                     <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
-                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {a.reason}{(a.available_shifts && a.available_shifts.length) ? ` · nur ${a.available_shifts.join('/')}` : ''}</span>
+                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {a.reason}{(a.available_shifts && a.available_shifts.length) ? ` · ${SHIFTS.filter(s => !a.available_shifts.includes(s)).join('/')} weg` : ''}</span>
                       <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                     </div>
                   ))}

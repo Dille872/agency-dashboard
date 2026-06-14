@@ -261,12 +261,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
 
   const addAbsence = async () => {
     if (!newAbsenceName || !newAbsenceFrom || !newAbsenceTo) return
+    // newAbsenceShifts = Schichten, an denen die Person WEG ist.
+    // Gespeichert wird die Verfügbarkeit = alle Schichten außer den abwesenden.
+    const avail = newAbsenceShifts.length ? SHIFTS.filter(s => !newAbsenceShifts.includes(s)) : null
     await supabase.from('absences').insert({
       chatter_name: newAbsenceName,
       date_from: newAbsenceFrom,
       date_to: newAbsenceTo,
       reason: newAbsenceReason || 'Abwesend',
-      available_shifts: newAbsenceShifts.length ? newAbsenceShifts : null,
+      available_shifts: (avail && avail.length) ? avail : null,
     })
     setNewAbsenceName(''); setNewAbsenceFrom(''); setNewAbsenceTo(''); setNewAbsenceReason(''); setNewAbsenceShifts([])
     loadAbsences()
@@ -1787,7 +1790,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Verfügbar (sonst ganzer Tag weg)</label>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Weg an Schichten (nichts = ganzer Tag)</label>
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button type="button" onClick={() => setNewAbsenceShifts([])}
                     style={{ padding: '6px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
@@ -1800,9 +1803,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       <button key={s} type="button"
                         onClick={() => setNewAbsenceShifts(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
                         style={{ padding: '6px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                          background: on ? 'rgba(16,185,129,0.15)' : 'var(--bg-input)',
-                          color: on ? '#10b981' : 'var(--text-muted)',
-                          border: `1px solid ${on ? 'rgba(16,185,129,0.4)' : 'var(--border)'}` }}>{on ? '✓ ' : ''}{s}</button>
+                          background: on ? 'rgba(239,68,68,0.18)' : 'var(--bg-input)',
+                          color: on ? '#ef4444' : 'var(--text-muted)',
+                          border: `1px solid ${on ? 'rgba(239,68,68,0.45)' : 'var(--border)'}` }}>{on ? '✕ ' : ''}{s}</button>
                     )
                   })}
                 </div>
