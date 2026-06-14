@@ -354,9 +354,15 @@ export default function SettingsTab() {
     if (!email.trim() || !displayName.trim()) return
     setSending(true); setError(''); setSuccess('')
     try {
+      // v3.26.0: User-Token mitschicken, damit die Edge Function die Rolle des Aufrufers prüfen kann
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { setError('Nicht angemeldet'); setSending(false); return }
       const resp = await fetch(`https://xdchyruasjxvrjduchoc.supabase.co/functions/v1/invite-user`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ email: email.trim(), display_name: displayName.trim(), role }),
       })
       const data = await resp.json()
