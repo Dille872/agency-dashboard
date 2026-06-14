@@ -1095,8 +1095,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
                     <div key={shift} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
                       style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: cellBgF, border: `${cellBorderWidthF}px solid ${cellBorderF}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: cellBoxShadowF }}>
                       {showSwap && (
-                        <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -7, right: 8, fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'rgba(167,139,250,0.9)', color: '#fff', zIndex: 2 }}>
-                          {swapHere.isAdminOffer ? '🔄' : '↔'}
+                        <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 10, right: isTrainee ? 10 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
+                          {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH'}
                         </div>
                       )}
                       {isTrainee && (
@@ -1316,8 +1316,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
                           style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
                           {showSwap && (
-                            <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -7, right: 6, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(167,139,250,0.9)', color: '#fff', zIndex: 2 }}>
-                              {swapHere.isAdminOffer ? '🔄' : '↔'}
+                            <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 6, right: isTrainee ? 6 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
+                              {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH'}
                             </div>
                           )}
                           {/* v3.1.0: Doppel-Schicht-Badge — klickbar zum als-gesehen-markieren */}
