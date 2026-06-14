@@ -93,6 +93,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   })
   const [models, setModels] = useState([])
   const [blockOffer, setBlockOffer] = useState(null) // v3.27.0: { dayIso, shift, presetModelId } | null
+  const [openSwaps, setOpenSwaps] = useState([]) // v3.28.0: offene Anbote/Anfragen für Dienstplan-Markierung
   const [chatters, setChatters] = useState([])
   const [admins, setAdmins] = useState([]) // v2.9.2: Admins für Co-Schicht-Dropdown
   const [schedule, setSchedule] = useState({})
@@ -196,7 +197,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
-  useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); loadAbsences(); loadActiveReminders(); loadConflictAcks() }, [])
+  useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); loadAbsences(); loadActiveReminders(); loadConflictAcks(); loadOpenSwaps() }, [])
 
   // v3.1.0: Konflikt-Acks aus DB laden (welche Doppel-Schichten wurden als gesehen markiert)
   const loadConflictAcks = async () => {
@@ -230,6 +231,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   useEffect(() => {
     if (weekKey) {
       loadSchedule()
+      loadOpenSwaps()
       sessionStorage.setItem('scheduleWeek', weekKey)
     }
   }, [weekKey])
@@ -405,6 +407,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
     const map = {}
     for (const r of data || []) map[r.shift_key] = { chatter: r.chatter, note: r.note }
     setRecurring(map)
+  }
+
+  // v3.28.0: offene Schicht-Anbote/-Anfragen laden (für Dienstplan-Markierung)
+  const loadOpenSwaps = async () => {
+    const { data } = await supabase
+      .from('shift_swaps')
+      .select('model_name, shift_date, shift, requester_name')
+      .eq('status', 'offen')
+    setOpenSwaps(data || [])
   }
 
   const loadSchedule = async () => {
@@ -889,6 +900,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
     background: weekDays.some(d => isoDate(d) === dayIso && isToday(d)) ? 'rgba(124,58,237,0.04)' : 'transparent',
   })
 
+  // v3.28.0: Lookup für Dienstplan-Markierung. Key: `${model_name}__${dayIso}__${shift}`
+  // Admin-Anbot (requester_name=null) hat Vorrang in der Anzeige, falls beides existiert.
+  const openSwapMap = {}
+  for (const s of openSwaps) {
+    const key = `${s.model_name}__${s.shift_date}__${s.shift}`
+    const isAdminOffer = !s.requester_name
+    if (!openSwapMap[key] || isAdminOffer) openSwapMap[key] = { isAdminOffer }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* v3.27.0: Ausschreiben-/Block-Modal */}
@@ -898,7 +918,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
           models={models}
           shifts={SHIFTS}
           onClose={() => setBlockOffer(null)}
-          onDone={() => setBlockOffer(null)}
+          onDone={() => { setBlockOffer(null); loadOpenSwaps() }}
         />
       )}
       {/* Header */}
@@ -1063,9 +1083,23 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const boxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
                                     isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
 
+                  // v3.28.0: ausgeschriebene Schicht markieren (Admin orange, Chatter lila)
+                  const swapHere = openSwapMap[`${model.name}__${dayIso}__${shift}`]
+                  const swapColor = swapHere ? (swapHere.isAdminOffer ? '#f59e0b' : '#a78bfa') : null
+                  const showSwap = swapHere && !isChatterAbsent
+                  const cellBgF = showSwap ? (swapHere.isAdminOffer ? 'rgba(245,158,11,0.18)' : 'rgba(167,139,250,0.18)') : bg
+                  const cellBorderF = showSwap ? swapColor : border
+                  const cellBorderWidthF = showSwap ? 2 : borderWidth
+                  const cellBoxShadowF = (showSwap && !isSearchMatch) ? `0 0 0 1px ${swapColor}, 0 0 8px ${swapHere.isAdminOffer ? 'rgba(245,158,11,0.35)' : 'rgba(167,139,250,0.35)'}` : boxShadow
+
                   return (
                     <div key={shift} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
-                      style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: bg, border: `${borderWidth}px solid ${border}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow }}>
+                      style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: cellBgF, border: `${cellBorderWidthF}px solid ${cellBorderF}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: cellBoxShadowF }}>
+                      {showSwap && (
+                        <div style={{ position: 'absolute', top: -8, right: 10, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, background: swapColor, color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>
+                          {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH ANGEFRAGT'}
+                        </div>
+                      )}
                       {isTrainee && (
                         <div style={{ position: 'absolute', top: -8, left: 10, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, background: '#06b6d4', color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>🎓 ANLERNEN</div>
                       )}
@@ -1269,9 +1303,26 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                               showDoppelWarn ? '0 0 12px rgba(239,68,68,0.5)' :
                                               isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
 
+                      // v3.28.0: ausgeschriebene Schicht markieren (Admin orange, Chatter lila).
+                      // Rote Warnungen (Abwesend/Doppel) und Suche behalten Vorrang.
+                      const swapHere = openSwapMap[`${model.name}__${dayIso}__${shift}`]
+                      const swapColor = swapHere ? (swapHere.isAdminOffer ? '#f59e0b' : '#a78bfa') : null
+                      const showSwap = swapHere && !isChatterAbsent && !showDoppelWarn
+                      if (showSwap) {
+                        finalBg = swapHere.isAdminOffer ? 'rgba(245,158,11,0.18)' : 'rgba(167,139,250,0.18)'
+                        finalBorder = swapColor
+                        finalBorderWidth = 2
+                      }
+                      const finalBoxShadow = (showSwap && !isSearchMatch) ? `0 0 0 1px ${swapColor}` : searchBoxShadow
+
                       return (
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
-                          style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: searchBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
+                          style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
+                          {showSwap && (
+                            <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Anbot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -7, right: 6, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: swapColor, color: '#fff', zIndex: 2 }}>
+                              {swapHere.isAdminOffer ? '🔄' : '↔'}
+                            </div>
+                          )}
                           {/* v3.1.0: Doppel-Schicht-Badge — klickbar zum als-gesehen-markieren */}
                           {showDoppelWarn && (
                             <button
