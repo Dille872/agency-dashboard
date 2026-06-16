@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import Icon from './Icon'
 import Card from './Card'
 import KpiCard from './KpiCard'
 import RevenueTrendChart from './RevenueTrendChart'
@@ -751,8 +752,8 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
 
       {/* v3.7.0: Aufmerksamkeit-Alert gruppiert mit Tooltips */}
       <Card title={modelProblemCount > 0
-        ? `🚨 Aufmerksamkeit nötig (${modelProblemCount})`
-        : '✓ Alle Models auf Kurs'}>
+        ? <><Icon name="alert" /> Aufmerksamkeit nötig ({modelProblemCount})</>
+        : <><Icon name="check" /> Alle Models auf Kurs</>}>
         {modelProblemCount === 0 ? (
           <div style={{ color: 'var(--green)', fontSize: 13, padding: '4px 0' }}>
             Keine Models mit kritischem Monatsrückstand, Abwärtstrend oder Health-Issues.
@@ -773,17 +774,17 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
             </div>
             {(() => {
               const groupConfig = [
-                { key: 'target', label: '🎯 Monatsziel-Risiko', color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
+                { key: 'target', label: <><Icon name="target" /> Monatsziel-Risiko</>, color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
                   desc: 'Models die deutlich unter ihrem Monatssoll liegen — Aufholbedarf vor Monatsende.' },
-                { key: 'critical_health', label: '🚨 Kritisch (Health)', color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
+                { key: 'critical_health', label: <><Icon name="alert" /> Kritisch (Health)</>, color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
                   desc: 'Fan-Burnout oder hohe Whale-Abhängigkeit — Account-Gesundheit gefährdet.' },
-                { key: 'trend', label: '📉 Abwärtstrend', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                { key: 'trend', label: <><Icon name="trending-down" /> Abwärtstrend</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Revenue über 3 Tage rückläufig.' },
-                { key: 'dependency', label: '👤 Chatter-Abhängigkeit', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                { key: 'dependency', label: <><Icon name="user" /> Chatter-Abhängigkeit</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Ein einzelner Chatter macht überproportional viele Schichten — Risiko bei Ausfall.' },
-                { key: 'stability', label: '🌊 Instabile Revenue', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                { key: 'stability', label: <><Icon name="activity" /> Instabile Revenue</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Tagesrevenue schwankt stark — keine konstante Performance.' },
-                { key: 'fan_quality', label: '👥 Schwache Fan-Qualität', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                { key: 'fan_quality', label: <><Icon name="users" /> Schwache Fan-Qualität</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Käuferbasis schrumpft oder zu wenige Stammkäufer.' },
               ]
               const byGroup = {}
@@ -864,7 +865,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       </Card>
 
       {/* v3.7.0: Top-Performer-Karte (positives Gegenstück) */}
-      <Card title="⭐ Top-Performer (Models)">
+      <Card title={<><Icon name="star" /> Top-Performer (Models)</>}>
         {(() => {
           // 1. Top Revenue heute (≥10 sellingChats)
           const topRevenue = tableRows
@@ -891,25 +892,25 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
 
           const groupCfg = [
             {
-              key: 'top_revenue', label: '⭐ Top Revenue heute',
+              key: 'top_revenue', label: <><Icon name="star" /> Top Revenue heute</>,
               desc: 'Die 3 Models mit dem höchsten Umsatz heute (mindestens 10 Käufer-Chats).',
               items: topRevenue, valueFn: (r) => formatMoney(r.revenue),
               metaFn: (r) => `${r.sellingChats} Käufer · Ø ${formatMoney(r.avgChatValue)}/Chat`,
             },
             {
-              key: 'avg_chat', label: '💰 Beste Käufer-Qualität',
+              key: 'avg_chat', label: <><Icon name="dollar" /> Beste Käufer-Qualität</>,
               desc: 'Höchster Avg Chat Value bei gesunder Käuferzahl ($30–$150 = solide Monetarisierung ohne Whale-Risiko).',
               items: topAvgChat, valueFn: (r) => formatMoney(r.avgChatValue),
               metaFn: (r) => `${formatMoney(r.revenue)} · ${r.sellingChats} Käufer`,
             },
             {
-              key: 'consistent', label: '🎯 Konstante Accounts',
+              key: 'consistent', label: <><Icon name="target" /> Konstante Accounts</>,
               desc: 'Revenue Stability ≥75 über 14 Tage, mindestens 7 aktive Tage. Wenig Schwankung.',
               items: consistent, valueFn: (r) => r.health.stability.score + '/100',
               metaFn: (r) => `${r.health.activeDays} aktive Tage · Schwankung ${(r.health.stability.cv * 100).toFixed(0)}%`,
             },
             {
-              key: 'healthy', label: '✓ Gesunde Long-Term Accounts',
+              key: 'healthy', label: <><Icon name="check" /> Gesunde Long-Term Accounts</>,
               desc: 'Stabile Revenue, gesunde Fan-Qualität, keine Whale-Abhängigkeit. Vorbild-Accounts.',
               items: healthy, valueFn: (r) => r.health.sustainability.score + '/100',
               metaFn: (r) => `Stability ${r.health.stability.score} · Fan Quality ${r.health.fanQuality.score}`,
@@ -974,7 +975,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       </Card>
 
       {/* Tagesziele · Monatsfortschritt — Hauptansicht prominent */}
-      <Card title="🎯 Tagesziele heute · Monatsfortschritt">
+      <Card title={<><Icon name="target" /> Tagesziele heute · Monatsfortschritt</>}>
         {targetData.groupRows.length === 0 ? (
           <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '20px 0' }}>Keine Daten für diesen Tag</div>
         ) : (
@@ -1045,7 +1046,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                         ) : '—'}
                       </td>
                       <td style={tdStyle}>
-                        <span style={{ background: `${g.statusColor}22`, color: g.statusColor, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{g.status}</span>
+                        <span style={{ background: `${g.statusColor}22`, color: g.statusColor, padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>{g.status}</span>
                       </td>
                       <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: 11 }}>
                         {g.variants.length > 1 ? g.variants.join(' + ') : g.variants[0]}
@@ -1066,7 +1067,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
 
       {/* ═══════════════ UNTEN: alle kollabierbar ═══════════════ */}
 
-      <Collapsible title="📈 Revenue-Trend & Ranking">
+      <Collapsible title={<><Icon name="trending-up" /> Revenue-Trend & Ranking</>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Revenue-Trend</div>
@@ -1085,7 +1086,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
         </div>
       </Collapsible>
 
-      <Collapsible title="💰 Revenue heute vs. Vortag & Quick Summary">
+      <Collapsible title={<><Icon name="dollar" /> Revenue heute vs. Vortag & Quick Summary</>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
           <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Revenue heute vs. Vortag</div>
@@ -1119,11 +1120,11 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
         </div>
       </Collapsible>
 
-      <Collapsible title="🔥 Status-Heatmap – letzte Tage">
+      <Collapsible title={<><Icon name="flame" /> Status-Heatmap – letzte Tage</>}>
         <Heatmap snapshots={modelSnapshots} mode="model" topNames={heatmapNames} title="" />
       </Collapsible>
 
-      <Collapsible title="📋 Model-Übersicht heute (Detail-Tabelle)">
+      <Collapsible title={<><Icon name="clipboard" /> Model-Übersicht heute (Detail-Tabelle)</>}>
         {/* Date switcher */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tag:</span>
@@ -1187,7 +1188,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                         <span style={{ color: 'var(--text-muted)', fontSize: 11 }} title={`Nur ${r.health.activeDays} aktive Tage`}>—</span>
                       )}
                     </td>
-                    <td style={tdStyle}><span style={{ background: `${statusColors[r.status]}22`, color: statusColors[r.status] || 'var(--text-secondary)', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.status}</span></td>
+                    <td style={tdStyle}><span style={{ background: `${statusColors[r.status]}22`, color: statusColors[r.status] || 'var(--text-secondary)', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>{r.status}</span></td>
                     <td style={{ ...tdStyle, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{r.recommendation}</td>
                   </tr>
                   {/* v3.7.0: Expandable Health-Detail-Row */}
