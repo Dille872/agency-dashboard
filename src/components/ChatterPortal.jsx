@@ -1304,7 +1304,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         })()}
 
         {/* Today Banner */}
-        {todayShifts.length > 0 && (
+        {/* v3.33.1: Auch anzeigen, wenn der Chatter ONLINE ist, aber keine heutige Plan-Schicht
+            (mehr) erkannt wird — z. B. manueller Check-in, nur Co-Chatter/Trainee, Fenster vorbei
+            oder Plan nachträglich geändert. Sonst gäbe es keinen "Schicht beenden"-Button. */}
+        {(todayShifts.length > 0 || isOnline) && (
           <div style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: isOnline ? '#10b981' : 'var(--text-primary)', marginBottom: 3 }}>
