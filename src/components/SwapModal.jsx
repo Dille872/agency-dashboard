@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 /**
- * SwapModal v3.27.0 — offene Schichten / Angebote für Chatter.
+ * SwapModal v3.33.0 — offene Schichten / Angebote für Chatter.
  * - 3 Reaktionen pro Angebot: "Übernehmen" / "Vielleicht" / "Ablehnen"
  * - Bleibt status='offen' egal welche Reaktion → Admin entscheidet final
  * - Sobald reagiert, verschwindet das Angebot für diesen Chatter
@@ -10,7 +10,15 @@ import { supabase } from '../supabase'
  *        eingeteilt sind, sehen das Angebot (Dienstplan-Abgleich)
  * - NEU: Blöcke (mehrere Models mit gemeinsamer block_id) erscheinen als EINE
  *        Karte; eine Reaktion gilt für den ganzen Block
+ * - FIX v3.33.0: "frei"-Abgleich übersah den ZWEITEN Chatter (Co-Schicht /
+ *        Anlernen, gespeichert als cell.trainee). Wer nur als zweiter Chatter
+ *        eingeteilt war, galt fälschlich als frei und sah das Angebot trotzdem.
+ *        Jetzt zählen Haupt- UND Zweit-Chatter als "eingeteilt". Zusätzlich wird
+ *        der Namensvergleich normalisiert (trim + Groß/Kleinschreibung egal).
  */
+
+// v3.33.0: Namen tolerant vergleichen (Leerzeichen / Groß-Kleinschreibung egal)
+const normName = (s) => (s || '').trim().toLowerCase()
 
 // Montag der Woche zu einem ISO-Datum (gleiche Logik wie ScheduleTab.getWeekStart)
 function weekStartIso(dateIso) {
@@ -75,9 +83,14 @@ export default function SwapModal({ displayName }) {
       for (const row of scheds || []) {
         const assignments = row.assignments || {}
         for (const [key, val] of Object.entries(assignments)) {
-          if (!val || !val.chatter || val.chatter === '__FREI__') continue
-          if (val.chatter !== displayName) continue
-          // key = `${model}__${dayIso}__${shift}`
+          if (!val) continue
+          const me = normName(displayName)
+          // v3.33.0: Sowohl Haupt-Chatter ALS AUCH zweiter Chatter (Co-Schicht / Anlernen,
+          // gespeichert als val.trainee) gelten als "eingeteilt" → nicht mehr frei.
+          const isPrimary = val.chatter && val.chatter !== '__FREI__' && normName(val.chatter) === me
+          const isSecond  = val.trainee && normName(val.trainee) === me
+          if (!isPrimary && !isSecond) continue
+          // key = `${modelId}__${dayIso}__${shift}`
           const parts = key.split('__')
           if (parts.length < 3) continue
           busySet.add(`${parts[1]}__${parts[2]}`)

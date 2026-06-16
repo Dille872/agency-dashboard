@@ -1028,6 +1028,74 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     return { error, count }
   }
 
+  // v3.33.0: Montag der Woche zu einem ISO-Datum (gleiche Logik wie ScheduleTab.getWeekStart)
+  const weekStartIso = (dateIso) => {
+    const d = new Date(dateIso + 'T00:00:00')
+    const day = d.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    d.setDate(d.getDate() + diff)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${dd}`
+  }
+
+  // v3.33.0: Vergebene Schicht(en) direkt in den Dienstplan eintragen.
+  // rows: shift_swaps-Zeilen (alle gleicher Tag + gleiche Schicht, ggf. mehrere Models = Block).
+  // Belegte Zellen werden NICHT überschrieben (außer leer / __FREI__ / Anfragender / gleicher Chatter)
+  // — sie werden nur gemeldet. Gibt { entered, skippedOccupied, noSchedule } zurück.
+  const enterIntoSchedule = async (rows, chatterName) => {
+    const first = rows[0]
+    const weekKey = weekStartIso(first.shift_date)
+
+    // Frischer Lesezugriff direkt vor dem Schreiben (minimiert Clobbern fremder Änderungen)
+    const { data: sched } = await supabase
+      .from('schedule').select('week_start, assignments')
+      .eq('week_start', weekKey).maybeSingle()
+    if (!sched) return { entered: [], skippedOccupied: [], noSchedule: true }
+
+    const assignments = { ...(sched.assignments || {}) }
+    const entered = []
+    const skippedOccupied = []
+
+    for (const r of rows) {
+      const model = models.find(m => m.name === r.model_name)
+      if (!model) { skippedOccupied.push(`${r.model_name} (Model im Dienstplan nicht gefunden)`); continue }
+      const cellKey = `${model.id}__${r.shift_date}__${r.shift}`
+      const existing = assignments[cellKey]
+      const occupant = existing?.chatter
+      const replaceable =
+        !occupant || occupant === '__FREI__' ||
+        occupant === chatterName || occupant === r.requester_name
+      if (!replaceable) {
+        skippedOccupied.push(`${r.model_name} (Zelle belegt mit ${occupant})`)
+        continue
+      }
+      // Bestehende Felder (Notiz, Zeit-Override etc.) erhalten, nur Chatter setzen
+      assignments[cellKey] = { ...(existing || {}), chatter: chatterName, note: existing?.note || '' }
+      entered.push(r.model_name)
+    }
+
+    if (entered.length > 0) {
+      await supabase.from('schedule').update({ assignments }).eq('week_start', weekKey)
+    }
+    return { entered, skippedOccupied, noSchedule: false }
+  }
+
+  // v3.33.0: Ergebnis von enterIntoSchedule in eine Admin-Meldung übersetzen
+  const scheduleResultMsg = (res) => {
+    if (res.noSchedule) {
+      return `⚠ Für diese Woche existiert noch KEIN Dienstplan – nicht automatisch eingetragen.\nBitte den Dienstplan anlegen und manuell eintragen.`
+    }
+    if (res.skippedOccupied.length > 0) {
+      return `⚠ NICHT in den Dienstplan eingetragen (Zelle schon belegt):\n- ${res.skippedOccupied.join('\n- ')}\nBitte manuell prüfen.`
+    }
+    if (res.entered.length > 0) {
+      return `✓ Im Dienstplan eingetragen: ${res.entered.join(', ')}`
+    }
+    return ''
+  }
+
   // Admin weist die Schicht einem Chatter zu (final)
   const assignSwapTo = async (swap, chatterName) => {
     if (!swap || !chatterName) return
@@ -1066,7 +1134,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       await tgToChatter(r.chatter_name, `Die Schicht wurde an jemand anderen vergeben. Danke fürs Angebot.\n${shiftLabel}`)
     }
 
+    // v3.33.0: direkt in den Dienstplan eintragen (belegte Zellen nur melden, nicht überschreiben)
+    const schedRes = await enterIntoSchedule([swap], chatterName)
+    const schedMsg = scheduleResultMsg(schedRes)
+
     loadSwaps()
+    if (schedMsg) alert(schedMsg)
   }
 
   // Admin setzt Schicht zurück auf 'offen' (nach Ablehnung oder versehentlich vergeben)
@@ -1179,7 +1252,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     for (const r of blockInterested(rows, chatterName)) {
       await tgToChatter(r.chatter_name, `Der Block wurde an jemand anderen vergeben. Danke fürs Angebot.\n${shiftLabel}`)
     }
+    // v3.33.0: ganzen Block in den Dienstplan eintragen (belegte Zellen nur melden)
+    const schedRes = await enterIntoSchedule(rows, chatterName)
+    const schedMsg = scheduleResultMsg(schedRes)
     loadSwaps()
+    if (schedMsg) alert(schedMsg)
   }
 
   const resetSwapBlockToOpen = async (rows) => {
