@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import Icon from './Icon'
 import { getTheme, setTheme } from '../theme'
 import { APP_VERSION } from '../version'
 import { sendTelegramMessage } from '../telegram'
@@ -599,13 +600,13 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* Nav */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
-            { key: 'home', label: '🏠 Übersicht' },
-            { key: 'board', label: `📋 Mein Board${unreadCustomContent > 0 ? ` (${unreadCustomContent})` : ''}` },
-            { key: 'videos', label: `🎬 Videos${videos.length > 0 ? ` (${videos.length})` : ''}` },
-            { key: 'kalender', label: `📅 Kalender${upcomingCal.length > 0 ? ` (${upcomingCal.length})` : ''}` },
-            { key: 'anfragen', label: `✉ Anfragen${openRequests.length > 0 ? ` (${openRequests.length})` : ''}` },
+            { key: 'home', label: <><Icon name="home" /> Übersicht</> },
+            { key: 'board', label: <><Icon name="clipboard" /> Mein Board{unreadCustomContent > 0 ? ` (${unreadCustomContent})` : ''}</> },
+            { key: 'videos', label: <><Icon name="video" /> Videos{videos.length > 0 ? ` (${videos.length})` : ''}</> },
+            { key: 'kalender', label: <><Icon name="calendar" /> Kalender{upcomingCal.length > 0 ? ` (${upcomingCal.length})` : ''}</> },
+            { key: 'anfragen', label: <><Icon name="mail" /> Anfragen{openRequests.length > 0 ? ` (${openRequests.length})` : ''}</> },
             { key: 'social', label: 'Social' },
-            { key: 'umsatz', label: '💰 Umsatz' },
+            { key: 'umsatz', label: <><Icon name="dollar" /> Umsatz</> },
           ].map(t => (
             <button key={t.key} onClick={async () => {
                 setActiveSection(t.key)

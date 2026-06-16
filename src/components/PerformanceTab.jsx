@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useState } from 'react'
 import { supabase } from '../supabase'
+import Icon from './Icon'
 
 const cardS = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }
 const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 12 }
@@ -716,9 +717,9 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
       {/* Tab-Switcher */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {[
-          { key: 'models', label: '📸 Models', color: '#ec4899' },
-          { key: 'chatters', label: '💬 Chatters', color: '#06b6d4' },
-          { key: 'insights', label: '✨ Insights', color: '#a78bfa' },
+          { key: 'models', label: <><Icon name="camera" /> Models</>, color: '#ec4899' },
+          { key: 'chatters', label: <><Icon name="message" /> Chatters</>, color: '#06b6d4' },
+          { key: 'insights', label: <><Icon name="sparkles" /> Insights</>, color: '#a78bfa' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             fontSize: 12, padding: '6px 14px', borderRadius: 7, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import Icon from './Icon'
 
 const PLATFORMS = ['TikTok', 'Instagram', 'YouTube', 'Twitter', 'Snapchat']
 const STATUS_COLORS = { idee: '#a78bfa', in_arbeit: '#f59e0b', freigabe: '#06b6d4', fertig: '#10b981', gepostet: '#888', abgelehnt: '#ef4444' }
@@ -134,7 +135,7 @@ export default function SocialTab({ session, userDisplayName, userRole }) {
     { key: 'performance', label: 'Performance' },
     { key: 'trends', label: 'Trends' },
     { key: 'branding', label: 'Branding' },
-    { key: 'settings', label: '⚙ Tracking' },
+    { key: 'settings', label: <><Icon name="settings" /> Tracking</> },
   ]
 
   const pendingApproval = posts.filter(p => p.status === 'freigabe')

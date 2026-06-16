@@ -1197,7 +1197,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                       <td colSpan={14} style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-                            📊 Account Health · {r.health.activeDays} aktive Tage (letzte 14)
+                            <Icon name="chart" /> Account Health · {r.health.activeDays} aktive Tage (letzte 14)
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
                             <ModelSubScore label="Account Health" score={r.health.accountHealth.score} color={r.health.accountHealth.color}

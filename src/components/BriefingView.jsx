@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import Icon from './Icon'
 
 // ═══════════════════════════════════════════════════════════════
 // v3.8.0: BriefingView — Wochen- und Monats-Rückblick
@@ -309,7 +310,7 @@ function BriefingContent({ briefing }) {
 
       {/* Block 1: Revenue Trio (Vergleich) */}
       <div>
-        <SectionLabel>💰 Revenue-Vergleich</SectionLabel>
+        <SectionLabel><Icon name="dollar" /> Revenue-Vergleich</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           <StatBox label={type === 'month' ? 'Diese Monat' : 'Diese Woche'} value={formatMoney(current.totalRevenue)} highlight />
           <StatBox label={type === 'month' ? 'Vormonat' : 'Vorwoche'} value={previous ? formatMoney(previous.totalRevenue) : '—'} sub={briefing.revenueChange !== null ? fmtPct(briefing.revenueChange) : null} subColor={briefing.revenueChange >= 0 ? 'var(--green)' : 'var(--red)'} />
@@ -326,7 +327,7 @@ function BriefingContent({ briefing }) {
 
       {/* Block 2: Models Top + Bottom */}
       <div>
-        <SectionLabel>👑 Models</SectionLabel>
+        <SectionLabel><Icon name="crown" /> Models</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
           <RankBox title="Top 3 nach Revenue" items={top3Models.map(m => ({
             name: m.creator,
@@ -347,7 +348,7 @@ function BriefingContent({ briefing }) {
 
       {/* Block 3: Chatter Top + Bottom */}
       <div>
-        <SectionLabel>👥 Chatter</SectionLabel>
+        <SectionLabel><Icon name="users" /> Chatter</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
           <RankBox title="Top 3 nach $/Std" items={topChatters.map(c => ({
             name: c.name,
@@ -368,7 +369,7 @@ function BriefingContent({ briefing }) {
 
       {/* Block 4: Auffälligkeiten der Periode */}
       <div>
-        <SectionLabel>📅 Periode-Insights</SectionLabel>
+        <SectionLabel><Icon name="calendar" /> Periode-Insights</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
           <StatBox label="Stärkster Tag" value={bestWorst.best ? `${bestWorst.best.dayName} (${bestWorst.best.date.slice(5)})` : '—'} sub={bestWorst.best ? formatMoney(bestWorst.best.revenue) : null} subColor="var(--green)" />
           <StatBox label="Schwächster Tag" value={bestWorst.worst ? `${bestWorst.worst.dayName} (${bestWorst.worst.date.slice(5)})` : '—'} sub={bestWorst.worst ? formatMoney(bestWorst.worst.revenue) : null} subColor="var(--red)" />
@@ -380,7 +381,7 @@ function BriefingContent({ briefing }) {
       {/* Block 5: Action Items */}
       {actionItems.length > 0 && (
         <div>
-          <SectionLabel>🎯 Empfohlene Aktionen</SectionLabel>
+          <SectionLabel><Icon name="target" /> Empfohlene Aktionen</SectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {actionItems.map((item, i) => {
               const color = item.severity === 'positive' ? 'var(--green)' : item.severity === 'critical' ? 'var(--red)' : 'var(--yellow)'
@@ -567,7 +568,7 @@ export default function BriefingView({ modelSnapshots, chatterSnapshots }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1100 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>📊 Briefing & Rückblick</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}><Icon name="chart" size={18} /> Briefing & Rückblick</h2>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Live-Auswertung aus Daily Snapshots. Automatisch aktualisiert.</div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
