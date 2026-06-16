@@ -1748,9 +1748,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const now = new Date()
         const activeAnnCount = announcements.filter(a => !a.expires_at || new Date(a.expires_at) > now).length
         const openSwapsCount = openSwapUnitCount()
-        const reactedSwapsCount = reactedSwapUnitCount()
         const attentionItems = []
-        if (reactedSwapsCount > 0) attentionItems.push({ icon: '↻', text: `${reactedSwapsCount} Schicht${reactedSwapsCount === 1 ? '' : 'en'} mit Reaktionen — du musst zuweisen`, color: '#a78bfa', action: 'swaps' })
+        // v3.33.2: "Schichten mit Reaktionen — du musst zuweisen"-Chip entfernt.
+        // War 1:1-Doppelung des Tab-Badges "Schicht-Tausch (N)" (gleicher Wert reactedSwapUnitCount, gleiches Ziel-Tab).
+        // Der Tab-Badge bleibt der kanonische Indikator dafür. Offene Angebote sind eigene Info -> bleibt als Chip.
         if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
         if (newAbsences.length > 0) attentionItems.push({ icon: '📅', text: `${newAbsences.length} neue Abwesenheit${newAbsences.length === 1 ? '' : 'en'} von Chattern`, color: '#ef4444', onClick: ackNewAbsences })
 
