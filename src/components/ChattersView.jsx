@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import Card from './Card'
+import Icon from './Icon'
 import RevenueTrendChart from './RevenueTrendChart'
 import RankingBar from './RankingBar'
 import DeltaList from './DeltaList'
@@ -553,8 +554,8 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
       {/* ═══════════════ OBEN: Unified Alerts ═══════════════ */}
       <Card title={(criticalCount + warningCount) > 0
-        ? `🚨 Aufmerksamkeit nötig (${criticalCount + warningCount})`
-        : '✓ Alle Chatter auf Kurs'}>
+        ? <><Icon name="alert" /> Aufmerksamkeit nötig ({criticalCount + warningCount})</>
+        : <><Icon name="check" /> Alle Chatter auf Kurs</>}>
         {(criticalCount + warningCount) === 0 ? (
           <div style={{ color: 'var(--green)', fontSize: 13, padding: '4px 0' }}>
             Keine Chatter mit kritisch niedriger Effizienz oder Abwärtstrend.
@@ -578,13 +579,13 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             {/* v3.5.0: Gruppierte Alert-Anzeige (Option A) */}
             {(() => {
               const groupConfig = [
-                { key: 'critical_health', label: '🚨 Kritisch (Health)', color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
+                { key: 'critical_health', label: <><Icon name="alert" /> Kritisch (Health)</>, color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
                   desc: 'Fan-Burnout und Spam-Risiko – Chatter-Verhalten gefährdet Fan-Beziehung.' },
-                { key: 'under_min', label: '⚠ Performance unter Minimum', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: true,
+                { key: 'under_min', label: <><Icon name="alert" /> Performance unter Minimum</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: true,
                   desc: 'Chatter unter $100/Std an einem oder mehreren Tagen.' },
-                { key: 'trend', label: '📉 Abwärtstrend', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                { key: 'trend', label: <><Icon name="trending-down" /> Abwärtstrend</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Revenue rückläufig — 3-Tage Trend oder schleichender Rückgang (5-Tage MA).' },
-                { key: 'stability', label: '🌊 Stabilität & Abhängigkeit', color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
+                { key: 'stability', label: <><Icon name="activity" /> Stabilität & Abhängigkeit</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Instabile Performance oder zu starke Whale-Abhängigkeit.' },
               ]
               const byGroup = {}
@@ -694,7 +695,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
       </Card>
 
       {/* v3.6.0: Top-Performer-Karte (positives Gegenstück zur Alert-Sektion) */}
-      <Card title="⭐ Top-Performer">
+      <Card title={<><Icon name="star" /> Top-Performer</>}>
         {(() => {
           // Helper: Chatter mit health berechnen
           const enriched = rows.map(r => ({
@@ -733,7 +734,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
           const groupCfg = [
             {
               key: 'top_revenue',
-              label: '⭐ Top Revenue heute',
+              label: <><Icon name="star" /> Top Revenue heute</>,
               desc: 'Die 3 Chatter mit dem höchsten Umsatz heute (mindestens 50 Nachrichten).',
               items: topRevenue,
               valueLabel: 'Revenue',
@@ -742,7 +743,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             },
             {
               key: 'efficiency',
-              label: '💪 Effizienz-Champions',
+              label: <><Icon name="zap" /> Effizienz-Champions</>,
               desc: 'Höchste Stundenleistung ab $200/Std bei mindestens 90 Min Aktivität.',
               items: efficiency,
               valueLabel: '$/Std',
@@ -751,7 +752,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             },
             {
               key: 'consistent',
-              label: '🎯 Konstante Performer',
+              label: <><Icon name="target" /> Konstante Performer</>,
               desc: 'Stabile Werte über 14 Tage: Sustainability ≥75, geringe Schwankung, mindestens 7 aktive Tage im Fenster.',
               items: consistent,
               valueLabel: 'Sustainability',
@@ -760,7 +761,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             },
             {
               key: 'healthy',
-              label: '✓ Gesunde Top-Chatter',
+              label: <><Icon name="check" /> Gesunde Top-Chatter</>,
               desc: 'Alles grün: gute Buy Rate, konstante Revenue, gesunde Sent/Bought-Ratio, kein Decline. Vorbild-Performance.',
               items: healthyChatters,
               valueLabel: 'Sustainability',
@@ -860,7 +861,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
       {/* ═══════════════ UNTEN: Kollabierbar ═══════════════ */}
 
-      <Collapsible title="📈 Revenue-Trend & Ranking">
+      <Collapsible title={<><Icon name="trending-up" /> Revenue-Trend & Ranking</>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Revenue-Trend</div>
@@ -873,7 +874,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
         </div>
       </Collapsible>
 
-      <Collapsible title="💰 Revenue heute vs. Vortag & Heatmap">
+      <Collapsible title={<><Icon name="dollar" /> Revenue heute vs. Vortag & Heatmap</>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Revenue heute vs. Vortag</div>
@@ -886,7 +887,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
         </div>
       </Collapsible>
 
-      <Collapsible title="📋 Chatter-Übersicht heute (Detail-Tabelle)">
+      <Collapsible title={<><Icon name="clipboard" /> Chatter-Übersicht heute (Detail-Tabelle)</>}>
         {/* Date switcher */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tag:</span>
@@ -971,7 +972,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
                         <span style={{ color: 'var(--text-muted)', fontSize: 11 }} title={`Nur ${r.health.activeDays} aktive Tage`}>—</span>
                       )}
                     </td>
-                    <td style={tdStyle}><span style={{ background: `${statusColors[r.status]}22`, color: statusColors[r.status] || 'var(--text-secondary)', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.status}</span></td>
+                    <td style={tdStyle}><span style={{ background: `${statusColors[r.status]}22`, color: statusColors[r.status] || 'var(--text-secondary)', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>{r.status}</span></td>
                     <td style={{ ...tdStyle, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{r.recommendation}</td>
                   </tr>
                   {/* v3.4.0: Expandable Health-Detail-Row */}
@@ -980,7 +981,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
                       <td colSpan={17} style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-                            📊 Health-Breakdown · {r.health.activeDays} aktive Tage (letzte 14)
+                            <Icon name="chart" /> Health-Breakdown · {r.health.activeDays} aktive Tage (letzte 14)
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
                             <HealthSubScore label="Sustainability" score={r.health.sustainability.score} color={r.health.sustainability.color}
