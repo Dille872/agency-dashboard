@@ -1339,6 +1339,11 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
                       <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: `${statusColor}22`, color: statusColor }}>{statusLabel}</span>
                     </div>
+                    {req.account_csv && req.account_csv !== req.model_name && (
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#c084fc', fontFamily: 'monospace', marginBottom: 4 }}>
+                        📲 {req.account_csv}
+                      </div>
+                    )}
                     {req.customer_id && (
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', marginBottom: 3 }}>
                         {req.customer_id}

@@ -1447,7 +1447,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         }
         const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
         const text = req.edited_text || req.request_text
-        const msg = `<b>📥 Neue Content-Anfrage für dich</b>\n\n${text}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
+        const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
+        const msg = `<b>📥 Neue Content-Anfrage für dich</b>\n\n${text}${profileLine}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
         await sendTelegramMessage(modelData.telegram_id, msg)
       }
     }
@@ -1472,7 +1473,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         }
         const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
         const text = req.edited_text || req.request_text
-        const msg = `<b>📸 Custom Content — Auftrag</b>\n\n${text}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
+        const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
+        const msg = `<b>📸 Custom Content — Auftrag</b>\n\n${text}${profileLine}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
         await sendTelegramMessage(modelData.telegram_id, msg)
       }
     }
@@ -3074,6 +3076,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         </div>
                         {/* Model groß + pink */}
                         <div style={{ fontSize: 17, fontWeight: 700, color: '#ec4899', marginBottom: 3 }}>{req.model_name}</div>
+                        {/* v3.36.0: gewähltes Export-Profil */}
+                        {req.account_csv && req.account_csv !== req.model_name && (
+                          <div style={{ fontSize: 12, color: '#c084fc', fontFamily: 'monospace', marginBottom: 3 }}>↳ Profil: {req.account_csv}</div>
+                        )}
                         {/* Kunde */}
                         {req.customer_id && (
                           <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', marginBottom: 2 }}>

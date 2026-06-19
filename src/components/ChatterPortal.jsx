@@ -298,6 +298,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [checkInTime, setCheckInTime] = useState(null)
   const [messages, setMessages] = useState([])
   const [models, setModels] = useState([])
+  const [aliases, setAliases] = useState([]) // v3.36.0: Profile/Export-Namen je Model
   const [noteText, setNoteText] = useState('')
   const [noteModel, setNoteModel] = useState('')
   const [noteShift, setNoteShift] = useState('')
@@ -367,6 +368,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   const [contentRequests, setContentRequests] = useState([])
   const [newRequestModel, setNewRequestModel] = useState('')
+  const [newRequestProfile, setNewRequestProfile] = useState('') // v3.36.0: gewählter Export-Profilname (csv_name)
   const [newRequestText, setNewRequestText] = useState('')
   const [newRequestType, setNewRequestType] = useState('video')
   const [newRequestPrice, setNewRequestPrice] = useState('')
@@ -511,6 +513,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     await supabase.from('content_requests').insert({
       chatter_name: displayName,
       model_name: newRequestModel,
+      account_csv: newRequestProfile || null,
       request_text: newRequestText.trim(),
       content_type: newRequestType,
       price: priceVal,
@@ -538,12 +541,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     } else if (depositVal > 0) {
       payInfoTg = ` (Anzahlung: $${depositVal})`
     }
-    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}\nTyp: ${newRequestType}\nPreis: $${newRequestPrice}${payInfoTg}\nDringlichkeit: ${deadlineText}\n\nWunsch: ${newRequestText.trim()}`
+    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}${(newRequestProfile && newRequestProfile !== newRequestModel) ? `\nProfil: ${newRequestProfile}` : ''}\nTyp: ${newRequestType}\nPreis: $${newRequestPrice}${payInfoTg}\nDringlichkeit: ${deadlineText}\n\nWunsch: ${newRequestText.trim()}`
     await Promise.all([
       sendTelegramMessage(CHRIS_TG, tgMsg),
       sendTelegramMessage(REY_TG, tgMsg),
     ])
-    setNewRequestModel(''); setNewRequestText(''); setNewRequestType('video')
+    setNewRequestModel(''); setNewRequestProfile(''); setNewRequestText(''); setNewRequestType('video')
     setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
     setNewRequestPaidAlready(false); setNewRequestDepositPaid(false)
     setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
@@ -901,10 +904,33 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const loadModels = async () => {
     const { data } = await supabase.from('models_contact').select('*').order('name')
     setModels(data || [])
+    // v3.36.0: Profile/Export-Namen je Model laden (für Custom-Content-Auswahl)
+    const { data: aliasData } = await supabase.from('model_aliases').select('*').order('model_name')
+    setAliases(aliasData || [])
   }
 
   // v3.23.0: offboardete/stillgelegte Models nicht mehr in Auswahl-Dropdowns anbieten
   const activeModels = models.filter(m => m.active !== false)
+
+  // v3.36.0: Auswahl-Optionen für Custom Content = echte Export-Profilnamen je Model.
+  // Models mit Aliases → ein Eintrag pro Profil (csv_name). Models ohne Aliases → Fallback auf Model-Name.
+  const profileOptions = (() => {
+    const opts = []
+    for (const m of activeModels) {
+      const ma = aliases.filter(a => a.model_name === m.name && a.csv_name)
+      if (ma.length > 0) {
+        for (const a of ma) opts.push({ modelName: m.name, profileName: a.csv_name })
+      } else {
+        opts.push({ modelName: m.name, profileName: m.name })
+      }
+    }
+    return opts
+  })()
+  // Gruppiert nach Model-Name für optgroup-Darstellung
+  const profileOptionsByModel = profileOptions.reduce((acc, o) => {
+    (acc[o.modelName] = acc[o.modelName] || []).push(o)
+    return acc
+  }, {})
 
   const loadSchedule = async () => {
     const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey).maybeSingle()
@@ -1741,11 +1767,22 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Model *</label>
-                <select value={newRequestModel} onChange={e => setNewRequestModel(e.target.value)}
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Model / Profil *</label>
+                <select value={newRequestProfile} onChange={e => {
+                    const pn = e.target.value
+                    const opt = profileOptions.find(o => o.profileName === pn)
+                    setNewRequestProfile(pn)
+                    setNewRequestModel(opt ? opt.modelName : '')
+                  }}
                   style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
                   <option value="">— wählen —</option>
-                  {activeModels.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  {Object.entries(profileOptionsByModel).map(([modelName, opts]) => (
+                    (opts.length === 1 && opts[0].profileName === modelName)
+                      ? <option key={modelName} value={opts[0].profileName}>{modelName}</option>
+                      : <optgroup key={modelName} label={modelName}>
+                          {opts.map(o => <option key={o.profileName} value={o.profileName}>{o.profileName}</option>)}
+                        </optgroup>
+                  ))}
                 </select>
               </div>
               <div>
@@ -1898,6 +1935,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                           <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: statusColor + '22', color: statusColor }}>{statusLabel}</span>
                         </div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: '#ec4899', marginBottom: 2 }}>{req.model_name}</div>
+                        {req.account_csv && req.account_csv !== req.model_name && (
+                          <div style={{ fontSize: 11, color: '#c084fc', fontFamily: 'monospace', marginBottom: 2 }}>↳ {req.account_csv}</div>
+                        )}
                         {req.customer_id && (
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                             Kunde: <span style={{ color: 'var(--text-secondary)' }}>{req.customer_id}</span>
