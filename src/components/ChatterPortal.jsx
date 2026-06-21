@@ -7,6 +7,7 @@ import SwapModal from './SwapModal'
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage } from '../telegram'
 import { APP_VERSION } from '../version'
+import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -382,6 +383,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newRequestDeadline, setNewRequestDeadline] = useState('asap')
   const [sendingRequest, setSendingRequest] = useState(false)
   const [assignedModelBoards, setAssignedModelBoards] = useState({}) // modelName → board map
+  const [assignedModelSocials, setAssignedModelSocials] = useState({}) // modelName → social links[]
   const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
   const [assignedServices, setAssignedServices] = useState({}) // modelName → services
   const [assignedCustomContent, setAssignedCustomContent] = useState({}) // modelName → custom content
@@ -393,6 +395,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const vids = {}
     const svcs = {}
     const customContents = {}
+    const socials = {}
     for (const name of modelNames) {
       const { data: boardData } = await supabase.from('model_board').select('*').eq('model_name', name).order('sort_order')
       const map = {}
@@ -400,6 +403,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         if (item.category === 'service_flags') {
           if (!svcs[name]) svcs[name] = {}
           svcs[name][item.title] = { enabled: item.yes_no, note: item.content }
+        } else if (item.category === SOCIAL_CATEGORY) {
+          if (!socials[name]) socials[name] = []
+          socials[name].push(item)
         } else {
           if (!map[item.category]) map[item.category] = []
           map[item.category].push(item)
@@ -412,6 +418,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       customContents[name] = ccData || []
     }
     setAssignedModelBoards(boards)
+    setAssignedModelSocials(socials)
     setAssignedModelVideos(vids)
     setAssignedServices(svcs)
     setAssignedCustomContent(customContents)
@@ -1675,6 +1682,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     </div>
                   )
                 })}
+
+                {/* Social Media Kanäle */}
+                {(assignedModelSocials[selectedModelInfo] || []).length > 0 && (
+                  <SocialLinksView links={assignedModelSocials[selectedModelInfo] || []} />
+                )}
 
                 {/* Services */}
                 {Object.keys(assignedServices[selectedModelInfo] || {}).length > 0 && (

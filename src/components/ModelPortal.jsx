@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import Icon from './Icon'
 import { getTheme, setTheme } from '../theme'
 import { APP_VERSION } from '../version'
+import { SocialLinksEditor } from './SocialLinks'
 import { sendTelegramMessage } from '../telegram'
 
 const CATEGORIES = [
@@ -957,6 +958,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* BOARD */}
         {activeSection === 'board' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Social Media Kanäle */}
+            <SocialLinksEditor modelName={displayName} />
+
             {/* Services Ja/Nein */}
             <div style={{ ...cardS, borderLeft: '3px solid #f97316', borderRadius: '0 10px 10px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>

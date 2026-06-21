@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { sendTelegramMessage, sendTelegramPhoto, sendTelegramMediaGroup, notifyOwner } from '../telegram'
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
+import { SocialLinksEditor } from './SocialLinks'
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 const DISPLAY_NAMES = {
@@ -1619,6 +1620,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               : <button onClick={() => setShowAddModel(true)} style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 8, padding: '9px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>+ Model hinzufügen</button>
             }
           </Card>
+
+          {/* v3.37.0: Social-Media-Kanäle (Admin/Manager bearbeitbar) */}
+          {selectedModel && (
+            <SocialLinksEditor modelName={selectedModel.name} onChanged={loadModelBoardActivity} compact />
+          )}
 
           {/* v3.11.0: Board-Activity Feed (ersetzt "Nachricht senden") */}
           <Card title={selectedModel ? `Board-Aktivität · ${selectedModel.name}` : 'Letzte Board-Änderungen'}>
