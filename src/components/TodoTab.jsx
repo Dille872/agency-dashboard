@@ -16,7 +16,9 @@ export default function TodoTab({ session, userDisplayName }) {
   const [newAssignedTo, setNewAssignedTo] = useState('')
   const [saving, setSaving] = useState(false)
   const [adminNames, setAdminNames] = useState([])
+  const [chatterNames, setChatterNames] = useState([])
   const [adminTelegramMap, setAdminTelegramMap] = useState({})
+  const [assigneeTelegramMap, setAssigneeTelegramMap] = useState({})
   const channelRef = useRef(null)
 
   useEffect(() => {
@@ -43,21 +45,30 @@ export default function TodoTab({ session, userDisplayName }) {
 
   const loadAdmins = async () => {
     const { data: roleData } = await supabase.from('user_roles').select('display_name, role, status').order('display_name')
-    // v3.23.0: stillgelegte/offboardete Admins/Manager nicht mehr zuweisbar (bestehende Todos behalten den Namen)
-    const admins = (roleData || []).filter(u => u.display_name && ['admin', 'manager'].includes(u.role) && u.status !== 'suspended' && u.status !== 'offboarded')
-    const names = [...new Set(admins.map(u => u.display_name))]
-    setAdminNames(names)
+    // v3.23.0: stillgelegte/offboardete Personen nicht mehr zuweisbar (bestehende Todos behalten den Namen)
+    const active = (roleData || []).filter(u => u.display_name && u.status !== 'suspended' && u.status !== 'offboarded')
+    const adminList = [...new Set(active.filter(u => ['admin', 'manager'].includes(u.role)).map(u => u.display_name))]
+    // v3.38.0: Chatter sind ebenfalls zuweisbar (sehen die Aufgabe in ihrem ChatterPortal)
+    const chatterList = [...new Set(active.filter(u => u.role === 'chatter').map(u => u.display_name))]
+    setAdminNames(adminList)
+    setChatterNames(chatterList)
 
-    if (names.length > 0) {
+    const allNames = [...new Set([...adminList, ...chatterList])]
+    if (allNames.length > 0) {
       const { data: contactData } = await supabase
         .from('chatters_contact')
         .select('name, telegram_id')
-        .in('name', names)
-      const map = {}
+        .in('name', allNames)
+      const adminMap = {}
+      const allMap = {}
       ;(contactData || []).forEach(c => {
-        if (c.telegram_id) map[c.name] = c.telegram_id
+        if (c.telegram_id) {
+          allMap[c.name] = c.telegram_id
+          if (adminList.includes(c.name)) adminMap[c.name] = c.telegram_id
+        }
       })
-      setAdminTelegramMap(map)
+      setAdminTelegramMap(adminMap)
+      setAssigneeTelegramMap(allMap)
     }
   }
 
@@ -91,6 +102,12 @@ export default function TodoTab({ session, userDisplayName }) {
       return
     }
     await notifyOtherAdmins(`📋 <b>Neue Aufgabe von ${userDisplayName}</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}${newAssignedTo ? '\nFür: ' + newAssignedTo : ''}`)
+    // v3.38.0: zugewiesenen Chatter direkt benachrichtigen (Admins erhalten die Info bereits über notifyOtherAdmins)
+    if (newAssignedTo && chatterNames.includes(newAssignedTo) && assigneeTelegramMap[newAssignedTo]) {
+      try {
+        await sendTelegramMessage(assigneeTelegramMap[newAssignedTo], `📋 <b>Neue Aufgabe für dich</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}\nVon: ${userDisplayName}`)
+      } catch (err) { console.error('Telegram-Fehler:', err) }
+    }
     setNewTitle(''); setNewDesc(''); setNewPriority('normal'); setNewAssignedTo(''); setShowAdd(false)
     setSaving(false)
   }
@@ -204,7 +221,16 @@ export default function TodoTab({ session, userDisplayName }) {
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Zuständig</label>
                 <select value={newAssignedTo} onChange={e => setNewAssignedTo(e.target.value)} style={inputS}>
                   <option value="">Alle / Offen</option>
-                  {adminNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  {adminNames.length > 0 && (
+                    <optgroup label="Team">
+                      {adminNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </optgroup>
+                  )}
+                  {chatterNames.length > 0 && (
+                    <optgroup label="Chatter">
+                      {chatterNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               <div>
@@ -254,6 +280,12 @@ export default function TodoTab({ session, userDisplayName }) {
                     )}
                   </div>
                   {todo.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>{todo.description}</div>}
+                  {todo.assignee_note && (
+                    <div style={{ marginTop: 6, padding: '6px 9px', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 6 }}>
+                      <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>💬 {todo.assigned_to}: </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{todo.assignee_note}</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 4, background: color + '22', color }}>{PRIORITY_LABELS[todo.priority]}</span>
                     {todo.assigned_to && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>→ {todo.assigned_to}</span>}
@@ -289,6 +321,12 @@ export default function TodoTab({ session, userDisplayName }) {
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
                   erledigt von {todo.completed_by || '—'}{todo.completed_at ? ` · ${formatDate(todo.completed_at)}` : ''}
                 </div>
+                {todo.assignee_note && (
+                  <div style={{ marginTop: 6, padding: '6px 9px', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 6 }}>
+                    <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>💬 {todo.assigned_to}: </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{todo.assignee_note}</span>
+                  </div>
+                )}
               </div>
               <button onClick={() => deleteTodo(todo.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px', flexShrink: 0 }}
                 onMouseEnter={e => e.target.style.color = '#ef4444'} onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
