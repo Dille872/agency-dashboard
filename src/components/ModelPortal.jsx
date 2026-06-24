@@ -4,7 +4,14 @@ import Icon from './Icon'
 import { getTheme, setTheme } from '../theme'
 import { APP_VERSION } from '../version'
 import { SocialLinksEditor } from './SocialLinks'
-import { sendTelegramMessage } from '../telegram'
+
+// v3.40.0: Prioritäts-Styles für "Meine Aufgaben"
+const TODO_PRIORITY = {
+  wichtig: { label: 'Wichtig', color: '#ef4444' },
+  normal: { label: 'Normal', color: '#f59e0b' },
+  niedrig: { label: 'Niedrig', color: '#06b6d4' },
+}
+import { sendTelegramMessage, notifyAdmins } from '../telegram'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -216,6 +223,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0')
   })
   const [activeSection, setActiveSection] = useState('home') // home | board | kalender | umsatz | anfragen
+  const [myTodos, setMyTodos] = useState([]) // v3.40.0: mir zugewiesene Aufgaben
+  const [todoNoteDrafts, setTodoNoteDrafts] = useState({})
 
   useEffect(() => {
     if (isPreview) {
@@ -234,7 +243,45 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }, [displayName])
 
   const loadAll = async () => {
-    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices()
+    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
+  }
+
+  // v3.40.0: Meine Aufgaben (vom Team zugewiesen)
+  const loadMyTodos = async () => {
+    if (!displayName) return
+    const { data } = await supabase.from('todos').select('*').eq('assigned_to', displayName).order('created_at', { ascending: false })
+    const list = data || []
+    setMyTodos(list)
+    // Ungelesene automatisch als "gesehen" markieren (read_by), damit das Team den Lesestatus sieht
+    for (const t of list) {
+      const readBy = Array.isArray(t.read_by) ? t.read_by : []
+      if (!readBy.includes(displayName)) {
+        await supabase.from('todos').update({ read_by: [...readBy, displayName] }).eq('id', t.id)
+      }
+    }
+  }
+
+  const toggleMyTodo = async (todo) => {
+    const completed = !todo.completed
+    await supabase.from('todos').update({
+      completed,
+      completed_by: completed ? displayName : null,
+      completed_at: completed ? new Date().toISOString() : null,
+    }).eq('id', todo.id)
+    if (completed) {
+      try { await notifyAdmins(`✅ <b>${displayName}</b> hat erledigt:\n\n${todo.title}`) } catch (err) { console.error('Telegram-Fehler:', err) }
+    }
+    loadMyTodos()
+  }
+
+  const saveTodoNote = async (todo) => {
+    const note = (todoNoteDrafts[todo.id] ?? '').trim()
+    await supabase.from('todos').update({ assignee_note: note || null }).eq('id', todo.id)
+    if (note) {
+      try { await notifyAdmins(`💬 <b>${displayName}</b> – Rückmeldung zu „${todo.title}":\n\n${note}`) } catch (err) { console.error('Telegram-Fehler:', err) }
+    }
+    setTodoNoteDrafts(prev => { const n = { ...prev }; delete n[todo.id]; return n })
+    loadMyTodos()
   }
 
   const loadBoard = async () => {
@@ -669,6 +716,62 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             </div>
           )
         })()}
+
+        {/* v3.40.0: Meine Aufgaben (vom Team zugewiesen) */}
+        {myTodos.length > 0 && (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '0 10px 10px 0', padding: '14px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>📋 Meine Aufgaben</span>
+              {myTodos.filter(t => !t.completed).length > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 10, background: '#ef4444', color: '#fff' }}>{myTodos.filter(t => !t.completed).length}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[...myTodos].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map(todo => {
+                const prio = TODO_PRIORITY[todo.priority] || TODO_PRIORITY.normal
+                const draft = todoNoteDrafts[todo.id]
+                const noteEditing = draft !== undefined
+                return (
+                  <div key={todo.id} style={{ padding: '11px 13px', borderRadius: 9, background: todo.completed ? 'var(--bg-card2)' : prio.color + '0d', border: `1px solid ${todo.completed ? 'var(--border)' : prio.color + '40'}`, opacity: todo.completed ? 0.7 : 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <div onClick={() => toggleMyTodo(todo)} title={todo.completed ? 'Wieder öffnen' : 'Abhaken'} style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: todo.completed ? '#10b981' : 'transparent', border: `1.5px solid ${todo.completed ? '#10b981' : prio.color}` }}>
+                        {todo.completed && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: todo.completed ? 'line-through' : 'none' }}>{todo.title}</div>
+                        {todo.description && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>{todo.description}</div>}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 4, background: prio.color + '22', color: prio.color }}>{prio.label}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>von {todo.created_by || 'Team'}</span>
+                        </div>
+
+                        {noteEditing ? (
+                          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <textarea value={draft} onChange={e => setTodoNoteDrafts(prev => ({ ...prev, [todo.id]: e.target.value }))} rows={2}
+                              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
+                              placeholder="Kurze Rückmeldung ans Team…" autoFocus />
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button onClick={() => saveTodoNote(todo)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Speichern</button>
+                              <button onClick={() => setTodoNoteDrafts(prev => { const n = { ...prev }; delete n[todo.id]; return n })} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                            </div>
+                          </div>
+                        ) : todo.assignee_note ? (
+                          <div style={{ marginTop: 8, padding: '7px 10px', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7 }}>
+                            <div style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700, marginBottom: 2 }}>💬 Deine Rückmeldung</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{todo.assignee_note}</div>
+                            <button onClick={() => setTodoNoteDrafts(prev => ({ ...prev, [todo.id]: todo.assignee_note || '' }))} style={{ marginTop: 5, fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Bearbeiten</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setTodoNoteDrafts(prev => ({ ...prev, [todo.id]: '' }))} style={{ marginTop: 8, fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>+ Rückmeldung</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Welcome banner for new models */}
         {activeSection === 'home' && Object.keys(board).length === 0 && !isPreview && (

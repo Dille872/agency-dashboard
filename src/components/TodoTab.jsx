@@ -17,6 +17,7 @@ export default function TodoTab({ session, userDisplayName }) {
   const [saving, setSaving] = useState(false)
   const [adminNames, setAdminNames] = useState([])
   const [chatterNames, setChatterNames] = useState([])
+  const [modelNames, setModelNames] = useState([])
   const [adminTelegramMap, setAdminTelegramMap] = useState({})
   const [assigneeTelegramMap, setAssigneeTelegramMap] = useState({})
   const channelRef = useRef(null)
@@ -48,28 +49,40 @@ export default function TodoTab({ session, userDisplayName }) {
     // v3.23.0: stillgelegte/offboardete Personen nicht mehr zuweisbar (bestehende Todos behalten den Namen)
     const active = (roleData || []).filter(u => u.display_name && u.status !== 'suspended' && u.status !== 'offboarded')
     const adminList = [...new Set(active.filter(u => ['admin', 'manager'].includes(u.role)).map(u => u.display_name))]
-    // v3.38.0: Chatter sind ebenfalls zuweisbar (sehen die Aufgabe in ihrem ChatterPortal)
+    // v3.38.0: Chatter, v3.40.0: Models ebenfalls zuweisbar (sehen die Aufgabe in ihrem Portal)
     const chatterList = [...new Set(active.filter(u => u.role === 'chatter').map(u => u.display_name))]
+    const modelList = [...new Set(active.filter(u => u.role === 'model').map(u => u.display_name))]
     setAdminNames(adminList)
     setChatterNames(chatterList)
+    setModelNames(modelList)
 
-    const allNames = [...new Set([...adminList, ...chatterList])]
-    if (allNames.length > 0) {
+    const adminMap = {}
+    const allMap = {}
+    const staffNames = [...new Set([...adminList, ...chatterList])]
+    if (staffNames.length > 0) {
       const { data: contactData } = await supabase
         .from('chatters_contact')
         .select('name, telegram_id')
-        .in('name', allNames)
-      const adminMap = {}
-      const allMap = {}
+        .in('name', staffNames)
       ;(contactData || []).forEach(c => {
         if (c.telegram_id) {
           allMap[c.name] = c.telegram_id
           if (adminList.includes(c.name)) adminMap[c.name] = c.telegram_id
         }
       })
-      setAdminTelegramMap(adminMap)
-      setAssigneeTelegramMap(allMap)
     }
+    // Model-Telegram-IDs liegen in models_contact
+    if (modelList.length > 0) {
+      const { data: modelContact } = await supabase
+        .from('models_contact')
+        .select('name, telegram_id')
+        .in('name', modelList)
+      ;(modelContact || []).forEach(c => {
+        if (c.telegram_id) allMap[c.name] = c.telegram_id
+      })
+    }
+    setAdminTelegramMap(adminMap)
+    setAssigneeTelegramMap(allMap)
   }
 
   const notifyOtherAdmins = async (msg) => {
@@ -102,8 +115,8 @@ export default function TodoTab({ session, userDisplayName }) {
       return
     }
     await notifyOtherAdmins(`📋 <b>Neue Aufgabe von ${userDisplayName}</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}${newAssignedTo ? '\nFür: ' + newAssignedTo : ''}`)
-    // v3.38.0: zugewiesenen Chatter direkt benachrichtigen (Admins erhalten die Info bereits über notifyOtherAdmins)
-    if (newAssignedTo && chatterNames.includes(newAssignedTo) && assigneeTelegramMap[newAssignedTo]) {
+    // v3.38.0/v3.40.0: zugewiesene Person (Chatter oder Model) direkt benachrichtigen; Admins erhalten die Info über notifyOtherAdmins
+    if (newAssignedTo && !adminNames.includes(newAssignedTo) && assigneeTelegramMap[newAssignedTo]) {
       try {
         await sendTelegramMessage(assigneeTelegramMap[newAssignedTo], `📋 <b>Neue Aufgabe für dich</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}\nVon: ${userDisplayName}`)
       } catch (err) { console.error('Telegram-Fehler:', err) }
@@ -229,6 +242,11 @@ export default function TodoTab({ session, userDisplayName }) {
                   {chatterNames.length > 0 && (
                     <optgroup label="Chatter">
                       {chatterNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </optgroup>
+                  )}
+                  {modelNames.length > 0 && (
+                    <optgroup label="Models">
+                      {modelNames.map(n => <option key={n} value={n}>{n}</option>)}
                     </optgroup>
                   )}
                 </select>
