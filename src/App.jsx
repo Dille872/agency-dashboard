@@ -64,8 +64,11 @@ export default function App() {
       setSession(session)
       setAuthLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      // v3.41.0: Session-Referenz nur bei echtem Login/Logout ändern.
+      // Supabase feuert beim Zurückwechseln zum Browser-Tab ein TOKEN_REFRESHED-Event –
+      // ohne diesen Guard würde das ganze Dashboard neu laden (und z.B. getippte Chat-Texte löschen).
+      setSession(prev => (prev?.user?.id === newSession?.user?.id ? prev : newSession))
       if (event === 'PASSWORD_RECOVERY' || event === 'USER_UPDATED') {
         setNeedsPassword(event === 'PASSWORD_RECOVERY')
       }
@@ -96,7 +99,7 @@ export default function App() {
       }
     }, 30000)
     return () => clearInterval(interval)
-  }, [session])
+  }, [session?.user?.id]) // v3.41.0: nur bei echtem User-Wechsel laden, nicht bei jedem Token-Refresh
 
   const [userRoles, setUserRoles] = useState([])
 
