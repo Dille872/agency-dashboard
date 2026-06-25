@@ -8,6 +8,7 @@ import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
 import { APP_VERSION } from '../version'
 import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
+import { convertHeicIfNeeded } from '../imageUtils'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -491,16 +492,26 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
     // Upload images first
     const uploadedUrls = []
-    for (const file of newRequestImages) {
-      const ext = file.name.split('.').pop()
+    let failedUploads = 0
+    for (const rawFile of newRequestImages) {
+      // v3.42.0: HEIC (iPhone) → JPEG, sonst wird das Foto später nicht angezeigt
+      const file = await convertHeicIfNeeded(rawFile)
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `${displayName}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { data: uploadData, error } = await supabase.storage
         .from('content-requests')
-        .upload(path, file, { contentType: file.type })
+        .upload(path, file, { contentType: file.type || 'image/jpeg' })
       if (!error && uploadData) {
         const { data: urlData } = supabase.storage.from('content-requests').getPublicUrl(path)
         if (urlData?.publicUrl) uploadedUrls.push(urlData.publicUrl)
+        else failedUploads++
+      } else {
+        console.error('Foto-Upload fehlgeschlagen:', error)
+        failedUploads++
       }
+    }
+    if (failedUploads > 0) {
+      alert(`${failedUploads} Foto${failedUploads === 1 ? '' : 's'} konnte${failedUploads === 1 ? '' : 'n'} nicht hochgeladen werden. Die Anfrage wird ohne diese Fotos gesendet.`)
     }
 
     // Bezahl-Status berechnen

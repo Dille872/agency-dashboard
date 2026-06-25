@@ -4,6 +4,7 @@ import { sendTelegramMessage, sendTelegramPhoto, sendTelegramMediaGroup, notifyO
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
 import { SocialLinksEditor } from './SocialLinks'
+import { convertHeicIfNeeded } from '../imageUtils'
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 const DISPLAY_NAMES = {
@@ -797,7 +798,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     const urls = []
     for (const att of chatAttachments) {
       try {
-        const blob = await resizeImage(att.file, 1920, 0.85)
+        // v3.42.0: HEIC zuerst zu JPEG wandeln, sonst kann resizeImage es nicht laden
+        const safeFile = await convertHeicIfNeeded(att.file)
+        const blob = await resizeImage(safeFile, 1920, 0.85)
         const ext = (att.file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
         const path = `chat/${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`
         const { error: uploadErr } = await supabase.storage.from('chat-attachments').upload(path, blob, {
