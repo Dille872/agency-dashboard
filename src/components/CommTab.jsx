@@ -3069,7 +3069,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
                 const remainder = (req.price || 0) - (req.deposit || 0)
                 // Bezahl-Status berechnen
-                const totalPaid = (req.deposit_paid ? (req.deposit || 0) : 0) + (req.remainder_paid ? remainder : 0)
+                // v3.44.1: zwei Modi konsistent zum Bezahl-Block unten.
+                //  - Anzahlungs-Modus (deposit>0 && remainder>0): Anzahlung + Rest getrennt
+                //  - Vollzahlungs-Modus (keine Anzahlung): deposit_paid = kompletter Preis bezahlt
+                const hasDeposit = req.deposit > 0 && remainder > 0
+                const totalPaid = hasDeposit
+                  ? (req.deposit_paid ? (req.deposit || 0) : 0) + (req.remainder_paid ? remainder : 0)
+                  : (req.deposit_paid ? (req.price || 0) : 0)
                 const fullyPaid = req.price > 0 && totalPaid >= req.price
                 const partiallyPaid = totalPaid > 0 && !fullyPaid
                 const nothingPaid = req.price > 0 && totalPaid === 0
