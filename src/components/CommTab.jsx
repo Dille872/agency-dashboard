@@ -173,7 +173,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [expandedReqs, setExpandedReqs] = useState(null)
   const toggleReqExpanded = (id) => setExpandedReqs(prev => {
     const base = prev === null
-      ? new Set(contentRequests.filter(r => r.deadline === 'asap' || r.status === 'neu').map(r => r.id))
+      ? new Set(contentRequests.filter(r => r.deadline === 'asap').map(r => r.id))
       : new Set(prev)
     base.has(id) ? base.delete(id) : base.add(id)
     return base
@@ -3004,6 +3004,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 fontWeight: 600, fontFamily: 'inherit'
               }}>{f.label}</button>
             ))}
+            {/* v3.43.0: Alle Karten ein-/ausklappen */}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <button onClick={() => setExpandedReqs(new Set(filteredRequests.map(r => r.id)))} title="Alle Karten aufklappen"
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit' }}>⊕ Alle auf</button>
+              <button onClick={() => setExpandedReqs(new Set())} title="Alle Karten einklappen"
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit' }}>⊖ Alle zu</button>
+            </div>
           </div>
 
           {/* Model + Chatter + Search Filter */}
@@ -3067,11 +3074,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 const nothingPaid = req.price > 0 && totalPaid === 0
                 const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
                 const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
-                // v3.22.0: Default offen nur bei ASAP oder Neu; manuelles Set hat Vorrang.
-                const defaultOpen = req.deadline === 'asap' || req.status === 'neu'
+                // v3.43.0: Default offen nur noch bei ASAP (dringend); Neu wird kompakt eingeklappt gezeigt.
+                const defaultOpen = req.deadline === 'asap'
                 const isExpanded = expandedReqs === null ? defaultOpen : expandedReqs.has(req.id)
                 const payDot = req.price > 0 ? (fullyPaid ? '#10b981' : partiallyPaid ? '#f59e0b' : '#ef4444') : null
                 const payDotLabel = fullyPaid ? '✓ bezahlt' : partiallyPaid ? paidPct + '% bezahlt' : 'offen'
+                // v3.43.0: Deadline-Badge auch im eingeklappten Zustand
+                const deadlineMeta = req.deadline === 'asap' ? { label: '⚡ ASAP', color: '#ef4444' }
+                  : req.deadline === 'hours' ? { label: '⏰ Heute', color: '#f97316' }
+                  : req.deadline === 'days' ? { label: '📅 1-2 Tage', color: '#f59e0b' }
+                  : req.deadline ? { label: '🗓 Diese Woche', color: '#10b981' } : null
+                const briefingPreview = (req.edited_text || req.request_text || '').trim()
                 return (
                   <div key={req.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
                     {/* Header: Model + Kunde + Chatter | Preis + Datum — v3.22.0 klickbar */}
@@ -3082,23 +3095,45 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor }}>{statusLabel}</span>
                           {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>NEU</span>}
+                          {/* v3.43.0: Deadline-Badge im eingeklappten Zustand sichtbar */}
+                          {!isExpanded && deadlineMeta && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: deadlineMeta.color + '22', color: deadlineMeta.color }}>{deadlineMeta.label}</span>}
                         </div>
-                        {/* Model groß + pink */}
-                        <div style={{ fontSize: 17, fontWeight: 700, color: '#ec4899', marginBottom: 3 }}>{req.model_name}</div>
-                        {/* v3.36.0: gewähltes Export-Profil */}
-                        {req.account_csv && req.account_csv !== req.model_name && (
-                          <div style={{ fontSize: 12, color: '#c084fc', fontFamily: 'monospace', marginBottom: 3 }}>↳ Profil: {req.account_csv}</div>
-                        )}
-                        {/* Kunde */}
-                        {req.customer_id && (
-                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', marginBottom: 2 }}>
-                            <span style={{ color: 'var(--text-muted)' }}>Kunde: </span>{req.customer_id}
+                        {isExpanded ? (<>
+                          {/* Model groß + pink */}
+                          <div style={{ fontSize: 17, fontWeight: 700, color: '#ec4899', marginBottom: 3 }}>{req.model_name}</div>
+                          {/* v3.36.0: gewähltes Export-Profil */}
+                          {req.account_csv && req.account_csv !== req.model_name && (
+                            <div style={{ fontSize: 12, color: '#c084fc', fontFamily: 'monospace', marginBottom: 3 }}>↳ Profil: {req.account_csv}</div>
+                          )}
+                          {/* Kunde */}
+                          {req.customer_id && (
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', marginBottom: 2 }}>
+                              <span style={{ color: 'var(--text-muted)' }}>Kunde: </span>{req.customer_id}
+                            </div>
+                          )}
+                          {/* Chatter */}
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span>
                           </div>
-                        )}
-                        {/* Chatter */}
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span>
-                        </div>
+                        </>) : (<>
+                          {/* v3.43.0: kompakte eingeklappte Darstellung */}
+                          <div style={{ fontSize: 15, fontWeight: 700, color: '#ec4899', display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                            {req.model_name}
+                            {req.account_csv && req.account_csv !== req.model_name && (
+                              <span style={{ fontSize: 11, fontWeight: 400, color: '#c084fc', fontFamily: 'monospace' }}>↳ {req.account_csv}</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            {req.customer_id && <span style={{ fontFamily: 'monospace' }}>Kunde: <span style={{ color: 'var(--text-secondary)' }}>{req.customer_id}</span></span>}
+                            <span>Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span></span>
+                          </div>
+                          {/* einzeilige Briefing-Vorschau */}
+                          {briefingPreview && (
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                              {briefingPreview}
+                            </div>
+                          )}
+                        </>)}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexShrink: 0 }}>
                         <div style={{ textAlign: 'right' }}>
@@ -3116,6 +3151,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <span style={{ color: 'var(--text-muted)', fontSize: 13, transition: 'transform 0.2s', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', marginTop: 2 }}>▼</span>
                       </div>
                     </div>
+
+                    {/* v3.43.0: Quick-Actions auch im eingeklappten Zustand erreichbar */}
+                    {!isExpanded && (req.status === 'neu' || req.status === 'angefragt') && (
+                      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                        {req.status !== 'angefragt' && (
+                          <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '4px 11px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Anfragen + TG</button>
+                        )}
+                        <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 10, padding: '4px 12px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Bestätigen + TG</button>
+                      </div>
+                    )}
 
                     {isExpanded && (<>
                     {/* Beschreibung */}
