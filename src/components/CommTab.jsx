@@ -203,6 +203,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [isMobileChat, setIsMobileChat] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
   const [chatTypeFilter, setChatTypeFilter] = useState('all') // 'all' | 'chatter' | 'model'
   const [expandedMonths, setExpandedMonths] = useState({}) // {'2026-04': true} für Custom Verlauf Akkordeon
+  const [hoverHistRow, setHoverHistRow] = useState(null) // v3.44.0: Hover-Highlight Verlauf-Tabelle
   const [editingRequest, setEditingRequest] = useState(null) // {...request} - öffnet Edit-Modal
   const [unreadCount, setUnreadCount] = useState(0)
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
@@ -3646,16 +3647,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 </tr>
               </thead>
               <tbody>
-                {items.map(req => {
+                {items.map((req, idx) => {
                   const remainder = (req.price || 0) - (req.deposit || 0)
                   const deadlineLabel = req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : req.deadline === 'week' ? '🗓 Diese Woche' : '—'
                   const deadlineColor = req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981'
                   const editedInfo = req.edited_by && req.edited_at
                     ? `bearbeitet ${new Date(req.edited_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${req.edited_by}`
                     : null
+                  // v3.44.0: Zeilenführung über Zebra-Streifen + Hover-Highlight
+                  const rowBg = hoverHistRow === req.id ? 'rgba(124,58,237,0.10)' : (idx % 2 === 1 ? 'rgba(255,255,255,0.025)' : 'transparent')
                   return (
                     <React.Fragment key={req.id}>
-                      <tr>
+                      <tr onMouseEnter={() => setHoverHistRow(req.id)} onMouseLeave={() => setHoverHistRow(null)} style={{ background: rowBg, transition: 'background 0.12s' }}>
                         <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
                         <td style={{ ...tdS, fontWeight: 600, color: '#06b6d4' }}>{req.chatter_name}</td>
                         <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
@@ -3677,7 +3680,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         )}
                       </tr>
                       {editedInfo && (
-                        <tr>
+                        <tr onMouseEnter={() => setHoverHistRow(req.id)} onMouseLeave={() => setHoverHistRow(null)} style={{ background: rowBg }}>
                           <td colSpan={isAdminUser ? 11 : 10} style={{ padding: '0 10px 6px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-muted)', fontSize: 9, fontStyle: 'italic' }}>
                             ↳ {editedInfo}
                           </td>
@@ -3691,24 +3694,39 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           </div>
         )
 
-        const renderStatsRow = (stats) => (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-            {Object.entries(stats.byModel).sort((a, b) => b[1].revenue - a[1].revenue).map(([name, v]) => (
-              <div key={`m-${name}`} style={{ padding: '4px 10px', background: 'rgba(167,139,250,0.1)', borderRadius: 6, border: '1px solid rgba(167,139,250,0.25)' }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>{name}</span>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>{v.count}×</span>
-                <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${v.revenue.toFixed(0)}</span>
-              </div>
-            ))}
-            {Object.entries(stats.byChatter).sort((a, b) => b[1].revenue - a[1].revenue).map(([name, v]) => (
-              <div key={`c-${name}`} style={{ padding: '4px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 6, border: '1px solid rgba(6,182,212,0.25)' }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#06b6d4' }}>{name}</span>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>{v.count}×</span>
-                <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${v.revenue.toFixed(0)}</span>
-              </div>
-            ))}
-          </div>
-        )
+        // v3.44.0: Stats-Chips in zwei beschriftete Gruppen (Models / Chatter) statt einer Wolke
+        const renderStatsRow = (stats) => {
+          const modelEntries = Object.entries(stats.byModel).sort((a, b) => b[1].revenue - a[1].revenue)
+          const chatterEntries = Object.entries(stats.byChatter).sort((a, b) => b[1].revenue - a[1].revenue)
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {modelEntries.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 58 }}>Models</span>
+                  {modelEntries.map(([name, v]) => (
+                    <div key={`m-${name}`} style={{ padding: '4px 10px', background: 'rgba(167,139,250,0.1)', borderRadius: 6, border: '1px solid rgba(167,139,250,0.25)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>{name}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>{v.count}×</span>
+                      <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${v.revenue.toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {chatterEntries.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#06b6d4', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 58 }}>Chatter</span>
+                  {chatterEntries.map(([name, v]) => (
+                    <div key={`c-${name}`} style={{ padding: '4px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 6, border: '1px solid rgba(6,182,212,0.25)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#06b6d4' }}>{name}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 5 }}>{v.count}×</span>
+                      <span style={{ fontSize: 11, color: '#10b981', marginLeft: 6, fontFamily: 'monospace' }}>${v.revenue.toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        }
 
         return (
           <Card title={`Custom Content Verlauf (${erledigte.length})`}>
