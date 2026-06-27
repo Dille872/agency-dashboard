@@ -173,7 +173,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [expandedReqs, setExpandedReqs] = useState(null)
   const toggleReqExpanded = (id) => setExpandedReqs(prev => {
     const base = prev === null
-      ? new Set(contentRequests.filter(r => r.deadline === 'asap').map(r => r.id))
+      ? new Set()
       : new Set(prev)
     base.has(id) ? base.delete(id) : base.add(id)
     return base
@@ -3074,8 +3074,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 const nothingPaid = req.price > 0 && totalPaid === 0
                 const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
                 const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
-                // v3.43.0: Default offen nur noch bei ASAP (dringend); Neu wird kompakt eingeklappt gezeigt.
-                const defaultOpen = req.deadline === 'asap'
+                // v3.43.1: Standardmäßig alles eingeklappt (auch ASAP); ASAP bleibt durch rotes Badge sichtbar.
+                const defaultOpen = false
                 const isExpanded = expandedReqs === null ? defaultOpen : expandedReqs.has(req.id)
                 const payDot = req.price > 0 ? (fullyPaid ? '#10b981' : partiallyPaid ? '#f59e0b' : '#ef4444') : null
                 const payDotLabel = fullyPaid ? '✓ bezahlt' : partiallyPaid ? paidPct + '% bezahlt' : 'offen'
