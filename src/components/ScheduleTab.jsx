@@ -198,6 +198,16 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
 
+  // v3.44.2: mobileDay an die angezeigte Woche koppeln. Ohne das zeigt das Handy nach einem
+  // Wochenwechsel weiter einen Tag aus der alten Woche -> alle Zellen leer, obwohl verplant.
+  useEffect(() => {
+    const weekIsos = weekDays.map(d => isoDate(d))
+    if (!weekIsos.includes(mobileDay)) {
+      const today = todayBerlin()
+      setMobileDay(weekIsos.includes(today) ? today : weekIsos[0])
+    }
+  }, [weekKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { loadModels(); loadChatters(); loadAdmins(); loadRecurring(); loadAbsences(); loadActiveReminders(); loadConflictAcks(); loadOpenSwaps() }, [])
 
   // v3.1.0: Konflikt-Acks aus DB laden (welche Doppel-Schichten wurden als gesehen markiert)
