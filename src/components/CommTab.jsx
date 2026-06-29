@@ -1418,6 +1418,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         return
       }
       await sendTelegramMessage(chatterData.telegram_id, body)
+      // v3.45.0: Status-Update auch im Chat-Verlauf des Chatters sichtbar machen
+      await supabase.from('messages').insert({
+        model_name: req.chatter_name,
+        model_telegram_id: chatterData.telegram_id,
+        direction: 'out',
+        contact_type: 'chatter',
+        message_type: 'status',
+        text: body.replace(/<\/?b>/g, ''),
+        status: 'sent',
+        read: true,
+        sent_by: userName,
+      })
     } catch (e) {
       console.error('notifyChatterStatusChange failed:', e)
     }
@@ -1455,6 +1467,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
         const msg = `<b>📥 Neue Content-Anfrage für dich</b>\n\n${text}${profileLine}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
         await sendTelegramMessage(modelData.telegram_id, msg)
+        // v3.45.0: Anfrage auch im Chat-Verlauf der Model sichtbar machen (Kontext für ihre Antwort)
+        await supabase.from('messages').insert({
+          model_name: req.model_name,
+          model_telegram_id: modelData.telegram_id,
+          direction: 'out',
+          contact_type: 'model',
+          message_type: 'content_request',
+          text: `📥 Content-Anfrage: ${text}`,
+          status: 'sent',
+          read: true,
+          sent_by: userName,
+        })
       }
     }
 
@@ -1481,6 +1505,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
         const msg = `<b>📸 Custom Content — Auftrag</b>\n\n${text}${profileLine}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
         await sendTelegramMessage(modelData.telegram_id, msg)
+        // v3.45.0: Auftrag auch im Chat-Verlauf der Model sichtbar machen
+        await supabase.from('messages').insert({
+          model_name: req.model_name,
+          model_telegram_id: modelData.telegram_id,
+          direction: 'out',
+          contact_type: 'model',
+          message_type: 'content_request',
+          text: `📸 Custom Content — Auftrag: ${text}`,
+          status: 'sent',
+          read: true,
+          sent_by: userName,
+        })
       }
     }
 
@@ -1491,6 +1527,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   //         Chat    = Nachrichten OHNE message_type (reine Konversation)
   const isTicket = (m) => m.message_type !== null && m.message_type !== undefined
   const isChat = (m) => !isTicket(m)
+
+  // v3.45.0: Label für Ticket-/System-Nachrichten, die jetzt mit im Chat-Verlauf stehen
+  const ticketLabel = (t) => ({
+    content_request: '📥 Content-Anfrage',
+    availability: '🟢 Verfügbarkeit',
+    announcement: '📣 Ankündigung',
+    zoom: '📅 Zoom Call',
+    free: '📝 Nachricht',
+    status: 'ℹ️ Status-Update',
+  }[t] || `📌 ${t}`)
 
   const inboxMessages = messages.filter(m => {
     if (m.direction !== 'in') return false
@@ -2056,9 +2102,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const allowedContactTypes = isUnified
           ? (chatTypeFilter === 'all' ? ['model', 'chatter'] : [chatTypeFilter])
           : [contactType]
-        // Alle Chat-Nachrichten passend
+        // v3.45.0: Chat-Verlauf zeigt jetzt ALLE Nachrichten (auch Tickets, Ansagen,
+        // Content-Anfragen) — damit Antworten der Models/Chatter im Kontext der
+        // rausgeschickten Nachricht stehen, statt kontextlos im Verlauf zu hängen.
         const chatMsgs = messages.filter(m =>
-          allowedContactTypes.includes(m.contact_type) && isChat(m) && m.contact_type !== 'unknown'
+          allowedContactTypes.includes(m.contact_type) && m.contact_type !== 'unknown'
         )
         // Threads gruppieren nach `${contact_type}:${model_name}` für unified, sonst nur model_name
         const threadsMap = {}
@@ -2274,6 +2322,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             border: isOut ? '1px solid rgba(124,58,237,0.3)' : '1px solid var(--border)',
                             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                           }}>
+                            {/* v3.45.0: Label, wenn es eine Ticket-/System-Nachricht ist */}
+                            {msg.message_type && (
+                              <div style={{
+                                fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+                                textTransform: 'uppercase', opacity: 0.75, marginBottom: 4,
+                              }}>
+                                {ticketLabel(msg.message_type)}
+                              </div>
+                            )}
                             {/* v3.25.0: Anhänge anzeigen — Bild/Video/Audio/Datei je nach Typ */}
                             {msg.image_urls && msg.image_urls.length > 0 && (
                               <div style={{
