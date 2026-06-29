@@ -205,6 +205,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [expandedMonths, setExpandedMonths] = useState({}) // {'2026-04': true} für Custom Verlauf Akkordeon
   const [hoverHistRow, setHoverHistRow] = useState(null) // v3.44.0: Hover-Highlight Verlauf-Tabelle
   const [editingRequest, setEditingRequest] = useState(null) // {...request} - öffnet Edit-Modal
+  const [editImages, setEditImages] = useState([])           // v3.46.0: Bild-URLs im Edit-Modal
+  const [editImgBusy, setEditImgBusy] = useState(false)      // v3.46.0: Upload läuft gerade
   const [unreadCount, setUnreadCount] = useState(0)
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
   const [replyText, setReplyText] = useState('')
@@ -271,6 +273,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
     }
   }, [activeThreadName, messages])
+
+  // v3.46.0: Beim Öffnen des Edit-Modals die vorhandenen Bilder der Anfrage laden
+  useEffect(() => {
+    setEditImages(editingRequest?.image_urls || [])
+  }, [editingRequest])
 
   // Mobile-Detection für Chat-Layout
   useEffect(() => {
@@ -705,6 +712,30 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (error) { alert('Fehler: ' + error.message); return }
     setEditingRequest(null)
     loadContentRequests()
+  }
+
+  // v3.46.0: Bilder für die Anfrage hochladen (gleiche Mechanik wie der Chat-Upload)
+  const uploadRequestImages = async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'))
+    if (files.length === 0) return
+    setEditImgBusy(true)
+    const newUrls = []
+    for (const f of files) {
+      try {
+        const safeFile = await convertHeicIfNeeded(f)
+        const blob = await resizeImage(safeFile, 1920, 0.85)
+        const ext = (f.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+        const path = `requests/${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`
+        const { error: upErr } = await supabase.storage.from('chat-attachments').upload(path, blob, {
+          contentType: 'image/jpeg', cacheControl: '31536000',
+        })
+        if (upErr) { console.error('Upload-Fehler:', upErr); continue }
+        const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path)
+        if (pub?.publicUrl) newUrls.push(pub.publicUrl)
+      } catch (e) { console.error('Resize/Upload fehlgeschlagen:', e) }
+    }
+    setEditImages(prev => [...prev, ...newUrls])
+    setEditImgBusy(false)
   }
 
   const markAllRead = async () => {
@@ -1467,6 +1498,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
         const msg = `<b>📥 Neue Content-Anfrage für dich</b>\n\n${text}${profileLine}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
         await sendTelegramMessage(modelData.telegram_id, msg)
+        // v3.46.0: Referenz-Bilder der Anfrage mitsenden (falls vorhanden)
+        if (req.image_urls?.length > 0) {
+          await sendTelegramMediaGroup(modelData.telegram_id, req.image_urls)
+        }
         // v3.45.0: Anfrage auch im Chat-Verlauf der Model sichtbar machen (Kontext für ihre Antwort)
         await supabase.from('messages').insert({
           model_name: req.model_name,
@@ -1475,6 +1510,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           contact_type: 'model',
           message_type: 'content_request',
           text: `📥 Content-Anfrage: ${text}`,
+          image_urls: req.image_urls?.length > 0 ? req.image_urls : null,
           status: 'sent',
           read: true,
           sent_by: userName,
@@ -1513,6 +1549,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           contact_type: 'model',
           message_type: 'content_request',
           text: `📸 Custom Content — Auftrag: ${text}`,
+          image_urls: req.image_urls?.length > 0 ? req.image_urls : null,
           status: 'sent',
           read: true,
           sent_by: userName,
@@ -3958,6 +3995,39 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 <textarea defaultValue={r.request_text || ''} id="edit-request-text" rows={3} style={{ ...inputS, resize: 'vertical' }} />
               </label>
 
+              {/* v3.46.0: Bilder / Referenzen — hinzufügen & entfernen */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Bilder / Referenzen</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {editImages.map((url, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <a href={url} target="_blank" rel="noreferrer">
+                        <img src={url} alt="" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid #2e2e5a', display: 'block' }} />
+                      </a>
+                      <button type="button" onClick={() => setEditImages(prev => prev.filter((_, idx) => idx !== i))} style={{
+                        position: 'absolute', top: -7, right: -7, width: 20, height: 20, borderRadius: '50%',
+                        background: '#ef4444', color: '#fff', border: '2px solid var(--bg-card)', fontSize: 12, lineHeight: '16px',
+                        cursor: 'pointer', padding: 0, fontWeight: 700,
+                      }}>×</button>
+                    </div>
+                  ))}
+                  <label style={{
+                    width: 60, height: 60, borderRadius: 6, border: '1px dashed #3a3a6a',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: editImgBusy ? 'wait' : 'pointer', color: 'var(--text-muted)', fontSize: 24,
+                    background: 'var(--bg-input)',
+                  }}>
+                    {editImgBusy ? '…' : '+'}
+                    <input type="file" accept="image/*" multiple disabled={editImgBusy}
+                      onChange={e => { uploadRequestImages(e.target.files); e.target.value = '' }}
+                      style={{ display: 'none' }} />
+                  </label>
+                </div>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                  Diese Bilder werden mit der Anfrage an die Model geschickt, sobald sie auf „Angefragt" gesetzt wird.
+                </span>
+              </div>
+
               {/* Zahl-Status Toggles */}
               <div style={{ display: 'flex', gap: 14, marginBottom: 18, padding: 10, background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -3994,6 +4064,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     request_text: document.getElementById('edit-request-text').value || null,
                     deposit_paid: document.getElementById('edit-deposit-paid').checked,
                     remainder_paid: document.getElementById('edit-remainder-paid').checked,
+                    image_urls: editImages.length > 0 ? editImages : null,
                   }
                   saveEditedRequest(updates)
                 }} style={{
