@@ -1405,6 +1405,27 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     await supabase.from('content_requests').update({ remainder_due_at: dateStr || null }).eq('id', reqId)
     loadContentRequests()
   }
+
+  // v3.47.0: Überfällige Restzahlung für 3 Tage ausblenden (kommt danach automatisch wieder)
+  const snoozeRemainder = async (reqId) => {
+    const until = new Date(Date.now() + 3 * 86400000).toISOString()
+    await supabase.from('content_requests').update({ remainder_snooze_until: until }).eq('id', reqId)
+    loadContentRequests()
+  }
+
+  // v3.47.0: Liste überfälliger Restzahlungen — angezahlt, Rest offen, Fälligkeit
+  // überschritten, nicht gerade weggeklickt. Treibt den Hinweis-Banner + Tab-Zähler.
+  const overdueRemainders = contentRequests.filter(r => {
+    if (r.status === 'abgelehnt') return false
+    if (!r.deposit_paid || r.remainder_paid) return false
+    if (!r.remainder_due_at) return false
+    const rest = (r.price || 0) - (r.deposit || 0)
+    if (rest <= 0) return false
+    if (new Date(r.remainder_due_at) >= new Date(todayIso())) return false
+    if (r.remainder_snooze_until && new Date(r.remainder_snooze_until) > new Date()) return false
+    return true
+  })
+
   const [editingText, setEditingText] = useState(null) // req.id
   const [editTextValue, setEditTextValue] = useState('')
 
@@ -1600,7 +1621,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {[
           (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => !a.read).length > 0) ? 1 : 0 },
-          section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}` },
+          section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}${overdueRemainders.length > 0 ? ` 🔴${overdueRemainders.length}` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
           section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
@@ -3084,6 +3105,32 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const isFiltered = contentModelFilter !== 'all' || contentChatterFilter !== 'all' || contentSearch.trim() !== ''
         return (
         <Card title={`Custom Content (${filteredRequests.length}${isFiltered ? ` von ${contentRequests.length}` : ''})`}>
+          {/* v3.47.0: Hinweis-Banner auf überfällige Restzahlungen */}
+          {overdueRemainders.length > 0 && (
+            <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>
+                ⚠ {overdueRemainders.length} überfällige Restzahlung{overdueRemainders.length !== 1 ? 'en' : ''} — bitte nachfassen
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {overdueRemainders.map(r => {
+                  const rest = (r.price || 0) - (r.deposit || 0)
+                  const days = Math.floor((new Date(todayIso()) - new Date(r.remainder_due_at)) / 86400000)
+                  return (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', padding: '6px 8px', borderRadius: 6, background: 'var(--bg-card2)', border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>
+                        <b>{r.model_name}</b>{r.customer_id ? ` · 👤 ${r.customer_id}` : ''} · <span style={{ color: '#f59e0b', fontWeight: 700 }}>${rest} offen</span>
+                        <span style={{ color: '#ef4444', marginLeft: 6, fontSize: 11, fontWeight: 700 }}>· seit {days} Tag{days !== 1 ? 'en' : ''} überfällig</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => markPaymentPaid(r, 'remainder')} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Rest erhalten</button>
+                        <button onClick={() => snoozeRemainder(r.id)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>⏰ in 3 Tagen</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {/* Status-Filter Buttons */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {[
