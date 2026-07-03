@@ -5,7 +5,7 @@ import { APP_VERSION } from './version'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight,
+  Eye, ArrowLeftRight, DollarSign,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
@@ -18,6 +18,7 @@ import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
+import BillingTab from './components/BillingTab'
 import PerformanceTab from './components/PerformanceTab'
 import TodoTab from './components/TodoTab'
 import SocialTab from './components/SocialTab'
@@ -395,7 +396,7 @@ export default function App() {
 
   const canAccess = (tab) => {
     if (userRole === 'admin') return true
-    if (userRole === 'manager') return !['settings'].includes(tab)
+    if (userRole === 'manager') return !['settings', 'billing'].includes(tab)
     if (userRole === 'dienstplan') return ['schedule', 'chatters-comm'].includes(tab)
     if (userRole === 'creator_manager') return ['models-comm'].includes(tab)
     if (isSocialMedia) return ['social'].includes(tab)
@@ -493,6 +494,7 @@ export default function App() {
                 { key: 'todos', label: 'ToDos', Icon: CheckSquare, badge: openTodos },
                 { key: 'performance', label: 'Performance', Icon: TrendingUp },
                 { key: 'social', label: 'Social', Icon: Globe },
+                { key: 'billing', label: 'Billing', Icon: DollarSign },
               ]
               const visiblePrimary = TABS_PRIMARY.filter(t => t.divider || canAccess(t.key))
               const visibleMore = TABS_MORE.filter(t => canAccess(t.key))
@@ -663,6 +665,7 @@ export default function App() {
               { key: 'performance', label: 'Performance', Icon: TrendingUp },
               { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
               { key: 'social', label: 'Social', Icon: Globe },
+              { key: 'billing', label: 'Billing', Icon: DollarSign },
               { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
             ].filter(t => canAccess(t.key)).map(tab => (
               <button key={tab.key} onClick={() => {
@@ -770,6 +773,8 @@ export default function App() {
           <TodoTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'social' ? (
           <SocialTab session={session} userDisplayName={userDisplayName} userRole={userRole} />
+        ) : activeTab === 'billing' ? (
+          <BillingTab />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (
