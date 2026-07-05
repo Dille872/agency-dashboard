@@ -12,6 +12,20 @@ import { convertHeicIfNeeded } from '../imageUtils'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
+
+// v3.50.0: Content-Typen inkl. Live-Leistungen (Videocall/Telefonat).
+// WICHTIG: Der Key 'audio' bleibt erhalten (Bestandsdaten!) und heißt jetzt nur "Sprachnachricht".
+// 'sonstiges' bleibt als Auffang-Typ. Felder werden je nach Typ ein-/ausgeblendet.
+const CONTENT_TYPE_META = {
+  videocall: { label: 'Videocall',       live: true,  showImages: false, showOutfit: true,  showQuantity: false, durLabel: 'Dauer',          durPlaceholder: 'z.B. 15 Min' },
+  telefonat: { label: 'Telefonat',       live: true,  showImages: false, showOutfit: false, showQuantity: false, durLabel: 'Dauer',          durPlaceholder: 'z.B. 15 Min' },
+  video:     { label: 'Video',           live: false, showImages: true,  showOutfit: true,  showQuantity: true,  durLabel: 'Länge / Anzahl', durPlaceholder: '5 Min' },
+  audio:     { label: 'Sprachnachricht', live: false, showImages: false, showOutfit: false, showQuantity: true,  durLabel: 'Länge / Anzahl', durPlaceholder: '2 Min' },
+  bild:      { label: 'Bild',            live: false, showImages: true,  showOutfit: true,  showQuantity: true,  durLabel: 'Anzahl',         durPlaceholder: '' },
+  sonstiges: { label: 'Sonstiges',       live: false, showImages: true,  showOutfit: true,  showQuantity: true,  durLabel: 'Länge / Anzahl', durPlaceholder: '' },
+}
+// Label-Helfer (fällt auf den rohen Key zurück, falls ein alter/unbekannter Typ auftaucht)
+const contentTypeLabel = (t) => (CONTENT_TYPE_META[t]?.label || t || '')
 // v3.38.0: Prioritäts-Styles für "Meine Aufgaben"
 const TODO_PRIORITY = {
   wichtig: { label: 'Wichtig', color: '#ef4444' },
@@ -384,8 +398,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newRequestType, setNewRequestType] = useState('video')
   const [newRequestPrice, setNewRequestPrice] = useState('')
   const [newRequestDeposit, setNewRequestDeposit] = useState('')
-  const [newRequestPaidAlready, setNewRequestPaidAlready] = useState(false) // ganzer Betrag schon da
-  const [newRequestDepositPaid, setNewRequestDepositPaid] = useState(false) // Anzahlung schon da
+  // v3.50.0: 3-Stufen-Umschalter statt zweier Checkboxen. 'anfrage' = nichts bezahlt.
+  const [newRequestPayStatus, setNewRequestPayStatus] = useState('anfrage') // 'anfrage' | 'angezahlt' | 'bezahlt'
+  const [newRequestOutfit, setNewRequestOutfit] = useState('')   // v3.50.0
+  const [newRequestSpecial, setNewRequestSpecial] = useState('') // v3.50.0 Besonderheiten
   const [newRequestDuration, setNewRequestDuration] = useState('')
   const [newRequestQuantity, setNewRequestQuantity] = useState('1')
   const [newRequestCustomerId, setNewRequestCustomerId] = useState('')
@@ -520,22 +536,30 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const remainderVal = priceVal - depositVal
     const nowIso = new Date().toISOString()
 
-    // Logik: wenn "ganzer Betrag schon bezahlt" angekreuzt → deposit_paid + remainder_paid beide true
-    // wenn nur "Anzahlung erhalten" angekreuzt → deposit_paid true, Rest noch offen
+    // v3.50.0: 3-Stufen-Bezahlstatus → gleiche DB-Felder wie zuvor (deposit_paid / remainder_paid),
+    // damit CommTab / ModelPortal die Auswertung unverändert nutzen können.
+    //   'bezahlt'   → deposit_paid + remainder_paid = true (komplett bezahlt)
+    //   'angezahlt' → deposit_paid = true, Rest offen (braucht Anzahlungsbetrag > 0)
+    //   'anfrage'   → nichts bezahlt
     let depositPaidNow = false
     let remainderPaidNow = false
     let depositPaidAt = null
     let remainderPaidAt = null
 
-    if (newRequestPaidAlready) {
+    if (newRequestPayStatus === 'bezahlt') {
       depositPaidNow = true
       remainderPaidNow = true
       depositPaidAt = nowIso
       remainderPaidAt = nowIso
-    } else if (newRequestDepositPaid && depositVal > 0) {
+    } else if (newRequestPayStatus === 'angezahlt' && depositVal > 0) {
       depositPaidNow = true
       depositPaidAt = nowIso
     }
+
+    // Zusatzfelder nur senden, wenn für den Typ sinnvoll bzw. befüllt
+    const typeMeta = CONTENT_TYPE_META[newRequestType] || {}
+    const outfitVal = (typeMeta.showOutfit && newRequestOutfit.trim()) ? newRequestOutfit.trim() : null
+    const specialVal = newRequestSpecial.trim() || null
 
     await supabase.from('content_requests').insert({
       chatter_name: displayName,
@@ -555,27 +579,30 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       status: 'neu',
       image_urls: uploadedUrls,
       deadline: newRequestDeadline,
+      outfit: outfitVal,               // v3.50.0
+      special_notes: specialVal,       // v3.50.0 Besonderheiten
     })
 
     // Notify admins via Telegram
     const deadlineText = newRequestDeadline === 'asap' ? '⚡ ASAP' : newRequestDeadline === 'hours' ? '⏰ In den nächsten Stunden' : newRequestDeadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'
-    // Bezahl-Zeile im TG
+    // Bezahl-Zeile im TG (v3.50.0)
     let payInfoTg = ''
-    if (newRequestPaidAlready) {
+    if (newRequestPayStatus === 'bezahlt') {
       payInfoTg = ` ✓ vollständig bezahlt`
-    } else if (newRequestDepositPaid && depositVal > 0) {
+    } else if (newRequestPayStatus === 'angezahlt' && depositVal > 0) {
       payInfoTg = ` (Anzahlung $${depositVal} ✓ erhalten · Rest $${remainderVal} offen)`
-    } else if (depositVal > 0) {
-      payInfoTg = ` (Anzahlung: $${depositVal})`
+    } else {
+      payInfoTg = ` (nur Anfrage – noch nichts bezahlt)`
     }
-    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}${(newRequestProfile && newRequestProfile !== newRequestModel) ? `\nProfil: ${newRequestProfile}` : ''}\nTyp: ${newRequestType}\nPreis: $${newRequestPrice}${payInfoTg}\nDringlichkeit: ${deadlineText}\n\nWunsch: ${newRequestText.trim()}`
+    const extraTg = `${outfitVal ? `\nOutfit: ${outfitVal}` : ''}${specialVal ? `\nBesonderheiten: ${specialVal}` : ''}`
+    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}${(newRequestProfile && newRequestProfile !== newRequestModel) ? `\nProfil: ${newRequestProfile}` : ''}\nTyp: ${contentTypeLabel(newRequestType)}\nPreis: $${newRequestPrice}${payInfoTg}\nDringlichkeit: ${deadlineText}${extraTg}\n\nWunsch: ${newRequestText.trim()}`
     await Promise.all([
       sendTelegramMessage(CHRIS_TG, tgMsg),
       sendTelegramMessage(REY_TG, tgMsg),
     ])
     setNewRequestModel(''); setNewRequestProfile(''); setNewRequestText(''); setNewRequestType('video')
     setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
-    setNewRequestPaidAlready(false); setNewRequestDepositPaid(false)
+    setNewRequestPayStatus('anfrage'); setNewRequestOutfit(''); setNewRequestSpecial('')
     setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
     await loadContentRequests()
     setSendingRequest(false)
@@ -1903,6 +1930,21 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', padding: 0
               }}>✕</button>
             </div>
+            {/* v3.50.0: Typ-Auswahl (volle Breite, 6 Typen inkl. Live-Leistungen 🔴) */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Typ *</label>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {Object.entries(CONTENT_TYPE_META).map(([k, meta]) => (
+                  <button key={k} onClick={() => setNewRequestType(k)} style={{
+                    flex: '1 1 28%', minWidth: 88, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
+                    background: newRequestType === k ? 'rgba(124,58,237,0.2)' : 'transparent',
+                    color: newRequestType === k ? '#a78bfa' : 'var(--text-muted)',
+                    border: `1px solid ${newRequestType === k ? '#7c3aed' : 'var(--border)'}`,
+                  }}>{meta.live ? '🔴 ' : ''}{meta.label}</button>
+                ))}
+              </div>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Model / Profil *</label>
@@ -1924,75 +1966,83 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Typ *</label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {[['video','Video'],['bild','Bild'],['audio','Audio'],['sonstiges','Sonstiges']].map(([k,l]) => (
-                    <button key={k} onClick={() => setNewRequestType(k)} style={{
-                      flex: 1, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
-                      background: newRequestType === k ? 'rgba(124,58,237,0.2)' : 'transparent',
-                      color: newRequestType === k ? '#a78bfa' : 'var(--text-muted)',
-                      border: `1px solid ${newRequestType === k ? '#7c3aed' : 'var(--border)'}`,
-                    }}>{l}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Kundennummer</label>
                 <input value={newRequestCustomerId} onChange={e => setNewRequestCustomerId(e.target.value)}
                   style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   placeholder="#FAN-xxxx" />
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Gesamtpreis</label>
-                <input type="number" value={newRequestPrice} onChange={e => setNewRequestPrice(e.target.value)}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                  placeholder="$0" />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, cursor: 'pointer', fontSize: 11 }}>
-                  <input type="checkbox" checked={newRequestPaidAlready}
-                    onChange={e => {
-                      setNewRequestPaidAlready(e.target.checked)
-                      if (e.target.checked) setNewRequestDepositPaid(false)
-                    }}
-                    style={{ accentColor: '#10b981' }} />
-                  <span style={{ color: newRequestPaidAlready ? '#10b981' : 'var(--text-muted)' }}>
-                    ✓ Komplett schon bezahlt
-                  </span>
-                </label>
+            </div>
+
+            {/* v3.50.0: Bezahl-Status als 3-Stufen-Umschalter (mappt intern auf deposit_paid / remainder_paid) */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Bezahlung</label>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                {[['anfrage','Anfrage','#a78bfa'],['angezahlt','Angezahlt','#f59e0b'],['bezahlt','Bezahlt','#10b981']].map(([k,l,c]) => (
+                  <button key={k} onClick={() => setNewRequestPayStatus(k)} style={{
+                    flex: 1, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                    background: newRequestPayStatus === k ? c + '22' : 'transparent',
+                    color: newRequestPayStatus === k ? c : 'var(--text-muted)',
+                    border: `1px solid ${newRequestPayStatus === k ? c : 'var(--border)'}`,
+                  }}>{l}</button>
+                ))}
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Anzahlung</label>
-                <input type="number" value={newRequestDeposit} onChange={e => setNewRequestDeposit(e.target.value)}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                  disabled={newRequestPaidAlready}
-                  placeholder="$0 (optional)" />
-                {!newRequestPaidAlready && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, cursor: parseFloat(newRequestDeposit) > 0 ? 'pointer' : 'not-allowed', fontSize: 11, opacity: parseFloat(newRequestDeposit) > 0 ? 1 : 0.5 }}>
-                    <input type="checkbox" checked={newRequestDepositPaid}
-                      disabled={!parseFloat(newRequestDeposit)}
-                      onChange={e => setNewRequestDepositPaid(e.target.checked)}
-                      style={{ accentColor: '#f59e0b' }} />
-                    <span style={{ color: newRequestDepositPaid ? '#f59e0b' : 'var(--text-muted)' }}>
-                      ✓ Anzahlung erhalten
-                    </span>
-                  </label>
+              <div style={{ display: 'grid', gridTemplateColumns: newRequestPayStatus === 'angezahlt' ? '1fr 1fr' : '1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Gesamtpreis</label>
+                  <input type="number" value={newRequestPrice} onChange={e => setNewRequestPrice(e.target.value)}
+                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    placeholder="$0" />
+                </div>
+                {newRequestPayStatus === 'angezahlt' && (
+                  <div>
+                    <label style={{ fontSize: 10, color: '#f59e0b', display: 'block', marginBottom: 3 }}>Anzahlung erhalten</label>
+                    <input type="number" value={newRequestDeposit} onChange={e => setNewRequestDeposit(e.target.value)}
+                      style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #f59e0b55', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                      placeholder="$0" />
+                  </div>
                 )}
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Länge / Anzahl</label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <input value={newRequestDuration} onChange={e => setNewRequestDuration(e.target.value)}
-                    style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                    placeholder="5 Min" />
+              {newRequestPayStatus === 'angezahlt' && !(parseFloat(newRequestDeposit) > 0) && (
+                <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4 }}>Bitte Anzahlungsbetrag eintragen, sonst wird nichts als bezahlt markiert.</div>
+              )}
+            </div>
+
+            {/* Länge / Anzahl – Label & Felder je nach Typ */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{(CONTENT_TYPE_META[newRequestType] || {}).durLabel || 'Länge / Anzahl'}</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input value={newRequestDuration} onChange={e => setNewRequestDuration(e.target.value)}
+                  style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  placeholder={(CONTENT_TYPE_META[newRequestType] || {}).durPlaceholder || ''} />
+                {(CONTENT_TYPE_META[newRequestType] || {}).showQuantity && (
                   <input type="number" value={newRequestQuantity} onChange={e => setNewRequestQuantity(e.target.value)} min="1"
                     style={{ width: 60, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                     placeholder="1" />
-                </div>
+                )}
               </div>
             </div>
             <div style={{ marginBottom: 8 }}>
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Wunsch des Kunden *</label>
               <textarea value={newRequestText} onChange={e => setNewRequestText(e.target.value)} rows={2}
                 placeholder="Was möchte der Kunde genau?"
+                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
+            </div>
+
+            {/* v3.50.0: Outfit (nur bei sichtbaren/visuellen Typen) */}
+            {(CONTENT_TYPE_META[newRequestType] || {}).showOutfit && (
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Outfit</label>
+                <input value={newRequestOutfit} onChange={e => setNewRequestOutfit(e.target.value)}
+                  placeholder="z.B. rotes Kleid, Dessous, casual …"
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
+              </div>
+            )}
+
+            {/* v3.50.0: Besonderheiten (immer) */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Besonderheiten</label>
+              <textarea value={newRequestSpecial} onChange={e => setNewRequestSpecial(e.target.value)} rows={2}
+                placeholder="z.B. Name nennen, bestimmte Ansprache, No-Gos, Requisiten …"
                 style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
             </div>
 
@@ -2010,7 +2060,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               </div>
             </div>
 
-            {/* Image upload */}
+            {/* Image upload – v3.50.0: nur bei Typen, wo Referenzbilder sinnvoll sind */}
+            {(CONTENT_TYPE_META[newRequestType] || {}).showImages && (
             <div style={{ marginBottom: 8 }}>
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Referenzbilder (optional · max. 5)</label>
               <label style={{ display: 'block', border: '1.5px dashed #2e2e5a', borderRadius: 7, padding: '10px', textAlign: 'center', cursor: 'pointer', background: 'var(--bg-input)' }}>
@@ -2034,6 +2085,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 </div>
               )}
             </div>
+            )}
 
             <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim()} style={{
               width: '100%', background: (newRequestModel && newRequestText.trim()) ? '#06b6d4' : 'var(--border)',
@@ -2069,7 +2121,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                          {req.content_type && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
+                          {req.content_type && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{contentTypeLabel(req.content_type)}</span>}
                           <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: statusColor + '22', color: statusColor }}>{statusLabel}</span>
                         </div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: '#ec4899', marginBottom: 2 }}>{req.model_name}</div>
@@ -2090,6 +2142,22 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
                     {/* Beschreibung */}
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.4 }}>{req.edited_text || req.request_text}</div>
+
+                    {/* v3.50.0: Outfit / Besonderheiten */}
+                    {(req.outfit || req.special_notes) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
+                        {req.outfit && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            👗 Outfit: <span style={{ color: 'var(--text-secondary)' }}>{req.outfit}</span>
+                          </div>
+                        )}
+                        {req.special_notes && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            ⭐ Besonderheiten: <span style={{ color: 'var(--text-secondary)' }}>{req.special_notes}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {req.image_urls?.length > 0 && (
                       <div style={{ display: 'flex', gap: 5, marginBottom: 8, flexWrap: 'wrap' }}>
