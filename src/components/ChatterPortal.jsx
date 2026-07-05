@@ -1612,6 +1612,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             {/* Abwesenheit eintragen */}
             <div style={{ marginTop: 16, borderTop: '1px solid #1e1e3a', paddingTop: 14 }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Ich bin nicht verfügbar am</div>
+              {/* v3.49.0: Info-Hinweis zur Vorlauf-Orientierung (nur Erklärtext, keine Sperre) */}
+              <div style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.22)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, color: '#a78bfa', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>ℹ️</span> Kurz zur Orientierung
+                </div>
+                Plane deine freien Tage bitte mit etwas Vorlauf – je mehr du bei uns arbeitest, desto mehr zählen wir auf dich:
+                <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span>• <b style={{ color: 'var(--text-primary)' }}>4+ Tage/Woche</b> → ca. 2 Wochen vorher eintragen</span>
+                  <span>• <b style={{ color: 'var(--text-primary)' }}>3 Tage/Woche</b> → ca. 10 Tage vorher</span>
+                  <span>• <b style={{ color: 'var(--text-primary)' }}>1–2 Tage/Woche</b> → ca. 1 Woche vorher reicht</span>
+                </div>
+                <div style={{ marginTop: 7 }}>Krank geworden? Kein Stress – das geht natürlich auch kurzfristig, trag es dann einfach direkt hier ein.</div>
+              </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 <input type="date" value={newAbsenceDate} onChange={e => setNewAbsenceDate(e.target.value)}
                   style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1 }} />
