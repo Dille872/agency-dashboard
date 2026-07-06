@@ -7,6 +7,47 @@ import { SocialLinksEditor } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
+
+// v3.50.0: Anzeige-Labels für Content-Typen (Keys = DB-Werte in content_requests.content_type).
+// 'audio' bleibt als Key erhalten (Bestandsdaten) und heißt nur "Sprachnachricht".
+// 'foto'/'other' sind Legacy-Werte aus dem alten Edit-Dropdown — nur Anzeige, nicht mehr wählbar.
+const CONTENT_TYPE_LABELS = {
+  videocall: 'Videocall',
+  telefonat: 'Telefonat',
+  video: 'Video',
+  audio: 'Sprachnachricht',
+  bild: 'Bild',
+  sonstiges: 'Sonstiges',
+  foto: 'Foto',       // legacy
+  other: 'Sonstiges', // legacy
+}
+const contentTypeLabel = (t) => CONTENT_TYPE_LABELS[t] || t || ''
+const isLiveType = (t) => t === 'videocall' || t === 'telefonat'
+
+// v3.51.0: Dringlichkeit zentral (inkl. Nächste Woche + Wunschdatum aus deadline_date)
+const DEADLINE_META = {
+  asap:     { short: '⚡ ASAP',          plain: 'So schnell wie möglich',   color: '#ef4444' },
+  hours:    { short: '⏰ Heute',         plain: 'In den nächsten Stunden',  color: '#f97316' },
+  days:     { short: '📅 1-2 Tage',      plain: '1-2 Tage',                 color: '#f59e0b' },
+  week:     { short: '🗓 Diese Woche',   plain: 'Diese Woche',              color: '#10b981' },
+  nextweek: { short: '📆 Nächste Woche', plain: 'Nächste Woche',            color: '#06b6d4' },
+  custom:   { short: '🎯 Wunschdatum',   plain: 'Wunschdatum',              color: '#a78bfa' },
+}
+const formatDeadlineDate = (dateStr) => {
+  try { return new Date(dateStr + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) } catch { return dateStr }
+}
+// Kurzform für Chips/Tabellen (bei Wunschdatum: konkretes Datum)
+const deadlineShort = (req) => {
+  if (!req?.deadline) return ''
+  if (req.deadline === 'custom' && req.deadline_date) return '🎯 ' + formatDeadlineDate(req.deadline_date)
+  return DEADLINE_META[req.deadline]?.short || ''
+}
+// Klartext für Telegram-Nachrichten ans Model
+const deadlinePlain = (req) => {
+  if (!req?.deadline) return ''
+  if (req.deadline === 'custom') return req.deadline_date ? `am ${formatDeadlineDate(req.deadline_date)}` : 'Wunschdatum'
+  return DEADLINE_META[req.deadline]?.plain || ''
+}
 const DISPLAY_NAMES = {
   'dillemc@hotmail.com': 'Chris',
 }
@@ -1500,7 +1541,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (status === 'angefragt' && req) {
       const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).maybeSingle()
       if (modelData?.telegram_id) {
-        const deadlineText = req.deadline === 'asap' ? 'So schnell wie möglich' : req.deadline === 'hours' ? 'In den nächsten Stunden' : req.deadline === 'days' ? '1-2 Tage' : req.deadline === 'week' ? 'Diese Woche' : ''
+        const deadlineText = deadlinePlain(req) // v3.51.0: inkl. Nächste Woche / Wunschdatum
         const remainder = (req.price || 0) - (req.deposit || 0)
         let payLine = ''
         if (req.price > 0) {
@@ -1517,7 +1558,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
         const text = req.edited_text || req.request_text
         const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
-        const msg = `<b>📥 Neue Content-Anfrage für dich</b>\n\n${text}${profileLine}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
+        // v3.50.0: Typ prominent im Header (Model sieht sofort: Videocall? Bild? …) + Outfit/Besonderheiten
+        const typeLbl = contentTypeLabel(req.content_type)
+        const headerIcon = req.content_type === 'videocall' ? '🎥' : req.content_type === 'telefonat' ? '📞' : '📥'
+        const durWord = isLiveType(req.content_type) ? 'Dauer' : 'Länge'
+        const outfitLine = req.outfit ? `\n👗 Outfit: ${req.outfit}` : ''
+        const specialLine = req.special_notes ? `\n⭐ Besonderheiten: ${req.special_notes}` : ''
+        const msg = `<b>${headerIcon} Neue ${typeLbl ? typeLbl + '-' : 'Content-'}Anfrage für dich</b>\n\n${text}${profileLine}${customerLine}${typeLbl ? '\n🎬 Typ: ' + typeLbl : ''}${req.duration ? `\n⏱ ${durWord}: ` + req.duration : ''}${outfitLine}${specialLine}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
         await sendTelegramMessage(modelData.telegram_id, msg)
         // v3.46.0: Referenz-Bilder der Anfrage mitsenden (falls vorhanden)
         if (req.image_urls?.length > 0) {
@@ -1530,7 +1577,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           direction: 'out',
           contact_type: 'model',
           message_type: 'content_request',
-          text: `📥 Content-Anfrage: ${text}`,
+          text: `${headerIcon} ${typeLbl ? typeLbl + '-' : 'Content-'}Anfrage: ${text}`,
           image_urls: req.image_urls?.length > 0 ? req.image_urls : null,
           status: 'sent',
           read: true,
@@ -1543,7 +1590,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       // Telegram ans Model schicken (KEIN doppel-Insert in custom_content mehr — content_requests ist die source of truth)
       const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).maybeSingle()
       if (modelData?.telegram_id) {
-        const deadlineText = req.deadline === 'asap' ? 'So schnell wie möglich' : req.deadline === 'hours' ? 'In den nächsten Stunden' : req.deadline === 'days' ? '1-2 Tage' : req.deadline === 'week' ? 'Diese Woche' : ''
+        const deadlineText = deadlinePlain(req) // v3.51.0: inkl. Nächste Woche / Wunschdatum
         const remainder = (req.price || 0) - (req.deposit || 0)
         let payLine = ''
         if (req.price > 0) {
@@ -1560,7 +1607,14 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
         const text = req.edited_text || req.request_text
         const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
-        const msg = `<b>📸 Custom Content — Auftrag</b>\n\n${text}${profileLine}${customerLine}${req.content_type ? '\n🎬 Typ: ' + req.content_type : ''}${req.duration ? '\n⏱ Länge: ' + req.duration : ''}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
+        // v3.50.0: Typ prominent im Header + Outfit/Besonderheiten
+        const typeLbl = contentTypeLabel(req.content_type)
+        const headerIcon = req.content_type === 'videocall' ? '🎥' : req.content_type === 'telefonat' ? '📞' : '📸'
+        const headerTitle = typeLbl ? `${typeLbl} — Auftrag` : 'Custom Content — Auftrag'
+        const durWord = isLiveType(req.content_type) ? 'Dauer' : 'Länge'
+        const outfitLine = req.outfit ? `\n👗 Outfit: ${req.outfit}` : ''
+        const specialLine = req.special_notes ? `\n⭐ Besonderheiten: ${req.special_notes}` : ''
+        const msg = `<b>${headerIcon} ${headerTitle}</b>\n\n${text}${profileLine}${customerLine}${typeLbl ? '\n🎬 Typ: ' + typeLbl : ''}${req.duration ? `\n⏱ ${durWord}: ` + req.duration : ''}${outfitLine}${specialLine}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
         await sendTelegramMessage(modelData.telegram_id, msg)
         // v3.45.0: Auftrag auch im Chat-Verlauf der Model sichtbar machen
         await supabase.from('messages').insert({
@@ -1569,7 +1623,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           direction: 'out',
           contact_type: 'model',
           message_type: 'content_request',
-          text: `📸 Custom Content — Auftrag: ${text}`,
+          text: `${headerIcon} ${headerTitle}: ${text}`,
           image_urls: req.image_urls?.length > 0 ? req.image_urls : null,
           status: 'sent',
           read: true,
@@ -1624,7 +1678,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}${overdueRemainders.length > 0 ? ` 🔴${overdueRemainders.length}` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
           section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
-          section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
+          // v3.51.0: Tickets-Tab ausgeblendet — die Sende-Seite (Model-Tickets wie [CONTENT_NOTIFY]/[STATUS_])
+          // existiert seit ModelPortal-Umbau nicht mehr, der Tab war immer leer. Code bleibt für Reaktivierung.
+          // section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
           (section === 'chatters' || !section) && { key: 'chatters', label: 'Chatters', badge: reactedSwapUnitCount() },
           section === 'chatters' && { key: 'swaps', label: (() => {
             const cnt = reactedSwapUnitCount()
@@ -1632,7 +1688,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           })() },
           section === 'chatters' && { key: 'stats', label: 'Statistik' },
           section === 'chatters' && { key: 'shiftlog', label: 'Schicht-Log' },
-          section === 'chatters' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter' && m.message_type !== null && m.message_type !== undefined).length },
+          // v3.51.0: Tickets-Tab ausgeblendet (siehe Kommentar oben — keine Sende-Seite mehr vorhanden)
+          // section === 'chatters' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'chatter' && m.message_type !== null && m.message_type !== undefined).length },
         ].filter(Boolean).map(s => (
           <button key={s.key} onClick={() => {
             setActiveSection(s.key)
@@ -3227,11 +3284,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 const isExpanded = expandedReqs === null ? defaultOpen : expandedReqs.has(req.id)
                 const payDot = req.price > 0 ? (fullyPaid ? '#10b981' : partiallyPaid ? '#f59e0b' : '#ef4444') : null
                 const payDotLabel = fullyPaid ? '✓ bezahlt' : partiallyPaid ? paidPct + '% bezahlt' : 'offen'
-                // v3.43.0: Deadline-Badge auch im eingeklappten Zustand
-                const deadlineMeta = req.deadline === 'asap' ? { label: '⚡ ASAP', color: '#ef4444' }
-                  : req.deadline === 'hours' ? { label: '⏰ Heute', color: '#f97316' }
-                  : req.deadline === 'days' ? { label: '📅 1-2 Tage', color: '#f59e0b' }
-                  : req.deadline ? { label: '🗓 Diese Woche', color: '#10b981' } : null
+                // v3.43.0: Deadline-Badge auch im eingeklappten Zustand (v3.51.0: zentral via DEADLINE_META)
+                const deadlineMeta = req.deadline && DEADLINE_META[req.deadline]
+                  ? { label: deadlineShort(req), color: DEADLINE_META[req.deadline].color }
+                  : null
                 const briefingPreview = (req.edited_text || req.request_text || '').trim()
                 return (
                   <div key={req.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
@@ -3240,7 +3296,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         {/* Badges */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
-                          {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{req.content_type}</span>}
+                          {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: isLiveType(req.content_type) ? 'rgba(239,68,68,0.15)' : 'rgba(124,58,237,0.15)', color: isLiveType(req.content_type) ? '#ef4444' : '#a78bfa' }}>{isLiveType(req.content_type) ? '🔴 ' : ''}{contentTypeLabel(req.content_type)}</span>}
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor }}>{statusLabel}</span>
                           {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>NEU</span>}
                           {/* v3.43.0: Deadline-Badge im eingeklappten Zustand sichtbar */}
@@ -3359,11 +3415,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                           {req.edited_text || req.request_text}
                         </div>
+                        {/* v3.50.0: Outfit / Besonderheiten */}
+                        {(req.outfit || req.special_notes) && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 5 }}>
+                            {req.outfit && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>👗 Outfit: <span style={{ color: 'var(--text-secondary)' }}>{req.outfit}</span></div>}
+                            {req.special_notes && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>⭐ Besonderheiten: <span style={{ color: 'var(--text-secondary)' }}>{req.special_notes}</span></div>}
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                           {req.duration && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>⏱ {req.duration}</span>}
                           {req.quantity > 1 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×{req.quantity}</span>}
-                          {req.deadline && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: req.deadline === 'asap' ? 'rgba(239,68,68,0.15)' : req.deadline === 'hours' ? 'rgba(249,115,22,0.15)' : req.deadline === 'days' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', color: req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981' }}>
-                            {req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'}
+                          {req.deadline && DEADLINE_META[req.deadline] && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: DEADLINE_META[req.deadline].color + '26', color: DEADLINE_META[req.deadline].color }}>
+                            {deadlineShort(req)}
                           </span>}
                           <button onClick={() => {
                             setEditingText(req.id)
@@ -3796,8 +3859,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               <tbody>
                 {items.map((req, idx) => {
                   const remainder = (req.price || 0) - (req.deposit || 0)
-                  const deadlineLabel = req.deadline === 'asap' ? '⚡ ASAP' : req.deadline === 'hours' ? '⏰ Heute' : req.deadline === 'days' ? '📅 1-2 Tage' : req.deadline === 'week' ? '🗓 Diese Woche' : '—'
-                  const deadlineColor = req.deadline === 'asap' ? '#ef4444' : req.deadline === 'hours' ? '#f97316' : req.deadline === 'days' ? '#f59e0b' : '#10b981'
+                  const deadlineLabel = deadlineShort(req) || '—'
+                  const deadlineColor = DEADLINE_META[req.deadline]?.color || '#10b981'
                   const editedInfo = req.edited_by && req.edited_at
                     ? `bearbeitet ${new Date(req.edited_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${req.edited_by}`
                     : null
@@ -3809,7 +3872,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <td style={{ ...tdS, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{new Date(req.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</td>
                         <td style={{ ...tdS, fontWeight: 600, color: '#06b6d4' }}>{req.chatter_name}</td>
                         <td style={{ ...tdS, fontWeight: 600, color: '#a78bfa' }}>{req.model_name}</td>
-                        <td style={tdS}>{req.content_type || '—'}</td>
+                        <td style={tdS}>{req.content_type ? contentTypeLabel(req.content_type) : '—'}</td>
                         <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
                         <td style={{ ...tdS, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.request_text}>{req.request_text || '—'}</td>
                         <td style={{ ...tdS, color: deadlineColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{deadlineLabel}</td>
@@ -4002,10 +4065,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Typ</span>
                   <select defaultValue={r.content_type || ''} id="edit-type" style={inputS}>
                     <option value="">—</option>
-                    <option value="audio">audio</option>
-                    <option value="video">video</option>
-                    <option value="foto">foto</option>
-                    <option value="other">other</option>
+                    {/* v3.50.0: kanonische Typen (Keys wie im ChatterPortal) */}
+                    <option value="videocall">Videocall</option>
+                    <option value="telefonat">Telefonat</option>
+                    <option value="video">Video</option>
+                    <option value="audio">Sprachnachricht</option>
+                    <option value="bild">Bild</option>
+                    <option value="sonstiges">Sonstiges</option>
+                    {/* Legacy-Wert des Eintrags wählbar lassen, damit defaultValue greift */}
+                    {r.content_type && !['videocall','telefonat','video','audio','bild','sonstiges'].includes(r.content_type) && (
+                      <option value={r.content_type}>{contentTypeLabel(r.content_type)} (alt)</option>
+                    )}
                   </select>
                 </label>
                 {/* Dringlichkeit */}
