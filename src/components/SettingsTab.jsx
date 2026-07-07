@@ -1257,7 +1257,7 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
   const [dragOver, setDragOver] = useState(false) // v3.51.0: Drag & Drop für Bilder
 
   const imageUrls = guideline.image_urls || []
-  const MAX_IMAGES = 8
+  const MAX_IMAGES = 20 // v3.52.0: von 8 auf 20 erhöht
 
   const saveText = async () => {
     if (savingText) return
