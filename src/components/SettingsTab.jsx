@@ -1128,6 +1128,7 @@ export default function SettingsTab() {
 
 // ============================================================
 // v3.2.0: Guidelines Editor (Admin-Pflege)
+// v3.51.0: Bilder per Drag & Drop hinzufügbar (Klick funktioniert weiterhin)
 // Schwesterkomponente im ChatterPortal: Read-Only-Anzeige
 // ============================================================
 
@@ -1253,6 +1254,7 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
   const [content, setContent] = useState(guideline.content || '')
   const [savingText, setSavingText] = useState(false)
   const [uploadingImages, setUploadingImages] = useState(false)
+  const [dragOver, setDragOver] = useState(false) // v3.51.0: Drag & Drop für Bilder
 
   const imageUrls = guideline.image_urls || []
   const MAX_IMAGES = 8
@@ -1326,6 +1328,16 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
       await onUpdate({ image_urls: newUrls })
     }
     setUploadingImages(false)
+  }
+
+  // v3.51.0: Drag & Drop — Bilder direkt auf die Drop-Zone ziehen
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    if (uploadingImages) return
+    const files = e.dataTransfer?.files
+    if (files && files.length > 0) handleImageSelect(files)
   }
 
   const removeImage = async (idx) => {
@@ -1413,15 +1425,34 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
                 ))}
               </div>
             )}
+            {/* v3.51.0: Drop-Zone — Bilder hierher ziehen ODER klicken */}
             {imageUrls.length < MAX_IMAGES && (
-              <label style={{
-                display: 'inline-block', padding: '8px 14px', borderRadius: 7,
-                background: 'rgba(6,182,212,0.12)', color: '#06b6d4',
-                border: '1px solid rgba(6,182,212,0.3)', fontSize: 12, fontWeight: 700,
-                cursor: uploadingImages ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-                opacity: uploadingImages ? 0.5 : 1,
-              }}>
-                {uploadingImages ? '⏳ Hochladen…' : '📎 Bilder hinzufügen'}
+              <label
+                onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (!uploadingImages) setDragOver(true) }}
+                onDragEnter={e => { e.preventDefault(); e.stopPropagation(); if (!uploadingImages) setDragOver(true) }}
+                onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setDragOver(false) }}
+                onDrop={handleDrop}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 4, padding: '18px 14px', borderRadius: 8, textAlign: 'center',
+                  border: `2px dashed ${dragOver ? '#06b6d4' : 'var(--border)'}`,
+                  background: dragOver ? 'rgba(6,182,212,0.12)' : 'rgba(6,182,212,0.04)',
+                  color: '#06b6d4', fontSize: 12, fontWeight: 700,
+                  cursor: uploadingImages ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                  opacity: uploadingImages ? 0.5 : 1, transition: 'all 0.15s',
+                }}
+              >
+                <div style={{ fontSize: 20, lineHeight: 1 }}>{uploadingImages ? '⏳' : '📎'}</div>
+                <div>
+                  {uploadingImages
+                    ? 'Hochladen…'
+                    : dragOver
+                      ? 'Loslassen zum Hochladen'
+                      : 'Bilder hierher ziehen oder klicken'}
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)' }}>
+                  JPG / PNG · noch {MAX_IMAGES - imageUrls.length} möglich
+                </div>
                 <input type="file" accept="image/*" multiple
                   disabled={uploadingImages}
                   onChange={e => { handleImageSelect(e.target.files); e.target.value = '' }}
