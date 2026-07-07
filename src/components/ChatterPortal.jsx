@@ -2484,6 +2484,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
 // ============================================================
 // v3.2.0: GuidelineView — Read-Only Anzeige für Chatter
+// v3.53.0: Bilder inline via [bildN]-Platzhalter (volle Breite an ihrer Textstelle)
 // (Editor ist in SettingsTab; hier nur Lesen)
 // ============================================================
 
@@ -2516,28 +2517,77 @@ function GuidelineView({ guideline, number, onImageClick }) {
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{expanded ? '▼' : '▶'}</span>
       </div>
 
-      {expanded && (
-        <div style={{ padding: '12px 14px 14px 14px' }}>
-          {guideline.content && (
-            <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)', marginBottom: imageUrls.length > 0 ? 12 : 0 }}>
-              <MarkdownText text={guideline.content} />
-            </div>
-          )}
-          {imageUrls.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {imageUrls.map((url, i) => (
-                <img key={i} src={url} alt={`Beispiel ${i + 1}`}
-                  onClick={() => onImageClick(url)}
-                  style={{
-                    width: 110, height: 110, objectFit: 'cover', borderRadius: 6,
-                    cursor: 'pointer', border: '1px solid var(--border)',
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {expanded && (() => {
+        // v3.53.0: Inhalt in Text-/Bild-Blöcke aufteilen — [bildN] erscheint inline
+        // (volle Breite) genau an seiner Stelle. Nicht referenzierte Bilder kommen
+        // gesammelt ans Ende (rückwärtskompatibel zu bestehenden Guidelines).
+        const content = guideline.content || ''
+        const usedIdx = new Set()
+        const parts = []
+        let textBuffer = []
+        const flushText = () => {
+          if (textBuffer.length > 0) {
+            parts.push({ type: 'text', value: textBuffer.join('\n') })
+            textBuffer = []
+          }
+        }
+        for (const line of content.split('\n')) {
+          const m = line.trim().match(/^\[bild(\d+)\]$/i)
+          if (m) {
+            const idx = parseInt(m[1], 10) - 1
+            if (idx >= 0 && idx < imageUrls.length) {
+              flushText()
+              parts.push({ type: 'image', idx })
+              usedIdx.add(idx)
+              continue
+            }
+          }
+          textBuffer.push(line)
+        }
+        flushText()
+        const unusedUrls = imageUrls.filter((_, i) => !usedIdx.has(i))
+
+        const InlineImg = ({ url }) => (
+          <img src={url} alt="" onClick={() => onImageClick(url)}
+            style={{
+              width: '100%', maxHeight: 520, objectFit: 'contain', borderRadius: 8,
+              cursor: 'pointer', border: '1px solid var(--border)',
+              background: 'rgba(0,0,0,0.15)', display: 'block',
+            }}
+          />
+        )
+
+        return (
+          <div style={{ padding: '12px 14px 14px 14px' }}>
+            {parts.map((p, i) => (
+              p.type === 'text' ? (
+                p.value.trim() ? (
+                  <div key={i} style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)', margin: '4px 0' }}>
+                    <MarkdownText text={p.value} />
+                  </div>
+                ) : null
+              ) : (
+                <div key={i} style={{ margin: '10px 0' }}>
+                  <InlineImg url={imageUrls[p.idx]} />
+                </div>
+              )
+            ))}
+            {unusedUrls.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: parts.length > 0 ? 12 : 0 }}>
+                {unusedUrls.map((url, i) => (
+                  <img key={i} src={url} alt={`Beispiel ${i + 1}`}
+                    onClick={() => onImageClick(url)}
+                    style={{
+                      width: 110, height: 110, objectFit: 'cover', borderRadius: 6,
+                      cursor: 'pointer', border: '1px solid var(--border)',
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

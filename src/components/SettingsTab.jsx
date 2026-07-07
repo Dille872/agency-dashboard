@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import BillingTab from './BillingTab'
 import ExportTab from './ExportTab'
@@ -1340,8 +1340,37 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
     if (files && files.length > 0) handleImageSelect(files)
   }
 
+  // v3.53.0: Bild-Platzhalter [bildN] an Cursor-Position im Inhalt einfügen.
+  // Der Chatter sieht das Bild dann genau an dieser Stelle (statt gesammelt unten).
+  const textareaRef = useRef(null)
+  const insertPlaceholder = (n) => {
+    const token = `[bild${n}]`
+    const ta = textareaRef.current
+    let start = content.length
+    let end = content.length
+    if (ta && typeof ta.selectionStart === 'number') {
+      start = ta.selectionStart
+      end = ta.selectionEnd
+    }
+    const before = content.slice(0, start)
+    const after = content.slice(end)
+    const needNlBefore = before.length > 0 && !before.endsWith('\n')
+    const needNlAfter = after.length > 0 && !after.startsWith('\n')
+    const insert = `${needNlBefore ? '\n' : ''}${token}${needNlAfter ? '\n' : ''}`
+    const newContent = before + insert + after
+    setContent(newContent)
+    onUpdate({ content: newContent }) // sofort speichern
+    // Cursor hinter das eingefügte Token setzen
+    requestAnimationFrame(() => {
+      if (!ta) return
+      ta.focus()
+      const pos = (before + insert).length
+      ta.setSelectionRange(pos, pos)
+    })
+  }
+
   const removeImage = async (idx) => {
-    if (!confirm('Bild aus Guideline entfernen?')) return
+    if (!confirm('Bild aus Guideline entfernen? Achtung: Nachfolgende Bild-Nummern verschieben sich — prüfe danach deine [bildN]-Platzhalter im Text.')) return
     const newUrls = imageUrls.filter((_, i) => i !== idx)
     await onUpdate({ image_urls: newUrls.length > 0 ? newUrls : null })
   }
@@ -1394,16 +1423,20 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
           {/* Content */}
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 5 }}>
-              Inhalt (Markdown: **fett**, *kursiv*, `code`, - Listen)
+              Inhalt (Markdown: **fett**, *kursiv*, `code`, - Listen, 1. nummeriert)
             </div>
             <textarea
+              ref={textareaRef}
               value={content}
               onChange={e => setContent(e.target.value)}
               onBlur={saveText}
-              placeholder="Schreib hier die Guideline-Inhalte. Beispiel:&#10;&#10;**Schritt 1:** Öffne die Lists-Übersicht&#10;**Schritt 2:** Klicke auf 'Neue Liste'&#10;&#10;- Punkt eins&#10;- Punkt zwei"
+              placeholder="Schreib hier die Guideline-Inhalte. Beispiel:&#10;&#10;1. Schichtbeginn im Dashboard anmelden&#10;[bild1]&#10;&#10;2. Aktuellen Schichtplan überprüfen&#10;[bild2]"
               rows={8}
               style={{ ...inputS, fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5 }}
             />
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+              💡 Tipp: Mit <code style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', padding: '1px 4px', borderRadius: 3 }}>[bild1]</code>, <code style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', padding: '1px 4px', borderRadius: 3 }}>[bild2]</code> … erscheint das jeweilige Bild genau an dieser Stelle im Text. Nutze die „einfügen"-Buttons unten bei den Bildern. Ohne Platzhalter werden Bilder gesammelt unten angezeigt.
+            </div>
           </div>
 
           {/* Bilder */}
@@ -1414,13 +1447,31 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
             {imageUrls.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                 {imageUrls.map((url, i) => (
-                  <div key={i} style={{ position: 'relative', width: 84, height: 84, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <button onClick={() => removeImage(i)} title="Entfernen" style={{
-                      position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%',
-                      background: 'rgba(0,0,0,0.7)', color: '#fff', border: 'none', cursor: 'pointer',
-                      fontSize: 11, lineHeight: 1, padding: 0, fontFamily: 'inherit',
-                    }}>✕</button>
+                  <div key={i} style={{ position: 'relative', width: 96, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                    <div style={{ position: 'relative', width: 96, height: 84 }}>
+                      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      {/* v3.53.0: Nummer-Badge zeigt, welches [bildN] gemeint ist */}
+                      <div style={{
+                        position: 'absolute', bottom: 3, left: 3,
+                        background: 'rgba(6,182,212,0.9)', color: '#001', borderRadius: 4,
+                        fontSize: 10, fontWeight: 700, padding: '1px 5px', fontFamily: 'inherit',
+                      }}>Bild {i + 1}</div>
+                      <button onClick={() => removeImage(i)} title="Entfernen" style={{
+                        position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.7)', color: '#fff', border: 'none', cursor: 'pointer',
+                        fontSize: 11, lineHeight: 1, padding: 0, fontFamily: 'inherit',
+                      }}>✕</button>
+                    </div>
+                    {/* v3.53.0: Platzhalter an Cursor-Position im Inhalt einfügen */}
+                    <button
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => insertPlaceholder(i + 1)}
+                      title={`[bild${i + 1}] an Cursor-Position im Inhalt einfügen`}
+                      style={{
+                        width: '100%', border: 'none', borderTop: '1px solid var(--border)',
+                        background: 'rgba(6,182,212,0.12)', color: '#06b6d4',
+                        fontSize: 10, fontWeight: 700, padding: '4px 0', cursor: 'pointer', fontFamily: 'inherit',
+                      }}>↥ in Text</button>
                   </div>
                 ))}
               </div>
