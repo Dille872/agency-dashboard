@@ -58,6 +58,15 @@ html, body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   transition: background 0.2s, color 0.2s;
+  /* v3.53.1: verhindert horizontalen Überlauf → Mobile zoomt nicht mehr raus.
+     'clip' statt 'hidden', damit der sticky Header weiter funktioniert. */
+  overflow-x: clip;
+}
+
+/* v3.53.1: App-Wurzel darf nie breiter als der Viewport werden */
+#root {
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
