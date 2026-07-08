@@ -189,6 +189,11 @@ function ModelAliasManager({ models }) {
   )
 }
 
+// v3.54.0: Modul-Cache für die Custom-Content-Liste. Beim Tab-Wechsel wird CommTab
+// neu gemountet; ohne Cache ist die Liste kurz leer ("Neuladen"-Gefühl). Mit Cache
+// erscheint der letzte Stand sofort und wird im Hintergrund aktualisiert.
+let _contentRequestsCache = null
+
 export default function CommTab({ session, section = 'nachrichten', displayName = '' }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
   const userName = getDisplayName(session?.user?.email)
@@ -1421,7 +1426,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     return units.size
   }
 
-  const [contentRequests, setContentRequests] = useState([])
+  const [contentRequests, setContentRequests] = useState(_contentRequestsCache || [])
   const [unreadRequests, setUnreadRequests] = useState(0)
   const [editingPayment, setEditingPayment] = useState(null) // req.id
   const [editPrice, setEditPrice] = useState('')
@@ -1480,6 +1485,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   const loadContentRequests = async () => {
     const { data } = await supabase.from('content_requests').select('*').order('created_at', { ascending: false })
+    _contentRequestsCache = data || [] // v3.54.0: Cache aktualisieren
     setContentRequests(data || [])
     setUnreadRequests((data || []).filter(r => r.status === 'neu').length)
   }
@@ -3332,8 +3338,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             <span>Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span></span>
                           </div>
                           {/* einzeilige Briefing-Vorschau */}
+                          {/* v3.54.0: 2-zeilige Vorschau mit Umbruch (vorher 1 abgeschnittene Zeile) */}
                           {briefingPreview && (
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                            <div style={{
+                              fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.45,
+                              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden', wordBreak: 'break-word',
+                            }}>
                               {briefingPreview}
                             </div>
                           )}
