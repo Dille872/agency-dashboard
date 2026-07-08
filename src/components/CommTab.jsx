@@ -1554,9 +1554,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
   }
 
-  const updateRequestStatus = async (id, status) => {
+  const updateRequestStatus = async (id, status, notify = true) => {
     const req = contentRequests.find(r => r.id === id)
     await supabase.from('content_requests').update({ status }).eq('id', id)
+
+    // v3.56.0: Stille Korrektur (z.B. "erledigt" zurücknehmen) — nur Status ändern, kein Telegram.
+    if (!notify) { loadContentRequests(); return }
 
     // Telegram an Chatter über Status-Wechsel (egal welcher Status)
     if (req && (status === 'angefragt' || status === 'bestaetigt' || status === 'erledigt' || status === 'abgelehnt')) {
@@ -1661,7 +1664,54 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadContentRequests()
   }
 
-  // v2.8.3: Tickets = Nachrichten MIT message_type (announcement, content_request, zoom, free, ...)
+  // v3.56.0: Reminder ans Model — erinnert manuell an einen noch offenen Custom.
+  // Nutzt denselben Telegram-Weg wie Anfrage/Bestätigung und landet im Chat-Verlauf.
+  const sendReminder = async (req) => {
+    if (!req) return
+    const { data: modelData } = await supabase.from('models_contact').select('telegram_id, name').eq('name', req.model_name).maybeSingle()
+    if (!modelData?.telegram_id) { alert(`${req.model_name} hat keine Telegram-ID hinterlegt.`); return }
+    const deadlineText = deadlinePlain(req)
+    const remainder = (req.price || 0) - (req.deposit || 0)
+    let payLine = ''
+    if (req.price > 0) {
+      if (req.deposit > 0 && remainder > 0) {
+        const depTxt = req.deposit_paid ? `${req.deposit}$ ✓` : `${req.deposit}$ (offen)`
+        const restTxt = req.remainder_paid ? `${remainder}$ ✓` : `${remainder}$ nach Lieferung`
+        payLine = `\n💰 Gesamt: ${req.price}$ — Anzahlung ${depTxt} · Rest ${restTxt}`
+      } else if (req.deposit_paid || req.remainder_paid) {
+        payLine = `\n💰 ${req.price}$ ✓ vollständig bezahlt`
+      } else {
+        payLine = `\n💰 ${req.price}$ — offen`
+      }
+    }
+    const customerLine = req.customer_id ? `\n👤 Kunde: ${req.customer_id}` : ''
+    const text = req.edited_text || req.request_text
+    const profileLine = req.account_csv && req.account_csv !== req.model_name ? `\n📲 Profil: ${req.account_csv}` : ''
+    const typeLbl = contentTypeLabel(req.content_type)
+    const durWord = isLiveType(req.content_type) ? 'Dauer' : 'Länge'
+    const outfitLine = req.outfit ? `\n👗 Outfit: ${req.outfit}` : ''
+    const specialLine = req.special_notes ? `\n⭐ Besonderheiten: ${req.special_notes}` : ''
+    const msg = `<b>🔔 Reminder: Custom noch offen</b>\n\nKleine Erinnerung an diesen Custom 🙏\n\n${text}${profileLine}${customerLine}${typeLbl ? '\n🎬 Typ: ' + typeLbl : ''}${req.duration ? `\n⏱ ${durWord}: ` + req.duration : ''}${outfitLine}${specialLine}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nSag kurz Bescheid, wann du dazu kommst. Danke dir! 💜\n\n– Thirteen 87`
+    try {
+      await sendTelegramMessage(modelData.telegram_id, msg)
+      if (req.image_urls?.length > 0) { try { await sendTelegramMediaGroup(modelData.telegram_id, req.image_urls) } catch {} }
+      await supabase.from('messages').insert({
+        model_name: req.model_name,
+        model_telegram_id: modelData.telegram_id,
+        direction: 'out',
+        contact_type: 'model',
+        message_type: 'content_request',
+        text: `🔔 Reminder: ${text}`,
+        image_urls: req.image_urls?.length > 0 ? req.image_urls : null,
+        status: 'sent',
+        read: true,
+        sent_by: userName,
+      })
+      alert(`🔔 Reminder an ${req.model_name} gesendet.`)
+    } catch (err) {
+      alert('Telegram-Fehler: ' + (err?.message || err))
+    }
+  }
   //         Chat    = Nachrichten OHNE message_type (reine Konversation)
   const isTicket = (m) => m.message_type !== null && m.message_type !== undefined
   const isChat = (m) => !isTicket(m)
@@ -3665,6 +3715,20 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       {req.status !== 'abgelehnt' && req.status !== 'erledigt' && (
                         <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
                       )}
+                      {/* v3.56.0: Reminder ans Model bei offenen/laufenden Customs */}
+                      {(req.status === 'angefragt' || req.status === 'bestaetigt') && (
+                        <button onClick={() => sendReminder(req)} title="Erinnerung an das Model senden" style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>🔔 Reminder ans Model</button>
+                      )}
+                      {/* v3.56.0: Status manuell korrigieren (ohne Telegram) — z.B. "Erledigt" zurücknehmen */}
+                      <select value={req.status} onChange={(e) => { if (e.target.value !== req.status) updateRequestStatus(req.id, e.target.value, false) }}
+                        title="Status manuell setzen (ohne Telegram)"
+                        style={{ fontSize: 10, padding: '5px 8px', borderRadius: 5, background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit', outline: 'none' }}>
+                        <option value="neu">● Neu</option>
+                        <option value="angefragt">⏳ Angefragt</option>
+                        <option value="bestaetigt">✓ Bestätigt</option>
+                        <option value="erledigt">✓ Erledigt</option>
+                        <option value="abgelehnt">✕ Abgelehnt</option>
+                      </select>
                     </div>
                     </>)}
                   </div>
