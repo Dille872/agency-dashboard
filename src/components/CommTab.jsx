@@ -194,6 +194,26 @@ function ModelAliasManager({ models }) {
 // erscheint der letzte Stand sofort und wird im Hintergrund aktualisiert.
 let _contentRequestsCache = null
 
+// v3.55.0: Kundennummer per Klick kopieren (mit kurzer Bestätigung)
+function CopyId({ value, labelColor = 'var(--text-secondary)' }) {
+  const [copied, setCopied] = useState(false)
+  if (!value) return null
+  return (
+    <span
+      onClick={(e) => {
+        e.stopPropagation()
+        try { navigator.clipboard?.writeText(String(value)) } catch {}
+        setCopied(true); setTimeout(() => setCopied(false), 1200)
+      }}
+      title="Kundennummer kopieren"
+      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <span style={{ color: copied ? '#10b981' : labelColor }}>{value}</span>
+      <span style={{ fontSize: 9, color: copied ? '#10b981' : 'var(--text-muted)' }}>{copied ? '✓ kopiert' : '⧉'}</span>
+    </span>
+  )
+}
+
 export default function CommTab({ session, section = 'nachrichten', displayName = '' }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
   const userName = getDisplayName(session?.user?.email)
@@ -3318,7 +3338,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {/* Kunde */}
                           {req.customer_id && (
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', marginBottom: 2 }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Kunde: </span>{req.customer_id}
+                              <span style={{ color: 'var(--text-muted)' }}>Kunde: </span><CopyId value={req.customer_id} />
                             </div>
                           )}
                           {/* Chatter */}
@@ -3334,7 +3354,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                             )}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                            {req.customer_id && <span style={{ fontFamily: 'monospace' }}>Kunde: <span style={{ color: 'var(--text-secondary)' }}>{req.customer_id}</span></span>}
+                            {req.customer_id && <span style={{ fontFamily: 'monospace' }}>Kunde: <CopyId value={req.customer_id} /></span>}
                             <span>Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span></span>
                           </div>
                           {/* einzeilige Briefing-Vorschau */}

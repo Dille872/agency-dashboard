@@ -302,6 +302,120 @@ function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = '
   )
 }
 
+// v3.55.0: Kundennummer per Klick kopieren (Chatter-Ansicht)
+function ChatterCopyId({ value }) {
+  const [copied, setCopied] = useState(false)
+  if (!value) return null
+  return (
+    <span
+      onClick={(e) => { e.stopPropagation(); try { navigator.clipboard?.writeText(String(value)) } catch {} setCopied(true); setTimeout(() => setCopied(false), 1200) }}
+      title="Kundennummer kopieren"
+      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <span style={{ color: copied ? '#10b981' : 'var(--text-secondary)' }}>{value}</span>
+      <span style={{ fontSize: 9, color: copied ? '#10b981' : 'var(--text-muted)' }}>{copied ? '✓' : '⧉'}</span>
+    </span>
+  )
+}
+
+// v3.55.0: Kunden-Historie / Bibliothek — gruppiert alle Anfragen pro Kunde
+function CustomerHistorySection({ history }) {
+  const [search, setSearch] = useState('')
+  const [openKeys, setOpenKeys] = useState(() => new Set())
+
+  const STATUS = {
+    erledigt:   { label: '✓ Erledigt',  color: '#10b981' },
+    bestaetigt: { label: '✓ Bestätigt', color: '#06b6d4' },
+    angefragt:  { label: '⏳ Angefragt', color: '#f59e0b' },
+    abgelehnt:  { label: '✕ Abgelehnt', color: '#ef4444' },
+    neu:        { label: '● Neu',       color: '#a78bfa' },
+  }
+  const typeLabel = (t) => ({ video: 'Video', bild: 'Bild', audio: 'Sprachnachricht', sonstiges: 'Sonstiges' }[t] || t || '—')
+  const isPaid = (r) => {
+    if (!(r.price > 0)) return false
+    const remainder = (r.price || 0) - (r.deposit || 0)
+    const hasDeposit = (r.deposit || 0) > 0 && remainder > 0
+    return hasDeposit ? (!!r.deposit_paid && !!r.remainder_paid) : !!r.deposit_paid
+  }
+
+  const groupsMap = new Map()
+  for (const r of history || []) {
+    const key = (r.customer_id && String(r.customer_id).trim()) || '— ohne Kundennummer'
+    if (!groupsMap.has(key)) groupsMap.set(key, [])
+    groupsMap.get(key).push(r)
+  }
+  let groups = [...groupsMap.entries()].map(([customer, items]) => ({
+    customer, items,
+    paidSum: items.reduce((s, r) => s + (isPaid(r) ? (r.price || 0) : 0), 0),
+    latest: items.reduce((m, r) => Math.max(m, new Date(r.created_at).getTime() || 0), 0),
+    models: [...new Set(items.map(i => i.model_name).filter(Boolean))],
+  }))
+  const q = search.trim().toLowerCase()
+  if (q) {
+    groups = groups.filter(g =>
+      g.customer.toLowerCase().includes(q) ||
+      g.models.some(m => (m || '').toLowerCase().includes(q)) ||
+      g.items.some(r => (r.edited_text || r.request_text || '').toLowerCase().includes(q))
+    )
+  }
+  groups.sort((a, b) => b.latest - a.latest)
+  const toggle = (key) => setOpenKeys(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+
+  if (!history || history.length === 0) {
+    return <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>Noch keine Anfragen für deine zugeteilten Models vorhanden.</div>
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 10 }}>
+        Alle bisherigen Anfragen (offen, bestätigt, erledigt, abgelehnt, bezahlt) für deine zugeteilten Models – als Nachschlagewerk pro Kunde.
+      </div>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Kunde / Model / Text suchen…"
+        style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', marginBottom: 10, boxSizing: 'border-box' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {groups.map(g => {
+          const open = openKeys.has(g.customer)
+          return (
+            <div key={g.customer} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+              <div onClick={() => toggle(g.customer)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '9px 11px', cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▼' : '▶'}</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: 12 }}><ChatterCopyId value={g.customer} /></span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{g.items.length}×</span>
+                  {g.paidSum > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981' }}>${g.paidSum} bezahlt</span>}
+                </div>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>{g.models.slice(0, 2).join(', ')}{g.models.length > 2 ? '…' : ''}</span>
+              </div>
+              {open && (
+                <div style={{ borderTop: '1px solid var(--border)', padding: '8px 11px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {g.items.map(r => {
+                    const st = STATUS[r.status] || { label: r.status || '—', color: 'var(--text-muted)' }
+                    return (
+                      <div key={r.id} style={{ borderLeft: `3px solid ${st.color}`, paddingLeft: 9 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: st.color + '22', color: st.color }}>{st.label}</span>
+                          <span style={{ fontSize: 10, color: '#ec4899', fontWeight: 700 }}>{r.model_name}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{typeLabel(r.content_type)}</span>
+                          {r.price > 0 && <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700 }}>${r.price}</span>}
+                          {isPaid(r) ? <span style={{ fontSize: 9, color: '#10b981', fontWeight: 700 }}>✓ bezahlt</span> : (r.deposit_paid && <span style={{ fontSize: 9, color: '#f59e0b' }}>Anzahlung</span>)}
+                          <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 'auto', fontFamily: 'monospace' }}>{new Date(r.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.45, wordBreak: 'break-word' }}>{r.edited_text || r.request_text}</div>
+                        {r.chatter_name && <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>Chatter: {r.chatter_name}</div>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {groups.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>Keine Treffer für „{search}".</div>}
+      </div>
+    </div>
+  )
+}
+
 export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview }) {
   const [theme, setThemeState] = useState(() => getTheme())
   const [showSocialPortal, setShowSocialPortal] = useState(false)
@@ -368,6 +482,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       note: true,
       models: true,
       content: true,
+      history: true, // v3.55.0: Kunden-Historie standardmäßig zu
       ideas: true,
       guidelines: true, // v3.2.0
       swap: true,
@@ -413,6 +528,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
   const [assignedServices, setAssignedServices] = useState({}) // modelName → services
   const [assignedCustomContent, setAssignedCustomContent] = useState({}) // modelName → custom content
+  const [customerHistory, setCustomerHistory] = useState([]) // v3.55.0: alle Anfragen für zugeteilte Models (Kunden-Bibliothek)
   const [selectedModelInfo, setSelectedModelInfo] = useState(null)
 
   const loadAssignedModelData = async (modelNames) => {
@@ -459,6 +575,35 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .gte('created_at', twoWeeksAgo.toISOString())
       .order('created_at', { ascending: false })
     setContentRequests(data || [])
+  }
+
+  // v3.55.0: Kunden-Historie — alle Anfragen (jeder Status, jeder Chatter) für die
+  // Models, denen der Chatter zugeteilt ist, PLUS eigene Anfragen. Dient als
+  // Bibliothek: "welcher Kunde hat schon was bestellt/bezahlt".
+  // Hinweis: liefert nur fremde Zeilen, wenn die Supabase-RLS das erlaubt.
+  const loadCustomerHistory = async (modelNames) => {
+    try {
+      const byId = new Map()
+      if (modelNames && modelNames.length > 0) {
+        const { data } = await supabase.from('content_requests')
+          .select('*')
+          .in('model_name', modelNames)
+          .order('created_at', { ascending: false })
+          .limit(1000)
+        for (const r of data || []) byId.set(r.id, r)
+      }
+      // eigene Anfragen immer ergänzen (auch wenn Model nicht zugeteilt)
+      const { data: own } = await supabase.from('content_requests')
+        .select('*')
+        .eq('chatter_name', displayName)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+      for (const r of own || []) byId.set(r.id, r)
+      const merged = [...byId.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      setCustomerHistory(merged)
+    } catch (e) {
+      console.error('loadCustomerHistory', e)
+    }
   }
 
   const loadContentIdeas = async () => {
@@ -1074,6 +1219,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     for (const m of modelsData || []) modelNameMap[String(m.id)] = m.name
     const resolvedNames = [...assignedNames].map(id => modelNameMap[id] || id).filter(Boolean)
     if (resolvedNames.length > 0) loadAssignedModelData(resolvedNames)
+    loadCustomerHistory(resolvedNames) // v3.55.0: Kunden-Historie laden (auch nur eigene, falls keine Zuteilung)
   }
 
   const loadMyReminders = async () => {
@@ -2204,6 +2350,16 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             </div>
           )}
         </div>
+        </Collapsible>
+
+        {/* v3.55.0: Kunden-Historie / Bibliothek */}
+        <Collapsible
+          isCollapsed={collapsed.history ?? true}
+          onToggle={() => setCollapsed(prev => { const cur = prev.history ?? true; const next = { ...prev, history: !cur }; try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)) } catch {} return next })}
+          icon="📚" title="Kunden-Historie"
+          badge={new Set(customerHistory.map(r => r.customer_id).filter(Boolean)).size || null}
+          badgeColor="#10b981">
+          <CustomerHistorySection history={customerHistory} />
         </Collapsible>
 
         {/* Content-Ideen */}
