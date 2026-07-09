@@ -1,26 +1,74 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
-// v3.59.0: Präsentationsmodus — ein globaler Schalter, der als .private markierte
-// Werte (v.a. Beträge/Umsatz/Stats) unkenntlich macht. Zustand liegt in localStorage,
-// die Klasse hängt an <html> — dadurch wirkt es auf JEDER Seite und übersteht
-// Tab-Wechsel wie auch einen Reload. Bewusst außerhalb von App gemountet (main.jsx),
-// damit der Knopf in allen Ansichten (Admin, Model-Portal, Chatter-Portal) sichtbar ist.
+// v3.60.0: Präsentationsmodus — EIN globaler Schalter, der automatisch ALLE Zahlen
+// auf der gesamten Seite unkenntlich macht (kein Markieren pro Stelle nötig).
+// Technik: Solange der Modus an ist, werden Textknoten mit Ziffern gesucht und ihr
+// umschließendes Element bekommt die Klasse .pv-blur (nur eine Klasse setzen — es
+// werden KEINE DOM-Knoten eingefügt/entfernt, damit React nicht durcheinanderkommt).
+// Ein MutationObserver wendet das bei Tab-Wechsel/Nachladen erneut an. Läuft nur,
+// während der Modus aktiv ist — im Normalbetrieb also ohne jede Last.
+
 const KEY = 'presentation_mode'
+const BLUR_CLASS = 'pv-blur'
+const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'SVG', 'PATH'])
+const HAS_DIGIT = /[0-9]/
 
 export default function PresentationToggle() {
   const [on, setOn] = useState(() => {
     try { return localStorage.getItem(KEY) === '1' } catch { return false }
   })
+  const obsRef = useRef(null)
+  const timerRef = useRef(0)
 
   useEffect(() => {
-    document.documentElement.classList.toggle('presentation-mode', on)
     try { localStorage.setItem(KEY, on ? '1' : '0') } catch {}
+    document.documentElement.classList.toggle('presentation-mode', on)
+
+    const cleanup = () => {
+      if (obsRef.current) { obsRef.current.disconnect(); obsRef.current = null }
+      clearTimeout(timerRef.current)
+      document.querySelectorAll('.' + BLUR_CLASS).forEach(el => el.classList.remove(BLUR_CLASS))
+    }
+
+    if (!on) { cleanup(); return }
+
+    const root = document.getElementById('root')
+    if (!root) return
+
+    const apply = () => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const v = node.nodeValue
+          if (!v || !HAS_DIGIT.test(v)) return NodeFilter.FILTER_REJECT
+          const p = node.parentElement
+          if (!p || SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT
+          return NodeFilter.FILTER_ACCEPT
+        },
+      })
+      const parents = new Set()
+      let n
+      while ((n = walker.nextNode())) { if (n.parentElement) parents.add(n.parentElement) }
+      parents.forEach(el => el.classList.add(BLUR_CLASS))
+    }
+
+    // gedrosselt neu anwenden (Tab-Wechsel, Nachladen, Re-Renders)
+    const schedule = () => {
+      clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(apply, 120)
+    }
+
+    apply()
+    const obs = new MutationObserver(schedule)
+    obs.observe(root, { childList: true, subtree: true, characterData: true })
+    obsRef.current = obs
+
+    return cleanup
   }, [on])
 
   return (
     <button
       onClick={() => setOn(v => !v)}
-      title={on ? 'Zahlen wieder anzeigen' : 'Zahlen für eine Präsentation ausblenden'}
+      title={on ? 'Zahlen wieder anzeigen' : 'Alle Zahlen für eine Präsentation ausblenden'}
       style={{
         position: 'fixed', left: 16, bottom: 16, zIndex: 99999,
         display: 'flex', alignItems: 'center', gap: 8,

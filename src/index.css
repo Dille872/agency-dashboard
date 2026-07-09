@@ -79,6 +79,14 @@ html, body {
   transition: filter 0.15s ease;
 }
 
+/* v3.60.0: automatisch gesetzte Blur-Klasse (alle Elemente mit Ziffern) */
+.pv-blur {
+  filter: blur(0.5em) !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  transition: filter 0.15s ease;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-base); }
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
