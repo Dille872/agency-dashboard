@@ -796,7 +796,7 @@ export default function App() {
       {(isAdmin || isManager) && (
         <>
           <ChatWidget session={session} displayName={userDisplayName} unread={unreadChat} />
-          <ActivityWidget />
+          <ActivityWidget onNavigate={(tab) => setActiveTab(tab)} />
         </>
       )}
     </div>
