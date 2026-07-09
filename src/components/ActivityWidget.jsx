@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Bell, ChevronDown, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand } from 'lucide-react'
+import { Bell, ChevronDown, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand, LogIn, LogOut } from 'lucide-react'
 import { supabase } from '../supabase'
 
 // v3.61.0: Aktivitäts-Feed — sammelt alle Aktualisierungen an einem Ort.
@@ -16,6 +16,19 @@ function relTime(iso) {
   if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std`
   if (diff < 172800) return 'gestern'
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+}
+
+// v3.61.5: Uhrzeit HH:MM + Schicht-Dauer
+function clockTime(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+}
+function durationText(a, b) {
+  if (!a || !b) return ''
+  const mins = Math.round((new Date(b) - new Date(a)) / 60000)
+  if (mins < 1) return ''
+  if (mins < 60) return `${mins} min`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
 }
 
 // Text mit [Tokens] als kleine Pills rendern (z.B. [Chiara] [Spät])
@@ -49,9 +62,10 @@ export default function ActivityWidget() {
     const q = (table, limit) =>
       supabase.from(table).select('*').gte('created_at', sinceIso).order('created_at', { ascending: false }).limit(limit)
 
-    const [notes, board, reqs, ideas, absences, swaps, reactions] = await Promise.allSettled([
+    const [notes, board, reqs, ideas, absences, swaps, reactions, logs] = await Promise.allSettled([
       q('notes', 40), q('model_board_activity', 60), q('content_requests', 40), q('content_ideas', 40),
       q('absences', 40), q('shift_swaps', 40), q('swap_reactions', 40),
+      supabase.from('shift_logs').select('*').gte('checked_in_at', sinceIso).order('checked_in_at', { ascending: false }).limit(60),
     ])
     const rows = (r) => (r.status === 'fulfilled' ? (r.value.data || []) : [])
     const merged = []
@@ -71,6 +85,14 @@ export default function ActivityWidget() {
       }
     }
     for (const r of rows(reactions)) merged.push({ id: 'react-' + r.id, when: r.created_at, Icon: Hand, color: '#10b981', title: `Schicht-Bewerbung · ${r.chatter_name || ''}`, text: r.reaction ? `Reaktion: ${r.reaction}` : 'hat sich auf eine Schicht beworben' })
+    // v3.61.5: Schicht-Login / -Logout mit Uhrzeiten
+    for (const l of rows(logs)) {
+      merged.push({ id: 'login-' + l.id, when: l.checked_in_at, Icon: LogIn, color: '#10b981', title: `Schicht begonnen · ${l.display_name || ''}`, text: `${l.shift ? l.shift + ' · ' : ''}um ${clockTime(l.checked_in_at)} Uhr` })
+      if (l.checked_out_at) {
+        const dur = durationText(l.checked_in_at, l.checked_out_at)
+        merged.push({ id: 'logout-' + l.id, when: l.checked_out_at, Icon: LogOut, color: '#94a3b8', title: `Schicht beendet · ${l.display_name || ''}`, text: `um ${clockTime(l.checked_out_at)} Uhr${dur ? ' · Dauer ' + dur : ''}` })
+      }
+    }
 
     merged.sort((a, b) => new Date(b.when) - new Date(a.when))
     setItems(merged.slice(0, 100))

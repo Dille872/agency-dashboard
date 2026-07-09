@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { supabase } from '../supabase'
 import Card from './Card'
 import Icon from './Icon'
 import RevenueTrendChart from './RevenueTrendChart'
@@ -279,6 +280,14 @@ function scoreBg(color) {
 export default function ChattersView({ selectedDate, chatterSnapshots, onDateChange }) {
   // v3.4.0: aufgeklappte Health-Detail-Row
   const [expandedHealth, setExpandedHealth] = useState(null)
+  // v3.61.5: stillgelegte/offboardete Chatter (aus user_roles) — werden aus der Heatmap ausgeblendet
+  const [inactiveNames, setInactiveNames] = useState(() => new Set())
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('user_roles').select('display_name, status').in('status', ['suspended', 'offboarded'])
+      setInactiveNames(new Set((data || []).map(r => r.display_name).filter(Boolean)))
+    })()
+  }, [])
   // v3.31.0: kompakte/gestapelte Alert-Zeilen auf Mobile
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
   useEffect(() => {
@@ -320,7 +329,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
       return { name: r.name, current: r.revenue, delta: prev ? r.revenue - prev.revenue : 0, deltaPct }
     })
 
-  const heatmapNames = allChatterNames
+  const heatmapNames = allChatterNames.filter(n => !inactiveNames.has(n)) // v3.61.5: nur aktive Chatter
 
   // Big table
   const tableRows = rows.map(r => {
