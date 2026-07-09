@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 
 // v3.60.0: Präsentationsmodus — EIN globaler Schalter, der automatisch ALLE Zahlen
 // auf der gesamten Seite unkenntlich macht (kein Markieren pro Stelle nötig).
@@ -65,25 +66,32 @@ export default function PresentationToggle() {
     return cleanup
   }, [on])
 
+  // Knopf-Beschriftung — hier bei Bedarf einfach den Text ändern
+  // (z.B. 'Privat', 'Discreet', 'Stealth', 'Zahlen aus', 'Demo', 'Vorschau').
+  const LABEL = 'Inkognito'
+
   return (
     <button
       onClick={() => setOn(v => !v)}
-      title={on ? 'Zahlen wieder anzeigen' : 'Alle Zahlen für eine Präsentation ausblenden'}
+      title={on ? 'Zahlen wieder anzeigen' : 'Zahlen ausblenden'}
       style={{
-        position: 'fixed', left: 16, bottom: 16, zIndex: 99999,
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '9px 14px', borderRadius: 999,
-        background: on ? '#7c3aed' : 'rgba(18,18,32,0.82)',
-        color: on ? '#fff' : '#cbd5e1',
-        border: `1px solid ${on ? '#7c3aed' : 'rgba(255,255,255,0.15)'}`,
-        boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-        fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-        userSelect: 'none',
+        position: 'fixed', left: 20, bottom: 20, zIndex: 99999,
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        height: 38, padding: '0 15px', borderRadius: 10,
+        background: on ? 'rgba(124,58,237,0.16)' : 'rgba(255,255,255,0.05)',
+        color: on ? '#a78bfa' : '#94a3b8',
+        border: `1px solid ${on ? 'rgba(124,58,237,0.45)' : 'rgba(255,255,255,0.10)'}`,
+        boxShadow: on
+          ? '0 0 0 1px rgba(124,58,237,0.15), 0 8px 24px rgba(124,58,237,0.20)'
+          : '0 4px 16px rgba(0,0,0,0.25)',
+        backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        fontSize: 12.5, fontWeight: 600, letterSpacing: '0.01em',
+        cursor: 'pointer', fontFamily: 'inherit', userSelect: 'none',
+        transition: 'background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
       }}
     >
-      <span style={{ fontSize: 14, lineHeight: 1 }}>{on ? '🙈' : '👁'}</span>
-      {on ? 'Zahlen versteckt' : 'Präsentationsmodus'}
+      {on ? <EyeOff size={15} strokeWidth={2.2} /> : <Eye size={15} strokeWidth={2.2} />}
+      {LABEL}
     </button>
   )
 }
