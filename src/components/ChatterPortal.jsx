@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { BookOpen, Library } from 'lucide-react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
@@ -2348,7 +2349,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         <Collapsible
           isCollapsed={collapsed.history ?? true}
           onToggle={() => setCollapsed(prev => { const cur = prev.history ?? true; const next = { ...prev, history: !cur }; try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)) } catch {} return next })}
-          icon="📚" title="Kunden-Historie"
+          icon={<Library size={16} />} title="Kunden-Historie"
           badge={new Set(customerHistory.map(r => r.customer_id).filter(Boolean)).size || null}
           badgeColor="#10b981">
           <CustomerHistorySection history={customerHistory} />
@@ -2487,7 +2488,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* v3.2.0: Guidelines (von Admin in Einstellungen gepflegt) */}
-        <Collapsible isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon="📖" title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
+        <Collapsible isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon={<BookOpen size={16} />} title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
           {guidelines.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '12px 0', textAlign: 'center' }}>
               Noch keine Guidelines hinterlegt.

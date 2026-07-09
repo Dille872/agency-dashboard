@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell } from 'lucide-react'
+import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Lightbulb } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, sendTelegramPhoto, sendTelegramMediaGroup, notifyOwner } from '../telegram'
 import Card from './Card'
@@ -1784,7 +1784,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           (section === 'models' || !section) && { key: 'models', label: 'Models', badge: (unreadRequests > 0 || modelBoardActivity.filter(a => !a.read).length > 0) ? 1 : 0 },
           section === 'models' && { key: 'content-requests', label: `Custom Content${unreadRequests > 0 ? ` (${unreadRequests})` : ''}${overdueRemainders.length > 0 ? ` 🔴${overdueRemainders.length}` : ''}` },
           section === 'models' && { key: 'content-verlauf', label: 'Custom Verlauf' },
-          section === 'models' && { key: 'content-ideas', label: `💡 Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
+          section === 'models' && { key: 'content-ideas', label: `Content-Ideen${contentIdeas.filter(i => i.status === 'offen').length > 0 ? ` (${contentIdeas.filter(i => i.status === 'offen').length})` : ''}` },
           // v3.51.0: Tickets-Tab ausgeblendet — die Sende-Seite (Model-Tickets wie [CONTENT_NOTIFY]/[STATUS_])
           // existiert seit ModelPortal-Umbau nicht mehr, der Tab war immer leer. Code bleibt für Reaktivierung.
           // section === 'models' && { key: 'nachrichten', label: 'Tickets', badge: messages.filter(m => m.direction === 'in' && !m.read && m.contact_type === 'model' && m.message_type !== null && m.message_type !== undefined).length },
@@ -3778,7 +3778,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           : ideasFilter === 'done' ? contentIdeas.filter(i => i.status === 'erledigt' || i.status === 'abgelehnt')
           : contentIdeas
         return (
-        <Card title={`💡 Content-Ideen (${filteredIdeas.length})`}>
+        <Card title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Lightbulb size={16} /> Content-Ideen ({filteredIdeas.length})</span>}>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
             Wünsche & Ideen die Chatter eingereicht haben. Du kannst editieren, an Model schicken, Status ändern.
           </div>

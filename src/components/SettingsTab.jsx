@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { BookOpen } from 'lucide-react'
 import { supabase } from '../supabase'
 import BillingTab from './BillingTab'
 import ExportTab from './ExportTab'
@@ -1200,7 +1201,7 @@ function GuidelinesEditor({ cardS, inputS, labelS }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 780 }}>
       <div style={cardS}>
-        <div style={labelS}>📖 Neue Guideline</div>
+        <div style={labelS}><BookOpen size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Neue Guideline</div>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
             type="text"
@@ -1397,8 +1398,8 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
             fontSize: 10, padding: 0, lineHeight: 1,
           }}>▼</button>
         </div>
-        <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
-          📖 {guideline.title || 'Ohne Titel'}
+        <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <BookOpen size={14} /> {guideline.title || 'Ohne Titel'}
         </div>
         <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
           {imageUrls.length > 0 && `📎 ${imageUrls.length}`}
