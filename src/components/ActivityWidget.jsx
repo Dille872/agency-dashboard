@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Bell, X } from 'lucide-react'
+import { Bell, ChevronDown } from 'lucide-react'
 import { supabase } from '../supabase'
 
 // v3.61.0: Aktivitäts-Feed — sammelt alle Aktualisierungen an einem Ort.
@@ -78,8 +78,8 @@ export default function ActivityWidget() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
               <Bell size={16} /> Aktivität
             </div>
-            <button onClick={() => setOpen(false)} title="Schließen" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4, display: 'flex' }}>
-              <X size={18} />
+            <button onClick={() => setOpen(false)} title="Minimieren" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4, display: 'flex' }}>
+              <ChevronDown size={20} />
             </button>
           </div>
           <div style={{ flex: 1, overflow: 'auto' }}>
@@ -118,7 +118,9 @@ export default function ActivityWidget() {
           transition: 'transform 0.15s ease, box-shadow 0.15s ease',
         }}
       >
-        {open ? <X size={23} strokeWidth={2.4} /> : <Bell size={22} strokeWidth={2.2} />}
+        {open
+          ? <ChevronDown size={24} strokeWidth={2.6} />
+          : <Bell size={22} fill="currentColor" strokeWidth={0} />}
         {!open && unread > 0 && (
           <span style={{
             position: 'absolute', top: -3, right: -3,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { MessageCircle, X } from 'lucide-react'
+import { MessageCircle, ChevronDown } from 'lucide-react'
 import CommTab from './CommTab'
 
 // v3.61.0: Chat als schwebende Bubble (wie bei Support-/KI-Bots) statt fester Seite.
@@ -32,13 +32,13 @@ export default function ChatWidget({ session, displayName, unread = 0 }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
               <MessageCircle size={16} /> Chat
             </div>
-            <button onClick={() => setOpen(false)} title="Schließen"
+            <button onClick={() => setOpen(false)} title="Minimieren"
               style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4, display: 'flex' }}>
-              <X size={18} />
+              <ChevronDown size={20} />
             </button>
           </div>
           <div style={{ flex: 1, overflow: 'auto', padding: '10px 12px' }}>
-            <CommTab session={session} section="chat" displayName={displayName} />
+            <CommTab session={session} section="chat" displayName={displayName} compact />
           </div>
         </div>
       )}
@@ -58,7 +58,9 @@ export default function ChatWidget({ session, displayName, unread = 0 }) {
           transition: 'transform 0.15s ease, box-shadow 0.15s ease',
         }}
       >
-        {open ? <X size={23} strokeWidth={2.4} /> : <MessageCircle size={23} strokeWidth={2.2} />}
+        {open
+          ? <ChevronDown size={24} strokeWidth={2.6} />
+          : <MessageCircle size={24} fill="currentColor" strokeWidth={0} />}
         {!open && unread > 0 && (
           <span style={{
             position: 'absolute', top: -3, right: -3,

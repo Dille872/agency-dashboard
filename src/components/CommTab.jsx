@@ -214,7 +214,7 @@ function CopyId({ value, labelColor = 'var(--text-secondary)' }) {
   )
 }
 
-export default function CommTab({ session, section = 'nachrichten', displayName = '' }) {
+export default function CommTab({ session, section = 'nachrichten', displayName = '', compact = false }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
   const userName = getDisplayName(session?.user?.email)
 
@@ -266,7 +266,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [broadcastZoomDate, setBroadcastZoomDate] = useState('')
   const [broadcastZoomTime, setBroadcastZoomTime] = useState('')
   const [broadcastSending, setBroadcastSending] = useState(false)
-  const [isMobileChat, setIsMobileChat] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
+  const [isMobileChat, setIsMobileChat] = useState(compact || (typeof window !== 'undefined' && window.innerWidth < 768))
   const [chatTypeFilter, setChatTypeFilter] = useState('all') // 'all' | 'chatter' | 'model'
   const [expandedMonths, setExpandedMonths] = useState({}) // {'2026-04': true} für Custom Verlauf Akkordeon
   const [hoverHistRow, setHoverHistRow] = useState(null) // v3.44.0: Hover-Highlight Verlauf-Tabelle
@@ -347,7 +347,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   // Mobile-Detection für Chat-Layout
   useEffect(() => {
-    const onResize = () => setIsMobileChat(window.innerWidth < 768)
+    const onResize = () => setIsMobileChat(compact || window.innerWidth < 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
