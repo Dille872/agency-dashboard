@@ -111,7 +111,7 @@ export default function App() {
       // Wichtig: KEIN Email-Fallback mehr — der erzeugt Doubletten in online_status
       // (mario.stegmeir vs Mario). Wenn kein display_name in user_roles → Eintrag fehlt.
       const name = data?.display_name
-      if (data && name) {
+      if (data && name && data.role) {
         // v3.18.0: Account-Status prüfen — stillgelegte/offboardete User dürfen nicht ins Dashboard
         if (data.status === 'suspended' || data.status === 'offboarded') {
           setAccountBlocked({ status: data.status, note: data.status_note || null })
@@ -130,12 +130,15 @@ export default function App() {
           shift_online: false,
         }, { onConflict: 'display_name' })
       } else {
-        // Kein user_roles Eintrag → User ist nicht angelegt
-        // Setze auf 'Unbekannt' damit kein Email-Username in online_status landet
-        console.warn('No user_roles entry for', session.user.id)
-        setUserRole('chatter')
-        setUserRoles(['chatter'])
-        setUserDisplayName(null) // explizit null statt Email-Fallback
+        // v3.57.0: Kein sauberer user_roles-Eintrag (fehlende Rolle oder fehlender
+        // display_name). Früher wurde hier still auf 'chatter' zurückgefallen — dadurch
+        // sahen falsch/nicht eingerichtete Accounts (z.B. ein Model ohne Rolle) unbemerkt
+        // die Chatter-Ansicht. Jetzt: klarer Hinweis statt stiller Fehlzuordnung.
+        console.warn('user_roles unvollständig für', session.user.id, { hasRow: !!data, name: data?.display_name, role: data?.role })
+        setAccountBlocked({ status: 'not_setup', note: null })
+        setUserRole('blocked') // Sentinel != null, damit der Lade-Screen endet
+        setUserRoles([])
+        setUserDisplayName(null)
       }
     } catch (err) {
       console.error('loadUserRole error:', err)
@@ -354,20 +357,26 @@ export default function App() {
 
   if (!session) return <LoginPage />
 
-  // v3.18.0: Zugang gesperrt (stillgelegt / offboarded)
+  // v3.18.0: Zugang gesperrt (stillgelegt / offboarded) · v3.57.0: + nicht eingerichtet
   if (accountBlocked) {
     const suspended = accountBlocked.status === 'suspended'
+    const notSetup = accountBlocked.status === 'not_setup'
+    const icon = notSetup ? '⚠️' : suspended ? '⏸️' : '📦'
+    const title = notSetup ? 'Account nicht korrekt eingerichtet' : suspended ? 'Zugang vorübergehend stillgelegt' : 'Zugang deaktiviert'
+    const message = notSetup
+      ? 'Deinem Konto ist noch keine Rolle zugewiesen. Bitte wende dich an deine Agentur-Leitung, damit dein Zugang eingerichtet wird.'
+      : suspended
+        ? 'Dein Konto ist aktuell pausiert. Bitte wende dich an deine Agentur-Leitung, wenn du wieder einsteigen möchtest.'
+        : 'Dein Konto wurde deaktiviert. Bei Fragen wende dich bitte an deine Agentur-Leitung.'
     return (
       <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'var(--font-sans)' }}>
         <div style={{ maxWidth: 420, textAlign: 'center', background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 16, padding: '36px 32px' }}>
-          <div style={{ fontSize: 40, marginBottom: 14 }}>{suspended ? '⏸️' : '📦'}</div>
+          <div style={{ fontSize: 40, marginBottom: 14 }}>{icon}</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>
-            {suspended ? 'Zugang vorübergehend stillgelegt' : 'Zugang deaktiviert'}
+            {title}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: accountBlocked.note ? 14 : 24 }}>
-            {suspended
-              ? 'Dein Konto ist aktuell pausiert. Bitte wende dich an deine Agentur-Leitung, wenn du wieder einsteigen möchtest.'
-              : 'Dein Konto wurde deaktiviert. Bei Fragen wende dich bitte an deine Agentur-Leitung.'}
+            {message}
           </div>
           {accountBlocked.note && (
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', background: 'var(--bg-card2)', border: '1px solid #1e1e3a', borderRadius: 8, padding: '10px 12px', marginBottom: 24 }}>
