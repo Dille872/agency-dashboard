@@ -382,7 +382,7 @@ function CustomerHistorySection({ history }) {
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▼' : '▶'}</span>
                   <span style={{ fontFamily: 'monospace', fontSize: 12 }}><ChatterCopyId value={g.customer} /></span>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{g.items.length}×</span>
-                  {g.paidSum > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981' }}>${g.paidSum} bezahlt</span>}
+                  {g.paidSum > 0 && <span className="private" style={{ fontSize: 10, fontWeight: 700, color: '#10b981' }}>${g.paidSum} bezahlt</span>}
                 </div>
                 <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120 }}>{g.models.slice(0, 2).join(', ')}{g.models.length > 2 ? '…' : ''}</span>
               </div>
@@ -396,7 +396,7 @@ function CustomerHistorySection({ history }) {
                           <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: st.color + '22', color: st.color }}>{st.label}</span>
                           <span style={{ fontSize: 10, color: '#ec4899', fontWeight: 700 }}>{r.model_name}</span>
                           <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{typeLabel(r.content_type)}</span>
-                          {r.price > 0 && <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700 }}>${r.price}</span>}
+                          {r.price > 0 && <span className="private" style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700 }}>${r.price}</span>}
                           {isPaid(r) ? <span style={{ fontSize: 9, color: '#10b981', fontWeight: 700 }}>✓ bezahlt</span> : (r.deposit_paid && <span style={{ fontSize: 9, color: '#f59e0b' }}>Anzahlung</span>)}
                           <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 'auto', fontFamily: 'monospace' }}>{new Date(r.created_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
                         </div>

@@ -69,6 +69,16 @@ html, body {
   max-width: 100%;
 }
 
+/* v3.59.0: Präsentationsmodus — als .private markierte Werte (Beträge, Umsatz, Stats)
+   werden unkenntlich gemacht, damit man das Portal ohne echte Zahlen herzeigen kann.
+   blur skaliert per em mit der Schriftgröße. Auswählen/Markieren ist gesperrt. */
+.presentation-mode .private {
+  filter: blur(0.5em);
+  -webkit-user-select: none;
+  user-select: none;
+  transition: filter 0.15s ease;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-base); }
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
