@@ -246,6 +246,7 @@ export default function ActivityWidget({ onNavigate }) {
       <button
         onClick={toggle}
         title="Aktivität"
+        className="fab-btn"
         style={{
           position: 'fixed', right: 20, bottom: 86, zIndex: 99999,
           width: 54, height: 54, borderRadius: '50%',

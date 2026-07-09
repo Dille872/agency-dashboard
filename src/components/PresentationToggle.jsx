@@ -74,6 +74,7 @@ export default function PresentationToggle() {
     <button
       onClick={() => setOn(v => !v)}
       title={on ? 'Zahlen wieder anzeigen' : 'Zahlen ausblenden'}
+      className="fab-pill"
       style={{
         position: 'fixed', left: 20, bottom: 20, zIndex: 99999,
         display: 'inline-flex', alignItems: 'center', gap: 8,

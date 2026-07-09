@@ -46,6 +46,7 @@ export default function ChatWidget({ session, displayName, unread = 0 }) {
       <button
         onClick={() => setOpen(o => !o)}
         title="Chat"
+        className="fab-btn"
         style={{
           position: 'fixed', right: 20, bottom: 20, zIndex: 99999,
           width: 54, height: 54, borderRadius: '50%',
