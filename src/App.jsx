@@ -14,6 +14,7 @@ import BriefingView from './components/BriefingView'
 import NotesTab from './components/NotesTab'
 import CommTab from './components/CommTab'
 import ChatWidget from './components/ChatWidget'
+import ActivityWidget from './components/ActivityWidget'
 import ScheduleTab from './components/ScheduleTab'
 import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
@@ -793,7 +794,10 @@ export default function App() {
       </main>
       {/* v3.61.0: Chat als schwebende Bubble (nur Admin/Manager) */}
       {(isAdmin || isManager) && (
-        <ChatWidget session={session} displayName={userDisplayName} unread={unreadChat} />
+        <>
+          <ChatWidget session={session} displayName={userDisplayName} unread={unreadChat} />
+          <ActivityWidget />
+        </>
       )}
     </div>
   )

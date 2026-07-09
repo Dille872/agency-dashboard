@@ -14,7 +14,7 @@ export default function ChatWidget({ session, displayName, unread = 0 }) {
       {open && (
         <div
           style={{
-            position: 'fixed', right: 20, bottom: 84, zIndex: 99998,
+            position: 'fixed', right: 20, bottom: 150, zIndex: 99998,
             width: 'min(460px, calc(100vw - 40px))',
             height: 'min(660px, calc(100vh - 140px))',
             background: 'var(--bg-base)',
@@ -48,14 +48,17 @@ export default function ChatWidget({ session, displayName, unread = 0 }) {
         title="Chat"
         style={{
           position: 'fixed', right: 20, bottom: 20, zIndex: 99999,
-          width: 54, height: 54, borderRadius: '50%',
-          background: '#7c3aed', color: '#fff', border: 'none',
-          boxShadow: '0 8px 26px rgba(124,58,237,0.4)',
+          width: 56, height: 56, borderRadius: '50%',
+          background: open
+            ? 'linear-gradient(135deg, #6d28d9 0%, #4f46e5 100%)'
+            : 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+          color: '#fff', border: '1px solid rgba(255,255,255,0.18)',
+          boxShadow: '0 10px 30px rgba(124,58,237,0.45), inset 0 1px 0 rgba(255,255,255,0.28)',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'transform 0.15s ease',
+          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
         }}
       >
-        {open ? <X size={22} /> : <MessageCircle size={22} />}
+        {open ? <X size={23} strokeWidth={2.4} /> : <MessageCircle size={23} strokeWidth={2.2} />}
         {!open && unread > 0 && (
           <span style={{
             position: 'absolute', top: -3, right: -3,
