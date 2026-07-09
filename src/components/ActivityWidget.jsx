@@ -35,6 +35,19 @@ function durationText(a, b) {
   if (mins < 60) return `${mins} min`
   return `${Math.floor(mins / 60)}h ${mins % 60}m`
 }
+// v3.64.0: Zeit-Gruppe für Trenner
+function dayBucket(iso) {
+  if (!iso) return 'Älter'
+  const d = new Date(iso)
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startYest = new Date(startToday); startYest.setDate(startYest.getDate() - 1)
+  const startWeek = new Date(startToday); startWeek.setDate(startWeek.getDate() - 7)
+  if (d >= startToday) return 'Heute'
+  if (d >= startYest) return 'Gestern'
+  if (d >= startWeek) return 'Diese Woche'
+  return 'Älter'
+}
 // [Tokens] als kleine Pills (z.B. [Chiara] [Spät])
 function renderBody(text) {
   if (!text) return null
@@ -191,10 +204,15 @@ export default function ActivityWidget({ onNavigate }) {
           <div style={{ flex: 1, overflow: 'auto' }}>
             {visible.length === 0 ? (
               <div style={{ padding: 20, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>Keine Aktivitäten in dieser Ansicht.</div>
-            ) : visible.map(it => {
+            ) : (() => { let lastBucket = null; return visible.map(it => {
               const fresh = isNew(it)
+              const bucket = dayBucket(it.when)
+              const showSep = bucket !== lastBucket
+              lastBucket = bucket
               return (
-                <div key={it.id}
+                <React.Fragment key={it.id}>
+                {showSep && <div style={{ padding: '9px 14px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{bucket}</div>}
+                <div
                   onClick={() => handleClick(it)}
                   onMouseEnter={() => setHovered(it.id)}
                   onMouseLeave={() => setHovered(h => h === it.id ? null : h)}
@@ -218,8 +236,9 @@ export default function ActivityWidget({ onNavigate }) {
                     )}
                   </div>
                 </div>
+                </React.Fragment>
               )
-            })}
+            }) })()}
           </div>
         </div>
       )}

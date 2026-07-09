@@ -332,7 +332,7 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
   const heatmapNames = allChatterNames.filter(n => !inactiveNames.has(n)) // v3.61.5: nur aktive Chatter
 
   // Big table
-  const tableRows = rows.map(r => {
+  const tableRows = rows.filter(r => !inactiveNames.has(r.name)).map(r => {
     // Δ vs. Wochentag: vergleicht jetzt $/Std (Volumen-unabhängig)
     // Vorher: Revenue → schlecht für kurze Schichten mit hoher Effizienz
     const targetWeekday = (() => {
