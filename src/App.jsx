@@ -48,6 +48,7 @@ export default function App() {
   const [unreadCustomContent, setUnreadCustomContent] = useState(0)
   const [openTodos, setOpenTodos] = useState(0)
   const [unreadChat, setUnreadChat] = useState(0)
+  const [commFocus, setCommFocus] = useState(null) // v3.65.0: Sprung-Ziel aus dem Aktivitäts-Feed
   const [userRole, setUserRole] = useState(null)
   const [accountBlocked, setAccountBlocked] = useState(null) // v3.18.0: {status, note} wenn stillgelegt/offboarded
   const [userDisplayName, setUserDisplayName] = useState('')
@@ -101,7 +102,14 @@ export default function App() {
         }, { onConflict: 'display_name' }).then(() => {})
       }
     }, 30000)
-    return () => clearInterval(interval)
+    // v3.65.0: Chat-/Badge-Zähler live — bei Nachrichten-Änderungen sofort neu laden
+    // (statt nur alle 30s per Intervall). Gedrosselt gegen Event-Bursts.
+    let badgeT = 0
+    const bumpBadges = () => { clearTimeout(badgeT); badgeT = setTimeout(loadBadgeCounts, 400) }
+    const badgeChannel = supabase.channel('badge-messages-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, bumpBadges)
+      .subscribe()
+    return () => { clearInterval(interval); clearTimeout(badgeT); supabase.removeChannel(badgeChannel) }
   }, [session?.user?.id]) // v3.41.0: nur bei echtem User-Wechsel laden, nicht bei jedem Token-Refresh
 
   const [userRoles, setUserRoles] = useState([])
@@ -773,7 +781,7 @@ export default function App() {
         ) : activeTab === 'nachrichten' ? (
           <CommTab key="nachrichten" session={session} section="nachrichten" displayName={userDisplayName} />
         ) : activeTab === 'models-comm' ? (
-          <CommTab key="models-comm" session={session} section="models" displayName={userDisplayName} />
+          <CommTab key="models-comm" session={session} section="models" displayName={userDisplayName} focus={commFocus} />
         ) : activeTab === 'chatters-comm' ? (
           <CommTab key="chatters-comm" session={session} section="chatters" displayName={userDisplayName} />
         ) : activeTab === 'chat' ? (
@@ -796,7 +804,7 @@ export default function App() {
       {(isAdmin || isManager) && (
         <>
           <ChatWidget session={session} displayName={userDisplayName} unread={unreadChat} />
-          <ActivityWidget onNavigate={(tab) => setActiveTab(tab)} />
+          <ActivityWidget onNavigate={(tab, focus) => { setActiveTab(tab); if (focus) setCommFocus({ ...focus, ts: Date.now() }) }} />
         </>
       )}
     </div>

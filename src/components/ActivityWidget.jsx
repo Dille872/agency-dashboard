@@ -89,8 +89,8 @@ export default function ActivityWidget({ onNavigate }) {
       merged.push({ id: 'note-' + n.id, when: n.created_at, cat: 'notes', tab: 'notes', Icon: StickyNote, color: '#a78bfa', title: 'Neue Notiz' + (n.author ? ` · ${n.author}` : ''), text: clean })
     }
     for (const a of rows(board)) merged.push({ id: 'board-' + a.id, when: a.created_at, cat: 'models', tab: 'models', Icon: Film, color: '#06b6d4', title: `${a.model_name || 'Model'} · ${a.action || 'Board aktualisiert'}${a.category ? ` (${a.category})` : ''}`, text: a.details })
-    for (const r of rows(reqs)) merged.push({ id: 'req-' + r.id, when: r.created_at, cat: 'content', tab: 'models-comm', Icon: Inbox, color: '#f59e0b', title: `Neue Anfrage · ${r.model_name || ''}`, text: r.edited_text || r.request_text })
-    for (const i of rows(ideas)) merged.push({ id: 'idea-' + i.id, when: i.created_at, cat: 'content', tab: 'models-comm', Icon: Lightbulb, color: '#10b981', title: `Content-Idee · ${i.model_name || ''}`, text: i.idea_text })
+    for (const r of rows(reqs)) merged.push({ id: 'req-' + r.id, when: r.created_at, cat: 'content', tab: 'models-comm', focus: { section: 'content-requests', id: r.id }, Icon: Inbox, color: '#f59e0b', title: `Neue Anfrage · ${r.model_name || ''}`, text: r.edited_text || r.request_text })
+    for (const i of rows(ideas)) merged.push({ id: 'idea-' + i.id, when: i.created_at, cat: 'content', tab: 'models-comm', focus: { section: 'content-ideas' }, Icon: Lightbulb, color: '#10b981', title: `Content-Idee · ${i.model_name || ''}`, text: i.idea_text })
     for (const a of rows(absences)) merged.push({ id: 'abs-' + a.id, when: a.created_at, cat: 'shifts', tab: 'schedule', Icon: Palmtree, color: '#22d3ee', title: `Freie Tage · ${a.chatter_name || ''}`, text: `${a.date_from || ''}${a.date_to && a.date_to !== a.date_from ? '–' + a.date_to : ''}${a.reason ? ' · ' + a.reason : ''}` })
     for (const s of rows(swaps)) {
       if (s.block_label || s.target) merged.push({ id: 'swap-' + s.id, when: s.created_at, cat: 'shifts', tab: 'chatters-comm', Icon: Megaphone, color: '#f59e0b', title: 'Schicht ausgeschrieben', text: `${s.block_label || `${s.shift_date || ''} ${s.shift || ''}`}${s.model_name ? ' · ' + s.model_name : ''}` })
@@ -151,7 +151,7 @@ export default function ActivityWidget({ onNavigate }) {
   }
 
   const handleClick = (it) => {
-    if (it.tab && onNavigate) onNavigate(it.tab)
+    if (it.tab && onNavigate) onNavigate(it.tab, it.focus)
     setOpen(false)
   }
 

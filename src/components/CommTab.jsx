@@ -214,7 +214,7 @@ function CopyId({ value, labelColor = 'var(--text-secondary)' }) {
   )
 }
 
-export default function CommTab({ session, section = 'nachrichten', displayName = '', compact = false }) {
+export default function CommTab({ session, section = 'nachrichten', displayName = '', compact = false, focus = null }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
   const userName = getDisplayName(session?.user?.email)
 
@@ -283,6 +283,21 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (section === 'chatters') return 'chatters'
     return 'nachrichten'
   })
+
+  // v3.65.0: Sprung aus dem Aktivitäts-Feed — passenden Sub-Tab öffnen, ggf. die
+  // Anfrage aufklappen und hinscrollen.
+  useEffect(() => {
+    if (!focus || !focus.section) return
+    setActiveSection(focus.section)
+    if (focus.id) {
+      setExpandedReqs(new Set([focus.id]))
+      const t = setTimeout(() => {
+        const el = document.getElementById('req-card-' + focus.id)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 350)
+      return () => clearTimeout(t)
+    }
+  }, [focus])
   const [initialJumpDone, setInitialJumpDone] = useState(false)
   const [onlineStatuses, setOnlineStatuses] = useState({})
   const [inboxFilter, setInboxFilter] = useState('all')
@@ -3366,7 +3381,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   : null
                 const briefingPreview = (req.edited_text || req.request_text || '').trim()
                 return (
-                  <div key={req.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
+                  <div key={req.id} id={'req-card-' + req.id} style={{ padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: 10, borderLeft: `3px solid ${statusColor}`, border: `1px solid ${req.status === 'neu' ? 'rgba(167,139,250,0.3)' : 'var(--border)'}` }}>
                     {/* Header: Model + Kunde + Chatter | Preis + Datum — v3.22.0 klickbar */}
                     <div onClick={() => toggleReqExpanded(req.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: isExpanded ? 10 : 0, cursor: 'pointer' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
