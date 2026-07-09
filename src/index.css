@@ -137,8 +137,10 @@ th { text-align: left; }
   [style*="border-radius: 10px"] { border-radius: 8px !important; }
   /* Tables scroll horizontally */
   table { display: block; overflow-x: auto; white-space: nowrap; }
-  /* v3.68.0: lange Wörter / IDs / URLs umbrechen statt überlaufen */
+  /* v3.68.1: lange Wörter / IDs / URLs umbrechen statt überlaufen */
   td, th, span, div, p, li, a, label, h1, h2, h3 { overflow-wrap: break-word; }
+  /* v3.68.1: Daily-Upload-Karten in eigene volle Zeile (sonst rechts abgeschnitten) */
+  .upload-row-compact { flex-basis: 100% !important; }
 }
 @media (max-width: 480px) {
   header .hide-sm { display: none !important; }
