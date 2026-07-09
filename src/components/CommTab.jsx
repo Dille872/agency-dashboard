@@ -3286,7 +3286,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <span style={{ color: '#ef4444', marginLeft: 6, fontSize: 11, fontWeight: 700 }}>· seit {days} Tag{days !== 1 ? 'en' : ''} überfällig</span>
                       </div>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => markPaymentPaid(r, 'remainder')} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Rest erhalten</button>
+                        <button onClick={() => markPaymentPaid(r, 'remainder')} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={11} strokeWidth={2.6} /> Rest erhalten</button>
                         <button onClick={() => snoozeRemainder(r.id)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>⏰ in 3 Tagen</button>
                       </div>
                     </div>
@@ -3359,7 +3359,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
             {isFiltered && (
               <button onClick={() => { setContentModelFilter('all'); setContentChatterFilter('all'); setContentSearch('') }}
-                style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit' }}>✕ Filter zurücksetzen</button>
+                style={{ fontSize: 10, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><XIcon size={11} strokeWidth={2.6} /> Filter zurücksetzen</button>
             )}
           </div>
 
@@ -3614,7 +3614,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                       {!req.deposit_paid && (
                                         <div style={{ display: 'flex', gap: 4 }}>
                                           <button onClick={() => markPaymentPaid(req, 'deposit')}
-                                            style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Anzahlung heute</button>
+                                            style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={10} strokeWidth={2.6} /> Anzahlung heute</button>
                                           <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'deposit' }); setPickerDate(todayIso()) }}
                                             style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }} title="Anderes Datum">📅</button>
                                         </div>
@@ -3655,7 +3655,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                           {!req.remainder_paid && (
                                             <div style={{ display: 'flex', gap: 4 }}>
                                               <button onClick={() => markPaymentPaid(req, 'remainder')}
-                                                style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Rest heute</button>
+                                                style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={10} strokeWidth={2.6} /> Rest heute</button>
                                               <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'remainder' }); setPickerDate(todayIso()) }}
                                                 style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }} title="Anderes Datum">📅</button>
                                               <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'due' }); setPickerDate(req.remainder_due_at || todayIso()) }}
@@ -3670,7 +3670,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                         <input type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)}
                                           style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', fontFamily: 'inherit' }} />
                                         <button onClick={() => { markPaymentPaid(req, 'remainder', pickerDate); setShowDatePicker(null) }}
-                                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Rest erhalten</button>
+                                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={10} strokeWidth={2.6} /> Rest erhalten</button>
                                         <button onClick={() => setShowDatePicker(null)}
                                           style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
                                       </div>
@@ -3684,7 +3684,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                           style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: '#f59e0b', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>⏰ Setzen</button>
                                         {req.remainder_due_at && (
                                           <button onClick={() => { setRemainderDueDate(req.id, null); setShowDatePicker(null) }}
-                                            style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✕ Entfernen</button>
+                                            style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><XIcon size={10} strokeWidth={2.6} /> Entfernen</button>
                                         )}
                                         <button onClick={() => setShowDatePicker(null)}
                                           style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
@@ -3706,7 +3706,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                     {!req.deposit_paid && (
                                       <div style={{ display: 'flex', gap: 4 }}>
                                         <button onClick={() => markPaymentPaid(req, 'deposit')}
-                                          style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>✓ Bezahlt heute</button>
+                                          style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={10} strokeWidth={2.6} /> Bezahlt heute</button>
                                         <button onClick={() => { setShowDatePicker({ reqId: req.id, type: 'deposit' }); setPickerDate(todayIso()) }}
                                           style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }} title="Anderes Datum">📅</button>
                                       </div>
