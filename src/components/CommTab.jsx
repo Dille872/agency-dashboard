@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, sendTelegramPhoto, sendTelegramMediaGroup, notifyOwner } from '../telegram'
 import Card from './Card'
@@ -23,6 +24,21 @@ const CONTENT_TYPE_LABELS = {
 }
 const contentTypeLabel = (t) => CONTENT_TYPE_LABELS[t] || t || ''
 const isLiveType = (t) => t === 'videocall' || t === 'telefonat'
+
+// v3.66.0: Status als Icon + Label (statt Emoji/Unicode-Symbole)
+const REQ_STATUS_META = {
+  erledigt:   { Icon: CheckCheck, label: 'Erledigt' },
+  bestaetigt: { Icon: Check,      label: 'Bestätigt' },
+  angefragt:  { Icon: Clock,      label: 'Angefragt' },
+  abgelehnt:  { Icon: XIcon,      label: 'Abgelehnt' },
+  neu:        { Icon: CircleDot,  label: 'Neu' },
+}
+const IDEA_STATUS_META = {
+  erledigt:  { Icon: CheckCheck, label: 'Erledigt' },
+  in_arbeit: { Icon: Loader,     label: 'In Arbeit' },
+  abgelehnt: { Icon: XIcon,      label: 'Abgelehnt' },
+  offen:     { Icon: CircleDot,  label: 'Offen' },
+}
 
 // v3.51.0: Dringlichkeit zentral (inkl. Nächste Woche + Wunschdatum aus deadline_date)
 const DEADLINE_META = {
@@ -3355,7 +3371,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {filteredRequests.map(req => {
                 const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
-                const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
+                const sMeta = REQ_STATUS_META[req.status] || { Icon: CircleDot, label: req.status || 'Neu' }
                 const remainder = (req.price || 0) - (req.deposit || 0)
                 // Bezahl-Status berechnen
                 // v3.44.1: zwei Modi konsistent zum Bezahl-Block unten.
@@ -3387,8 +3403,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         {/* Badges */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
-                          {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: isLiveType(req.content_type) ? 'rgba(239,68,68,0.15)' : 'rgba(124,58,237,0.15)', color: isLiveType(req.content_type) ? '#ef4444' : '#a78bfa' }}>{isLiveType(req.content_type) ? '🔴 ' : ''}{contentTypeLabel(req.content_type)}</span>}
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor }}>{statusLabel}</span>
+                          {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: isLiveType(req.content_type) ? 'rgba(239,68,68,0.15)' : 'rgba(124,58,237,0.15)', color: isLiveType(req.content_type) ? '#ef4444' : '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: 5 }}>{isLiveType(req.content_type) && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />}{contentTypeLabel(req.content_type)}</span>}
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor, display: 'inline-flex', alignItems: 'center', gap: 4 }}><sMeta.Icon size={11} strokeWidth={2.6} />{sMeta.label}</span>
                           {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>NEU</span>}
                           {/* v3.43.0: Deadline-Badge im eingeklappten Zustand sichtbar */}
                           {!isExpanded && deadlineMeta && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: deadlineMeta.color + '22', color: deadlineMeta.color }}>{deadlineMeta.label}</span>}
@@ -3456,9 +3472,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     {!isExpanded && (req.status === 'neu' || req.status === 'angefragt') && (
                       <div onClick={e => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                         {req.status !== 'angefragt' && (
-                          <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '4px 11px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Anfragen + TG</button>
+                          <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '4px 11px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Send size={12} strokeWidth={2.4} /> Anfragen + TG</button>
                         )}
-                        <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 10, padding: '4px 12px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Bestätigen + TG</button>
+                        <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 10, padding: '4px 12px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Check size={12} strokeWidth={2.6} /> Bestätigen + TG</button>
                       </div>
                     )}
 
@@ -3719,20 +3735,20 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     {/* Action-Buttons */}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
                       {req.status !== 'angefragt' && req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
-                        <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>⏳ Anfragen + TG</button>
+                        <button onClick={() => updateRequestStatus(req.id, 'angefragt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Send size={12} strokeWidth={2.4} /> Anfragen + TG</button>
                       )}
                       {req.status !== 'bestaetigt' && req.status !== 'erledigt' && (
-                        <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 11, padding: '5px 14px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Bestätigen + TG</button>
+                        <button onClick={() => updateRequestStatus(req.id, 'bestaetigt')} style={{ fontSize: 11, padding: '5px 14px', borderRadius: 5, background: '#06b6d4', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Check size={13} strokeWidth={2.6} /> Bestätigen + TG</button>
                       )}
                       {req.status !== 'erledigt' && req.status !== 'abgelehnt' && (
-                        <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
+                        <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><CheckCheck size={12} strokeWidth={2.6} /> Erledigt</button>
                       )}
                       {req.status !== 'abgelehnt' && req.status !== 'erledigt' && (
-                        <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✕ Ablehnen</button>
+                        <button onClick={() => updateRequestStatus(req.id, 'abgelehnt')} style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><XIcon size={12} strokeWidth={2.6} /> Ablehnen</button>
                       )}
                       {/* v3.56.0: Reminder ans Model bei offenen/laufenden Customs */}
                       {(req.status === 'angefragt' || req.status === 'bestaetigt') && (
-                        <button onClick={() => sendReminder(req)} title="Erinnerung an das Model senden" style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>🔔 Reminder ans Model</button>
+                        <button onClick={() => sendReminder(req)} title="Erinnerung an das Model senden" style={{ fontSize: 10, padding: '5px 12px', borderRadius: 5, background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Bell size={12} strokeWidth={2.4} /> Reminder ans Model</button>
                       )}
                       {/* v3.56.0: Status manuell korrigieren (ohne Telegram) — z.B. "Erledigt" zurücknehmen */}
                       <select value={req.status} onChange={(e) => { if (e.target.value !== req.status) updateRequestStatus(req.id, e.target.value, false) }}
@@ -3792,7 +3808,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {filteredIdeas.map(idea => {
                 const statusColor = idea.status === 'erledigt' ? '#10b981' : idea.status === 'in_arbeit' ? '#06b6d4' : idea.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
-                const statusLabel = idea.status === 'erledigt' ? '✓ Erledigt' : idea.status === 'in_arbeit' ? '⚙ In Arbeit' : idea.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Offen'
+                const sMeta = IDEA_STATUS_META[idea.status] || { Icon: CircleDot, label: idea.status || 'Offen' }
                 const prioIcon = idea.priority === 'urgent' ? '🔥' : idea.priority === 'nice' ? '💭' : '📅'
                 const prioColor = idea.priority === 'urgent' ? '#ef4444' : idea.priority === 'nice' ? '#06b6d4' : '#f59e0b'
                 const catIcon = idea.category === 'videos' ? '🎬' : idea.category === 'audio' ? '🎙' : idea.category === 'sonstiges' ? '💭' : '📸'
@@ -3810,7 +3826,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: prioColor + '22', color: prioColor, fontWeight: 600 }}>
                           {prioIcon} {idea.priority === 'urgent' ? 'Dringend' : idea.priority === 'nice' ? 'Wenn Zeit' : 'Normal'}
                         </span>
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: statusColor + '22', color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: statusColor + '22', color: statusColor, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><sMeta.Icon size={11} strokeWidth={2.6} />{sMeta.label}</span>
                       </div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', textAlign: 'right' }}>
                         Von {idea.created_by}<br/>
