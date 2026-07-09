@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Bell, ChevronDown } from 'lucide-react'
+import { Bell, ChevronDown, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand } from 'lucide-react'
 import { supabase } from '../supabase'
 
 // v3.61.0: Aktivitäts-Feed — sammelt alle Aktualisierungen an einem Ort.
-// Quellen: neue Notizen, Model-Board-Änderungen, neue Custom-Content-Anfragen,
-// neue Content-Ideen. Reine Lese-Aggregation (schreibt nichts). Ungelesen-Zähler
-// über einen "zuletzt gesehen"-Zeitstempel in localStorage; Öffnen setzt ihn zurück.
+// v3.61.4: Emojis raus → saubere lucide-Icons (Glas-/Icon-Design wie die Menüs),
+//          [Tokens] werden als kleine Pills dargestellt.
 const SEEN_KEY = 'activity_last_seen'
 
 function relTime(iso) {
@@ -17,6 +16,23 @@ function relTime(iso) {
   if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std`
   if (diff < 172800) return 'gestern'
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+}
+
+// Text mit [Tokens] als kleine Pills rendern (z.B. [Chiara] [Spät])
+function renderBody(text) {
+  if (!text) return null
+  const parts = String(text).split(/(\[[^\]]+\])/g)
+  return parts.map((p, i) => {
+    const m = p.match(/^\[([^\]]+)\]$/)
+    if (m) return (
+      <span key={i} style={{
+        display: 'inline-block', padding: '0 6px', margin: '0 3px', borderRadius: 5,
+        background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)',
+        fontSize: 10, fontWeight: 700, lineHeight: '16px', verticalAlign: 'middle',
+      }}>{m[1]}</span>
+    )
+    return <React.Fragment key={i}>{p}</React.Fragment>
+  })
 }
 
 export default function ActivityWidget() {
@@ -39,22 +55,23 @@ export default function ActivityWidget() {
     ])
     const rows = (r) => (r.status === 'fulfilled' ? (r.value.data || []) : [])
     const merged = []
-    for (const n of rows(notes)) merged.push({ id: 'note-' + n.id, when: n.created_at, icon: '📝', color: '#a78bfa', title: 'Neue Notiz' + (n.author ? ` · ${n.author}` : ''), text: n.text })
-    for (const a of rows(board)) merged.push({ id: 'board-' + a.id, when: a.created_at, icon: '🎬', color: '#06b6d4', title: `${a.model_name || 'Model'} · ${a.action || 'Board aktualisiert'}${a.category ? ` (${a.category})` : ''}`, text: a.details })
-    for (const r of rows(reqs)) merged.push({ id: 'req-' + r.id, when: r.created_at, icon: '📥', color: '#f59e0b', title: `Neue Anfrage · ${r.model_name || ''}`, text: r.edited_text || r.request_text })
-    for (const i of rows(ideas)) merged.push({ id: 'idea-' + i.id, when: i.created_at, icon: '💡', color: '#10b981', title: `Content-Idee · ${i.model_name || ''}`, text: i.idea_text })
-    // v3.61.2: freie Tage
-    for (const a of rows(absences)) merged.push({ id: 'abs-' + a.id, when: a.created_at, icon: '🌴', color: '#22d3ee', title: `Freie Tage · ${a.chatter_name || ''}`, text: `${a.date_from || ''}${a.date_to && a.date_to !== a.date_from ? '–' + a.date_to : ''}${a.reason ? ' · ' + a.reason : ''}` })
-    // v3.61.2: Schicht ausgeschrieben (Block-Angebot) ODER Tausch-Anfrage
+    for (const n of rows(notes)) {
+      const clean = (n.text || '').replace(/^Schichtnotiz von .+?\s·\s/, '') // redundanten Präfix entfernen
+      merged.push({ id: 'note-' + n.id, when: n.created_at, Icon: StickyNote, color: '#a78bfa', title: 'Neue Notiz' + (n.author ? ` · ${n.author}` : ''), text: clean })
+    }
+    for (const a of rows(board)) merged.push({ id: 'board-' + a.id, when: a.created_at, Icon: Film, color: '#06b6d4', title: `${a.model_name || 'Model'} · ${a.action || 'Board aktualisiert'}${a.category ? ` (${a.category})` : ''}`, text: a.details })
+    for (const r of rows(reqs)) merged.push({ id: 'req-' + r.id, when: r.created_at, Icon: Inbox, color: '#f59e0b', title: `Neue Anfrage · ${r.model_name || ''}`, text: r.edited_text || r.request_text })
+    for (const i of rows(ideas)) merged.push({ id: 'idea-' + i.id, when: i.created_at, Icon: Lightbulb, color: '#10b981', title: `Content-Idee · ${i.model_name || ''}`, text: i.idea_text })
+    for (const a of rows(absences)) merged.push({ id: 'abs-' + a.id, when: a.created_at, Icon: Palmtree, color: '#22d3ee', title: `Freie Tage · ${a.chatter_name || ''}`, text: `${a.date_from || ''}${a.date_to && a.date_to !== a.date_from ? '–' + a.date_to : ''}${a.reason ? ' · ' + a.reason : ''}` })
     for (const s of rows(swaps)) {
       if (s.block_label || s.target) {
-        merged.push({ id: 'swap-' + s.id, when: s.created_at, icon: '📢', color: '#f59e0b', title: 'Schicht ausgeschrieben', text: `${s.block_label || `${s.shift_date || ''} ${s.shift || ''}`}${s.model_name ? ' · ' + s.model_name : ''}` })
+        merged.push({ id: 'swap-' + s.id, when: s.created_at, Icon: Megaphone, color: '#f59e0b', title: 'Schicht ausgeschrieben', text: `${s.block_label || `${s.shift_date || ''} ${s.shift || ''}`}${s.model_name ? ' · ' + s.model_name : ''}` })
       } else {
-        merged.push({ id: 'swap-' + s.id, when: s.created_at, icon: '🔁', color: '#a78bfa', title: `Tausch-Anfrage · ${s.requester_name || ''}`, text: `${s.shift_date || ''} ${s.shift || ''}${s.model_name ? ' · ' + s.model_name : ''}${s.reason ? ' · ' + s.reason : ''}` })
+        merged.push({ id: 'swap-' + s.id, when: s.created_at, Icon: Repeat, color: '#a78bfa', title: `Tausch-Anfrage · ${s.requester_name || ''}`, text: `${s.shift_date || ''} ${s.shift || ''}${s.model_name ? ' · ' + s.model_name : ''}${s.reason ? ' · ' + s.reason : ''}` })
       }
     }
-    // v3.61.2: Chatter bewirbt sich auf eine Schicht
-    for (const r of rows(reactions)) merged.push({ id: 'react-' + r.id, when: r.created_at, icon: '🙋', color: '#10b981', title: `Schicht-Bewerbung · ${r.chatter_name || ''}`, text: r.reaction ? `Reaktion: ${r.reaction}` : 'hat sich auf eine Schicht beworben' })
+    for (const r of rows(reactions)) merged.push({ id: 'react-' + r.id, when: r.created_at, Icon: Hand, color: '#10b981', title: `Schicht-Bewerbung · ${r.chatter_name || ''}`, text: r.reaction ? `Reaktion: ${r.reaction}` : 'hat sich auf eine Schicht beworben' })
+
     merged.sort((a, b) => new Date(b.when) - new Date(a.when))
     setItems(merged.slice(0, 100))
   }, [])
@@ -99,15 +116,17 @@ export default function ActivityWidget() {
             {items.length === 0 ? (
               <div style={{ padding: 20, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>Keine neuen Aktivitäten.</div>
             ) : items.map(it => (
-              <div key={it.id} style={{ display: 'flex', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 16, lineHeight: 1.3, flexShrink: 0 }}>{it.icon}</div>
+              <div key={it.id} style={{ display: 'flex', gap: 11, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: it.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                  <it.Icon size={15} color={it.color} strokeWidth={2} />
+                </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: it.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</span>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{relTime(it.when)}</span>
                   </div>
                   {it.text && (
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.45, marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{it.text}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginTop: 3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{renderBody(it.text)}</div>
                   )}
                 </div>
               </div>
@@ -131,9 +150,7 @@ export default function ActivityWidget() {
           transition: 'background 0.16s ease, border-color 0.16s ease',
         }}
       >
-        {open
-          ? <ChevronDown size={23} strokeWidth={2.6} />
-          : <Bell size={21} fill="currentColor" strokeWidth={0} />}
+        {open ? <ChevronDown size={23} strokeWidth={2.6} /> : <Bell size={21} fill="currentColor" strokeWidth={0} />}
         {!open && unread > 0 && (
           <span style={{
             position: 'absolute', top: -3, right: -3,
