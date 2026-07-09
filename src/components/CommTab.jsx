@@ -2371,7 +2371,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
                   }}>＋</button>
                 </div>
-                {isUnified && (
+                {isUnified && !compact && (
                   <div style={{ display: 'flex', gap: 4 }}>
                     {[
                       { key: 'all', label: 'Alle' },
@@ -2429,7 +2429,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           fontSize: 11,
                           color: thread.unreadCount > 0 ? 'var(--text-primary)' : 'var(--text-muted)',
                           fontWeight: thread.unreadCount > 0 ? 600 : 400,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0,
                         }}>
                           {thread.last.direction === 'out' ? 'Du: ' : ''}{thread.last.text}
                         </span>
