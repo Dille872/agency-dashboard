@@ -2380,7 +2380,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     ].map(opt => (
                       <button key={opt.key} onClick={() => setChatTypeFilter(opt.key)} style={{
                         flex: 1, padding: '4px 6px', borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
-                        background: chatTypeFilter === opt.key ? 'rgba(124,58,237,0.18)' : 'transparent',
+                        background: chatTypeFilter === opt.key ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.04)',
                         color: chatTypeFilter === opt.key ? '#a78bfa' : 'var(--text-muted)',
                         border: `1px solid ${chatTypeFilter === opt.key ? '#7c3aed' : 'var(--border)'}`,
                       }}>{opt.label}</button>

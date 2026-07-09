@@ -48,19 +48,19 @@ export default function ChatWidget({ session, displayName, unread = 0 }) {
         title="Chat"
         style={{
           position: 'fixed', right: 20, bottom: 20, zIndex: 99999,
-          width: 56, height: 56, borderRadius: '50%',
-          background: open
-            ? 'linear-gradient(135deg, #6d28d9 0%, #4f46e5 100%)'
-            : 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
-          color: '#fff', border: '1px solid rgba(255,255,255,0.18)',
-          boxShadow: '0 10px 30px rgba(124,58,237,0.45), inset 0 1px 0 rgba(255,255,255,0.28)',
+          width: 54, height: 54, borderRadius: '50%',
+          background: open ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.06)',
+          color: '#a78bfa',
+          border: `1px solid ${open ? 'rgba(124,58,237,0.5)' : 'rgba(255,255,255,0.12)'}`,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+          transition: 'background 0.16s ease, border-color 0.16s ease',
         }}
       >
         {open
-          ? <ChevronDown size={24} strokeWidth={2.6} />
-          : <MessageCircle size={24} fill="currentColor" strokeWidth={0} />}
+          ? <ChevronDown size={23} strokeWidth={2.6} />
+          : <MessageCircle size={22} fill="currentColor" strokeWidth={0} />}
         {!open && unread > 0 && (
           <span style={{
             position: 'absolute', top: -3, right: -3,

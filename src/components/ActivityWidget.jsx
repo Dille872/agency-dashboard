@@ -33,8 +33,9 @@ export default function ActivityWidget() {
     const q = (table, limit) =>
       supabase.from(table).select('*').gte('created_at', sinceIso).order('created_at', { ascending: false }).limit(limit)
 
-    const [notes, board, reqs, ideas] = await Promise.allSettled([
+    const [notes, board, reqs, ideas, absences, swaps, reactions] = await Promise.allSettled([
       q('notes', 40), q('model_board_activity', 60), q('content_requests', 40), q('content_ideas', 40),
+      q('absences', 40), q('shift_swaps', 40), q('swap_reactions', 40),
     ])
     const rows = (r) => (r.status === 'fulfilled' ? (r.value.data || []) : [])
     const merged = []
@@ -42,8 +43,20 @@ export default function ActivityWidget() {
     for (const a of rows(board)) merged.push({ id: 'board-' + a.id, when: a.created_at, icon: '🎬', color: '#06b6d4', title: `${a.model_name || 'Model'} · ${a.action || 'Board aktualisiert'}${a.category ? ` (${a.category})` : ''}`, text: a.details })
     for (const r of rows(reqs)) merged.push({ id: 'req-' + r.id, when: r.created_at, icon: '📥', color: '#f59e0b', title: `Neue Anfrage · ${r.model_name || ''}`, text: r.edited_text || r.request_text })
     for (const i of rows(ideas)) merged.push({ id: 'idea-' + i.id, when: i.created_at, icon: '💡', color: '#10b981', title: `Content-Idee · ${i.model_name || ''}`, text: i.idea_text })
+    // v3.61.2: freie Tage
+    for (const a of rows(absences)) merged.push({ id: 'abs-' + a.id, when: a.created_at, icon: '🌴', color: '#22d3ee', title: `Freie Tage · ${a.chatter_name || ''}`, text: `${a.date_from || ''}${a.date_to && a.date_to !== a.date_from ? '–' + a.date_to : ''}${a.reason ? ' · ' + a.reason : ''}` })
+    // v3.61.2: Schicht ausgeschrieben (Block-Angebot) ODER Tausch-Anfrage
+    for (const s of rows(swaps)) {
+      if (s.block_label || s.target) {
+        merged.push({ id: 'swap-' + s.id, when: s.created_at, icon: '📢', color: '#f59e0b', title: 'Schicht ausgeschrieben', text: `${s.block_label || `${s.shift_date || ''} ${s.shift || ''}`}${s.model_name ? ' · ' + s.model_name : ''}` })
+      } else {
+        merged.push({ id: 'swap-' + s.id, when: s.created_at, icon: '🔁', color: '#a78bfa', title: `Tausch-Anfrage · ${s.requester_name || ''}`, text: `${s.shift_date || ''} ${s.shift || ''}${s.model_name ? ' · ' + s.model_name : ''}${s.reason ? ' · ' + s.reason : ''}` })
+      }
+    }
+    // v3.61.2: Chatter bewirbt sich auf eine Schicht
+    for (const r of rows(reactions)) merged.push({ id: 'react-' + r.id, when: r.created_at, icon: '🙋', color: '#10b981', title: `Schicht-Bewerbung · ${r.chatter_name || ''}`, text: r.reaction ? `Reaktion: ${r.reaction}` : 'hat sich auf eine Schicht beworben' })
     merged.sort((a, b) => new Date(b.when) - new Date(a.when))
-    setItems(merged.slice(0, 80))
+    setItems(merged.slice(0, 100))
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -108,19 +121,19 @@ export default function ActivityWidget() {
         title="Aktivität"
         style={{
           position: 'fixed', right: 20, bottom: 86, zIndex: 99999,
-          width: 56, height: 56, borderRadius: '50%',
-          background: open
-            ? 'linear-gradient(135deg, #0e7490 0%, #155e75 100%)'
-            : 'linear-gradient(135deg, #22d3ee 0%, #0891b2 100%)',
-          color: '#fff', border: '1px solid rgba(255,255,255,0.18)',
-          boxShadow: '0 10px 30px rgba(8,145,178,0.45), inset 0 1px 0 rgba(255,255,255,0.28)',
+          width: 54, height: 54, borderRadius: '50%',
+          background: open ? 'rgba(34,211,238,0.18)' : 'rgba(255,255,255,0.06)',
+          color: '#22d3ee',
+          border: `1px solid ${open ? 'rgba(34,211,238,0.5)' : 'rgba(255,255,255,0.12)'}`,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+          transition: 'background 0.16s ease, border-color 0.16s ease',
         }}
       >
         {open
-          ? <ChevronDown size={24} strokeWidth={2.6} />
-          : <Bell size={22} fill="currentColor" strokeWidth={0} />}
+          ? <ChevronDown size={23} strokeWidth={2.6} />
+          : <Bell size={21} fill="currentColor" strokeWidth={0} />}
         {!open && unread > 0 && (
           <span style={{
             position: 'absolute', top: -3, right: -3,
