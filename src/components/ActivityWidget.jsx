@@ -97,6 +97,20 @@ export default function ActivityWidget({ onNavigate }) {
 
   useEffect(() => { load() }, [load])
 
+  // v3.63.0: Live-Updates — bei Änderungen an den Quell-Tabellen den Feed neu laden
+  // (gedrosselt, damit viele schnelle Events nur einen Ladevorgang auslösen).
+  useEffect(() => {
+    let t = 0
+    const schedule = () => { clearTimeout(t); t = setTimeout(load, 400) }
+    const TABLES = ['notes', 'model_board_activity', 'content_requests', 'content_ideas', 'absences', 'shift_swaps', 'swap_reactions', 'shift_logs']
+    let channel = supabase.channel('activity-feed-live')
+    for (const table of TABLES) {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, schedule)
+    }
+    channel.subscribe()
+    return () => { clearTimeout(t); supabase.removeChannel(channel) }
+  }, [load])
+
   const unread = items.filter(i => i.when && (!lastSeen || new Date(i.when) > new Date(lastSeen))).length
   const isNew = (it) => it.when && (!seenAtOpen || new Date(it.when) > new Date(seenAtOpen))
   const newCount = items.filter(isNew).length
