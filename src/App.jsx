@@ -474,13 +474,19 @@ export default function App() {
       }}>
         {/* Left */}
         <div onClick={() => setActiveTab('models')} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer' }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-            background: 'linear-gradient(135deg, #7c3aed, #06b6d4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 14, fontWeight: 800, color: '#fff', fontFamily: 'monospace',
-            boxShadow: '0 0 16px rgba(124,58,237,0.4)',
-          }}>A</div>
+          <div style={{ width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Thirteen 87 Collective">
+              <defs>
+                <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="#8b8cf9" />
+                  <stop offset="1" stopColor="#c98bff" />
+                </linearGradient>
+              </defs>
+              <path d="M14 3 L24 13 L14 25 L4 13 Z" stroke="url(#logoGrad)" strokeWidth="1.6" strokeLinejoin="round" />
+              <path d="M7 13 L21 13" stroke="url(#logoGrad)" strokeWidth="1" />
+              <path d="M14 3 L7 13 L14 25 M14 3 L21 13 L14 25" stroke="url(#logoGrad)" strokeWidth="1" strokeOpacity="0.55" />
+            </svg>
+          </div>
           <div style={{ minWidth: 0 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Agency Dashboard</span>
             <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6, letterSpacing: '0.05em', display: 'inline' }} className="hide-mobile">Thirteen 87 Collective</span>
