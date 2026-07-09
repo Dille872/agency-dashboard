@@ -581,26 +581,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // Models, denen der Chatter zugeteilt ist, PLUS eigene Anfragen. Dient als
   // Bibliothek: "welcher Kunde hat schon was bestellt/bezahlt".
   // Hinweis: liefert nur fremde Zeilen, wenn die Supabase-RLS das erlaubt.
+  // v3.58.0: STRIKT nur Anfragen für die Models, denen der Chatter zugeteilt ist
+  // (gleiche Model-Liste wie die Boards / "Meine Models"). Keine fremden Models mehr,
+  // auch nicht über selbst erstellte Anfragen.
   const loadCustomerHistory = async (modelNames) => {
     try {
-      const byId = new Map()
-      if (modelNames && modelNames.length > 0) {
-        const { data } = await supabase.from('content_requests')
-          .select('*')
-          .in('model_name', modelNames)
-          .order('created_at', { ascending: false })
-          .limit(1000)
-        for (const r of data || []) byId.set(r.id, r)
-      }
-      // eigene Anfragen immer ergänzen (auch wenn Model nicht zugeteilt)
-      const { data: own } = await supabase.from('content_requests')
+      if (!modelNames || modelNames.length === 0) { setCustomerHistory([]); return }
+      const { data } = await supabase.from('content_requests')
         .select('*')
-        .eq('chatter_name', displayName)
+        .in('model_name', modelNames)
         .order('created_at', { ascending: false })
         .limit(1000)
-      for (const r of own || []) byId.set(r.id, r)
-      const merged = [...byId.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      setCustomerHistory(merged)
+      setCustomerHistory(data || [])
     } catch (e) {
       console.error('loadCustomerHistory', e)
     }
@@ -1219,7 +1211,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     for (const m of modelsData || []) modelNameMap[String(m.id)] = m.name
     const resolvedNames = [...assignedNames].map(id => modelNameMap[id] || id).filter(Boolean)
     if (resolvedNames.length > 0) loadAssignedModelData(resolvedNames)
-    loadCustomerHistory(resolvedNames) // v3.55.0: Kunden-Historie laden (auch nur eigene, falls keine Zuteilung)
+    loadCustomerHistory(resolvedNames) // v3.58.0: Historie nur für zugeteilte Models (wie Boards)
   }
 
   const loadMyReminders = async () => {
