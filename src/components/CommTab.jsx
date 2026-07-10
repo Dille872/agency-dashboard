@@ -232,7 +232,7 @@ function CopyId({ value, labelColor = 'var(--text-secondary)' }) {
 
 export default function CommTab({ session, section = 'nachrichten', displayName = '', compact = false, focus = null }) {
   const isOwner = session?.user?.email === OWNER_EMAIL
-  const userName = getDisplayName(session?.user?.email)
+  const userName = displayName || getDisplayName(session?.user?.email)
 
   const [models, setModels] = useState([])
   const [selectedModel, setSelectedModel] = useState(null)
