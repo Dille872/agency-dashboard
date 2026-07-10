@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Lightbulb } from 'lucide-react'
+import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Lightbulb, ArrowLeftRight, CalendarDays, Pin, Megaphone } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, sendTelegramPhoto, sendTelegramMediaGroup, notifyOwner } from '../telegram'
 import Card from './Card'
@@ -2032,8 +2032,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         // v3.33.2: "Schichten mit Reaktionen — du musst zuweisen"-Chip entfernt.
         // War 1:1-Doppelung des Tab-Badges "Schicht-Tausch (N)" (gleicher Wert reactedSwapUnitCount, gleiches Ziel-Tab).
         // Der Tab-Badge bleibt der kanonische Indikator dafür. Offene Angebote sind eigene Info -> bleibt als Chip.
-        if (openSwapsCount > 0) attentionItems.push({ icon: '🔄', text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
-        if (newAbsences.length > 0) attentionItems.push({ icon: '📅', text: `${newAbsences.length} neue Abwesenheit${newAbsences.length === 1 ? '' : 'en'} von Chattern`, color: '#ef4444', onClick: ackNewAbsences })
+        if (openSwapsCount > 0) attentionItems.push({ Icon: ArrowLeftRight, text: `${openSwapsCount} offene Schicht-Tausch-Angebote`, color: '#f59e0b', action: 'swaps' })
+        if (newAbsences.length > 0) attentionItems.push({ Icon: CalendarDays, text: `${newAbsences.length} neue Abwesenheit${newAbsences.length === 1 ? '' : 'en'} von Chattern`, color: '#ef4444', onClick: ackNewAbsences })
 
         // v3.28.2: Hex -> rgba für dezente Chip-Akzente
         const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})` }
@@ -2053,7 +2053,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   transition: 'background 0.12s',
                 }} onMouseEnter={e => e.currentTarget.style.background = hexA(item.color, 0.18)}
                    onMouseLeave={e => e.currentTarget.style.background = hexA(item.color, 0.10)}>
-                  <span style={{ fontSize: 13 }}>{item.icon}</span>
+                  <item.Icon size={14} color={item.color} strokeWidth={2.4} />
                   <span style={{ fontSize: 12.5, color: 'var(--text-primary)', fontWeight: 600 }}>{item.text}</span>
                   <span style={{ fontSize: 11, color: item.color, marginLeft: 1 }}>→</span>
                 </button>
@@ -2107,8 +2107,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <button onClick={e => { e.stopPropagation(); setShowAvailability(showAvailability === chatter.name ? null : chatter.name) }}
-                          style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.1)' : 'transparent', color: availabilities[chatter.name]?.length ? '#06b6d4' : 'var(--text-muted)', border: `1px solid ${availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.3)' : 'var(--border)'}`, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                          🗓 {availabilities[chatter.name]?.length ? availabilities[chatter.name].length : '+'}
+                          style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.1)' : 'transparent', color: availabilities[chatter.name]?.length ? '#06b6d4' : 'var(--text-muted)', border: `1px solid ${availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.3)' : 'var(--border)'}`, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <CalendarDays size={11} strokeWidth={2.2} /> {availabilities[chatter.name]?.length ? availabilities[chatter.name].length : '+'}
                         </button>
                         <OnlineStatus
                           dashboardOnline={onlineStatuses[chatter.name]?.dashboardOnline || false}
@@ -2167,7 +2167,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           </Card>
 
           {/* v3.12.0: Pinnwand (ersetzt "Nachricht senden" Card, war vorher eigener Sub-Tab) */}
-          <Card title={selectedChatter ? `📌 Pinnwand · ${selectedChatter.name}` : '📌 Pinnwand'}>
+          <Card title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Pin size={15} /> {selectedChatter ? `Pinnwand · ${selectedChatter.name}` : 'Pinnwand'}</span>}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 Ankündigungen für alle Chatter — werden im ChatterPortal oben angezeigt.
@@ -4403,7 +4403,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
       {/* PINNWAND ADMIN */}
       {activeSection === 'pinnwand' && (
-        <Card title="📌 Pinnwand für alle Chatter">
+        <Card title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Pin size={15} /> Pinnwand für alle Chatter</span>}>
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
               Ankündigungen für alle Chatter — werden im ChatterPortal oben angezeigt.
@@ -4577,7 +4577,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
                           {isAdminOffer ? (
-                            <span style={{ color: '#06b6d4' }}>📢 Admin-Angebot</span>
+                            <span style={{ color: '#06b6d4', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Megaphone size={11} strokeWidth={2.4} /> Admin-Angebot</span>
                           ) : (
                             <span style={{ color: '#a78bfa' }}>{swap.requester_name}</span>
                           )}
