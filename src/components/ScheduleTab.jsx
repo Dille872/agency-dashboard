@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Sunrise, Sunset, Moon } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
 import BlockOfferModal from './BlockOfferModal'
@@ -41,6 +42,8 @@ function getTimezoneOffset(dateStr, tz) {
 
 const SHIFTS = ['Früh', 'Spät', 'Nacht']
 const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
+// v3.69.0: Schicht-Icons statt Emojis (Früh/Spät/Nacht)
+const SHIFT_ICON = { 'Früh': Sunrise, 'Spät': Sunset, 'Nacht': Moon }
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 function berlinDate(date) {
@@ -1083,7 +1086,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const isSearchMatch = cellMatchesSearch(cell)
                   const isTrainee = !!cell.trainee && !isFrei
                   const timeStr = shiftTimes[`${model.id}__${shift}`]
-                  const shiftIcon = shift === 'Früh' ? '🌅' : shift === 'Spät' ? '🌃' : shift === 'Nacht' ? '🌙' : '•'
+                  const ShiftIcon = SHIFT_ICON[shift] || null
                   const shiftColor = SHIFT_COLORS[shift] || 'var(--text-muted)'
 
                   const bgBase = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.06)' : isPending ? 'rgba(245,158,11,0.06)' : cell.chatter ? 'rgba(16,185,129,0.04)' : 'var(--bg-card2)'
@@ -1114,7 +1117,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         <div style={{ position: 'absolute', top: -8, left: 10, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, background: '#06b6d4', color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>🎓 ANLERNEN</div>
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 11, color: shiftColor, fontWeight: 700 }}>{shiftIcon} {shift}{timeStr ? ` · ${timeStr}` : ''}</div>
+                        <div style={{ fontSize: 11, color: shiftColor, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>{ShiftIcon && <ShiftIcon size={12} strokeWidth={2.4} />}<span>{shift}{timeStr ? ` · ${timeStr}` : ''}</span></div>
                         {isFrei ? (
                           <div style={{ fontSize: 14, fontWeight: 700, color: '#10b981' }}>✓ Freischicht</div>
                         ) : cell.chatter ? (
@@ -1543,7 +1546,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
         const isRecurring = !!recurring[recurringKey]
         const isFrei = cell.chatter === '__FREI__'
         const model = models.find(m => m.id === editSheet.modelId)
-        const shiftLabel = editSheet.shift === 'Früh' ? '🌅 Frühschicht' : editSheet.shift === 'Spät' ? '🌃 Spätschicht' : editSheet.shift === 'Nacht' ? '🌙 Nachtschicht' : editSheet.shift
+        const shiftLabel = editSheet.shift === 'Früh' ? 'Frühschicht' : editSheet.shift === 'Spät' ? 'Spätschicht' : editSheet.shift === 'Nacht' ? 'Nachtschicht' : editSheet.shift
+        const SheetIcon = SHIFT_ICON[editSheet.shift] || null
         return (
           <div onClick={() => setEditSheet(null)} style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
@@ -1559,7 +1563,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{model?.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {shiftLabel} · {new Date(editSheet.dayIso + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })}
+                    {SheetIcon && <SheetIcon size={13} strokeWidth={2.4} color={SHIFT_COLORS[editSheet.shift]} style={{ verticalAlign: '-2px', marginRight: 4 }} />}{shiftLabel} · {new Date(editSheet.dayIso + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })}
                   </div>
                 </div>
                 <button onClick={() => setEditSheet(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 22, cursor: 'pointer', padding: 4 }}>✕</button>
