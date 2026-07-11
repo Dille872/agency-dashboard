@@ -88,10 +88,23 @@ export default function NotesTab({ session, userDisplayName }) {
   const sendNote = async () => {
     if (!newNote.trim()) return
     setSending(true)
-    await supabase.from('notes').insert({ text: newNote.trim(), author: displayName })
-    setNewNote('')
-    setSending(false)
-    loadNotes()
+    try {
+      // v3.71.0: Fehler abfangen + Button-Reset in finally.
+      // Vorher blieb sending bei einem Fehler auf true haengen -> Button dauerhaft deaktiviert.
+      const { error } = await supabase.from('notes').insert({ text: newNote.trim(), author: displayName })
+      if (error) {
+        console.error('Notiz-Insert fehlgeschlagen:', error)
+        alert('⚠️ Notiz konnte nicht gespeichert werden:\n' + (error.message || 'Unbekannter Fehler'))
+        return
+      }
+      setNewNote('')
+      loadNotes()
+    } catch (e) {
+      console.error('Notiz-Insert Ausnahme:', e)
+      alert('⚠️ Notiz konnte nicht gesendet werden (Netzwerk-/Serverfehler). Bitte erneut versuchen.')
+    } finally {
+      setSending(false)
+    }
   }
 
   const parsed = useMemo(() => notes.map(n => ({ ...n, parsed: parseNote(n.text) })), [notes])

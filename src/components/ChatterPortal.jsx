@@ -1303,16 +1303,30 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const modelPart = noteModel ? `[${noteModel}]` : ''
     const shiftPart = noteShift ? `[${noteShift}]` : ''
     const prefix = [modelPart, shiftPart].filter(Boolean).join(' ')
-    await supabase.from('notes').insert({
-      text: `Schichtnotiz von ${displayName}${prefix ? ' · ' + prefix : ''}: ${noteText.trim()}`,
-      author: displayName,
-    })
-    setNoteText('')
-    setNoteModel('')
-    setNoteShift('')
-    setSendingNote(false)
-    setHasShiftNote(true)
-    alert('✓ Notiz gesendet!')
+    try {
+      // v3.71.0: Fehler abfangen + Button-Reset in finally.
+      // Vorher blieb sendingNote bei einem Fehler auf true hängen -> Button dauerhaft deaktiviert
+      // ("kann nicht drücken"), und ein RLS-/Serverfehler wurde faelschlich als Erfolg angezeigt.
+      const { error } = await supabase.from('notes').insert({
+        text: `Schichtnotiz von ${displayName}${prefix ? ' · ' + prefix : ''}: ${noteText.trim()}`,
+        author: displayName,
+      })
+      if (error) {
+        console.error('Notiz-Insert fehlgeschlagen:', error)
+        alert('⚠️ Notiz konnte nicht gespeichert werden:\n' + (error.message || 'Unbekannter Fehler') + '\n\nBitte an einen Admin melden.')
+        return
+      }
+      setNoteText('')
+      setNoteModel('')
+      setNoteShift('')
+      setHasShiftNote(true)
+      alert('✓ Notiz gesendet!')
+    } catch (e) {
+      console.error('Notiz-Insert Ausnahme:', e)
+      alert('⚠️ Notiz konnte nicht gesendet werden (Netzwerk-/Serverfehler). Bitte erneut versuchen.')
+    } finally {
+      setSendingNote(false)
+    }
   }
 
   // Reload when preview chatter changes
