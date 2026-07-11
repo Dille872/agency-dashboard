@@ -642,6 +642,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   const submitContentRequest = async () => {
     if (!newRequestModel || !newRequestText.trim()) return
+    // v3.73.0: Ohne gültigen Namen kann chatter_name (NOT NULL) nicht gesetzt werden ->
+    // der Insert würde still abgelehnt, während Telegram trotzdem raus ginge. Deshalb hier
+    // hart abbrechen und den User bitten, sich neu einzuloggen bzw. den Namen setzen zu lassen.
+    if (!displayName || !displayName.trim()) {
+      alert('⚠️ Dein Anzeigename fehlt – die Anfrage kann nicht gespeichert werden.\n\nBitte einmal ab- und wieder anmelden. Wenn das nicht hilft, meldet sich ein Admin (Name muss im Profil hinterlegt werden).')
+      return
+    }
     setSendingRequest(true)
 
     // Upload images first
@@ -699,52 +706,82 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const outfitVal = (typeMeta.showOutfit && newRequestOutfit.trim()) ? newRequestOutfit.trim() : null
     const specialVal = newRequestSpecial.trim() || null
 
-    await supabase.from('content_requests').insert({
-      chatter_name: displayName,
-      model_name: newRequestModel,
-      account_csv: newRequestProfile || null,
-      request_text: newRequestText.trim(),
-      content_type: newRequestType,
-      price: priceVal,
-      deposit: depositVal,
-      deposit_paid: depositPaidNow,
-      deposit_paid_at: depositPaidAt,
-      remainder_paid: remainderPaidNow,
-      remainder_paid_at: remainderPaidAt,
-      duration: newRequestDuration.trim() || null,
-      quantity: parseInt(newRequestQuantity) || 1,
-      customer_id: newRequestCustomerId.trim() || null,
-      status: 'neu',
-      image_urls: uploadedUrls,
-      deadline: newRequestDeadline,
-      outfit: outfitVal,               // v3.50.0
-      special_notes: specialVal,       // v3.50.0 Besonderheiten
-    })
+    // v3.72.0: Insert-Fehler wird jetzt geprüft. Vorher lief die Telegram-Benachrichtigung
+    // + "✓ Anfrage gesendet!" unabhängig davon, ob der DB-Insert geklappt hat. Ein
+    // fehlgeschlagener Insert (z.B. fehlende Spalte, RLS, Constraint) erzeugte so eine
+    // Telegram-Nachricht an die Admins, OBWOHL nie eine Zeile in content_requests landete
+    // -> "kam bei TG, aber nicht im Dashboard sichtbar". Jetzt: erst Insert prüfen, und
+    // NUR bei Erfolg benachrichtigen / Formular leeren / Erfolg melden.
+    try {
+      const { error: insertError } = await supabase.from('content_requests').insert({
+        chatter_name: displayName,
+        model_name: newRequestModel,
+        account_csv: newRequestProfile || null,
+        request_text: newRequestText.trim(),
+        content_type: newRequestType,
+        price: priceVal,
+        deposit: depositVal,
+        deposit_paid: depositPaidNow,
+        deposit_paid_at: depositPaidAt,
+        remainder_paid: remainderPaidNow,
+        remainder_paid_at: remainderPaidAt,
+        duration: newRequestDuration.trim() || null,
+        quantity: parseInt(newRequestQuantity) || 1,
+        customer_id: newRequestCustomerId.trim() || null,
+        status: 'neu',
+        image_urls: uploadedUrls,
+        deadline: newRequestDeadline,
+        outfit: outfitVal,               // v3.50.0
+        special_notes: specialVal,       // v3.50.0 Besonderheiten
+      })
 
-    // Notify admins via Telegram
-    const deadlineText = newRequestDeadline === 'asap' ? '⚡ ASAP' : newRequestDeadline === 'hours' ? '⏰ In den nächsten Stunden' : newRequestDeadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'
-    // Bezahl-Zeile im TG (v3.50.0)
-    let payInfoTg = ''
-    if (newRequestPayStatus === 'bezahlt') {
-      payInfoTg = ` ✓ vollständig bezahlt`
-    } else if (newRequestPayStatus === 'angezahlt' && depositVal > 0) {
-      payInfoTg = ` (Anzahlung $${depositVal} ✓ erhalten · Rest $${remainderVal} offen)`
-    } else {
-      payInfoTg = ` (nur Anfrage – noch nichts bezahlt)`
+      if (insertError) {
+        console.error('content_requests-Insert fehlgeschlagen:', insertError)
+        alert(
+          '⚠️ Anfrage konnte NICHT gespeichert werden:\n' +
+          (insertError.message || 'Unbekannter Fehler') +
+          '\n\nEs wurde KEINE Telegram-Benachrichtigung gesendet und die Eingaben bleiben erhalten.' +
+          '\nBitte einen Screenshot dieser Meldung an einen Admin schicken.'
+        )
+        return
+      }
+
+      // Ab hier: Insert war erfolgreich -> Admins per Telegram benachrichtigen
+      const deadlineText = newRequestDeadline === 'asap' ? '⚡ ASAP' : newRequestDeadline === 'hours' ? '⏰ In den nächsten Stunden' : newRequestDeadline === 'days' ? '📅 1-2 Tage' : '🗓 Diese Woche'
+      // Bezahl-Zeile im TG (v3.50.0)
+      let payInfoTg = ''
+      if (newRequestPayStatus === 'bezahlt') {
+        payInfoTg = ` ✓ vollständig bezahlt`
+      } else if (newRequestPayStatus === 'angezahlt' && depositVal > 0) {
+        payInfoTg = ` (Anzahlung $${depositVal} ✓ erhalten · Rest $${remainderVal} offen)`
+      } else {
+        payInfoTg = ` (nur Anfrage – noch nichts bezahlt)`
+      }
+      const extraTg = `${outfitVal ? `\nOutfit: ${outfitVal}` : ''}${specialVal ? `\nBesonderheiten: ${specialVal}` : ''}`
+      const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}${(newRequestProfile && newRequestProfile !== newRequestModel) ? `\nProfil: ${newRequestProfile}` : ''}\nTyp: ${contentTypeLabel(newRequestType)}\nPreis: $${newRequestPrice}${payInfoTg}\nDringlichkeit: ${deadlineText}${extraTg}\n\nWunsch: ${newRequestText.trim()}`
+      // Telegram-Fehler dürfen den Erfolg nicht kippen — die Zeile ist bereits gespeichert.
+      try {
+        await Promise.all([
+          sendTelegramMessage(CHRIS_TG, tgMsg),
+          sendTelegramMessage(REY_TG, tgMsg),
+        ])
+      } catch (tgErr) {
+        console.error('Telegram-Benachrichtigung fehlgeschlagen (Anfrage ist trotzdem gespeichert):', tgErr)
+      }
+
+      setNewRequestModel(''); setNewRequestProfile(''); setNewRequestText(''); setNewRequestType('video')
+      setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
+      setNewRequestPayStatus('anfrage'); setNewRequestOutfit(''); setNewRequestSpecial('')
+      setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
+      await loadContentRequests()
+      alert('✓ Anfrage gesendet!')
+    } catch (e) {
+      console.error('content_requests-Insert Ausnahme:', e)
+      alert('⚠️ Anfrage konnte nicht gesendet werden (Netzwerk-/Serverfehler). Bitte erneut versuchen.')
+    } finally {
+      // v3.72.0: Button immer wieder freigeben — vorher blieb er bei Fehlern gesperrt.
+      setSendingRequest(false)
     }
-    const extraTg = `${outfitVal ? `\nOutfit: ${outfitVal}` : ''}${specialVal ? `\nBesonderheiten: ${specialVal}` : ''}`
-    const tgMsg = `🎬 <b>Neue Content-Anfrage!</b>\n\nVon: ${displayName}\nModel: ${newRequestModel}${(newRequestProfile && newRequestProfile !== newRequestModel) ? `\nProfil: ${newRequestProfile}` : ''}\nTyp: ${contentTypeLabel(newRequestType)}\nPreis: $${newRequestPrice}${payInfoTg}\nDringlichkeit: ${deadlineText}${extraTg}\n\nWunsch: ${newRequestText.trim()}`
-    await Promise.all([
-      sendTelegramMessage(CHRIS_TG, tgMsg),
-      sendTelegramMessage(REY_TG, tgMsg),
-    ])
-    setNewRequestModel(''); setNewRequestProfile(''); setNewRequestText(''); setNewRequestType('video')
-    setNewRequestPrice(''); setNewRequestDeposit(''); setNewRequestDuration('')
-    setNewRequestPayStatus('anfrage'); setNewRequestOutfit(''); setNewRequestSpecial('')
-    setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
-    await loadContentRequests()
-    setSendingRequest(false)
-    alert('✓ Anfrage gesendet!')
   }
 
   const sendHeartbeat = async (shiftOnline) => {
