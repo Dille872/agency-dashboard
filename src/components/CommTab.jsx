@@ -1116,7 +1116,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   }
   const ackNewAbsences = async () => {
     if (newAbsences.length === 0) return
-    const SH = ['Früh', 'Spät', 'Nacht']
+    const SH = ['Vorschicht', 'Früh', 'Spät', 'Nacht']
     const lines = newAbsences.map(a => {
       const f = new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
       const t = a.date_to !== a.date_from ? '–' + new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''

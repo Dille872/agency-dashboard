@@ -102,8 +102,11 @@ function convertTimeToLocal(timeStr) {
   return converted.join('-')
 }
 
-const SHIFTS = ['Früh', 'Spät', 'Nacht']
-const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
+// v3.74.0: 'Vorschicht' (optionale Schicht vor der Früh) mit aufgenommen, damit Chatter
+// ihre Vorschicht-Zuweisungen sehen und einchecken können. Die Schicht wird nur sichtbar,
+// wenn im Dienstplan tatsächlich eine Vorschicht-Zuweisung existiert.
+const SHIFTS = ['Vorschicht', 'Früh', 'Spät', 'Nacht']
+const SHIFT_COLORS = { 'Vorschicht': '#3b82f6', 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 function berlinDate(date) {
@@ -1970,7 +1973,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   >
                     <option value="">— Schicht —</option>
-                    {['Früh', 'Spät', 'Nacht'].map(s => <option key={s} value={s}>{s}</option>)}
+                    {['Vorschicht', 'Früh', 'Spät', 'Nacht'].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               </div>

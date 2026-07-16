@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Sunrise, Sunset, Moon } from 'lucide-react'
+import { Sunrise, Sunset, Moon, Clock } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
 import BlockOfferModal from './BlockOfferModal'
@@ -41,9 +41,14 @@ function getTimezoneOffset(dateStr, tz) {
 }
 
 const SHIFTS = ['Früh', 'Spät', 'Nacht']
-const SHIFT_COLORS = { 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
+// v3.74.0: "Vorschicht" — optionale Schicht VOR der Früh, pro Woche + pro Model zuschaltbar.
+// Steht bewusst NICHT im festen SHIFTS-Array (sonst immer für alle sichtbar), sondern
+// wird über extra_shifts (pro Model, pro Woche) aktiviert. ALL_SHIFTS = Vorschicht zuerst.
+const EXTRA_SHIFT = 'Vorschicht'
+const ALL_SHIFTS = [EXTRA_SHIFT, ...SHIFTS]
+const SHIFT_COLORS = { 'Vorschicht': '#3b82f6', 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
 // v3.69.0: Schicht-Icons statt Emojis (Früh/Spät/Nacht)
-const SHIFT_ICON = { 'Früh': Sunrise, 'Spät': Sunset, 'Nacht': Moon }
+const SHIFT_ICON = { 'Vorschicht': Clock, 'Früh': Sunrise, 'Spät': Sunset, 'Nacht': Moon }
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 function berlinDate(date) {
@@ -103,6 +108,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const [recurring, setRecurring] = useState({}) // modelId__dayOfWeek__shift → {chatter, note}
   const [dayNotes, setDayNotes] = useState({})
   const [shiftTimes, setShiftTimes] = useState({})
+  // v3.74.0: pro Woche aktivierte Vorschicht-Zeilen — { [modelId]: true }
+  const [extraShifts, setExtraShifts] = useState({})
   const [editingCell, setEditingCell] = useState(null)
   const [editingNote, setEditingNote] = useState(null)
   const [editingShiftTime, setEditingShiftTime] = useState(null)
@@ -276,7 +283,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     if (!newAbsenceName || !newAbsenceFrom || !newAbsenceTo) return
     // newAbsenceShifts = Schichten, an denen die Person WEG ist.
     // Gespeichert wird die Verfügbarkeit = alle Schichten außer den abwesenden.
-    const avail = newAbsenceShifts.length ? SHIFTS.filter(s => !newAbsenceShifts.includes(s)) : null
+    const avail = newAbsenceShifts.length ? ALL_SHIFTS.filter(s => !newAbsenceShifts.includes(s)) : null
     await supabase.from('absences').insert({
       chatter_name: newAbsenceName,
       date_from: newAbsenceFrom,
@@ -466,6 +473,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
       setSchedule(row.assignments || {})
       setDayNotes(row.day_notes || {})
       setShiftTimes(cleanTimes)
+      setExtraShifts(row.extra_shifts || {})
       setScheduleStatus(row.status || 'draft')
       setHasSavedData(true)
     } else {
@@ -482,6 +490,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
       }
       setSchedule(autoSchedule)
       setDayNotes({})
+      setExtraShifts({}) // v3.74.0: neue Woche startet ohne Vorschicht
 
       // Load shift times from most recent previous week
       const { data: prevWeeks } = await supabase
@@ -509,9 +518,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setSaving(true)
     const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', weekKey).single()
     if (existing) {
-      await supabase.from('schedule').update({ assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes }).eq('week_start', weekKey)
+      await supabase.from('schedule').update({ assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts }).eq('week_start', weekKey)
     } else {
-      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, status: 'draft' })
+      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts, status: 'draft' })
     }
     setHasSavedData(true)
     setSaving(false)
@@ -522,9 +531,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
     const newStatus = scheduleStatus === 'live' ? 'draft' : 'live'
     const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', weekKey).single()
     if (existing) {
-      await supabase.from('schedule').update({ status: newStatus, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes }).eq('week_start', weekKey)
+      await supabase.from('schedule').update({ status: newStatus, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts }).eq('week_start', weekKey)
     } else {
-      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, status: newStatus })
+      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts, status: newStatus })
     }
     setScheduleStatus(newStatus)
     setHasSavedData(true)
@@ -645,6 +654,34 @@ export default function ScheduleTab({ session, userDisplayName }) {
     return schedule[getCellKey(modelId, dayIso, shift)] || { chatter: '', note: '' }
   }
 
+  // v3.74.0: Vorschicht-Logik — pro Model/Woche zuschaltbar.
+  // Ein Model zeigt die Vorschicht-Zeile, wenn sie aktiviert ist ODER bereits Daten
+  // (Belegung oder Zeit) für die Vorschicht existieren — so gehen bestehende Einträge
+  // nie verloren, auch wenn das Flag mal fehlt.
+  const modelHasVorschichtData = (modelId) => {
+    if (shiftTimes[`${modelId}__${EXTRA_SHIFT}`]) return true
+    for (const day of weekDays) {
+      const c = schedule[getCellKey(modelId, isoDate(day), EXTRA_SHIFT)]
+      if (c?.chatter) return true
+    }
+    return false
+  }
+  const getModelShifts = (modelId) =>
+    (extraShifts[modelId] || modelHasVorschichtData(modelId)) ? ALL_SHIFTS : SHIFTS
+  const toggleVorschicht = (modelId) => {
+    const isOn = !!extraShifts[modelId] || modelHasVorschichtData(modelId)
+    if (isOn) {
+      // Ausblenden nur wenn nichts eingetragen ist — sonst würden Daten versteckt.
+      if (modelHasVorschichtData(modelId)) {
+        alert('Vorschicht kann nicht ausgeblendet werden, solange Chatter oder eine Zeit eingetragen sind.\n\nBitte erst die Vorschicht-Zellen und die Zeit leeren.')
+        return
+      }
+      setExtraShifts(prev => { const n = { ...prev }; delete n[modelId]; return n })
+    } else {
+      setExtraShifts(prev => ({ ...prev, [modelId]: true }))
+    }
+  }
+
   const saveRecurring = async (modelId, dayOfWeek, shift, value) => {
     const key = getRecurringKey(modelId, dayOfWeek, shift)
     if (!value.chatter) {
@@ -727,7 +764,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   }
   for (const day of weekDays) {
     const dayIso = isoDate(day)
-    for (const shift of SHIFTS) {
+    for (const shift of ALL_SHIFTS) {
       const chatterCount = {}
       for (const model of models) {
         const cell = getCell(model.id, dayIso, shift)
@@ -744,7 +781,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const chatterShiftsByDay = {} // {"Max__2026-05-06": Set("Früh", "Spät")}
   for (const day of weekDays) {
     const dayIso = isoDate(day)
-    for (const shift of SHIFTS) {
+    for (const shift of ALL_SHIFTS) {
       for (const model of models) {
         const cell = getCell(model.id, dayIso, shift)
         if (!cell.chatter || cell.chatter === '__FREI__') continue
@@ -794,7 +831,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
       for (const day of weekDays) {
         const dayIso = isoDate(day)
         const dayShifts = []
-        for (const shift of SHIFTS) {
+        for (const shift of ALL_SHIFTS) {
           for (const model of models) {
             const cell = getCell(model.id, dayIso, shift)
             if (cell.chatter === chatter.name) {
@@ -858,7 +895,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
       for (const day of weekDays) {
         const dayIso = isoDate(day)
         const dayShifts = []
-        for (const shift of SHIFTS) {
+        for (const shift of ALL_SHIFTS) {
           for (const model of models) {
             const cell = getCell(model.id, dayIso, shift)
             if (cell.chatter === chatter.name) {
@@ -930,7 +967,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
         <BlockOfferModal
           preset={blockOffer}
           models={models}
-          shifts={SHIFTS}
+          shifts={[...SHIFTS, EXTRA_SHIFT]}
           onClose={() => setBlockOffer(null)}
           onDone={() => { setBlockOffer(null); loadOpenSwaps() }}
         />
@@ -1074,9 +1111,25 @@ export default function ScheduleTab({ session, userDisplayName }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 7, background: model.avatar_url ? `url(${model.avatar_url}) center/cover` : 'rgba(167,139,250,0.15)', border: '1px solid var(--border)', flexShrink: 0 }} />
                   <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{model.name}</span>
+                  {(() => {
+                    const vorOn = !!extraShifts[model.id] || modelHasVorschichtData(model.id)
+                    return (
+                      <button
+                        onClick={() => toggleVorschicht(model.id)}
+                        title={vorOn ? 'Vorschicht ausblenden (nur wenn leer)' : 'Vorschicht zuschalten'}
+                        style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700,
+                          background: vorOn ? 'rgba(59,130,246,0.15)' : 'transparent',
+                          color: vorOn ? '#3b82f6' : 'var(--text-muted)',
+                          border: `1px solid ${vorOn ? 'rgba(59,130,246,0.45)' : 'var(--border)'}` }}
+                      >
+                        <span style={{ width: 6, height: 6, borderRadius: 2, background: '#3b82f6', flexShrink: 0 }} />
+                        {vorOn ? '✓ Vor' : '+ Vor'}
+                      </button>
+                    )
+                  })()}
                 </div>
 
-                {SHIFTS.map(shift => {
+                {getModelShifts(model.id).map(shift => {
                   const cell = getCell(model.id, dayIso, shift)
                   const cellId = getCellKey(model.id, dayIso, shift)
                   const isFrei = cell.chatter === '__FREI__'
@@ -1220,7 +1273,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
           let pending = 0
           for (const day of weekDays) {
             const dayIso = isoDate(day)
-            for (const shift of SHIFTS) {
+            for (const shift of getModelShifts(model.id)) {
               totalCells++
               const c = getCell(model.id, dayIso, shift)
               if (c.chatter === '__FREI__') frei++
@@ -1241,6 +1294,22 @@ export default function ScheduleTab({ session, userDisplayName }) {
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, width: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
                 <div style={{ width: 26, height: 26, borderRadius: '50%', background: modelColor + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: modelColor, flexShrink: 0 }}>{model.name[0]}</div>
                 <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{model.name}</span>
+                {!isCollapsed && (() => {
+                  const vorOn = !!extraShifts[model.id] || modelHasVorschichtData(model.id)
+                  return (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleVorschicht(model.id) }}
+                      title={vorOn ? 'Vorschicht ausblenden (nur wenn leer)' : 'Vorschicht für dieses Model diese Woche zuschalten'}
+                      style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700,
+                        background: vorOn ? 'rgba(59,130,246,0.15)' : 'transparent',
+                        color: vorOn ? '#3b82f6' : 'var(--text-muted)',
+                        border: `1px solid ${vorOn ? 'rgba(59,130,246,0.45)' : 'var(--border)'}` }}
+                    >
+                      <span style={{ width: 6, height: 6, borderRadius: 2, background: '#3b82f6', flexShrink: 0 }} />
+                      {vorOn ? '✓ Vorschicht' : '+ Vorschicht'}
+                    </button>
+                  )
+                })()}
                 {isCollapsed && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', fontSize: 10, fontFamily: 'monospace' }}>
                     <span style={{ color: '#10b981' }}>✓ {filledCells}</span>
@@ -1252,7 +1321,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
               </div>
 
               {/* Shifts — nur wenn nicht collapsed */}
-              {!isCollapsed && SHIFTS.map(shift => (
+              {!isCollapsed && getModelShifts(model.id).map(shift => (
                 <div key={shift} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 2, background: SHIFT_COLORS[shift], flexShrink: 0 }} />
@@ -1813,7 +1882,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       background: newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.15)' : 'var(--bg-input)',
                       color: newAbsenceShifts.length === 0 ? '#ef4444' : 'var(--text-muted)',
                       border: `1px solid ${newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>Ganzer Tag</button>
-                  {SHIFTS.map(s => {
+                  {ALL_SHIFTS.map(s => {
                     const on = newAbsenceShifts.includes(s)
                     return (
                       <button key={s} type="button"
@@ -1879,7 +1948,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
       {/* Legend + Recurring + Next week */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
-          {SHIFTS.map(s => (
+          {ALL_SHIFTS.map(s => (
             <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 10, height: 10, borderRadius: 2, background: SHIFT_COLORS[s] }} />{s}
             </div>
@@ -1983,7 +2052,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                 let shiftCount = 0
                 for (const day of weekDays) {
                   const dayIso = isoDate(day)
-                  for (const shift of SHIFTS) {
+                  for (const shift of ALL_SHIFTS) {
                     for (const model of models) {
                       const c = getCell(model.id, dayIso, shift)
                       if (c.chatter === chatter.name) shiftCount++
