@@ -116,7 +116,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [hasSavedData, setHasSavedData] = useState(false)
-  const [conflictsOpen, setConflictsOpen] = useState(false)
+  const [openConflictGroups, setOpenConflictGroups] = useState({}) // v3.75.0: pro Konflikt-Gruppe auf/zu, z.B. { unbesetzt: true, doppel: false }
   // v3.1.0: Konflikt-Acknowledgements (gesehen) — persistiert in DB für alle Admins
   const [conflictAcks, setConflictAcks] = useState(new Set()) // set of conflict_keys
   // v3.1.0: Send-Modal für gezielte Chatter-Auswahl
@@ -758,23 +758,14 @@ export default function ScheduleTab({ session, userDisplayName }) {
       const dayIso = isoDate(day)
       for (const shift of SHIFTS) {
         const cell = getCell(model.id, dayIso, shift)
-        if (!cell.chatter || cell.chatter === '__FREI__') { if (cell.chatter !== '__FREI__') conflicts.push({ type: 'unbesetzt', msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift, modelId: model.id }) }
+        // Nur echt leere Zellen sind "unbesetzt". __FREI__ ist eine bewusste Freischicht
+        // und wird NICHT besetzt → nie als Konflikt melden.
+        if (!cell.chatter) conflicts.push({ type: 'unbesetzt', msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift, modelId: model.id })
       }
     }
   }
-  for (const day of weekDays) {
-    const dayIso = isoDate(day)
-    for (const shift of ALL_SHIFTS) {
-      const chatterCount = {}
-      for (const model of models) {
-        const cell = getCell(model.id, dayIso, shift)
-        if (cell.chatter) chatterCount[cell.chatter] = (chatterCount[cell.chatter] || 0) + 1
-      }
-      for (const [name, count] of Object.entries(chatterCount)) {
-        if (count >= 4) conflicts.push({ type: 'ueberlastet', msg: `${name} hat ${count} Models am ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift })
-      }
-    }
-  }
+  // v3.75.0: "Überlastet"-Erkennung (Chatter mit >=4 Models pro Schicht) auf Wunsch entfernt.
+  // Es bleiben nur noch "Unbesetzt" und "Doppelschicht" als Konflikte.
 
   // v3.1.0: Doppel-Schicht-Detection — Chatter in 2+ verschiedenen Schichten am gleichen Tag
   // Mapping: chatter+date → Set of shifts (Früh/Spät/Nacht)
@@ -1808,30 +1799,61 @@ export default function ScheduleTab({ session, userDisplayName }) {
         )
       })()}
 
-      {/* Conflicts below – einklappbar */}
-      {hasSavedData && conflicts.length > 0 && (
-        <div style={{ border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, overflow: 'hidden' }}>
-          <div onClick={() => setConflictsOpen(!conflictsOpen)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'rgba(239,68,68,0.06)', cursor: 'pointer' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#ef4444' }}>⚠ Konflikte gefunden</span>
-              <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.2)', color: '#ef4444', padding: '1px 8px', borderRadius: 10, fontWeight: 700 }}>{conflicts.length}</span>
-            </div>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{conflictsOpen ? '▲ zuklappen' : '▼ aufklappen'}</span>
-          </div>
-          {conflictsOpen && (
-            <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,0.03)', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {conflicts.map((c, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                  <span style={{ padding: '1px 7px', borderRadius: 4, fontWeight: 700, fontSize: 10, background: c.type === 'unbesetzt' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', color: c.type === 'unbesetzt' ? '#f59e0b' : '#ef4444' }}>
-                    {c.type === 'unbesetzt' ? 'Unbesetzt' : 'Überlastet'}
-                  </span>
-                  <span style={{ color: 'var(--text-secondary)' }}>{c.msg}</span>
-                </div>
+      {/* Conflicts below – v3.75.0: nach Typ gruppiert, jede Gruppe einzeln aufklappbar */}
+      {hasSavedData && conflicts.length > 0 && (() => {
+        const unbesetztList = conflicts.filter(c => c.type === 'unbesetzt')
+        const doppelList = conflicts.filter(c => c.type === 'doppel_schicht')
+        // Doppelschichten: noch offene (nicht quittierte) zuerst
+        const doppelSorted = [...doppelList].sort((a, b) => (a.acked === b.acked ? 0 : a.acked ? 1 : -1))
+        const groups = [
+          { key: 'unbesetzt', label: 'Unbesetzt', items: unbesetztList, accent: '#f59e0b', badge: unbesetztList.length },
+          { key: 'doppel', label: 'Doppelschicht', items: doppelSorted, accent: '#a78bfa', badge: doppelList.filter(c => !c.acked).length },
+        ].filter(g => g.items.length > 0)
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Zusammenfassung – Zähler auf einen Blick, ohne aufklappen zu müssen */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>⚠ Konflikte</span>
+              {groups.map(g => (
+                <span key={g.key} style={{ fontSize: 11, fontWeight: 700, color: g.accent, background: `${g.accent}22`, padding: '2px 10px', borderRadius: 10 }}>
+                  {g.badge} {g.label}
+                </span>
               ))}
             </div>
-          )}
-        </div>
-      )}
+            {/* Gruppen – standardmäßig zugeklappt, öffnen nur was gebraucht wird */}
+            {groups.map(g => {
+              const isOpen = !!openConflictGroups[g.key]
+              return (
+                <div key={g.key} style={{ border: `1px solid ${g.accent}55`, borderRadius: 10, overflow: 'hidden' }}>
+                  <div onClick={() => setOpenConflictGroups(prev => ({ ...prev, [g.key]: !prev[g.key] }))}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: `${g.accent}18`, cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: g.accent }}>{g.label}</span>
+                      <span style={{ fontSize: 10, background: `${g.accent}30`, color: g.accent, padding: '1px 8px', borderRadius: 10, fontWeight: 700 }}>{g.items.length}</span>
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isOpen ? '▲ zuklappen' : '▼ aufklappen'}</span>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding: '8px 12px', background: `${g.accent}0a`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {g.items.map((c, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, opacity: c.acked ? 0.55 : 1 }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>{c.msg}</span>
+                          {g.key === 'doppel' && (
+                            <button onClick={() => toggleConflictAck(c.conflictKey)}
+                              style={{ flexShrink: 0, background: c.acked ? 'rgba(16,185,129,0.15)' : 'transparent', border: `1px solid ${c.acked ? 'rgba(16,185,129,0.4)' : 'var(--border-bright)'}`, color: c.acked ? '#10b981' : 'var(--text-muted)', borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              {c.acked ? '✓ gesehen' : 'als gesehen'}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
       {hasSavedData && conflicts.length === 0 && Object.keys(schedule).length > 0 && (
         <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '10px 16px', fontSize: 12, color: '#10b981', fontWeight: 600 }}>
           ✓ Keine Konflikte – Plan ist vollständig
