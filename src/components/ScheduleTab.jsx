@@ -760,7 +760,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
         const cell = getCell(model.id, dayIso, shift)
         // Nur echt leere Zellen sind "unbesetzt". __FREI__ ist eine bewusste Freischicht
         // und wird NICHT besetzt → nie als Konflikt melden.
-        if (!cell.chatter) conflicts.push({ type: 'unbesetzt', msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift, modelId: model.id })
+        if (!cell.chatter) conflicts.push({ type: 'unbesetzt', msg: `${model.name} · ${DAYS[weekDays.indexOf(day)]} ${formatDate(day)} · ${shift}`, dayIso, shift, modelId: model.id, modelName: model.name })
       }
     }
   }
@@ -1801,13 +1801,19 @@ export default function ScheduleTab({ session, userDisplayName }) {
 
       {/* Conflicts below – v3.75.0: nach Typ gruppiert, jede Gruppe einzeln aufklappbar */}
       {hasSavedData && conflicts.length > 0 && (() => {
-        const unbesetztList = conflicts.filter(c => c.type === 'unbesetzt')
+        // v3.76.0: unbesetzte Schichten, die bereits ausgeschrieben sind (Block-Angebot/Tausch),
+        // gelten nicht als offenes "Unbesetzt"-Problem, sondern kommen in die Gruppe "Ausgeschrieben".
+        const allUnbesetzt = conflicts.filter(c => c.type === 'unbesetzt')
+        const isAusgeschrieben = c => !!openSwapMap[`${c.modelName}__${c.dayIso}__${c.shift}`]
+        const ausgeschriebenList = allUnbesetzt.filter(isAusgeschrieben)
+        const unbesetztList = allUnbesetzt.filter(c => !isAusgeschrieben(c))
         const doppelList = conflicts.filter(c => c.type === 'doppel_schicht')
         // Doppelschichten: noch offene (nicht quittierte) zuerst
         const doppelSorted = [...doppelList].sort((a, b) => (a.acked === b.acked ? 0 : a.acked ? 1 : -1))
         const groups = [
           { key: 'unbesetzt', label: 'Unbesetzt', items: unbesetztList, accent: '#f59e0b', badge: unbesetztList.length },
-          { key: 'doppel', label: 'Doppelschicht', items: doppelSorted, accent: '#a78bfa', badge: doppelList.filter(c => !c.acked).length },
+          { key: 'ausgeschrieben', label: 'Ausgeschrieben', items: ausgeschriebenList, accent: '#a78bfa', badge: ausgeschriebenList.length },
+          { key: 'doppel', label: 'Doppelschicht', items: doppelSorted, accent: '#ec4899', badge: doppelList.filter(c => !c.acked).length },
         ].filter(g => g.items.length > 0)
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1838,6 +1844,13 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       {g.items.map((c, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, opacity: c.acked ? 0.55 : 1 }}>
                           <span style={{ color: 'var(--text-secondary)' }}>{c.msg}</span>
+                          {g.key === 'unbesetzt' && (
+                            <button onClick={() => setBlockOffer({ dayIso: c.dayIso, shift: c.shift, presetModelId: c.modelId })}
+                              title="Schicht zum Tausch ausschreiben — gleiches Block-Angebot wie im Dienstplan"
+                              style={{ flexShrink: 0, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)', color: '#a78bfa', borderRadius: 6, padding: '2px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              🔄 Ausschreiben
+                            </button>
+                          )}
                           {g.key === 'doppel' && (
                             <button onClick={() => toggleConflictAck(c.conflictKey)}
                               style={{ flexShrink: 0, background: c.acked ? 'rgba(16,185,129,0.15)' : 'transparent', border: `1px solid ${c.acked ? 'rgba(16,185,129,0.4)' : 'var(--border-bright)'}`, color: c.acked ? '#10b981' : 'var(--text-muted)', borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
