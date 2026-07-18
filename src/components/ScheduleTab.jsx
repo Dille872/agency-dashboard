@@ -1810,10 +1810,12 @@ export default function ScheduleTab({ session, userDisplayName }) {
         const doppelList = conflicts.filter(c => c.type === 'doppel_schicht')
         // Doppelschichten: noch offene (nicht quittierte) zuerst
         const doppelSorted = [...doppelList].sort((a, b) => (a.acked === b.acked ? 0 : a.acked ? 1 : -1))
+        // v3.76.1: Zähler = Anzahl Einträge in der Gruppe (g.items.length) — identisch oben (Chip)
+        // und unten (Gruppen-Header), damit es keine abweichenden Zahlen mehr gibt.
         const groups = [
-          { key: 'unbesetzt', label: 'Unbesetzt', items: unbesetztList, accent: '#f59e0b', badge: unbesetztList.length },
-          { key: 'ausgeschrieben', label: 'Ausgeschrieben', items: ausgeschriebenList, accent: '#a78bfa', badge: ausgeschriebenList.length },
-          { key: 'doppel', label: 'Doppelschicht', items: doppelSorted, accent: '#ec4899', badge: doppelList.filter(c => !c.acked).length },
+          { key: 'unbesetzt', label: 'Unbesetzt', items: unbesetztList, accent: '#f59e0b' },
+          { key: 'ausgeschrieben', label: 'Ausgeschrieben', items: ausgeschriebenList, accent: '#a78bfa' },
+          { key: 'doppel', label: 'Doppelschicht', items: doppelSorted, accent: '#ec4899' },
         ].filter(g => g.items.length > 0)
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1822,7 +1824,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>⚠ Konflikte</span>
               {groups.map(g => (
                 <span key={g.key} style={{ fontSize: 11, fontWeight: 700, color: g.accent, background: `${g.accent}22`, padding: '2px 10px', borderRadius: 10 }}>
-                  {g.badge} {g.label}
+                  {g.items.length} {g.label}
                 </span>
               ))}
             </div>
