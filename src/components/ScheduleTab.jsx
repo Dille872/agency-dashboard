@@ -182,6 +182,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const [absences, setAbsences] = useState([]) // [{id, chatter_name, date_from, date_to, reason}]
   const [showAbsences, setShowAbsences] = useState(false)
   const [showExpiredAbsences, setShowExpiredAbsences] = useState(false)
+  const [openAbsenceWeeks, setOpenAbsenceWeeks] = useState({}) // v3.77.0: Abwesenheiten nach KW aufklappbar, {weekIso: bool}
   const [newAbsenceName, setNewAbsenceName] = useState('')
   const [newAbsenceFrom, setNewAbsenceFrom] = useState('')
   const [newAbsenceTo, setNewAbsenceTo] = useState('')
@@ -1946,24 +1947,68 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const active = absences.filter(a => a.date_to >= today)
                   const expired = absences.filter(a => a.date_to < today)
                   const visible = showExpiredAbsences ? absences : active
+
+                  // Einzelne Abwesenheits-Zeile (wiederverwendet in jeder KW-Gruppe)
+                  const renderRow = (a) => {
+                    const isExpired = a.date_to < today
+                    return (
+                      <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${isExpired ? '#6b7280' : '#ef4444'}`, opacity: isExpired ? 0.6 : 1 }}>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: isExpired ? 'var(--text-muted)' : '#ef4444' }}>{a.chatter_name}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                            {new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} – {new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                          </span>
+                          {isExpired && <span style={{ fontSize: 10, color: '#6b7280', background: 'rgba(107,114,128,0.15)', padding: '1px 7px', borderRadius: 4 }}>Abgelaufen</span>}
+                          <span style={{ fontSize: 10, color: (!a.available_shifts || a.available_shifts.length === 0) ? '#ef4444' : '#10b981', background: (!a.available_shifts || a.available_shifts.length === 0) ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', padding: '1px 7px', borderRadius: 4, fontWeight: 600 }}>{absenceScopeLabel(a)}</span>
+                          {a.reason && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{a.reason}</span>}
+                        </div>
+                        <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
+                          onMouseEnter={e => e.target.style.color = '#ef4444'}
+                          onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
+                      </div>
+                    )
+                  }
+
+                  // v3.77.0: nach Kalenderwoche gruppieren. Laufende Abwesenheiten (schon gestartet,
+                  // enden aber heute/später) landen in der aktuellen Woche; sonst nach Startdatum.
+                  const currentWeekIso = isoDate(getWeekStart(new Date(today + 'T00:00:00')))
+                  const weekMap = {}
+                  for (const a of visible) {
+                    const anchor = (a.date_to >= today && a.date_from < today) ? today : a.date_from
+                    const ws = getWeekStart(new Date(anchor + 'T00:00:00'))
+                    const wIso = isoDate(ws)
+                    if (!weekMap[wIso]) {
+                      const we = new Date(ws); we.setDate(we.getDate() + 6)
+                      weekMap[wIso] = { ws, we, kw: getKW(ws), items: [] }
+                    }
+                    weekMap[wIso].items.push(a)
+                  }
+                  const weekKeys = Object.keys(weekMap).sort()
+                  for (const k of weekKeys) weekMap[k].items.sort((x, y) => x.date_from.localeCompare(y.date_from))
+
                   return (
                     <>
-                      {visible.map(a => {
-                        const isExpired = a.date_to < today
+                      {weekKeys.map(wIso => {
+                        const g = weekMap[wIso]
+                        const isCurrent = wIso === currentWeekIso
+                        const isOpen = wIso in openAbsenceWeeks ? openAbsenceWeeks[wIso] : isCurrent
                         return (
-                          <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${isExpired ? '#6b7280' : '#ef4444'}`, opacity: isExpired ? 0.6 : 1 }}>
-                            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: isExpired ? 'var(--text-muted)' : '#ef4444' }}>{a.chatter_name}</span>
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                                {new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} – {new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
-                              </span>
-                              {isExpired && <span style={{ fontSize: 10, color: '#6b7280', background: 'rgba(107,114,128,0.15)', padding: '1px 7px', borderRadius: 4 }}>Abgelaufen</span>}
-                              <span style={{ fontSize: 10, color: (!a.available_shifts || a.available_shifts.length === 0) ? '#ef4444' : '#10b981', background: (!a.available_shifts || a.available_shifts.length === 0) ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', padding: '1px 7px', borderRadius: 4, fontWeight: 600 }}>{absenceScopeLabel(a)}</span>
-                              {a.reason && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{a.reason}</span>}
+                          <div key={wIso} style={{ border: `1px solid ${isCurrent ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 9, overflow: 'hidden' }}>
+                            <div onClick={() => setOpenAbsenceWeeks(prev => ({ ...prev, [wIso]: !(wIso in prev ? prev[wIso] : isCurrent) }))}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: isCurrent ? 'rgba(239,68,68,0.08)' : 'var(--bg-card2)', cursor: 'pointer' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: isCurrent ? '#ef4444' : 'var(--text-primary)' }}>KW {g.kw}</span>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatDate(g.ws)} – {formatDate(g.we)}</span>
+                                {isCurrent && <span style={{ fontSize: 9, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.15)', padding: '1px 7px', borderRadius: 10 }}>diese Woche</span>}
+                                <span style={{ fontSize: 10, background: 'var(--bg-input)', color: 'var(--text-muted)', padding: '1px 8px', borderRadius: 10, fontWeight: 700 }}>{g.items.length}</span>
+                              </div>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isOpen ? '▲' : '▼'}</span>
                             </div>
-                            <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}
-                              onMouseEnter={e => e.target.style.color = '#ef4444'}
-                              onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
+                            {isOpen && (
+                              <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {g.items.map(renderRow)}
+                              </div>
+                            )}
                           </div>
                         )
                       })}
