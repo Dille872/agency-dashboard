@@ -672,10 +672,18 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const toggleVorschicht = (modelId) => {
     const isOn = !!extraShifts[modelId] || modelHasVorschichtData(modelId)
     if (isOn) {
-      // Ausblenden nur wenn nichts eingetragen ist — sonst würden Daten versteckt.
-      if (modelHasVorschichtData(modelId)) {
-        alert('Vorschicht kann nicht ausgeblendet werden, solange Chatter oder eine Zeit eingetragen sind.\n\nBitte erst die Vorschicht-Zellen und die Zeit leeren.')
+      // v3.78.0: Nur echte Belegung (Chatter) blockiert das Ausblenden. Eine übrig
+      // gebliebene Vorschicht-Zeit ohne Chatter lässt sich schlecht in der Oberfläche
+      // finden/leeren — daher bieten wir an, sie direkt mit zu entfernen.
+      const hasChatter = weekDays.some(day => !!schedule[getCellKey(modelId, isoDate(day), EXTRA_SHIFT)]?.chatter)
+      if (hasChatter) {
+        alert('Vorschicht kann nicht ausgeblendet werden, solange noch Chatter eingetragen sind.\n\nBitte erst die Vorschicht-Zellen leeren.')
         return
+      }
+      const timeKey = `${modelId}__${EXTRA_SHIFT}`
+      if (shiftTimes[timeKey]) {
+        if (!window.confirm('Für die Vorschicht ist noch eine Zeit hinterlegt (aber keine Chatter). Zeit entfernen und Vorschicht ausblenden?')) return
+        setShiftTimes(prev => { const n = { ...prev }; delete n[timeKey]; return n })
       }
       setExtraShifts(prev => { const n = { ...prev }; delete n[modelId]; return n })
     } else {

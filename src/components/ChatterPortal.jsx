@@ -435,6 +435,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [isOnline, setIsOnline] = useState(false)
   const [selectedShift, setSelectedShift] = useState('')
   const [currentLogId, setCurrentLogId] = useState(null)
+  const [currentShift, setCurrentShift] = useState(null) // v3.77.1: Schicht, in die eingecheckt wurde — für zielgenauen Auto-Checkout
   const [checkInTime, setCheckInTime] = useState(null)
   const [messages, setMessages] = useState([])
   const [models, setModels] = useState([])
@@ -855,13 +856,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       // Check if already logged in - prevent duplicate logs
       const { data: existingLog } = await supabase
         .from('shift_logs')
-        .select('id')
+        .select('id, shift')
         .eq('display_name', displayName)
         .is('checked_out_at', null)
         .maybeSingle()
       if (existingLog) {
         // Already logged in - just set state
         setCurrentLogId(existingLog.id)
+        setCurrentShift(existingLog.shift || null) // v3.77.1
         setIsOnline(true)
         await sendHeartbeat(true)
         return
@@ -938,6 +940,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         setCurrentLogId(data.id)
         setCheckInTime(new Date())
       }
+      setCurrentShift(shiftToLog) // v3.77.1: eingecheckte Schicht merken
       setIsOnline(true)
       setSelectedShift('')
       await sendHeartbeat(true)
@@ -967,6 +970,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         .is('checked_out_at', null)
       setIsOnline(false)
       setCurrentLogId(null)
+      setCurrentShift(null) // v3.77.1
       setCheckInTime(null)
       await sendHeartbeat(false)
     } finally {
@@ -988,9 +992,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // Refs to avoid stale closures in intervals
   const isOnlineRef = React.useRef(isOnline)
   const currentLogIdRef = React.useRef(currentLogId)
+  const currentShiftRef = React.useRef(currentShift) // v3.77.1
   const next7SchedulesRef = React.useRef(next7Schedules)
   useEffect(() => { isOnlineRef.current = isOnline }, [isOnline])
   useEffect(() => { currentLogIdRef.current = currentLogId }, [currentLogId])
+  useEffect(() => { currentShiftRef.current = currentShift }, [currentShift])
   useEffect(() => { next7SchedulesRef.current = next7Schedules }, [next7Schedules])
 
   // v3.38.0: Meine Aufgaben (vom Team zugewiesen)
@@ -1056,6 +1062,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
       // Auto-checkout check
       if (!isOnlineRef.current || !currentLogIdRef.current) return
+      // v3.77.1: Nur die Schicht prüfen, in die tatsächlich eingecheckt wurde. Ohne bekannte
+      // Schicht (oder "Manuell") kein automatischer Checkout — sonst wirft eine früher am Tag
+      // abgelaufene Schicht (z.B. Spät) beim Einchecken in eine spätere (z.B. Nacht) sofort raus.
+      const myShift = currentShiftRef.current
+      if (!myShift || myShift === 'Manuell') return
       const now = new Date()
       const berlinStr = now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
       const todayIsoStr = berlinStr
@@ -1072,6 +1083,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           if (parts[1] !== todayIsoStr || val.chatter !== displayName) continue
           const modelId = parts[0]
           const shift = parts[2]
+          if (shift !== myShift) continue // v3.77.1: nur die eingecheckte Schicht kann auschecken
           // v2.9.7: Cell-Override hat Vorrang vor Standard-Zeit
           const timeStr = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
           if (!timeStr) continue
@@ -1089,6 +1101,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             await supabase.from('shift_logs').update({ checked_out_at: new Date().toISOString() }).eq('id', currentLogIdRef.current)
             setIsOnline(false)
             setCurrentLogId(null)
+            setCurrentShift(null) // v3.77.1
             setCheckInTime(null)
             sendHeartbeat(false)
             return
@@ -1147,6 +1160,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const openLog = openLogs[0]
     setIsOnline(true)
     setCurrentLogId(openLog.id)
+    setCurrentShift(openLog.shift || null) // v3.77.1
     setCheckInTime(new Date(openLog.checked_in_at))
     await sendHeartbeat(true)
   }
