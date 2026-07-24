@@ -78,7 +78,7 @@ export default function SuggestionsAdmin() {
     if (active.length) setStatModel(active[0])
   }
 
-  const emptyForm = (name) => ({ model_name: name, description: '', persona_tags: [], anrede: 'du', dialekt: 'hochdeutsch', laenge: 'kurz', emoji: 'mittel', direktheit: 'normal', anzahl: 8, nogos: [], examples: [] })
+  const emptyForm = (name) => ({ model_name: name, description: '', persona_tags: [], anrede: 'du', dialekt: 'hochdeutsch', laenge: 'kurz', emoji: 'mittel', direktheit: 'normal', anzahl: 8, nogos: [], emojis: [], examples: [] })
   const selectModel = (name, map = personas) => { setSel(name); setForm(map[name] ? { ...emptyForm(name), ...map[name] } : emptyForm(name)) }
 
   const savePersona = async () => {
@@ -183,6 +183,11 @@ export default function SuggestionsAdmin() {
           <span style={lbl}>No-Gos / Grenzen</span>
           <div style={{ marginBottom: 18 }}>
             <Tags items={form.nogos} color="rgba(239,68,68,0.08)" onAdd={t => upd('nogos', [...form.nogos, t])} onRemove={i => upd('nogos', form.nogos.filter((_, x) => x !== i))} />
+          </div>
+
+          <span style={lbl}>Erlaubte Emojis (leer = alle erlaubt · sonst nutzt die KI nur diese)</span>
+          <div style={{ marginBottom: 18 }}>
+            <Tags items={form.emojis || []} onAdd={t => upd('emojis', [...(form.emojis || []), t])} onRemove={i => upd('emojis', (form.emojis || []).filter((_, x) => x !== i))} />
           </div>
 
           <span style={lbl}>Beispiel-Nachrichten (Ton-Vorlage)</span>

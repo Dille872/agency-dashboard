@@ -81,6 +81,7 @@ serve(async (req) => {
       persona.persona_tags?.length ? `Charakter: ${persona.persona_tags.join(', ')}.` : '',
       `Anrede: ${persona.anrede === 'sie' ? 'Sie' : 'Du'}. Sprache/Dialekt: ${persona.dialekt}. Länge: ${persona.laenge}. Emoji-Menge: ${persona.emoji}. Direktheit: ${persona.direktheit}.`,
       persona.nogos?.length ? `Absolute No-Gos (niemals): ${persona.nogos.join('; ')}.` : '',
+      persona.emojis?.length ? `Erlaubte Emojis – verwende AUSSCHLIESSLICH diese, KEINE anderen: ${persona.emojis.join(' ')}` : '',
       `Anlass: ${occLabel}. ${guardrail}`,
       `Kontext: ${shiftText}. Passe die Nachricht an die Tageszeit an.`,
       `Schreibe auf Deutsch, klingt echt und persönlich, nicht generisch. Kein Klarname, keine echten Treffen, keine Links.`,
