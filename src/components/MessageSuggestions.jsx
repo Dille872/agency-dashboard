@@ -67,24 +67,35 @@ export default function MessageSuggestions({ displayName }) {
     setOccasions(occ || [])
     if (occ && occ.length) setOccasion(occ[0].key)
 
-    // Meine Schichten + Models aus dem Dienstplan (nächste ~2 Wochen, live)
+    // Meine Schichten + Models aus dem Dienstplan (aktuelle + nächste ~2 Wochen, live)
+    // v3.94.0: LOKALES ISO-Datum (toISOString rutscht bei UTC+2 auf den Vortag ->
+    // Woche wird nicht geladen). Zusätzlich Montag- UND Sonntag-basierte Wochenstarts,
+    // damit keine Schicht (z.B. Nacht) durch die Wochengrenze verloren geht.
+    const isoL = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     const today = new Date()
     const starts = new Set()
     for (let i = -1; i < 14; i++) {
       const d = new Date(today); d.setDate(today.getDate() + i)
       const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day
       const mon = new Date(d); mon.setDate(d.getDate() + diff)
-      starts.add(mon.toISOString().slice(0, 10))
+      starts.add(isoL(mon))
+      const sun = new Date(mon); sun.setDate(mon.getDate() - 1)
+      starts.add(isoL(sun))
     }
     const { data: scheds } = await supabase.from('schedule')
       .select('assignments').in('week_start', [...starts]).eq('status', 'live')
     const { data: models } = await supabase.from('models_contact').select('name, id')
     const idToName = {}; for (const m of models || []) idToName[String(m.id)] = m.name
 
+    const dn = (displayName || '').toLowerCase().trim()
     const set = new Map()
     for (const s of scheds || []) {
       for (const [key, val] of Object.entries(s.assignments || {})) {
-        if (val && val.chatter === displayName) {
+        if (!val) continue
+        // v3.93.0: Haupt-Chatter ODER Trainee/Co zählt (Doppelschichten!), case-insensitive
+        const isMain = (val.chatter || '').toLowerCase().trim() === dn && val.chatter !== '__FREI__'
+        const isTrainee = (val.trainee || '').toLowerCase().trim() === dn
+        if (isMain || isTrainee) {
           const parts = key.split('__')
           const modelName = idToName[parts[0]] || parts[0]
           const sh = parts[2] || ''
