@@ -68,7 +68,13 @@ export default function SurveyModal({ displayName, role }) {
       const qs = (questions || []).filter(q => q.survey_id === s.id)
       if (qs.length === 0) continue
       const allAnswered = qs.every(q => answeredSet.has(`${s.id}:${q.id}`))
-      if (!allAnswered) stillPending.push({ survey: s, questions: qs })
+      if (!allAnswered) {
+        // v3.80.0: bereits beantwortete Fragen-IDs merken, damit beim Absenden
+        // nur NEUE Antworten eingefügt werden (sonst kippt der Unique-Konflikt den
+        // ganzen Insert und die neuen Antworten gehen verloren).
+        const answeredIds = new Set(qs.filter(q => answeredSet.has(`${s.id}:${q.id}`)).map(q => q.id))
+        stillPending.push({ survey: s, questions: qs, answeredIds })
+      }
     }
 
     setPending(stillPending)
@@ -99,23 +105,29 @@ export default function SurveyModal({ displayName, role }) {
   const handleSubmit = async () => {
     if (submitting) return // Double-Click-Schutz
     setSubmitting(true)
-    const rows = questions.map(q => ({
-      survey_id: survey.id,
-      question_id: q.id,
-      responder_name: displayName,
-      responder_role: role,
-      answer: String(answers[q.id]?.answer ?? ''),
-      comment: answers[q.id]?.comment || null,
-    }))
-    const { error } = await supabase.from('survey_responses').insert(rows)
+    // v3.80.0: nur noch nicht beantwortete Fragen einfügen
+    const answeredIds = pending[currentIdx].answeredIds || new Set()
+    const rows = questions
+      .filter(q => !answeredIds.has(q.id))
+      .map(q => ({
+        survey_id: survey.id,
+        question_id: q.id,
+        responder_name: displayName,
+        responder_role: role,
+        answer: String(answers[q.id]?.answer ?? ''),
+        comment: answers[q.id]?.comment || null,
+      }))
 
-    if (error) {
-      // Falls Doppel-Insert: nicht als Fehler behandeln (User hat schon geantwortet)
-      const isDuplicate = error.code === '23505' || /duplicate|unique/i.test(error.message || '')
-      if (!isDuplicate) {
-        alert('Fehler beim Speichern: ' + error.message + '\nBitte erneut versuchen.')
-        setSubmitting(false)
-        return
+    if (rows.length > 0) {
+      const { error } = await supabase.from('survey_responses').insert(rows)
+      if (error) {
+        // Falls Doppel-Insert: nicht als Fehler behandeln (User hat schon geantwortet)
+        const isDuplicate = error.code === '23505' || /duplicate|unique/i.test(error.message || '')
+        if (!isDuplicate) {
+          alert('Fehler beim Speichern: ' + error.message + '\nBitte erneut versuchen.')
+          setSubmitting(false)
+          return
+        }
       }
     }
 

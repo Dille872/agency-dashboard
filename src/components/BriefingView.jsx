@@ -32,6 +32,13 @@ function getWeekNumber(date) {
   return Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
 }
 
+// v3.80.0: Lokales ISO-Datum (YYYY-MM-DD) ohne UTC-Verschiebung.
+// new Date(y,m,d).toISOString() rutscht bei DE-Offset (UTC+1/+2) einen Tag zurück
+// → Monats-/Wochenumsätze wären um einen Tag falsch abgegrenzt.
+function isoLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 // Liefert Mo + So eines Wochen-Zeitfensters relativ zu Referenzdatum
 // offset = 0 → aktuelle Woche, -1 → Vorwoche, -2 → 2 Wochen zurück
 function getWeekRange(referenceDate, weekOffset = 0) {
@@ -43,8 +50,8 @@ function getWeekRange(referenceDate, weekOffset = 0) {
   const sunday = new Date(monday)
   sunday.setDate(monday.getDate() + 6)
   return {
-    from: monday.toISOString().slice(0, 10),
-    to: sunday.toISOString().slice(0, 10),
+    from: isoLocal(monday),
+    to: isoLocal(sunday),
     monday,
     sunday,
     weekNumber: getWeekNumber(monday),
@@ -58,8 +65,8 @@ function getMonthRange(year, monthIdx) {
   const first = new Date(year, monthIdx, 1)
   const last = new Date(year, monthIdx + 1, 0)
   return {
-    from: first.toISOString().slice(0, 10),
-    to: last.toISOString().slice(0, 10),
+    from: isoLocal(first),
+    to: isoLocal(last),
     year,
     monthIdx,
     label: first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }),

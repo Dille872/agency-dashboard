@@ -608,7 +608,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const csvNames = aliases.length > 0 ? aliases.map(a => a.csv_name) : [displayName]
   const multiAccount = csvNames.length > 1
   const monthName = new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-  const openRequests = contentRequests.filter(r => r.status === 'neu' || r.status === 'angefragt')
+  // v3.80.0: contentRequests lädt nur ['bestaetigt','erledigt'] (siehe loadContentRequests).
+  // Vorher filterte openRequests auf 'neu'/'angefragt' → immer leer, Badge/Banner erschienen nie.
+  // ANNAHME: „offen" = bestätigte, noch nicht erledigte Aufträge. Falls anders gewünscht, hier anpassen.
+  const openRequests = contentRequests.filter(r => r.status === 'bestaetigt')
   const today = new Date().toISOString().slice(0, 10)
   const upcomingCal = calItems.filter(c => c.due_date >= today).slice(0, 5)
 

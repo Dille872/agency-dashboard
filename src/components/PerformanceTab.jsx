@@ -598,7 +598,8 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
     for (const snap of chatterSnapshots) {
       const d = new Date(snap.businessDate + 'T12:00:00')
       const dow = d.getDay() === 0 ? 6 : d.getDay() - 1
-      const total = (snap.rows || []).reduce((s, r) => s + (r.revenue || 0), 0)
+      // v3.80.0: Aggregat-/Summenzeilen (Name enthält '*') überspringen — sonst Doppelzählung
+      const total = (snap.rows || []).filter(r => !(r.name && r.name.includes('*'))).reduce((s, r) => s + (r.revenue || 0), 0)
       if (total > 0) byWeekday[dow].push(total)
     }
     const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -649,6 +650,7 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
         const day = parseInt(snap.businessDate.slice(8, 10))
         let dayRev = 0
         for (const row of (snap.rows || [])) {
+          if (row.name && row.name.includes('*')) continue // v3.80.0: Aggregatzeilen überspringen
           dayRev += (row.revenue || 0)
         }
         if (dayRev > 0) dailyRev[day] = (dailyRev[day] || 0) + dayRev

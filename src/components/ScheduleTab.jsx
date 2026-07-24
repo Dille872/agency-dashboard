@@ -84,9 +84,13 @@ function getWeekDays(ws) {
 }
 function formatDate(date) { return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) }
 function getKW(date) {
-  const d = new Date(date)
-  const onejan = new Date(d.getFullYear(), 0, 1)
-  return Math.ceil(((d - onejan) / 86400000 + onejan.getDay() + 1) / 7)
+  // v3.80.0: echte ISO-8601-Kalenderwoche (Montag-basiert, Woche 1 = Woche mit erstem Donnerstag).
+  const src = new Date(date)
+  const d = new Date(Date.UTC(src.getFullYear(), src.getMonth(), src.getDate()))
+  const dayNum = d.getUTCDay() || 7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
 }
 
 export default function ScheduleTab({ session, userDisplayName }) {
@@ -264,7 +268,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     if (Object.keys(schedule).length === 0 && !hasSavedData) return
     const timer = setTimeout(() => { saveSchedule() }, 2000)
     return () => clearTimeout(timer)
-  }, [schedule, dayNotes, shiftTimes])
+  }, [schedule, dayNotes, shiftTimes, extraShifts]) // v3.80.0: extraShifts ergänzt — nur Vorschicht-Umschalten wurde sonst nicht gespeichert
 
   const loadAbsences = async () => {
     const { data } = await supabase.from('absences').select('*').order('date_from')
@@ -592,8 +596,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
           const shiftEnd = timeStr ? timeStr.split('-')[1]?.trim() : null
 
           const candidates = chatters.filter(c => {
-            // Check not absent
-            const absent = (absData || []).some(a => a.chatter_name === c.name && dayIso >= a.date_from && dayIso <= a.date_to)
+            // Check not absent — v3.80.0: schicht-genau (wie die Recurring-Prüfung oben),
+            // damit teilweise abwesende Chatter nicht für ALLE Schichten ausgeschlossen werden
+            const absent = (absData || []).some(a => {
+              if (a.chatter_name !== c.name) return false
+              if (dayIso < a.date_from || dayIso > a.date_to) return false
+              const avail = a.available_shifts
+              if (!avail || avail.length === 0) return true
+              return !avail.includes(shift)
+            })
             if (absent) return false
             // Check availability profile
             const avails = availMap[c.name] || []
