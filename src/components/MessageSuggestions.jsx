@@ -81,7 +81,11 @@ export default function MessageSuggestions({ displayName }) {
       const { data, error } = await supabase.functions.invoke('generate-messages', {
         body: { model, occasion, shift: normShift(shift), chatter: displayName },
       })
-      if (error) { setError(error.message || 'Fehler beim Generieren'); return }
+      if (error) {
+        let msg = error.message || 'Fehler beim Generieren'
+        try { const j = await error.context.json(); if (j?.error) msg = j.error } catch (_) {}
+        setError(msg); return
+      }
       if (!data?.ok) { setError(data?.error || 'Keine Vorschläge erhalten'); return }
       setItems((data.suggestions || []).map(s => ({ ...s, rating: null })))
     } catch (e) {

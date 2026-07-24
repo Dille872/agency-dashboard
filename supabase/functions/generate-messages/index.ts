@@ -14,8 +14,8 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
-// Bei Bedarf auf ein aktuelles Modell anpassen (Env ANTHROPIC_MODEL):
-const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-3-5-haiku-latest'
+// Aktuelles günstiges Modell (Stand 2026). Per Env ANTHROPIC_MODEL überschreibbar:
+const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-haiku-4-5'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
