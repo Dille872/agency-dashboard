@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { Lightbulb, Copy, ThumbsUp, ThumbsDown, Sparkles, Loader } from 'lucide-react'
+import { Lightbulb, Copy, Check, ThumbsUp, ThumbsDown, Sparkles, Loader } from 'lucide-react'
 
 // v3.81.0: KI-Nachrichten-Vorschläge (Chatter-Portal).
 // Chatter wählt aus SEINEN Schichten + Models + einem Anlass und bekommt auf
@@ -30,6 +30,7 @@ export default function MessageSuggestions({ displayName }) {
   const [copiedId, setCopiedId] = useState(null)
   const [allowed, setAllowed] = useState(null) // v3.83.0: nur freigeschaltete Chatter
   const [language, setLanguage] = useState('Deutsch') // v3.90.0: Zielsprache der Vorschläge
+  const [usedList, setUsedList] = useState([]) // v3.92.0: zuletzt verwendete Nachrichten
 
   useEffect(() => { if (displayName) loadContext() }, [displayName])
 
@@ -40,13 +41,13 @@ export default function MessageSuggestions({ displayName }) {
     let cancelled = false
     ;(async () => {
       const { data } = await supabase.from('message_suggestions')
-        .select('id, text, rating, created_at')
+        .select('id, text, rating, used, created_at')
         .eq('chatter', displayName).eq('model_name', model).eq('occasion', occasion)
         .order('created_at', { ascending: false }).limit(20)
       if (cancelled) return
       if (data && data.length) {
         const latest = data[0].created_at // alle Zeilen eines Batches teilen denselben created_at
-        setItems(data.filter(r => r.created_at === latest).map(r => ({ id: r.id, text: r.text, rating: r.rating })))
+        setItems(data.filter(r => r.created_at === latest).map(r => ({ id: r.id, text: r.text, rating: r.rating, used: r.used })))
       } else {
         setItems([])
       }
@@ -134,6 +135,30 @@ export default function MessageSuggestions({ displayName }) {
     if (next) await supabase.from('message_suggestions').update({ rating: next }).eq('id', it.id)
   }
 
+  // v3.92.0: "Nehm ich" – als verwendet markieren (+ kopieren), landet in "Zuletzt verwendet"
+  const loadUsed = async () => {
+    const { data } = await supabase.from('message_suggestions')
+      .select('id, text, rating, model_name, occasion')
+      .eq('chatter', displayName).eq('used', true)
+      .order('created_at', { ascending: false }).limit(10)
+    setUsedList(data || [])
+  }
+  useEffect(() => { if (allowed && displayName) loadUsed() }, [allowed, displayName])
+
+  const markUsed = async (it) => {
+    setItems(prev => prev.map(x => x.id === it.id ? { ...x, used: true } : x))
+    try { navigator.clipboard.writeText(it.text) } catch (_) {}
+    setCopiedId(it.id); setTimeout(() => setCopiedId(null), 1200)
+    await supabase.from('message_suggestions').update({ used: true }).eq('id', it.id)
+    loadUsed()
+  }
+
+  const rateUsed = async (it, rating) => {
+    const next = it.rating === rating ? null : rating
+    setUsedList(prev => prev.map(x => x.id === it.id ? { ...x, rating: next } : x))
+    if (next) await supabase.from('message_suggestions').update({ rating: next }).eq('id', it.id)
+  }
+
   const btn = (active) => ({
     background: active ? 'rgba(124,58,237,0.18)' : 'transparent',
     color: active ? '#a78bfa' : 'var(--text-secondary)',
@@ -212,6 +237,10 @@ export default function MessageSuggestions({ displayName }) {
                     <button onClick={() => copy(it)} style={{ ...btn(false), borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                       <Copy size={12} /> {copiedId === it.id ? 'Kopiert!' : 'Kopieren'}
                     </button>
+                    <button onClick={() => markUsed(it)} title="Diese nehm ich – wird gespeichert"
+                      style={{ ...btn(!!it.used), borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5, color: it.used ? '#22c55e' : 'var(--text-secondary)', borderColor: it.used ? '#22c55e' : '#2e2e5a' }}>
+                      <Check size={12} /> {it.used ? 'Genommen' : 'Nehm ich'}
+                    </button>
                     <button onClick={() => rate(it, 'up')} title="Gut"
                       style={{ ...btn(it.rating === 'up'), borderRadius: 8, marginLeft: 'auto', padding: '6px 9px', color: it.rating === 'up' ? '#22c55e' : 'var(--text-secondary)', borderColor: it.rating === 'up' ? '#22c55e' : '#2e2e5a' }}>
                       <ThumbsUp size={13} />
@@ -223,6 +252,23 @@ export default function MessageSuggestions({ displayName }) {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {usedList.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <span style={{ ...lbl, marginBottom: 10 }}>✓ Zuletzt verwendet — gern später noch bewerten</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {usedList.map(it => (
+                  <div key={it.id} style={{ background: 'var(--bg-input)', border: '1px solid #1e1e3a', borderRadius: 9, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.3px', marginRight: 6 }}>{it.model_name}</span>{it.text}
+                    </div>
+                    <button onClick={() => rateUsed(it, 'up')} title="Gut" style={{ ...btn(it.rating === 'up'), borderRadius: 8, padding: '5px 8px', color: it.rating === 'up' ? '#22c55e' : 'var(--text-secondary)', borderColor: it.rating === 'up' ? '#22c55e' : '#2e2e5a' }}><ThumbsUp size={12} /></button>
+                    <button onClick={() => rateUsed(it, 'down')} title="Passt nicht" style={{ ...btn(it.rating === 'down'), borderRadius: 8, padding: '5px 8px', color: it.rating === 'down' ? '#ef4444' : 'var(--text-secondary)', borderColor: it.rating === 'down' ? '#ef4444' : '#2e2e5a' }}><ThumbsDown size={12} /></button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </>

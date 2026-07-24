@@ -68,6 +68,12 @@ serve(async (req) => {
       .order('up', { ascending: false }).limit(6)
     const goodOnes = (lib || []).filter((r) => (r.up || 0) > (r.down || 0)).map((r) => r.text)
 
+    // v3.92.0: zuletzt "genommene" Nachrichten als zusätzliche Vorlage (starkes Signal)
+    const { data: usedRows } = await db.from('message_suggestions')
+      .select('text').eq('model_name', model).eq('occasion', occasion).eq('used', true)
+      .order('created_at', { ascending: false }).limit(5)
+    const usedOnes = (usedRows || []).map((r) => r.text)
+
     const since = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString()
     const { data: recent } = await db.from('message_suggestions')
       .select('text').eq('model_name', model).eq('occasion', occasion).gte('created_at', since).limit(60)
@@ -78,7 +84,7 @@ serve(async (req) => {
       : shift === 'spaet' ? 'Spätschicht (Nachmittag/Abend)'
       : shift === 'nacht' ? 'Nachtschicht (spät nachts)' : 'unbestimmte Tageszeit'
 
-    const examples = [...(persona.examples || []), ...goodOnes].slice(0, 8)
+    const examples = [...new Set([...(persona.examples || []), ...usedOnes, ...goodOnes])].slice(0, 10)
 
     const system = [
       `Du schreibst kurze Direktnachrichten im Namen des Models "${model}" für zahlende Fans auf einer Creator-Plattform.`,
