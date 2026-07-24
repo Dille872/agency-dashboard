@@ -43,6 +43,7 @@ serve(async (req) => {
     const occasion = String(body.occasion || '').trim()
     const shift = String(body.shift || '').trim()   // frueh | spaet | nacht
     const chatter = String(body.chatter || '').trim()
+    const language = String(body.language || 'Deutsch').trim()
     if (!model || !occasion) return json({ ok: false, error: 'model/occasion fehlt' }, 400)
 
     // --- Steckbrief laden (Pflicht) ---
@@ -89,7 +90,8 @@ serve(async (req) => {
       persona.emojis?.length ? `Erlaubte Emojis – verwende AUSSCHLIESSLICH diese, KEINE anderen: ${persona.emojis.join(' ')}` : '',
       `Anlass: ${occLabel}. ${guardrail}`,
       `Kontext: ${shiftText}. Passe die Nachricht an die Tageszeit an.`,
-      `Schreibe auf Deutsch. Kein Klarname, keine echten Treffen, keine Links.`,
+      `Schreibe die Nachrichten auf ${language}. Kein Klarname, keine echten Treffen, keine Links.`,
+      language !== 'Deutsch' ? `Hinweis: Die Dialekt-Einstellung ist deutschspezifisch. In ${language} den Charakter und Ton des Models beibehalten, aber natürlich und muttersprachlich in ${language} schreiben (kein deutscher Dialekt).` : '',
       persona.extra ? `WICHTIGE Extra-Anweisungen (unbedingt befolgen): ${persona.extra}` : '',
       examples.length ? `Ton-Vorlagen (Stil nachahmen, NICHT kopieren):\n- ${examples.join('\n- ')}` : '',
       avoid.length ? `Vermeide Nachrichten, die diesen zu ähnlich sind:\n- ${avoid.slice(0, 25).join('\n- ')}` : '',

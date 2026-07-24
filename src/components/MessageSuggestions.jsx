@@ -29,6 +29,7 @@ export default function MessageSuggestions({ displayName }) {
   const [items, setItems] = useState([])        // [{id, text, rating}]
   const [copiedId, setCopiedId] = useState(null)
   const [allowed, setAllowed] = useState(null) // v3.83.0: nur freigeschaltete Chatter
+  const [language, setLanguage] = useState('Deutsch') // v3.90.0: Zielsprache der Vorschläge
 
   useEffect(() => { if (displayName) loadContext() }, [displayName])
 
@@ -106,7 +107,7 @@ export default function MessageSuggestions({ displayName }) {
     setLoading(true); setError(''); setItems([])
     try {
       const { data, error } = await supabase.functions.invoke('generate-messages', {
-        body: { model, occasion, shift: normShift(shift), chatter: displayName },
+        body: { model, occasion, shift: normShift(shift), chatter: displayName, language },
       })
       if (error) {
         let msg = error.message || 'Fehler beim Generieren'
@@ -170,6 +171,12 @@ export default function MessageSuggestions({ displayName }) {
               <span style={lbl}>Model</span>
               <select style={sel} value={model} onChange={e => setModel(e.target.value)}>
                 {modelsForShift.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={lbl}>Sprache</span>
+              <select style={sel} value={language} onChange={e => setLanguage(e.target.value)}>
+                {['Deutsch', 'English', 'Français', 'Español', 'Italiano'].map(l => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
           </div>
