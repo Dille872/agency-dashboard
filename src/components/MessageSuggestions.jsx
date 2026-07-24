@@ -176,7 +176,7 @@ export default function MessageSuggestions({ displayName }) {
             <div>
               <span style={lbl}>Sprache</span>
               <select style={sel} value={language} onChange={e => setLanguage(e.target.value)}>
-                {['Deutsch', 'English', 'Français', 'Español', 'Italiano'].map(l => <option key={l} value={l}>{l}</option>)}
+                {['Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Ungarisch', 'Tschechisch', 'Polnisch', 'Dänisch', 'Schwedisch', 'Norwegisch'].map(l => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
           </div>
