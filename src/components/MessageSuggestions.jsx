@@ -32,6 +32,27 @@ export default function MessageSuggestions({ displayName }) {
 
   useEffect(() => { if (displayName) loadContext() }, [displayName])
 
+  // v3.84.0: Beim Öffnen/Wechsel den zuletzt generierten Satz wieder laden
+  // (bleibt über Reloads stehen, bis der Chatter neu generiert). Inkl. Bewertungen.
+  useEffect(() => {
+    if (!allowed || !model || !occasion) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase.from('message_suggestions')
+        .select('id, text, rating, created_at')
+        .eq('chatter', displayName).eq('model_name', model).eq('occasion', occasion)
+        .order('created_at', { ascending: false }).limit(20)
+      if (cancelled) return
+      if (data && data.length) {
+        const latest = data[0].created_at // alle Zeilen eines Batches teilen denselben created_at
+        setItems(data.filter(r => r.created_at === latest).map(r => ({ id: r.id, text: r.text, rating: r.rating })))
+      } else {
+        setItems([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [allowed, model, occasion, displayName])
+
   const loadContext = async () => {
     // v3.83.0: Freigabe prüfen — nur wer can_suggest=true hat, sieht das Panel
     const { data: me } = await supabase.from('user_roles').select('can_suggest').eq('display_name', displayName).maybeSingle()
