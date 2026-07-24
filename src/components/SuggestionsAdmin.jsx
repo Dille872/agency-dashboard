@@ -56,8 +56,8 @@ export default function SuggestionsAdmin() {
   const [saving, setSaving] = useState(false)
   const [occasions, setOccasions] = useState([])
   const [chatters, setChatters] = useState([])
-  const [statModel, setStatModel] = useState('')
-  const [statOcc, setStatOcc] = useState('')
+  const [statModel, setStatModel] = useState('alle')
+  const [statOcc, setStatOcc] = useState('alle')
   const [lib, setLib] = useState([])
   const [hist, setHist] = useState([])
   const [basics, setBasics] = useState('')
@@ -83,10 +83,8 @@ export default function SuggestionsAdmin() {
     if (active.length && !sel) selectModel(active[0], map)
     const { data: o } = await supabase.from('message_occasions').select('*').order('sort')
     setOccasions(o || [])
-    if (o && o.length) setStatOcc(o[0].key)
     const { data: c } = await supabase.from('user_roles').select('user_id, display_name, roles, role, can_suggest')
     setChatters((c || []).filter(u => (u.roles || []).includes('chatter') || u.role === 'chatter').filter(u => u.display_name))
-    if (active.length) setStatModel(active[0])
     const { data: s } = await supabase.from('suggestion_settings').select('global_rules').eq('id', 1).maybeSingle()
     setBasics(s?.global_rules || '')
   }
@@ -129,7 +127,10 @@ export default function SuggestionsAdmin() {
   // Auswertung
   useEffect(() => { if (statModel && statOcc) loadLib() }, [statModel, statOcc])
   const loadLib = async () => {
-    const { data } = await supabase.from('message_library').select('*').eq('model_name', statModel).eq('occasion', statOcc).order('up', { ascending: false }).limit(30)
+    let q = supabase.from('message_library').select('*')
+    if (statModel && statModel !== 'alle') q = q.eq('model_name', statModel)
+    if (statOcc && statOcc !== 'alle') q = q.eq('occasion', statOcc)
+    const { data } = await q.order('up', { ascending: false }).limit(80)
     setLib(data || [])
   }
   // History
@@ -140,6 +141,7 @@ export default function SuggestionsAdmin() {
   }
 
   const missing = models.filter(m => !personas[m])
+  const occMap = Object.fromEntries(occasions.map(o => [o.key, o.label]))
 
   return (
     <div>
@@ -275,20 +277,26 @@ export default function SuggestionsAdmin() {
       {tab === 'stats' && (
         <div style={card}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-            <select value={statModel} onChange={e => setStatModel(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
-            <select value={statOcc} onChange={e => setStatOcc(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}>{occasions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}</select>
+            <select value={statModel} onChange={e => setStatModel(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Models</option>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
+            <select value={statOcc} onChange={e => setStatOcc(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Anlässe</option>{occasions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}</select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <span style={{ ...lbl, color: '#22c55e' }}>Läuft gut 👍</span>
-              {lib.filter(r => (r.up || 0) > (r.down || 0)).slice(0, 8).map(r => (
-                <div key={r.id} style={{ fontSize: 12.5, background: 'var(--bg-input)', borderRadius: 7, padding: '8px 11px', marginBottom: 7, display: 'flex', gap: 8 }}><span style={{ flex: 1 }}>{r.text}</span><b style={{ color: '#22c55e' }}>{r.up}×</b></div>
+              {lib.filter(r => (r.up || 0) > (r.down || 0)).slice(0, 12).map(r => (
+                <div key={r.id} style={{ background: 'var(--bg-input)', borderRadius: 7, padding: '8px 11px', marginBottom: 7 }}>
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.3px' }}>{r.model_name} · {occMap[r.occasion] || r.occasion}</div>
+                  <div style={{ fontSize: 12.5, display: 'flex', gap: 8 }}><span style={{ flex: 1 }}>{r.text}</span><b style={{ color: '#22c55e' }}>{r.up}×</b></div>
+                </div>
               ))}
             </div>
             <div>
               <span style={{ ...lbl, color: '#ef4444' }}>Floppt 👎</span>
-              {lib.filter(r => (r.down || 0) > 0).sort((a, b) => b.down - a.down).slice(0, 8).map(r => (
-                <div key={r.id} style={{ fontSize: 12.5, background: 'var(--bg-input)', borderRadius: 7, padding: '8px 11px', marginBottom: 7, display: 'flex', gap: 8 }}><span style={{ flex: 1 }}>{r.text}</span><b style={{ color: '#ef4444' }}>{r.down}×</b></div>
+              {lib.filter(r => (r.down || 0) > 0).sort((a, b) => b.down - a.down).slice(0, 12).map(r => (
+                <div key={r.id} style={{ background: 'var(--bg-input)', borderRadius: 7, padding: '8px 11px', marginBottom: 7 }}>
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.3px' }}>{r.model_name} · {occMap[r.occasion] || r.occasion}</div>
+                  <div style={{ fontSize: 12.5, display: 'flex', gap: 8 }}><span style={{ flex: 1 }}>{r.text}</span><b style={{ color: '#ef4444' }}>{r.down}×</b></div>
+                </div>
               ))}
             </div>
           </div>
