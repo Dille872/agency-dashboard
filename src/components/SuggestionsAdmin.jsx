@@ -78,7 +78,7 @@ export default function SuggestionsAdmin() {
     if (active.length) setStatModel(active[0])
   }
 
-  const emptyForm = (name) => ({ model_name: name, description: '', persona_tags: [], anrede: 'du', dialekt: 'hochdeutsch', laenge: 'kurz', emoji: 'mittel', direktheit: 'normal', anzahl: 8, nogos: [], emojis: [], examples: [] })
+  const emptyForm = (name) => ({ model_name: name, description: '', extra: '', persona_tags: [], anrede: 'du', dialekt: 'hochdeutsch', laenge: 'kurz', emoji: 'mittel', direktheit: 'normal', anzahl: 8, nogos: [], emojis: [], examples: [] })
   const selectModel = (name, map = personas) => { setSel(name); setForm(map[name] ? { ...emptyForm(name), ...map[name] } : emptyForm(name)) }
 
   const savePersona = async () => {
@@ -165,6 +165,9 @@ export default function SuggestionsAdmin() {
 
           <span style={lbl}>Beschreibung (Freitext)</span>
           <textarea value={form.description} onChange={e => upd('description', e.target.value)} style={{ ...inp, minHeight: 58, resize: 'vertical', marginBottom: 18, lineHeight: 1.5 }} />
+
+          <span style={lbl}>Extra-Anweisungen an die KI (Freitext, wird 1:1 befolgt)</span>
+          <textarea value={form.extra || ''} onChange={e => upd('extra', e.target.value)} placeholder="z.B. klingt nie wie ein Bot · keine Gedankenstriche – · locker & natürlich schreiben · ruhig mal umgangssprachlich" style={{ ...inp, minHeight: 54, resize: 'vertical', marginBottom: 18, lineHeight: 1.5 }} />
 
           <span style={lbl}>Persona</span>
           <div style={{ marginBottom: 18 }}>
