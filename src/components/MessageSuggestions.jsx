@@ -28,10 +28,16 @@ export default function MessageSuggestions({ displayName }) {
   const [error, setError] = useState('')
   const [items, setItems] = useState([])        // [{id, text, rating}]
   const [copiedId, setCopiedId] = useState(null)
+  const [allowed, setAllowed] = useState(null) // v3.83.0: nur freigeschaltete Chatter
 
   useEffect(() => { if (displayName) loadContext() }, [displayName])
 
   const loadContext = async () => {
+    // v3.83.0: Freigabe prüfen — nur wer can_suggest=true hat, sieht das Panel
+    const { data: me } = await supabase.from('user_roles').select('can_suggest').eq('display_name', displayName).maybeSingle()
+    if (!me?.can_suggest) { setAllowed(false); return }
+    setAllowed(true)
+
     // Anlässe
     const { data: occ } = await supabase.from('message_occasions')
       .select('*').eq('active', true).order('sort')
@@ -113,6 +119,8 @@ export default function MessageSuggestions({ displayName }) {
     borderRadius: 20, padding: '6px 13px', fontSize: 12, fontWeight: 600,
     cursor: 'pointer', fontFamily: 'inherit',
   })
+
+  if (!allowed) return null
 
   return (
     <div style={card}>

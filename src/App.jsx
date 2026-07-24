@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 import { setTheme, initTheme } from './theme'
 import { APP_VERSION } from './version'
+import SuggestionsAdmin from './components/SuggestionsAdmin'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
@@ -526,6 +527,7 @@ export default function App() {
                 { key: 'performance', label: 'Performance', Icon: TrendingUp },
                 { key: 'social', label: 'Social', Icon: Globe },
                 { key: 'billing', label: 'Billing', Icon: DollarSign },
+                { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
               ]
               const visiblePrimary = TABS_PRIMARY.filter(t => t.divider || canAccess(t.key))
               const visibleMore = TABS_MORE.filter(t => canAccess(t.key))
@@ -697,6 +699,7 @@ export default function App() {
               { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
               { key: 'social', label: 'Social', Icon: Globe },
               { key: 'billing', label: 'Billing', Icon: DollarSign },
+              { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
               { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
             ].filter(t => canAccess(t.key)).map(tab => (
               <button key={tab.key} onClick={() => {
@@ -806,6 +809,8 @@ export default function App() {
           <SocialTab session={session} userDisplayName={userDisplayName} userRole={userRole} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
+        ) : activeTab === 'vorschlaege' ? (
+          <SuggestionsAdmin />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (
