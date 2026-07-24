@@ -6,6 +6,9 @@ const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
 const CHRIS_ID = '1538601588'
 const REY_ID = '528328429'
 const ADMIN_IDS = [CHRIS_ID, REY_ID]
+// v3.79.0: Webhook-Absicherung. Wenn gesetzt, muss jeder Webhook-Aufruf den
+// passenden X-Telegram-Bot-Api-Secret-Token mitschicken (per setWebhook konfiguriert).
+const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') || ''
 
 const H = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Accept-Profile': 'public', 'Content-Profile': 'public' }
 
@@ -249,6 +252,11 @@ async function getParallelChatters(currentChatterName: string) {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok')
+  // v3.79.0: Nur echte Telegram-Webhooks zulassen. Rückwärtskompatibel — solange
+  // TELEGRAM_WEBHOOK_SECRET nicht gesetzt ist, wird (noch) nicht erzwungen.
+  if (WEBHOOK_SECRET && req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== WEBHOOK_SECRET) {
+    return new Response('forbidden', { status: 403 })
+  }
   try {
     const body = await req.json()
     const msg = body.message
@@ -664,7 +672,9 @@ serve(async (req) => {
     await tg(fromId, `Danke für deine Nachricht. Ich habe sie weitergeleitet — das Team meldet sich bei dir.\n\nDeine Telegram-ID: <code>${fromId}</code>`)
     return new Response('ok')
   } catch (err) {
+    // v3.79.0: Immer 200 zurückgeben — sonst wiederholt Telegram die Zustellung
+    // und dieselbe Nachricht wird doppelt verarbeitet (Doppel-Forward/Insert).
     console.error('telegram-bot error:', err)
-    return new Response('error', { status: 500 })
+    return new Response('ok')
   }
 })

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Lightbulb, ArrowLeftRight, CalendarDays, Pin, Megaphone } from 'lucide-react'
 import { supabase } from '../supabase'
-import { sendTelegramMessage, sendTelegramPhoto, sendTelegramMediaGroup, notifyOwner } from '../telegram'
+import { sendTelegramMessage, sendTelegramMediaGroup } from '../telegram'
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
 import { SocialLinksEditor } from './SocialLinks'
@@ -600,33 +600,36 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
     // Build calendar link for zoom
     let calLink = ''
-    console.log('zoom check:', chatterMsgType, zoomDate, zoomTime)
     if (chatterMsgType === 'zoom' && zoomDate && zoomTime) {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
       const d = zoomDate.replace(/-/g, '')
       const t = zoomTime.replace(':', '') + '00'
       calLink = `\n\n📅 Zum Kalender hinzufügen:\nhttps://calendar.google.com/calendar/render?action=TEMPLATE&text=Zoom+Call+Thirteen+87&dates=${d}T${t}/${d}T${t}&ctz=${encodeURIComponent(tz)}&details=Team+Zoom+Call`
-      console.log('calLink generated:', calLink)
     }
 
-    let sent = 0
+    let sent = 0, failed = 0
     for (const chatter of targets) {
       if (!chatter.telegram_id) continue
       const personalText = chatterMsgText.replace('{name}', chatter.name) + calLink
-      await sendTelegramMessage(chatter.telegram_id, personalText)
-      await supabase.from('messages').insert({
-        model_name: chatter.name, model_telegram_id: chatter.telegram_id,
-        direction: 'out', contact_type: 'chatter', message_type: chatterMsgType,
-        text: personalText, status: 'sent', sent_by: userName,
-      })
-      await supabase.from('chatters_contact').update({ last_contacted: new Date().toISOString() }).eq('id', chatter.id)
-      sent++
+      try {
+        await sendTelegramMessage(chatter.telegram_id, personalText)
+        await supabase.from('messages').insert({
+          model_name: chatter.name, model_telegram_id: chatter.telegram_id,
+          direction: 'out', contact_type: 'chatter', message_type: chatterMsgType,
+          text: personalText, status: 'sent', sent_by: userName,
+        })
+        await supabase.from('chatters_contact').update({ last_contacted: new Date().toISOString() }).eq('id', chatter.id)
+        sent++
+      } catch (err) {
+        console.error('Chatter-Nachricht fehlgeschlagen:', chatter.name, err)
+        failed++
+      }
     }
     setChatterMsgText(''); setSelectedChatters(new Set())
     setZoomDate(''); setZoomTime('')
     loadMessages(); loadChatters()
     setSendingChatter(false)
-    alert(`✓ Nachricht an ${sent} Chatter gesendet`)
+    alert(`✓ Nachricht an ${sent} Chatter gesendet${failed ? ` (${failed} fehlgeschlagen)` : ''}`)
   }
 
   // v3.10.0: Massennachricht aus dem Chat-Tab
@@ -749,7 +752,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   }
 
   const addAvailability = async (chatterName) => {
-    if (!newAvailDay === '' || !newAvailFrom || !newAvailTo) return
+    if (newAvailDay === '' || !newAvailFrom || !newAvailTo) return
     await supabase.from('chatter_availability').insert({
       chatter_name: chatterName,
       day_of_week: parseInt(newAvailDay),
@@ -770,20 +773,26 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const sendReply = async (msg) => {
     if (!replyText.trim() || !msg.model_telegram_id) return
     setSendingReply(true)
-    await sendTelegramMessage(msg.model_telegram_id, replyText.trim())
-    await supabase.from('messages').insert({
-      model_name: msg.model_name,
-      model_telegram_id: msg.model_telegram_id,
-      direction: 'out',
-      contact_type: msg.contact_type,
-      text: replyText.trim(),
-      status: 'sent',
-      read: true,
-    })
-    setReplyText('')
-    setReplyingTo(null)
-    setSendingReply(false)
-    loadMessages()
+    try {
+      await sendTelegramMessage(msg.model_telegram_id, replyText.trim())
+      await supabase.from('messages').insert({
+        model_name: msg.model_name,
+        model_telegram_id: msg.model_telegram_id,
+        direction: 'out',
+        contact_type: msg.contact_type,
+        text: replyText.trim(),
+        status: 'sent',
+        read: true,
+      })
+      setReplyText('')
+      setReplyingTo(null)
+      loadMessages()
+    } catch (err) {
+      console.error('Antwort fehlgeschlagen:', err)
+      alert('⚠ Antwort konnte nicht gesendet werden: ' + (err?.message || err))
+    } finally {
+      setSendingReply(false)
+    }
   }
 
   // v2.8.8: Custom Verlauf Edit nur für Admins (Chris + Rey)
@@ -4225,7 +4234,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Status</span>
                   <select defaultValue={r.status || ''} id="edit-status" style={inputS}>
                     <option value="neu">neu</option>
-                    <option value="bestätigt">bestätigt</option>
+                    <option value="bestaetigt">bestätigt</option>
                     <option value="erledigt">erledigt</option>
                     <option value="abgelehnt">abgelehnt</option>
                   </select>

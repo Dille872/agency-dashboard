@@ -1,10 +1,17 @@
 // supabase/functions/send-telegram/index.ts
-// Proxy-Function: Frontend sendet Telegram-Nachrichten NUR noch hierüber.
-// Der Bot-Token liegt ausschließlich als Supabase-Secret (TELEGRAM_BOT_TOKEN)
-// und wird niemals an den Browser ausgeliefert.
+// v3.46.0: Auth-Gate ergänzt.
+// Der Bot-Token liegt weiterhin ausschließlich im Secret TELEGRAM_BOT_TOKEN
+// und wird nie an den Browser ausgeliefert.
+// NEU: Es dürfen nur noch EINGELOGGTE Dashboard-User senden. Ein Aufruf mit
+// nur dem öffentlichen Key (ohne echtes Login) wird abgewiesen. Es gibt bewusst
+// KEINE Rollen-Beschränkung — Chatter, Models, Admins usw. funktionieren alle
+// unverändert weiter.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const API = `https://api.telegram.org/bot${BOT_TOKEN}`
 
 const corsHeaders = {
@@ -26,6 +33,27 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // --- Auth-Gate: nur echte, eingeloggte User dürfen senden ---
+  // Ein Außenstehender hat höchstens den öffentlichen Key, aber kein Login-Token.
+  const authHeader = req.headers.get('Authorization') ?? ''
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!token) {
+    return json({ ok: false, description: 'Nicht eingeloggt' }, 401)
+  }
+  try {
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const { data, error } = await authClient.auth.getUser(token)
+    if (error || !data?.user) {
+      // Kein gültiges User-Login (z.B. nur der öffentliche Key) -> abweisen
+      return json({ ok: false, description: 'Nicht autorisiert' }, 401)
+    }
+  } catch (_e) {
+    return json({ ok: false, description: 'Auth-Prüfung fehlgeschlagen' }, 401)
+  }
+  // --- ab hier: Aufrufer ist ein eingeloggter Dashboard-User ---
 
   try {
     const payload = await req.json()

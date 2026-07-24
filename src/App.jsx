@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
-import { getTheme, setTheme, initTheme } from './theme'
+import { setTheme, initTheme } from './theme'
 import { APP_VERSION } from './version'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
@@ -55,6 +55,13 @@ export default function App() {
   const [viewMode, setViewMode] = useState('auto')
   const [theme, setThemeState] = useState(() => initTheme())
   const lastNoteCheck = useRef(null)
+  // v3.79.0: Refs halten die AKTUELLEN Werte für das 30s-Intervall und Realtime-Callbacks.
+  // Ohne sie bleibt deren Closure auf dem Initialwert (leer) hängen (Stale Closure) —
+  // dadurch feuerte der Online-Heartbeat nie und Model-Badges blieben auf 0.
+  const userDisplayNameRef = useRef('')
+  const userRoleRef = useRef(null)
+  useEffect(() => { userDisplayNameRef.current = userDisplayName }, [userDisplayName])
+  useEffect(() => { userRoleRef.current = userRole }, [userRole])
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -94,9 +101,9 @@ export default function App() {
       // Send heartbeat so admin shows as online in chatter list
       // Wichtig: nur wenn userDisplayName gesetzt ist — sonst kein Heartbeat
       // (verhindert dass Email-Usernames in online_status landen)
-      if (session?.user && userDisplayName) {
+      if (session?.user && userDisplayNameRef.current) {
         supabase.from('online_status').upsert({
-          display_name: userDisplayName,
+          display_name: userDisplayNameRef.current,
           last_seen: new Date().toISOString(),
           shift_online: false,
         }, { onConflict: 'display_name' }).then(() => {})
@@ -211,13 +218,12 @@ export default function App() {
     setUnreadChat(uniqueThreads.size)
 
     setUnreadModelChanges((modelCount || 0) + (ccCount || 0) + (reqCount || 0) + (modelTicketCount || 0))
-    setOpenSwaps(prev => prev) // keep existing swap count, add chatter tickets to crew badge below
 
     // Unread custom content for model portal
-    if (userRole === 'model' && userDisplayName) {
+    if (userRoleRef.current === 'model' && userDisplayNameRef.current) {
       const { count: modelCcCount } = await supabase
         .from('custom_content').select('*', { count: 'exact', head: true })
-        .eq('model_name', userDisplayName)
+        .eq('model_name', userDisplayNameRef.current)
         .eq('read_by_model', false)
         .eq('completed', false)
       setUnreadCustomContent(modelCcCount || 0)

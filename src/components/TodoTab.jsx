@@ -150,7 +150,7 @@ export default function TodoTab({ session, userDisplayName }) {
     if (openTodos.length === 0) return
     for (const todo of openTodos) {
       const readBy = Array.isArray(todo.read_by) ? todo.read_by : []
-      const updated = Array.from(new Set([...readBy, 'Chris', 'Rey']))
+      const updated = Array.from(new Set([...readBy, userDisplayName]))
       await supabase.from('todos').update({ read_by: updated }).eq('id', todo.id)
     }
     loadTodos()
