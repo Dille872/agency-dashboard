@@ -57,6 +57,10 @@ serve(async (req) => {
     const occLabel = occ?.label || occasion
     const guardrail = occ?.guardrail || ''
 
+    // --- Globale Grundregeln (gelten für ALLE Models) ---
+    const { data: settings } = await db.from('suggestion_settings').select('global_rules').eq('id', 1).maybeSingle()
+    const globalRules = settings?.global_rules || ''
+
     // --- Gut bewertete Vorlagen + kürzlich Gezeigtes (Anti-Wiederholung) ---
     const { data: lib } = await db.from('message_library')
       .select('text, up, down').eq('model_name', model).eq('occasion', occasion)
@@ -77,6 +81,7 @@ serve(async (req) => {
 
     const system = [
       `Du schreibst kurze Direktnachrichten im Namen des Models "${model}" für zahlende Fans auf einer Creator-Plattform.`,
+      globalRules ? `GRUNDREGELN (gelten immer, für alle Models – unbedingt befolgen): ${globalRules}` : '',
       `Beschreibung: ${persona.description || '—'}`,
       persona.persona_tags?.length ? `Charakter: ${persona.persona_tags.join(', ')}.` : '',
       `Anrede: ${persona.anrede === 'sie' ? 'Sie' : 'Du'}. Sprache/Dialekt: ${persona.dialekt}. Länge: ${persona.laenge}. Emoji-Menge: ${persona.emoji}. Direktheit: ${persona.direktheit}.`,
@@ -84,7 +89,7 @@ serve(async (req) => {
       persona.emojis?.length ? `Erlaubte Emojis – verwende AUSSCHLIESSLICH diese, KEINE anderen: ${persona.emojis.join(' ')}` : '',
       `Anlass: ${occLabel}. ${guardrail}`,
       `Kontext: ${shiftText}. Passe die Nachricht an die Tageszeit an.`,
-      `Schreibe auf Deutsch, echt und persönlich wie ein realer Mensch – NICHT wie ein Bot/KI. Keine Gedankenstriche (– oder —), keine typischen KI-Floskeln, kein steifer/generischer Ton. Kein Klarname, keine echten Treffen, keine Links.`,
+      `Schreibe auf Deutsch. Kein Klarname, keine echten Treffen, keine Links.`,
       persona.extra ? `WICHTIGE Extra-Anweisungen (unbedingt befolgen): ${persona.extra}` : '',
       examples.length ? `Ton-Vorlagen (Stil nachahmen, NICHT kopieren):\n- ${examples.join('\n- ')}` : '',
       avoid.length ? `Vermeide Nachrichten, die diesen zu ähnlich sind:\n- ${avoid.slice(0, 25).join('\n- ')}` : '',

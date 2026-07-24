@@ -6,6 +6,7 @@ import { Lightbulb, Trash2, Plus, Save } from 'lucide-react'
 // Steckbriefe pflegen, Anlässe verwalten, Freigabe pro Chatter, Auswertung, History.
 
 const TABS = [
+  { k: 'basics', label: '⚙️ Basics' },
   { k: 'steck', label: '🎭 Steckbriefe' },
   { k: 'occ', label: '🗂️ Anlässe' },
   { k: 'frei', label: '✅ Freigabe' },
@@ -59,8 +60,18 @@ export default function SuggestionsAdmin() {
   const [statOcc, setStatOcc] = useState('')
   const [lib, setLib] = useState([])
   const [hist, setHist] = useState([])
+  const [basics, setBasics] = useState('')
+  const [basicsSaving, setBasicsSaving] = useState(false)
 
   useEffect(() => { loadAll() }, [])
+
+  const saveBasics = async () => {
+    setBasicsSaving(true)
+    const { error } = await supabase.from('suggestion_settings').upsert({ id: 1, global_rules: basics, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+    setBasicsSaving(false)
+    if (error) { alert('Fehler: ' + error.message); return }
+    alert('Basics gespeichert ✓')
+  }
 
   const loadAll = async () => {
     const { data: m } = await supabase.from('models_contact').select('name, active').order('name')
@@ -76,6 +87,8 @@ export default function SuggestionsAdmin() {
     const { data: c } = await supabase.from('user_roles').select('user_id, display_name, roles, role, can_suggest')
     setChatters((c || []).filter(u => (u.roles || []).includes('chatter') || u.role === 'chatter').filter(u => u.display_name))
     if (active.length) setStatModel(active[0])
+    const { data: s } = await supabase.from('suggestion_settings').select('global_rules').eq('id', 1).maybeSingle()
+    setBasics(s?.global_rules || '')
   }
 
   const emptyForm = (name) => ({ model_name: name, description: '', extra: '', persona_tags: [], anrede: 'du', dialekt: 'hochdeutsch', laenge: 'kurz', emoji: 'mittel', direktheit: 'normal', anzahl: 8, nogos: [], emojis: [], examples: [] })
@@ -142,6 +155,16 @@ export default function SuggestionsAdmin() {
           }}>{t.label}</button>
         ))}
       </div>
+
+      {/* BASICS */}
+      {tab === 'basics' && (
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}><span style={{ fontSize: 16 }}>⚙️</span><span style={{ fontSize: 14, fontWeight: 800 }}>Basics – Grundregeln für ALLE Models</span></div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16 }}>Diese Regeln gelten bei jeder Nachricht und jedem Model. Einmal hier festlegen – das Modelspezifische kommt zusätzlich im Steckbrief obendrauf.</div>
+          <textarea value={basics} onChange={e => setBasics(e.target.value)} placeholder="z.B. Klinge nie wie ein Bot oder KI. Keine Gedankenstriche (– oder —). Keine KI-Floskeln. Schreib locker, natürlich und persönlich." style={{ ...inp, minHeight: 150, resize: 'vertical', lineHeight: 1.6, marginBottom: 14 }} />
+          <button onClick={saveBasics} disabled={basicsSaving} style={{ background: `linear-gradient(135deg,#8b5cf6,${ACC})`, color: '#fff', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{basicsSaving ? 'Speichere…' : 'Basics speichern'}</button>
+        </div>
+      )}
 
       {/* STECKBRIEFE */}
       {tab === 'steck' && form && (
