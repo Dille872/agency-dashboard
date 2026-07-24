@@ -102,7 +102,10 @@ export default function App() {
       // Send heartbeat so admin shows as online in chatter list
       // Wichtig: nur wenn userDisplayName gesetzt ist — sonst kein Heartbeat
       // (verhindert dass Email-Usernames in online_status landen)
-      if (session?.user && userDisplayNameRef.current) {
+      // v3.89.0: Chatter NICHT hier upserten – deren shift_online verwaltet der
+      // ChatterPortal-Check-in. Sonst überschreibt dieser Heartbeat den Check-in
+      // alle 30s auf false → shift-alert hält jeden für "nicht eingecheckt".
+      if (session?.user && userDisplayNameRef.current && userRoleRef.current !== 'chatter') {
         supabase.from('online_status').upsert({
           display_name: userDisplayNameRef.current,
           last_seen: new Date().toISOString(),
@@ -142,11 +145,15 @@ export default function App() {
         setUserRole(data.role)
         setUserRoles(roles)
         setUserDisplayName(name)
-        await supabase.from('online_status').upsert({
-          display_name: name,
-          last_seen: new Date().toISOString(),
-          shift_online: false,
-        }, { onConflict: 'display_name' })
+        // v3.89.0: Chatter hier NICHT upserten (siehe Heartbeat oben) – sonst
+        // wird ihr Check-in-Flag beim Laden/Reload auf false gesetzt.
+        if (!roles.includes('chatter')) {
+          await supabase.from('online_status').upsert({
+            display_name: name,
+            last_seen: new Date().toISOString(),
+            shift_online: false,
+          }, { onConflict: 'display_name' })
+        }
       } else {
         // v3.57.0: Kein sauberer user_roles-Eintrag (fehlende Rolle oder fehlender
         // display_name). Früher wurde hier still auf 'chatter' zurückgefallen — dadurch

@@ -79,7 +79,8 @@ serve(async (_req) => {
       const shift = parts[2]
       const chatterName = val?.chatter
 
-      if (dayIso !== todayIso || !chatterName) continue
+      // v3.89.0: Freischicht (__FREI__) ist keine echte Schicht -> kein Alert
+      if (dayIso !== todayIso || !chatterName || chatterName === '__FREI__') continue
 
       const alertKey = `${chatterName}_${shift}`
       if (alreadyAlerted.has(alertKey)) continue
