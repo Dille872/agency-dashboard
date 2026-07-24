@@ -1,0 +1,137 @@
+// supabase/functions/generate-messages/index.ts
+// Erzeugt Nachrichten-Vorschläge für ein Model + Anlass + Schicht via Anthropic (Claude).
+// - Auth-Gate: nur eingeloggte Dashboard-User.
+// - Steckbrief-Pflicht: fehlt der Steckbrief oder ist er inaktiv -> keine Vorschläge.
+// - Nutzt gut bewertete Bibliotheks-Nachrichten als Vorlage, meidet kürzlich Gezeigtes.
+// - Speichert jeden Vorschlag (mit Model/Anlass/Schicht/Chatter) und räumt >7 Tage auf.
+//
+// Nötige Secrets: ANTHROPIC_API_KEY  (optional: ANTHROPIC_MODEL)
+// Vorhanden von Supabase: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
+const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
+// Bei Bedarf auf ein aktuelles Modell anpassen (Env ANTHROPIC_MODEL):
+const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-3-5-haiku-latest'
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+const json = (b: unknown, s = 200) =>
+  new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } })
+
+const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  try {
+    // --- Auth-Gate ---
+    const authHeader = req.headers.get('Authorization') ?? ''
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    if (!token) return json({ ok: false, error: 'Nicht eingeloggt' }, 401)
+    const auth = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } })
+    const { data: u, error: authErr } = await auth.auth.getUser(token)
+    if (authErr || !u?.user) return json({ ok: false, error: 'Nicht autorisiert' }, 401)
+
+    const body = await req.json().catch(() => ({}))
+    const model = String(body.model || '').trim()
+    const occasion = String(body.occasion || '').trim()
+    const shift = String(body.shift || '').trim()   // frueh | spaet | nacht
+    const chatter = String(body.chatter || '').trim()
+    if (!model || !occasion) return json({ ok: false, error: 'model/occasion fehlt' }, 400)
+
+    // --- Steckbrief laden (Pflicht) ---
+    const { data: persona } = await db.from('model_personas').select('*').eq('model_name', model).maybeSingle()
+    if (!persona || persona.active === false) {
+      return json({ ok: false, error: `Für ${model} ist noch kein Steckbrief eingerichtet.` }, 409)
+    }
+    const count = Math.min(Math.max(Number(body.count || persona.anzahl || 8), 1), 12)
+
+    // --- Anlass ---
+    const { data: occ } = await db.from('message_occasions').select('*').eq('key', occasion).maybeSingle()
+    const occLabel = occ?.label || occasion
+    const guardrail = occ?.guardrail || ''
+
+    // --- Gut bewertete Vorlagen + kürzlich Gezeigtes (Anti-Wiederholung) ---
+    const { data: lib } = await db.from('message_library')
+      .select('text, up, down').eq('model_name', model).eq('occasion', occasion)
+      .order('up', { ascending: false }).limit(6)
+    const goodOnes = (lib || []).filter((r) => (r.up || 0) > (r.down || 0)).map((r) => r.text)
+
+    const since = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString()
+    const { data: recent } = await db.from('message_suggestions')
+      .select('text').eq('model_name', model).eq('occasion', occasion).gte('created_at', since).limit(60)
+    const avoid = (recent || []).map((r) => r.text)
+
+    // --- Prompt bauen ---
+    const shiftText = shift === 'frueh' ? 'Frühschicht (Vormittag)'
+      : shift === 'spaet' ? 'Spätschicht (Nachmittag/Abend)'
+      : shift === 'nacht' ? 'Nachtschicht (spät nachts)' : 'unbestimmte Tageszeit'
+
+    const examples = [...(persona.examples || []), ...goodOnes].slice(0, 8)
+
+    const system = [
+      `Du schreibst kurze Direktnachrichten im Namen des Models "${model}" für zahlende Fans auf einer Creator-Plattform.`,
+      `Beschreibung: ${persona.description || '—'}`,
+      persona.persona_tags?.length ? `Charakter: ${persona.persona_tags.join(', ')}.` : '',
+      `Anrede: ${persona.anrede === 'sie' ? 'Sie' : 'Du'}. Sprache/Dialekt: ${persona.dialekt}. Länge: ${persona.laenge}. Emoji-Menge: ${persona.emoji}. Direktheit: ${persona.direktheit}.`,
+      persona.nogos?.length ? `Absolute No-Gos (niemals): ${persona.nogos.join('; ')}.` : '',
+      `Anlass: ${occLabel}. ${guardrail}`,
+      `Kontext: ${shiftText}. Passe die Nachricht an die Tageszeit an.`,
+      `Schreibe auf Deutsch, klingt echt und persönlich, nicht generisch. Kein Klarname, keine echten Treffen, keine Links.`,
+      examples.length ? `Ton-Vorlagen (Stil nachahmen, NICHT kopieren):\n- ${examples.join('\n- ')}` : '',
+      avoid.length ? `Vermeide Nachrichten, die diesen zu ähnlich sind:\n- ${avoid.slice(0, 25).join('\n- ')}` : '',
+      `Antworte AUSSCHLIESSLICH als JSON: {"messages":["...","..."]} mit genau ${count} unterschiedlichen Nachrichten. Kein weiterer Text.`,
+    ].filter(Boolean).join('\n')
+
+    // --- Anthropic ---
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 1024,
+        temperature: 1,
+        system,
+        messages: [{ role: 'user', content: `Gib mir ${count} Vorschläge für "${occLabel}".` }],
+      }),
+    })
+    if (!aiRes.ok) {
+      const t = await aiRes.text()
+      return json({ ok: false, error: `Anthropic-Fehler ${aiRes.status}: ${t.slice(0, 300)}` }, 502)
+    }
+    const aiJson = await aiRes.json()
+    const raw = aiJson?.content?.[0]?.text || ''
+    let messages: string[] = []
+    try {
+      const m = raw.match(/\{[\s\S]*\}/)
+      messages = JSON.parse(m ? m[0] : raw).messages || []
+    } catch {
+      // Fallback: Zeilen extrahieren
+      messages = raw.split('\n').map((l: string) => l.replace(/^[-*\d.\s"]+/, '').replace(/"$/, '').trim()).filter(Boolean)
+    }
+    messages = messages.filter((x) => typeof x === 'string' && x.trim().length > 0).slice(0, count)
+    if (messages.length === 0) return json({ ok: false, error: 'Keine Vorschläge erhalten' }, 502)
+
+    // --- Speichern (mit Model/Anlass/Schicht/Chatter) ---
+    const rows = messages.map((text) => ({ model_name: model, occasion, shift: shift || null, chatter: chatter || null, text }))
+    const { data: inserted } = await db.from('message_suggestions').insert(rows).select('id, text')
+
+    // --- Opportunistischer 7-Tage-Cleanup (kein Cron nötig) ---
+    const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+    await db.from('message_suggestions').delete().lt('created_at', cutoff)
+
+    return json({ ok: true, model, occasion, shift, suggestions: inserted || [] })
+  } catch (err) {
+    return json({ ok: false, error: `generate-messages: ${err}` }, 500)
+  }
+})

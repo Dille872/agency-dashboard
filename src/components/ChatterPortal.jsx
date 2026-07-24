@@ -5,6 +5,7 @@ import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
 import SurveyModal from './SurveyModal'
 import SwapModal from './SwapModal'
+import MessageSuggestions from './MessageSuggestions'
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
 import { APP_VERSION } from '../version'
@@ -2005,6 +2006,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             </div>
           </div>
         </Collapsible>
+
+        {/* v3.81.0: KI-Nachrichten-Vorschläge */}
+        <MessageSuggestions displayName={displayName} />
 
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
