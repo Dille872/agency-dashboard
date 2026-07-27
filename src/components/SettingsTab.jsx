@@ -3,6 +3,7 @@ import { BookOpen } from 'lucide-react'
 import { supabase } from '../supabase'
 import BillingTab from './BillingTab'
 import ExportTab from './ExportTab'
+import { logActivity } from '../activity'
 
 const SECTIONS = [
   { key: 'team', label: 'Team' },
@@ -400,6 +401,10 @@ export default function SettingsTab() {
     // Primary role = first in array
     const primaryRole = updatedRoles[0]
     await supabase.from('user_roles').update({ role: primaryRole, roles: updatedRoles }).eq('user_id', userId)
+    logActivity('user.roles', {
+      entity: users.find(u => u.user_id === userId)?.display_name || userId,
+      detail: updatedRoles.join(', '),
+    })
     setEditingRole(null)
     loadUsers()
   }
@@ -407,6 +412,7 @@ export default function SettingsTab() {
   const saveBotMessage = async (key, value) => {
     setSavingMsg(true)
     await supabase.from('bot_settings').upsert({ key, value }, { onConflict: 'key' })
+    logActivity('bot.message', { entity: key })
     setBotMessages(prev => ({ ...prev, [key]: value }))
     setEditingMsg(null); setSavingMsg(false)
   }
@@ -1159,6 +1165,7 @@ function GuidelinesEditor({ cardS, inputS, labelS }) {
       order_index: maxOrder + 1,
       updated_by: user?.user?.email || 'admin',
     })
+    logActivity('guideline.create', { entity: newTitle.trim() })
     setNewTitle('')
     await loadGuidelines()
     setCreating(false)
@@ -1172,11 +1179,14 @@ function GuidelinesEditor({ cardS, inputS, labelS }) {
       updated_by: user?.user?.email || 'admin',
     }).eq('id', id)
     setGuidelines(prev => prev.map(g => g.id === id ? { ...g, ...patch } : g))
+    logActivity('guideline.edit', { entity: patch.title || guidelines.find(g => g.id === id)?.title || `#${id}` })
   }
 
   const deleteGuideline = async (id) => {
     if (!confirm('Diese Guideline wirklich löschen?')) return
+    const title = guidelines.find(g => g.id === id)?.title || `#${id}`
     await supabase.from('guidelines').delete().eq('id', id)
+    logActivity('guideline.delete', { entity: title })
     await loadGuidelines()
   }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Lightbulb, Trash2, Plus, Save } from 'lucide-react'
+import { logActivity } from '../activity'
 
 // v3.83.0: Admin-Bereich für die Nachrichten-Vorschläge.
 // Steckbriefe pflegen, Anlässe verwalten, Freigabe pro Chatter, Auswertung, History.
@@ -70,6 +71,7 @@ export default function SuggestionsAdmin() {
     const { error } = await supabase.from('suggestion_settings').upsert({ id: 1, global_rules: basics, updated_at: new Date().toISOString() }, { onConflict: 'id' })
     setBasicsSaving(false)
     if (error) { alert('Fehler: ' + error.message); return }
+    logActivity('suggestions.basics', {})
     alert('Basics gespeichert ✓')
   }
 
@@ -98,6 +100,7 @@ export default function SuggestionsAdmin() {
     setSaving(false)
     if (error) { alert('Fehler: ' + error.message); return }
     setPersonas(prev => ({ ...prev, [form.model_name]: { ...form } }))
+    logActivity('persona.edit', { entity: form.model_name })
     alert('Steckbrief gespeichert ✓')
   }
 

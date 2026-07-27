@@ -16,6 +16,7 @@ import NotesTab from './components/NotesTab'
 import CommTab from './components/CommTab'
 import ChatWidget from './components/ChatWidget'
 import ActivityWidget from './components/ActivityWidget'
+import AdminBell from './components/AdminBell'
 import ScheduleTab from './components/ScheduleTab'
 import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
@@ -829,6 +830,8 @@ export default function App() {
         <>
           <ChatWidget session={session} displayName={userDisplayName} unread={unreadChat} />
           <ActivityWidget onNavigate={(tab, focus) => { setActiveTab(tab); if (focus) setCommFocus({ ...focus, ts: Date.now() }) }} />
+          {/* v3.97.0: dritte Glocke — was die ANDEREN Admins gemacht haben */}
+          <AdminBell me={userDisplayName} onNavigate={(tab) => setActiveTab(tab)} />
         </>
       )}
     </div>

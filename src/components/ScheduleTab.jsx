@@ -3,6 +3,7 @@ import { Sunrise, Sunset, Moon, Clock } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
 import BlockOfferModal from './BlockOfferModal'
+import { logActivity } from '../activity'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -529,6 +530,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
     }
     setHasSavedData(true)
     setSaving(false)
+    // v3.97.0: protokollieren — schedule.assignments wird beim Speichern
+    // überschrieben, ohne Protokoll wäre der Bearbeiter nicht rekonstruierbar.
+    logActivity('schedule.edit', { entity: `KW ${getKW(weekStart)}`, detail: `Woche ab ${weekKey}` })
   }
 
   const togglePublish = async () => {
@@ -543,6 +547,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setScheduleStatus(newStatus)
     setHasSavedData(true)
     setPublishing(false)
+    logActivity(newStatus === 'live' ? 'schedule.publish' : 'schedule.unpublish',
+      { entity: `KW ${getKW(weekStart)}`, detail: `Woche ab ${weekKey}` })
   }
 
   const [autoPlanning, setAutoPlanning] = useState(false)
