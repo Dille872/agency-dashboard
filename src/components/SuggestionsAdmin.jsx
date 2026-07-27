@@ -112,8 +112,14 @@ export default function SuggestionsAdmin() {
     const label = prompt('Anzeigename (z.B. Geburtstag)') || key
     const { data } = await supabase.from('message_occasions').insert({ key, label, icon: '💬', sort: occasions.length + 1 }).select()
     if (data) setOccasions([...occasions, ...data])
+    logActivity('occasion.edit', { entity: label, detail: 'angelegt' })
   }
-  const delOcc = async (id) => { await supabase.from('message_occasions').delete().eq('id', id); setOccasions(occasions.filter(o => o.id !== id)) }
+  const delOcc = async (id) => {
+    const label = occasions.find(o => o.id === id)?.label || `#${id}`
+    await supabase.from('message_occasions').delete().eq('id', id)
+    setOccasions(occasions.filter(o => o.id !== id))
+    logActivity('occasion.edit', { entity: label, detail: 'gelöscht' })
+  }
   const saveOccField = async (id, field, val) => {
     setOccasions(occasions.map(o => o.id === id ? { ...o, [field]: val } : o))
     await supabase.from('message_occasions').update({ [field]: val }).eq('id', id)

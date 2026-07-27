@@ -335,6 +335,7 @@ export default function SettingsTab() {
     setStatusBusy(false)
     setOffboardingUser(null)
     setStatusNote('')
+    logActivity('user.status', { entity: name, detail: newStatus === 'active' ? 'wieder aktiviert' : `stillgelegt${note ? ': ' + note : ''}` })
     loadUsers(); loadModels(); loadChatters()
   }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Users, ChevronDown, CalendarCog, Send, ClipboardList, Megaphone, BookOpen, Settings, ShieldCheck, Sparkles, Bot } from 'lucide-react'
+import { Users, ChevronDown, CalendarCog, Send, ClipboardList, Megaphone, BookOpen, Settings, ShieldCheck, Sparkles, Bot, Inbox, Euro, Bell } from 'lucide-react'
 import { supabase } from '../supabase'
 import { ACTION_LABELS } from '../activity'
 
@@ -28,6 +28,7 @@ const CHIPS = [
   { key: 'schedule', label: 'Dienstplan' },
   { key: 'messages', label: 'Nachrichten' },
   { key: 'tasks', label: 'Aufgaben' },
+  { key: 'content', label: 'Custom Content' },
   { key: 'settings', label: 'Einstellungen' },
 ]
 
@@ -40,6 +41,12 @@ const ACTION_META = {
   suggestions: { cat: 'settings', Icon: Sparkles, color: '#f59e0b' },
   persona: { cat: 'settings', Icon: Sparkles, color: '#f59e0b' },
   occasion: { cat: 'settings', Icon: Sparkles, color: '#f59e0b' },
+  customcontent: { cat: 'content', Icon: Inbox, color: '#f59e0b' },
+}
+// Feinere Icons je nach konkreter Aktion (überschreibt ACTION_META)
+const ICON_BY_ACTION = {
+  'customcontent.payment': { Icon: Euro, color: '#10b981' },
+  'customcontent.reminder': { Icon: Bell, color: '#a78bfa' },
 }
 
 function relTime(iso) {
@@ -79,7 +86,7 @@ export default function AdminBell({ me, onNavigate }) {
     const since = new Date(); since.setDate(since.getDate() - 14)
     const sinceIso = since.toISOString()
 
-    const [logRes, msgRes, todoRes, annRes, swapRes] = await Promise.allSettled([
+    const [logRes, msgRes, todoRes, annRes, swapRes, ccRes] = await Promise.allSettled([
       supabase.from('activity_log').select('*').gte('created_at', sinceIso)
         .order('created_at', { ascending: false }).limit(80),
       supabase.from('messages').select('id, created_at, model_name, contact_type, sent_by, text, message_type')
@@ -91,6 +98,11 @@ export default function AdminBell({ me, onNavigate }) {
         .order('created_at', { ascending: false }).limit(20),
       supabase.from('shift_swaps').select('*').gte('created_at', sinceIso)
         .order('created_at', { ascending: false }).limit(40),
+      // Bearbeitete Content-Anfragen: content_requests führt edited_by/edited_at
+      // bereits mit — dafür braucht es kein Protokoll, das geht rückwirkend.
+      supabase.from('content_requests').select('id, model_name, chatter_name, request_text, edited_text, status, edited_by, edited_at')
+        .not('edited_at', 'is', null).gte('edited_at', sinceIso)
+        .order('edited_at', { ascending: false }).limit(40),
     ])
     const rows = (r) => (r.status === 'fulfilled' ? (r.value.data || []) : [])
     const out = []
@@ -98,13 +110,16 @@ export default function AdminBell({ me, onNavigate }) {
     // 1) Protokollierte Aktionen
     for (const l of rows(logRes)) {
       const prefix = String(l.action || '').split('.')[0]
-      const meta = ACTION_META[prefix] || { cat: 'settings', Icon: Settings, color: '#8888aa' }
+      const base = ACTION_META[prefix] || { cat: 'settings', Icon: Settings, color: '#8888aa' }
+      const meta = { ...base, ...(ICON_BY_ACTION[l.action] || {}) }
       out.push({
         id: 'log-' + l.id, when: l.created_at, actor: l.actor, cat: meta.cat,
         Icon: meta.Icon, color: meta.color,
         title: `${l.actor} ${ACTION_LABELS[l.action] || l.action}`,
         text: [l.entity, l.detail].filter(Boolean).join(' · '),
-        nav: meta.cat === 'schedule' ? { tab: 'schedule' } : { tab: 'settings' },
+        nav: meta.cat === 'schedule' ? { tab: 'schedule' }
+          : meta.cat === 'content' ? { tab: 'models-comm' }
+          : { tab: 'settings' },
       })
     }
 
@@ -155,6 +170,17 @@ export default function AdminBell({ me, onNavigate }) {
       })
     }
 
+    // 6) Content-Anfragen bearbeitet — ableitbar über edited_by/edited_at
+    for (const r of rows(ccRes)) {
+      out.push({
+        id: 'cc-' + r.id, when: r.edited_at, actor: r.edited_by, cat: 'content',
+        Icon: Inbox, color: '#f59e0b',
+        title: `${r.edited_by || 'Jemand'} hat eine Content-Anfrage bearbeitet`,
+        text: [r.model_name, r.status, short(r.edited_text || r.request_text, 60)].filter(Boolean).join(' · '),
+        nav: { tab: 'models-comm' },
+      })
+    }
+
     out.sort((a, b) => new Date(b.when) - new Date(a.when))
     setItems(out.slice(0, 150))
   }, [])
@@ -170,7 +196,7 @@ export default function AdminBell({ me, onNavigate }) {
     let t = 0
     const kick = () => { clearTimeout(t); t = setTimeout(load, 500) }
     let ch = supabase.channel('adminbell-live')
-    for (const table of ['activity_log', 'messages', 'todos', 'announcements', 'shift_swaps']) {
+    for (const table of ['activity_log', 'messages', 'todos', 'announcements', 'shift_swaps', 'content_requests']) {
       ch = ch.on('postgres_changes', { event: '*', schema: 'public', table }, kick)
     }
     ch.subscribe()

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Lightbulb, ArrowLeftRight, CalendarDays, Pin, Megaphone } from 'lucide-react'
 import { supabase } from '../supabase'
+import { logActivity } from '../activity'
 import { sendTelegramMessage, sendTelegramMediaGroup } from '../telegram'
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
@@ -1504,6 +1505,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     } else if (type === 'remainder') {
       await supabase.from('content_requests').update({ remainder_paid: true, remainder_paid_at: date }).eq('id', req.id)
     }
+    logActivity('customcontent.payment', {
+      entity: req.model_name,
+      detail: `${type === 'deposit' ? 'Anzahlung' : 'Restzahlung'} als bezahlt markiert`,
+    })
     loadContentRequests()
   }
 
@@ -1597,6 +1602,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const updateRequestStatus = async (id, status, notify = true) => {
     const req = contentRequests.find(r => r.id === id)
     await supabase.from('content_requests').update({ status }).eq('id', id)
+    // v3.97.0: content_requests hält keinen Status-Bearbeiter fest — ohne Protokoll
+    // wäre nicht nachvollziehbar, wer einen Custom bestätigt oder abgelehnt hat.
+    logActivity('customcontent.status', {
+      entity: req?.model_name || `#${id}`,
+      detail: `${status}${req?.request_text ? ' · ' + String(req.request_text).slice(0, 60) : ''}`,
+    })
 
     // v3.56.0: Stille Korrektur (z.B. "erledigt" zurücknehmen) — nur Status ändern, kein Telegram.
     if (!notify) { loadContentRequests(); return }
@@ -1748,6 +1759,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         sent_by: userName,
       })
       alert(`🔔 Reminder an ${req.model_name} gesendet.`)
+      logActivity('customcontent.reminder', { entity: req.model_name, detail: String(req.request_text || '').slice(0, 60) })
     } catch (err) {
       alert('Telegram-Fehler: ' + (err?.message || err))
     }

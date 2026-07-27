@@ -68,4 +68,7 @@ export const ACTION_LABELS = {
   'suggestions.basics': 'hat die KI-Basics geändert',
   'persona.edit': 'hat einen Steckbrief bearbeitet',
   'occasion.edit': 'hat die Anlässe geändert',
+  'customcontent.status': 'hat einen Custom bearbeitet',
+  'customcontent.payment': 'hat eine Zahlung eingetragen',
+  'customcontent.reminder': 'hat einen Custom-Reminder geschickt',
 }

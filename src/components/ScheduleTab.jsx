@@ -648,6 +648,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
 
     setSchedule(newSchedule)
     setAutoPlanning(false)
+    logActivity('schedule.autoplan', { entity: `KW ${getKW(weekStart)}`, detail: `Woche ab ${weekKey}` })
     alert('✓ Plan wurde automatisch ausgefüllt – bitte prüfen und anpassen!')
   }
 
