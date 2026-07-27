@@ -465,6 +465,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newAbsenceShifts, setNewAbsenceShifts] = useState([]) // v3.29.0: leer = ganzer Tag, sonst nur diese Schichten verfügbar
   const [next7Schedules, setNext7Schedules] = useState([])
   const [absentLoading, setAbsentLoading] = useState(false)
+  // v3.98.0: In "Meine Schichten" ist nur die heutige Schicht offen. null = Standard
+  // (heute offen, Rest zu); sonst der Index der manuell aufgeklappten Zeile.
+  const [openShiftIdx, setOpenShiftIdx] = useState(null)
   const [announcements, setAnnouncements] = useState([])
   const [showAnnArchive, setShowAnnArchive] = useState(false)
   const [showNewRequestForm, setShowNewRequestForm] = useState(false)
@@ -483,7 +486,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // v3.95.0: Key auf _v2 gehoben — durch die Tab-Aufteilung sind pro Tab nur noch
   // 3–5 Panels sichtbar, deshalb stehen die wichtigen jetzt standardmäßig OFFEN.
   // Der alte _collapse_-Key wird dadurch ignoriert (kein Migrations-Aufwand).
-  const COLLAPSE_KEY = `chatterportal_collapse_v2_${displayName || 'default'}`
+  const COLLAPSE_KEY = `chatterportal_collapse_v3_${displayName || 'default'}`
   const [collapsed, setCollapsed] = useState(() => {
     try {
       const stored = localStorage.getItem(COLLAPSE_KEY)
@@ -492,10 +495,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     return {
       todos: false,      // Heute: offen
       shifts: false,     // Heute: offen
-      messages: false,   // Heute: offen
+      messages: false,   // Heute: offen (Schichtnotiz)
       note: true,
-      absence: true,
-      swap: true,        // Heute: zu (selten gebraucht)
+      absence: false,    // Organisation: offen (nur zwei Panels im Tab)
+      swap: true,        // Organisation: zu (selten gebraucht)
       models: false,     // Models: offen
       content: false,    // Content: offen
       history: true,
@@ -520,7 +523,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [tab, setTab] = useState(() => {
     try {
       const stored = localStorage.getItem(TAB_KEY)
-      if (stored && ['heute', 'models', 'content', 'mehr'].includes(stored)) return stored
+      if (stored && ['heute', 'models', 'content', 'orga', 'mehr'].includes(stored)) return stored
     } catch {}
     return 'heute'
   })
@@ -1763,7 +1766,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             gibt es nichts zu tun, erscheint hier auch nichts. Klick springt zur Stelle. */}
         {(() => {
           const openTodos = myTodos.filter(t => !t.completed).length
-          const unreadTeam = messages.filter(m => !m.read_at && m.direction === 'out').length
           const openContent = contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length
           const chips = []
           if (openTodos > 0) chips.push({
@@ -1782,10 +1784,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           })
           if (isOnline && hasShiftNote) chips.push({
             key: 'note-ok', tone: '#10b981', icon: '✅', label: 'Schichtnotiz erledigt', onClick: null,
-          })
-          if (unreadTeam > 0) chips.push({
-            key: 'team', tone: '#7c3aed', count: unreadTeam, label: unreadTeam === 1 ? 'Team-Nachricht' : 'Team-Nachrichten',
-            onClick: () => { goTab('heute'); openPanel('messages') },
           })
           if (openContent > 0) chips.push({
             key: 'content', tone: '#06b6d4', count: openContent, label: 'Custom offen',
@@ -1825,13 +1823,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {/* ── v3.95.0: Tab-Navigation ──
             Vier Arbeitsmomente statt einer Liste aus 13 Panels. Badge = etwas offen. */}
         {(() => {
+          // v3.98.0: Team-Nachrichten zählen hier nicht mehr mit — dafür ist der
+          // Zähler an der Chat-Bubble zuständig, sonst wird dieselbe Sache doppelt gemeldet.
           const openTodos = myTodos.filter(t => !t.completed).length
-          const unreadTeam = messages.filter(m => !m.read_at && m.direction === 'out').length
           const openContent = contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length
           const TABS = [
-            { key: 'heute', icon: '📅', label: 'Heute', badge: openTodos + unreadTeam, urgent: openTodos > 0 },
+            { key: 'heute', icon: '📅', label: 'Heute', badge: openTodos, urgent: openTodos > 0 },
             { key: 'models', icon: '🎬', label: 'Models', badge: 0 },
             { key: 'content', icon: '📥', label: 'Content', badge: openContent },
+            { key: 'orga', icon: '🗂️', label: 'Organisation', badge: 0 },
             { key: 'mehr', icon: '📚', label: 'Mehr', badge: 0 },
           ]
           return (
@@ -1935,12 +1935,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     : s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
                   // v2.9.0: Bin ich Trainee/Co bei mind. einem Model in dieser Schicht?
                   const traineeEntry = s.models.find(m => m.asTrainee)
+                  // Standard: nur heute offen. Klick auf eine Zeile klappt sie auf/zu.
+                  const isOpen = openShiftIdx === i || (openShiftIdx === null && today)
                   return (
-                    <div key={i} style={{
-                      padding: '10px 12px', background: today ? 'rgba(16,185,129,0.05)' : 'var(--bg-card2)',
-                      borderRadius: 8, border: `1px solid ${today ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s.models.length > 1 ? 8 : 0 }}>
+                    <div key={i}
+                      onClick={() => setOpenShiftIdx(isOpen ? -1 : i)}
+                      style={{
+                        padding: '10px 12px', background: today ? 'rgba(16,185,129,0.05)' : 'var(--bg-card2)',
+                        borderRadius: 8, border: `1px solid ${today ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
+                        cursor: 'pointer',
+                      }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isOpen ? 8 : 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div style={{ width: 4, height: 32, borderRadius: 2, background: SHIFT_COLORS[s.shift], flexShrink: 0 }} />
                           <div>
@@ -1975,25 +1980,32 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                           }}>
                             {today ? 'Heute' : past ? 'Erledigt' : 'Geplant'}
                           </span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 10, textAlign: 'center' }}>{isOpen ? '▼' : '▶'}</span>
                         </div>
                       </div>
-                      {/* Model list */}
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 14 }}>
-                        {s.models.map((m, mi) => (
-                          <span key={mi} style={{ fontSize: 10, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 7px', color: 'var(--text-secondary)' }}>
-                            {m.modelName}
-                          </span>
-                        ))}
-                      </div>
+                      {/* Model list — nur wenn aufgeklappt */}
+                      {isOpen && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 14 }}>
+                          {s.models.map((m, mi) => (
+                            <span key={mi} style={{ fontSize: 10, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 7px', color: 'var(--text-secondary)' }}>
+                              {m.modelName}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
               </div>
             )}
 
-            {/* Abwesenheit eintragen */}
-            <div style={{ marginTop: 16, borderTop: '1px solid #1e1e3a', paddingTop: 14 }}>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Ich bin nicht verfügbar am</div>
+          </div>
+        </Collapsible>
+
+        {/* v3.98.0: Abwesenheit aus dem Schichten-Panel herausgelöst und in den
+            Organisation-Tab verschoben — das Schichten-Panel war zu voll. */}
+        <Collapsible hidden={tab !== 'orga'} isCollapsed={collapsed.absence} onToggle={() => toggleCollapse('absence')} icon="🌴" title="Ich bin nicht verfügbar am" badge={myAbsences.length || null} badgeColor="#ef4444">
+          <div>
               {/* v3.49.0: Info-Hinweis zur Vorlauf-Orientierung (nur Erklärtext, keine Sperre) */}
               <div style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.22)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
                 <div style={{ fontWeight: 700, color: '#a78bfa', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2047,67 +2059,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   ))}
                 </div>
               )}
-            </div>
           </div>
         </Collapsible>
 
-        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read_at && m.direction === 'out').length || null} badgeColor="#7c3aed">
-          {/* Messages + Note */}
+        {/* v3.98.0: Die Liste "Nachrichten vom Team" ist raus — die Chat-Bubble unten
+            rechts zeigt denselben Verlauf, nur vollständig und in beide Richtungen.
+            Übrig bleibt die Schichtnotiz, die hier ihren angestammten Platz hat. */}
+        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="📝" title="Schichtnotiz" badge={isOnline && !hasShiftNote ? 'offen' : null} badgeColor="#f59e0b">
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
-                Nachrichten vom Team
-              </div>
-              {messages.filter(m => !m.read_at && m.direction === 'out').length > 0 && (
-                <button onClick={markAllMessagesRead} style={{
-                  fontSize: 10, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
-                  background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)',
-                  color: '#a78bfa', fontFamily: 'inherit', fontWeight: 600
-                }}>✓ Alle gelesen</button>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-              {messages.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Nachrichten</div>
-              ) : messages.slice(0, 4).map(msg => {
-                const isUnread = msg.direction === 'out' && !msg.read_at
-                return (
-                <div key={msg.id} style={{
-                  padding: '9px 12px',
-                  background: isUnread ? 'rgba(245,158,11,0.06)' : 'var(--bg-card2)',
-                  borderRadius: 8,
-                  border: `1px solid ${isUnread ? 'rgba(245,158,11,0.3)' : 'rgba(124,58,237,0.2)'}`,
-                  position: 'relative'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3, gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: msg.sent_by === 'Chris' ? '#a78bfa' : '#06b6d4' }}>{msg.sent_by || 'Team'}</span>
-                      {isUnread && (
-                        <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>NEU</span>
-                      )}
-                    </div>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>{formatTime(msg.created_at)}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: isUnread ? 8 : 0 }}>{msg.text}</div>
-                  {isUnread && (
-                    <button onClick={() => markSingleMessageRead(msg.id)} style={{
-                      fontSize: 10, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
-                      background: 'transparent', border: '1px solid rgba(245,158,11,0.4)',
-                      color: '#f59e0b', fontFamily: 'inherit', fontWeight: 600
-                    }}>✓ Gelesen</button>
-                  )}
-                  {!isUnread && msg.read_at && msg.direction === 'out' && (
-                    <div style={{ fontSize: 9, color: '#10b981', fontFamily: 'monospace', marginTop: 4 }}>
-                      ✓ gelesen {new Date(msg.read_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  )}
-                </div>
-                )
-              })}
-            </div>
-            <div ref={noteRef} style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12 }}>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 10 }}>Schichtnotiz hinterlassen</div>
+            <div ref={noteRef}>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 120 }}>
                   <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Model</label>
@@ -2164,6 +2124,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {Object.keys(assignedModelBoards).length > 0 && (
           <Collapsible hidden={tab !== 'models'} isCollapsed={collapsed.models} onToggle={() => toggleCollapse('models')} icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
           <div>
+            {/* v3.98.0: Ohne Hinweis war nicht erkennbar, dass die Namen anklickbar sind */}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 9, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>👆</span>
+              <span>Tippe auf ein Model, um Board, Preise, Regeln und Videos zu sehen.</span>
+            </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {Object.keys(assignedModelBoards).map(name => (
                 <button key={name} onClick={() => setSelectedModelInfo(selectedModelInfo === name ? null : name)}
@@ -2731,7 +2696,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Schicht-Tausch */}
-        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
+        <Collapsible hidden={tab !== 'orga'} isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
           <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
         </Collapsible>
 
