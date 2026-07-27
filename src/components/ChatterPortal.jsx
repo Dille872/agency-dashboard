@@ -5,6 +5,8 @@ import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
 import SurveyModal from './SurveyModal'
 import SwapModal from './SwapModal'
+import ChatterBell from './ChatterBell'
+import ChatterChat from './ChatterChat'
 import MessageSuggestions from './MessageSuggestions'
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
@@ -2847,7 +2849,24 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </div>
       )}
       {!isPreview && displayName && <SurveyModal displayName={displayName} role="chatter" />}
+      {/* Popup bleibt: es stupst bei neuen Angeboten an. Die Glocke daneben ist das
+          Archiv — weggeklickte Angebote sind dort weiter erreichbar. */}
       {!isPreview && displayName && <SwapModal displayName={displayName} />}
+      {/* v3.96.0: Glocke + Chat-Bubble für Chatter */}
+      {!isPreview && displayName && !showSocialPortal && (
+        <>
+          <ChatterBell
+            displayName={displayName}
+            shifts={myNext7Shifts}
+            todos={myTodos}
+            announcements={announcements}
+            isOnline={isOnline}
+            onCheckIn={(shiftName) => checkIn(shiftName)}
+            onNavigate={(t, panel) => { goTab(t); if (panel) openPanel(panel) }}
+          />
+          <ChatterChat displayName={displayName} />
+        </>
+      )}
     </div>
   )
 }
