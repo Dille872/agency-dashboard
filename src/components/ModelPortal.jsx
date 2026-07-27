@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import ModelBell from './ModelBell'
+import ChatterChat from './ChatterChat'
 import Icon from './Icon'
 import { getTheme, setTheme } from '../theme'
 import { APP_VERSION } from '../version'
@@ -243,7 +245,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }, [displayName])
 
   const loadAll = async () => {
-    loadBoard(); loadCalendar(); loadContentRequests(); loadMessages(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
+    loadBoard(); loadCalendar(); loadContentRequests(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
   }
 
   // v3.40.0: Meine Aufgaben (vom Team zugewiesen)
@@ -945,56 +947,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 <button onClick={() => setActiveSection('kalender')} style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 8, padding: '7px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>+ Eintrag hinzufügen</button>
               </div>
 
-              {/* Nachrichten */}
-              <div style={cardS}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ ...labelS, marginBottom: 0 }}><span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />Nachrichten vom Team</div>
-                  {messages.filter(m => !m.read_at).length > 0 && (
-                    <button onClick={markAllMessagesRead} style={{
-                      fontSize: 10, padding: '4px 10px', borderRadius: 5, cursor: 'pointer',
-                      background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)',
-                      color: '#a78bfa', fontFamily: 'inherit', fontWeight: 600
-                    }}>✓ Alle gelesen</button>
-                  )}
-                </div>
-                {messages.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Keine Nachrichten</div>
-                ) : messages.slice(0, 4).map(msg => {
-                  const isUnread = !msg.read_at
-                  return (
-                  <div key={msg.id} style={{
-                    ...itemS,
-                    background: isUnread ? 'rgba(245,158,11,0.06)' : itemS.background,
-                    border: `1px solid ${isUnread ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`,
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3, gap: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa' }}>{msg.sent_by || 'Team'}</span>
-                        {isUnread && (
-                          <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>NEU</span>
-                        )}
-                      </div>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', flexShrink: 0 }}>
-                        {new Date(msg.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: isUnread ? 8 : 0 }}>{msg.text}</div>
-                    {isUnread && (
-                      <button onClick={() => markSingleMessageRead(msg.id)} style={{
-                        fontSize: 10, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
-                        background: 'transparent', border: '1px solid rgba(245,158,11,0.4)',
-                        color: '#f59e0b', fontFamily: 'inherit', fontWeight: 600
-                      }}>✓ Gelesen</button>
-                    )}
-                    {!isUnread && msg.read_at && (
-                      <div style={{ fontSize: 9, color: '#10b981', fontFamily: 'monospace', marginTop: 4 }}>
-                        ✓ gelesen {new Date(msg.read_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    )}
-                  </div>
-                  )
-                })}
-              </div>
+              {/* v3.99.0: Karte "Nachrichten vom Team" entfernt — die Chat-Bubble unten
+                  rechts zeigt denselben Verlauf, vollständig und in beide Richtungen. */}
 
               {/* Board Übersicht */}
               <div style={cardS}>
@@ -1611,6 +1565,14 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         )}
 
       </main>
+
+      {/* v3.99.0: Glocke + Chat-Bubble — wie im Chatter-Portal */}
+      {!isPreview && displayName && (
+        <>
+          <ModelBell displayName={displayName} onNavigate={(section) => setActiveSection(section)} />
+          <ChatterChat displayName={displayName} contactType="model" />
+        </>
+      )}
     </div>
   )
 }

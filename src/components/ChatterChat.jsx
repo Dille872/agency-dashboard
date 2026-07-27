@@ -4,16 +4,20 @@ import { supabase } from '../supabase'
 import { notifyAdmins } from '../telegram'
 
 /**
- * ChatterChat v3.96.0 — schwebender Chat für das Chatter-Portal.
+ * ChatterChat v3.96.0 — schwebender Chat für Chatter- UND Model-Portal (ab v3.99.0).
  *
  * Bewusst NICHT die Admin-Variante (<CommTab section="chat">): die zeigt ALLE Threads.
- * Ein Chatter hat genau einen Gesprächspartner — das Team. Also ein Thread, keine Liste.
+ * Chatter wie Models haben genau einen Gesprächspartner — das Team. Ein Thread, keine Liste.
  *
  * Wichtig: schreibt in dieselbe `messages`-Tabelle wie der Telegram-Bot, mit exakt
- * denselben Feldern (direction='in', contact_type='chatter', model_name=Anzeigename).
- * Dadurch sehen Admins im Chat-Tab EINEN durchgehenden Verlauf, egal ob der Chatter
- * über Telegram oder übers Dashboard geschrieben hat. Und der Weg funktioniert auch
+ * denselben Feldern (direction='in', contact_type, model_name=Anzeigename).
+ * Dadurch sehen Admins im Chat-Tab EINEN durchgehenden Verlauf, egal ob über
+ * Telegram oder übers Dashboard geschrieben wurde. Und der Weg funktioniert auch
  * dann, wenn der Telegram-Webhook mal ausfällt.
+ *
+ * v3.99.0: `contactType` steuert, ob als Chatter oder als Model geschrieben wird —
+ * die Telegram-ID kommt entsprechend aus chatters_contact oder models_contact.
+ * Der Dateiname ist historisch; die Komponente bedient beide Portale.
  */
 
 const fmtTime = (iso) => {
@@ -25,7 +29,8 @@ const fmtTime = (iso) => {
   return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function ChatterChat({ displayName, onUnreadChange }) {
+export default function ChatterChat({ displayName, onUnreadChange, contactType = 'chatter' }) {
+  const contactTable = contactType === 'model' ? 'models_contact' : 'chatters_contact'
   const [open, setOpen] = useState(false)
   const [msgs, setMsgs] = useState([])
   const [text, setText] = useState('')
@@ -37,19 +42,19 @@ export default function ChatterChat({ displayName, onUnreadChange }) {
   // der Thread auf Admin-Seite eindeutig einem Telegram-Kontakt zugeordnet.
   useEffect(() => {
     if (!displayName) return
-    supabase.from('chatters_contact').select('telegram_id').eq('name', displayName).maybeSingle()
+    supabase.from(contactTable).select('telegram_id').eq('name', displayName).maybeSingle()
       .then(({ data }) => setMyTelegramId(data?.telegram_id || null))
-  }, [displayName])
+  }, [displayName, contactTable])
 
   const load = useCallback(async () => {
     if (!displayName) return
     const { data } = await supabase
       .from('messages').select('*')
-      .eq('contact_type', 'chatter').eq('model_name', displayName)
+      .eq('contact_type', contactType).eq('model_name', displayName)
       .order('created_at', { ascending: false })
       .limit(80)
     setMsgs((data || []).slice().reverse())
-  }, [displayName])
+  }, [displayName, contactType])
 
   useEffect(() => {
     if (!displayName) return
@@ -85,7 +90,7 @@ export default function ChatterChat({ displayName, onUnreadChange }) {
       model_name: displayName,
       model_telegram_id: myTelegramId,
       direction: 'in',
-      contact_type: 'chatter',
+      contact_type: contactType,
       text: t,
       status: 'received',
       read: false,
