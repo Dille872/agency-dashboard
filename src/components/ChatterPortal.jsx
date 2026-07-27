@@ -261,9 +261,13 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
 
 // Helper: kollabierbare Sektion - außerhalb der Component definiert
 // damit es nicht bei jedem Render neu erstellt wird (was Focus-Loss in Inputs verursacht)
-function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = 'var(--text-muted)', children }) {
+// v3.95.0: `hidden` blendet das Panel aus, ohne es zu unmounten (display:none statt
+// return null). So bleiben Zustand und bereits geladene Daten der Kinder beim
+// Tab-Wechsel erhalten — wichtig z.B. für generierte Nachrichten-Vorschläge.
+function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = 'var(--text-muted)', children, hidden = false }) {
   return (
     <div style={{
+      display: hidden ? 'none' : 'block',
       marginBottom: 12,
       background: 'var(--bg-card)',
       border: '1px solid var(--border)',
@@ -474,27 +478,29 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newIdeaPriority, setNewIdeaPriority] = useState('normal')
   const [sendingIdea, setSendingIdea] = useState(false)
   // Collapse-State pro Sektion mit Localstorage-Memory
-  const COLLAPSE_KEY = `chatterportal_collapse_${displayName || 'default'}`
+  // v3.95.0: Key auf _v2 gehoben — durch die Tab-Aufteilung sind pro Tab nur noch
+  // 3–5 Panels sichtbar, deshalb stehen die wichtigen jetzt standardmäßig OFFEN.
+  // Der alte _collapse_-Key wird dadurch ignoriert (kein Migrations-Aufwand).
+  const COLLAPSE_KEY = `chatterportal_collapse_v2_${displayName || 'default'}`
   const [collapsed, setCollapsed] = useState(() => {
     try {
       const stored = localStorage.getItem(COLLAPSE_KEY)
       if (stored) return JSON.parse(stored)
     } catch {}
-    // Default: alles zu außer KPIs
     return {
-      shifts: true,
-      absence: true,
-      messages: true,
+      todos: false,      // Heute: offen
+      shifts: false,     // Heute: offen
+      messages: false,   // Heute: offen
       note: true,
-      models: true,
-      content: true,
-      history: true, // v3.55.0: Kunden-Historie standardmäßig zu
+      absence: true,
+      swap: true,        // Heute: zu (selten gebraucht)
+      models: false,     // Models: offen
+      content: false,    // Content: offen
+      history: true,
       ideas: true,
-      guidelines: true, // v3.2.0
-      swap: true,
-      stats: true,
+      stats: false,      // Mehr: offen
+      guidelines: true,
       bot: true,
-      todos: false, // v3.38.0: Aufgaben standardmäßig sichtbar
     }
   })
   const toggleCollapse = (key) => {
@@ -504,6 +510,46 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       return next
     })
   }
+
+  // v3.95.0: Tab-Navigation statt einer langen Panel-Liste.
+  // heute = laufende Schicht · models = womit gechattet wird · content = Produktion
+  // mehr  = Nachschlagewerk. Zuletzt gewählter Tab wird gemerkt.
+  const TAB_KEY = `chatterportal_tab_${displayName || 'default'}`
+  const [tab, setTab] = useState(() => {
+    try {
+      const stored = localStorage.getItem(TAB_KEY)
+      if (stored && ['heute', 'models', 'content', 'mehr'].includes(stored)) return stored
+    } catch {}
+    return 'heute'
+  })
+  const goTab = (key) => {
+    setTab(key)
+    try { localStorage.setItem(TAB_KEY, key) } catch {}
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  // v3.95.0: Panel gezielt aufklappen (für die Handlungs-Chips im Cockpit)
+  const openPanel = (key) => {
+    setCollapsed(prev => {
+      const next = { ...prev, [key]: false }
+      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
+  // v3.95.0: Höhe des klebenden Kopfes messen, damit das Cockpit exakt darunter
+  // andockt. Fest verdrahtete 56px würden auf dem Handy brechen, sobald der Kopf umbricht.
+  const headerRef = React.useRef(null)
+  const [headerH, setHeaderH] = useState(56)
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const update = () => setHeaderH(el.offsetHeight || 56)
+    update()
+    let ro
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(update); ro.observe(el) }
+    window.addEventListener('resize', update)
+    return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', update) }
+  }, [])
 
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
@@ -1533,7 +1579,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       {/* Header */}
-      <header style={{
+      <header ref={headerRef} style={{
         position: 'sticky', top: 0, zIndex: 100,
         background: 'rgba(7,7,16,0.97)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid #1e1e3a', padding: '0 20px',
@@ -1633,12 +1679,20 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )
         })()}
 
+        {/* ================= v3.95.0: COCKPIT ================= */}
+        {/* Die Schichtleiste klebt unter dem Kopf. Check-in/Check-out ist die
+            wichtigste Aktion im Portal und darf beim Scrollen nie verschwinden. */}
+        <div style={{
+          position: 'sticky', top: headerH, zIndex: 40,
+          margin: '0 -20px', padding: '0 20px',
+          background: 'var(--bg-base)',
+        }}>
         {/* Today Banner */}
         {/* v3.33.1: Auch anzeigen, wenn der Chatter ONLINE ist, aber keine heutige Plan-Schicht
             (mehr) erkannt wird — z. B. manueller Check-in, nur Co-Chatter/Trainee, Fenster vorbei
             oder Plan nachträglich geändert. Sonst gäbe es keinen "Schicht beenden"-Button. */}
         {(todayShifts.length > 0 || isOnline) && (
-          <div style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 12, padding: '11px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: isOnline ? '#10b981' : 'var(--text-primary)', marginBottom: 3 }}>
                 {isOnline ? '🟢 Schicht aktiv' : '⚪ Schicht noch nicht gestartet'}
@@ -1680,34 +1734,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         )}
 
-        {/* Schichtnotiz Reminder */}
-        {isOnline && !hasShiftNote && (
-          <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10, padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <div style={{ fontSize: 16, flexShrink: 0 }}>📝</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309', marginBottom: 3 }}>Schichtnotiz ausstehend</div>
-              <div style={{ fontSize: 11, color: '#b45309', marginBottom: 8 }}>Vergiss nicht deine Notiz für heute zu schreiben!</div>
-              <button onClick={() => { noteRef.current?.scrollIntoView({ behavior: 'smooth' }); setTimeout(() => noteRef.current?.querySelector('textarea')?.focus(), 400) }}
-                style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: '#f59e0b', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
-                Jetzt schreiben
-              </button>
-            </div>
-          </div>
-        )}
-        {isOnline && hasShiftNote && (
-          <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 10, padding: '8px 14px', display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 14 }}>✅</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#065f46' }}>Schichtnotiz erledigt</span>
-          </div>
-        )}
+        </div>{/* ── Ende klebende Schichtleiste ── */}
 
-        {/* KPIs - kompakt in einer Zeile */}
+        {/* KPIs — v3.95.0: auto-fit statt fester 4 Spalten, damit sie auf dem Handy 2x2 stehen */}
         {lastStatDate && (
           <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, fontFamily: 'monospace' }}>
             Stats vom {new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12 }}>
           {[
             { label: 'Revenue', val: formatMoney(chatterStats?.revenue || 0), good: revDelta >= 0, accent: '#10b981' },
             { label: 'Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(0)}%` : '—', good: (chatterStats?.buyRate || 0) >= 25, accent: '#06b6d4' },
@@ -1721,7 +1756,117 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           ))}
         </div>
 
-        <Collapsible isCollapsed={collapsed.todos} onToggle={() => toggleCollapse('todos')} icon="📋" title="Meine Aufgaben" badge={myTodos.filter(t => !t.completed).length || null} badgeColor="#ef4444">
+        {/* ── v3.95.0: Handlungs-Chips ──
+            Ersetzen die früheren Schichtnotiz-Banner. Zeigen NUR, was offen ist —
+            gibt es nichts zu tun, erscheint hier auch nichts. Klick springt zur Stelle. */}
+        {(() => {
+          const openTodos = myTodos.filter(t => !t.completed).length
+          const unreadTeam = messages.filter(m => !m.read_at && m.direction === 'out').length
+          const openContent = contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length
+          const chips = []
+          if (openTodos > 0) chips.push({
+            key: 'todos', tone: '#ef4444', count: openTodos, label: openTodos === 1 ? 'Aufgabe offen' : 'Aufgaben offen',
+            onClick: () => { goTab('heute'); openPanel('todos') },
+          })
+          if (isOnline && !hasShiftNote) chips.push({
+            key: 'note', tone: '#f59e0b', icon: '📝', label: 'Schichtnotiz fehlt',
+            onClick: () => {
+              goTab('heute'); openPanel('messages')
+              setTimeout(() => {
+                noteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                setTimeout(() => noteRef.current?.querySelector('textarea')?.focus(), 400)
+              }, 120)
+            },
+          })
+          if (isOnline && hasShiftNote) chips.push({
+            key: 'note-ok', tone: '#10b981', icon: '✅', label: 'Schichtnotiz erledigt', onClick: null,
+          })
+          if (unreadTeam > 0) chips.push({
+            key: 'team', tone: '#7c3aed', count: unreadTeam, label: unreadTeam === 1 ? 'Team-Nachricht' : 'Team-Nachrichten',
+            onClick: () => { goTab('heute'); openPanel('messages') },
+          })
+          if (openContent > 0) chips.push({
+            key: 'content', tone: '#06b6d4', count: openContent, label: 'Custom offen',
+            onClick: () => { goTab('content'); openPanel('content') },
+          })
+          if (chips.length === 0) return null
+          return (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+              {chips.map(c => {
+                const inner = (
+                  <>
+                    {c.count != null && (
+                      <span style={{
+                        minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999,
+                        background: c.tone, color: '#fff', fontSize: 10, fontWeight: 800,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+                      }}>{c.count}</span>
+                    )}
+                    {c.icon && <span style={{ fontSize: 13 }}>{c.icon}</span>}
+                    <span>{c.label}</span>
+                  </>
+                )
+                const st = {
+                  display: 'inline-flex', alignItems: 'center', gap: 7,
+                  padding: '7px 13px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                  fontFamily: 'inherit', background: c.tone + '18',
+                  border: `1px solid ${c.tone}55`, color: c.tone,
+                }
+                return c.onClick
+                  ? <button key={c.key} onClick={c.onClick} style={{ ...st, cursor: 'pointer' }}>{inner}</button>
+                  : <span key={c.key} style={st}>{inner}</span>
+              })}
+            </div>
+          )
+        })()}
+
+        {/* ── v3.95.0: Tab-Navigation ──
+            Vier Arbeitsmomente statt einer Liste aus 13 Panels. Badge = etwas offen. */}
+        {(() => {
+          const openTodos = myTodos.filter(t => !t.completed).length
+          const unreadTeam = messages.filter(m => !m.read_at && m.direction === 'out').length
+          const openContent = contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length
+          const TABS = [
+            { key: 'heute', icon: '📅', label: 'Heute', badge: openTodos + unreadTeam, urgent: openTodos > 0 },
+            { key: 'models', icon: '🎬', label: 'Models', badge: 0 },
+            { key: 'content', icon: '📥', label: 'Content', badge: openContent },
+            { key: 'mehr', icon: '📚', label: 'Mehr', badge: 0 },
+          ]
+          return (
+            <div style={{
+              display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4,
+              borderBottom: '1px solid var(--border)', marginBottom: 16,
+              scrollbarWidth: 'none',
+            }}>
+              {TABS.map(t => {
+                const on = tab === t.key
+                return (
+                  <button key={t.key} onClick={() => goTab(t.key)} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
+                    padding: '9px 16px', borderRadius: '10px 10px 0 0', fontSize: 13, fontWeight: 600,
+                    fontFamily: 'inherit', cursor: 'pointer', marginBottom: -5,
+                    background: on ? 'rgba(124,58,237,0.12)' : 'transparent',
+                    color: on ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    border: 'none', borderBottom: `2px solid ${on ? '#7c3aed' : 'transparent'}`,
+                  }}>
+                    <span style={{ fontSize: 15 }}>{t.icon}</span>
+                    <span>{t.label}</span>
+                    {t.badge > 0 && (
+                      <span style={{
+                        minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999,
+                        background: t.urgent ? '#ef4444' : '#7c3aed', color: '#fff',
+                        fontSize: 10, fontWeight: 800, display: 'inline-flex',
+                        alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+                      }}>{t.badge}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })()}
+
+        <Collapsible hidden={tab !== 'heute' || myTodos.length === 0} isCollapsed={collapsed.todos} onToggle={() => toggleCollapse('todos')} icon="📋" title="Meine Aufgaben" badge={myTodos.filter(t => !t.completed).length || null} badgeColor="#ef4444">
           {myTodos.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px 2px' }}>Aktuell keine Aufgaben für dich.</div>
           ) : (
@@ -1772,7 +1917,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )}
         </Collapsible>
 
-        <Collapsible isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={todayShifts.length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
+        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={todayShifts.length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
           {/* My Shifts – next 7 days */}
           <div>
             {myNext7Shifts.length === 0 ? (
@@ -1904,7 +2049,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         </Collapsible>
 
-        <Collapsible isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read_at && m.direction === 'out').length || null} badgeColor="#7c3aed">
+        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="💬" title="Nachrichten vom Team & Schichtnotiz" badge={messages.filter(m => !m.read_at && m.direction === 'out').length || null} badgeColor="#7c3aed">
           {/* Messages + Note */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -2007,12 +2152,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         </Collapsible>
 
-        {/* v3.81.0: KI-Nachrichten-Vorschläge */}
-        <MessageSuggestions displayName={displayName} />
+        {/* v3.81.0: KI-Nachrichten-Vorschläge · v3.95.0: im Models-Tab.
+            display:none statt Ausbau — sonst gingen erzeugte Vorschläge beim Tab-Wechsel verloren. */}
+        <div style={{ display: tab === 'models' ? 'block' : 'none' }}>
+          <MessageSuggestions displayName={displayName} />
+        </div>
 
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
-          <Collapsible isCollapsed={collapsed.models} onToggle={() => toggleCollapse('models')} icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
+          <Collapsible hidden={tab !== 'models'} isCollapsed={collapsed.models} onToggle={() => toggleCollapse('models')} icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
           <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {Object.keys(assignedModelBoards).map(name => (
@@ -2123,7 +2271,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         )}
 
         {/* Content Requests */}
-        <Collapsible isCollapsed={collapsed.content} onToggle={() => toggleCollapse('content')} icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
+        <Collapsible hidden={tab !== 'content'} isCollapsed={collapsed.content} onToggle={() => toggleCollapse('content')} icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
         <div>
             {!showNewRequestForm ? (
               <button onClick={() => setShowNewRequestForm(true)} style={{
@@ -2419,6 +2567,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* v3.55.0: Kunden-Historie / Bibliothek */}
         <Collapsible
+          hidden={tab !== 'content'}
           isCollapsed={collapsed.history ?? true}
           onToggle={() => setCollapsed(prev => { const cur = prev.history ?? true; const next = { ...prev, history: !cur }; try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)) } catch {} return next })}
           icon={<Library size={16} />} title="Kunden-Historie"
@@ -2428,7 +2577,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Content-Ideen */}
-        <Collapsible isCollapsed={collapsed.ideas} onToggle={() => toggleCollapse('ideas')} icon="💡" title="Content-Ideen" badge={contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length || null} badgeColor="#a78bfa">
+        <Collapsible hidden={tab !== 'content'} isCollapsed={collapsed.ideas} onToggle={() => toggleCollapse('ideas')} icon="💡" title="Content-Ideen" badge={contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length || null} badgeColor="#a78bfa">
           <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
             Wünsche & Ideen für Content der demnächst gemacht werden sollte. Wird vom Admin reviewed und ggf. ans Model weitergeleitet.
           </div>
@@ -2560,7 +2709,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* v3.2.0: Guidelines (von Admin in Einstellungen gepflegt) */}
-        <Collapsible isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon={<BookOpen size={16} />} title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
+        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon={<BookOpen size={16} />} title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
           {guidelines.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '12px 0', textAlign: 'center' }}>
               Noch keine Guidelines hinterlegt.
@@ -2580,12 +2729,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Schicht-Tausch */}
-        <Collapsible isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
+        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
           <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
         </Collapsible>
 
         {/* Week Stats */}
-        <Collapsible isCollapsed={collapsed.stats} onToggle={() => toggleCollapse('stats')} icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
+        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.stats} onToggle={() => toggleCollapse('stats')} icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
             {[
               { label: `Revenue ${new Date().toLocaleString('de-DE', { month: 'long' })}`, val: formatMoney(monthRevenue), good: monthRevenue > 2000 },
@@ -2603,7 +2752,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Bot Commands */}
-        <Collapsible isCollapsed={collapsed.bot} onToggle={() => toggleCollapse('bot')} icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
+        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.bot} onToggle={() => toggleCollapse('bot')} icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
               { cmd: '/on', desc: 'Schicht starten', color: '#10b981' },
@@ -2618,8 +2767,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         </Collapsible>
 
-        {/* PINNWAND VERLAUF - kollabierbar */}
-        {announcements.length > 0 && (
+        {/* PINNWAND VERLAUF - kollabierbar · v3.95.0: im Mehr-Tab */}
+        {tab === 'mehr' && announcements.length > 0 && (
           <div style={{ marginTop: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}>
             <button
               onClick={() => setShowAnnArchive(!showAnnArchive)}

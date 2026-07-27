@@ -67,6 +67,22 @@ serve(async (_req) => {
       a.display_name.replace(`ALERTED_${todayIso}_`, '')
     ))
 
+    // v3.95.0: ECHTES Eincheck-Signal — ein offener shift_log bedeutet "eingecheckt",
+    // auch wenn der Browser/das Handy zu ist und online_status längst veraltet.
+    const { data: openLogs } = await supabase.from('shift_logs').select('display_name').is('checked_out_at', null)
+    const checkedIn = new Set((openLogs || []).map((l: any) => (l.display_name || '').toLowerCase().trim()))
+
+    // v3.95.0: abgemeldete (abwesende) Chatter nicht alarmieren
+    const { data: absData } = await supabase.from('absences').select('*')
+    const isAbsent = (name: string, iso: string, sh: string) =>
+      (absData || []).some((a: any) => {
+        if ((a.chatter_name || '').toLowerCase().trim() !== name.toLowerCase().trim()) return false
+        if (iso < a.date_from || iso > a.date_to) return false
+        const avail = a.available_shifts
+        if (!avail || avail.length === 0) return true
+        return !avail.includes(sh)
+      })
+
     const assignments = schedData.assignments || {}
     const shiftTimes = schedData.shift_times || {}
     const alerted: string[] = []
@@ -81,6 +97,8 @@ serve(async (_req) => {
 
       // v3.89.0: Freischicht (__FREI__) ist keine echte Schicht -> kein Alert
       if (dayIso !== todayIso || !chatterName || chatterName === '__FREI__') continue
+      // v3.95.0: abwesende Chatter nicht alarmieren
+      if (isAbsent(chatterName, dayIso, shift)) continue
 
       const alertKey = `${chatterName}_${shift}`
       if (alreadyAlerted.has(alertKey)) continue
@@ -97,8 +115,10 @@ serve(async (_req) => {
       const nowMins = currentHour * 60 + currentMin
 
       if (nowMins >= shiftStartMins + 15 && nowMins <= shiftStartMins + 25) {
-        // FIX: case-insensitive lookup
         const chatterKey = chatterName.toLowerCase().trim()
+        // v3.95.0: per Dashboard eingecheckt (offener shift_log) -> kein Alert,
+        // egal ob online_status noch frisch ist
+        if (checkedIn.has(chatterKey)) { skippedAlreadyOnline.push(alertKey); continue }
         if (shiftOnlineMap[chatterKey]) {
           skippedAlreadyOnline.push(alertKey)
           continue

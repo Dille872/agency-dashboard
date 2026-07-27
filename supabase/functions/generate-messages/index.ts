@@ -52,6 +52,11 @@ serve(async (req) => {
       return json({ ok: false, error: `Für ${model} ist noch kein Steckbrief eingerichtet.` }, 409)
     }
     const count = Math.min(Math.max(Number(body.count || persona.anzahl || 8), 1), 12)
+    const laengeHint = persona.laenge === 'lang'
+      ? 'etwas ausführlicher (2 bis 3 kurze Sätze), aber nie ein Roman'
+      : persona.laenge === 'mittel'
+      ? 'kurz gehalten (1 bis 2 knappe Sätze)'
+      : 'SEHR KURZ: nur EIN knapper Satz (ca. 6 bis 14 Wörter), wie eine echte, schnell getippte DM'
 
     // --- Anlass ---
     const { data: occ } = await db.from('message_occasions').select('*').eq('key', occasion).maybeSingle()
@@ -91,7 +96,9 @@ serve(async (req) => {
       globalRules ? `GRUNDREGELN (gelten immer, für alle Models – unbedingt befolgen): ${globalRules}` : '',
       `Beschreibung: ${persona.description || '—'}`,
       persona.persona_tags?.length ? `Charakter: ${persona.persona_tags.join(', ')}.` : '',
-      `Anrede: ${persona.anrede === 'sie' ? 'Sie' : 'Du'}. Sprache/Dialekt: ${persona.dialekt}. Länge: ${persona.laenge}. Emoji-Menge: ${persona.emoji}. Direktheit: ${persona.direktheit}.`,
+      `Anrede: ${persona.anrede === 'sie' ? 'Sie' : 'Du'}. Sprache/Dialekt: ${persona.dialekt}. Emoji-Menge: ${persona.emoji}. Direktheit: ${persona.direktheit}.`,
+      `Länge: ${laengeHint}. WICHTIG: Halte jede Nachricht knapp und natürlich – lieber zu kurz als zu lang. Keine langen Sätze, kein Gelaber, keine Aufzählungen.`,
+      `ZIEL: Jede Nachricht ist ein GESPRÄCHSOPENER, der den Fan zum Antworten bringt – NICHT nur eine Aussage/Ansage. Nutze entweder eine proaktive, neugierig machende Frage ODER eine Entweder-oder-Wahl (z.B. "Kaffee oder lieber kuscheln?", "Netflix oder rausgehen?"). Variiere über die Vorschläge hinweg zwischen echten Fragen und Entweder-oder. Am Ende soll der Fan das Gefühl haben, dass er reagieren MUSS.`,
       persona.nogos?.length ? `Absolute No-Gos (niemals): ${persona.nogos.join('; ')}.` : '',
       persona.emojis?.length ? `Erlaubte Emojis – verwende AUSSCHLIESSLICH diese, KEINE anderen: ${persona.emojis.join(' ')}` : '',
       `Anlass: ${occLabel}. ${guardrail}`,
