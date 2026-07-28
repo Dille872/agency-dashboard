@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { MessageCircle, ChevronDown, Send } from 'lucide-react'
 import { supabase } from '../supabase'
 import { notifyAdmins } from '../telegram'
+import { parseSystemMessage } from '../systemMessage'
 
 /**
  * ChatterChat v3.96.0 — schwebender Chat für Chatter- UND Model-Portal (ab v3.99.0).
@@ -152,6 +153,23 @@ export default function ChatterChat({ displayName, onUnreadChange, contactType =
             )}
             {msgs.map(m => {
               const mine = m.direction === 'in'
+              // v4.0.0: Statusmeldungen als Ereigniszeile, nicht als Sprechblase
+              const sys = !m.image_urls?.length ? parseSystemMessage(m.text) : null
+              if (sys) return (
+                <div key={m.id} style={{ display: 'flex', justifyContent: 'center', margin: '6px 0' }}>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '4px 11px', borderRadius: 999,
+                    background: sys.tone + '14', border: `1px solid ${sys.tone}44`,
+                    color: sys.tone, fontSize: 11, fontWeight: 600,
+                  }}>
+                    <span>{sys.icon}</span>{sys.label}
+                    <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 9, fontWeight: 400 }}>
+                      {fmtTime(m.created_at)}
+                    </span>
+                  </span>
+                </div>
+              )
               return (
                 <div key={m.id} style={{
                   maxWidth: '82%', marginLeft: mine ? 'auto' : 0, marginBottom: 9,

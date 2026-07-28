@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Lightbulb, ArrowLeftRight, CalendarDays, Pin, Megaphone } from 'lucide-react'
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
+import { parseSystemMessage, systemMessagePreview } from '../systemMessage'
 import { sendTelegramMessage, sendTelegramMediaGroup } from '../telegram'
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
@@ -2483,7 +2484,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           fontWeight: thread.unreadCount > 0 ? 600 : 400,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0,
                         }}>
-                          {thread.last.direction === 'out' ? 'Du: ' : ''}{thread.last.text}
+                          {thread.last.direction === 'out' ? 'Du: ' : ''}{systemMessagePreview(thread.last.text) || thread.last.text}
                         </span>
                         {thread.unreadCount > 0 && (
                           <span style={{
@@ -2545,6 +2546,35 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     const dateSep = new Date(msg.created_at).toLocaleDateString('de-DE', {
                       weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
                     })
+                    // v4.0.0: [STATUS_…] / [CONTENT_NOTIFY] sind keine echten Nachrichten,
+                    // sondern Ereignisse. Als zentrierte Pille statt als Sprechblase.
+                    const sys = !msg.image_urls?.length ? parseSystemMessage(msg.text) : null
+                    if (sys) {
+                      return (
+                        <React.Fragment key={msg.id}>
+                          {showDateSeparator && (
+                            <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--text-tertiary)', margin: '8px 0 4px' }}>
+                              {dateSep}
+                            </div>
+                          )}
+                          <div style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 7, margin: '3px 0' }}>
+                            <span style={{ flex: 'none', width: 18, height: 1, background: 'var(--border)' }} />
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '4px 11px', borderRadius: 999,
+                              background: sys.tone + '14', border: `1px solid ${sys.tone}44`,
+                              color: sys.tone, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                            }}>
+                              <span>{sys.icon}</span>{sys.label}
+                            </span>
+                            <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                              {new Date(msg.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span style={{ flex: 'none', width: 18, height: 1, background: 'var(--border)' }} />
+                          </div>
+                        </React.Fragment>
+                      )
+                    }
                     return (
                       <React.Fragment key={msg.id}>
                         {showDateSeparator && (
