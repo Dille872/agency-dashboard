@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Bell, ChevronDown, Check, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand, LogIn, LogOut, MessageCircle, CheckCircle2, Sparkles } from 'lucide-react'
+import { Bell, ChevronDown, Check, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand, LogIn, LogOut, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../supabase'
 import { useFabOpen } from '../fabPanel'
 
@@ -83,16 +83,13 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
     const q = (table, limit) =>
       supabase.from(table).select('*').gte('created_at', sinceIso).order('created_at', { ascending: false }).limit(limit)
 
-    const [notes, board, reqs, ideas, absences, swaps, reactions, logs, done, portalMsgs] = await Promise.allSettled([
+    const [notes, board, reqs, ideas, absences, swaps, reactions, logs, done] = await Promise.allSettled([
       q('notes', 40), q('model_board_activity', 60), q('content_requests', 40), q('content_ideas', 40),
       q('absences', 40), q('shift_swaps', 40), q('swap_reactions', 40),
       supabase.from('shift_logs').select('*').gte('checked_in_at', sinceIso).order('checked_in_at', { ascending: false }).limit(60),
-      // v4.2.0: erledigte Aufgaben + Nachrichten aus den Portalen/Telegram
+      // v4.2.0: erledigte Aufgaben
       supabase.from('todos').select('*').eq('completed', true).gte('completed_at', sinceIso)
         .order('completed_at', { ascending: false }).limit(40),
-      supabase.from('messages').select('id, created_at, model_name, contact_type, text, direction')
-        .eq('direction', 'in').gte('created_at', sinceIso)
-        .order('created_at', { ascending: false }).limit(50),
     ])
     const rows = (r) => (r.status === 'fulfilled' ? (r.value.data || []) : [])
     const merged = []
@@ -125,16 +122,8 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
         text: t.title,
       })
     }
-    // v4.2.0: eingehende Nachrichten aus Portal oder Telegram
-    for (const m of rows(portalMsgs)) {
-      if (!m.text || m.text.startsWith('[')) continue   // Statusmarker sind keine Aktivität
-      merged.push({
-        id: 'pmsg-' + m.id, when: m.created_at, cat: m.contact_type === 'model' ? 'models' : 'chatter-msg',
-        who: m.model_name, person: m.contact_type === 'chatter', tab: 'chat', Icon: MessageCircle, color: '#06b6d4',
-        title: `${m.model_name || 'Jemand'} hat geschrieben`,
-        text: m.text.length > 90 ? m.text.slice(0, 90) + '…' : m.text,
-      })
-    }
+    // v4.2.1: "hat geschrieben" wieder entfernt — der Chat-Tab und die Chat-Bubble
+    // zeigen dieselben Nachrichten vollständig. Im Feed war das reine Dopplung.
 
     merged.sort((a, b) => new Date(b.when) - new Date(a.when))
     setItems(merged.slice(0, 160))
