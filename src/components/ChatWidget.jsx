@@ -1,13 +1,14 @@
 import React, { useState } from 'react'
 import { MessageCircle, ChevronDown } from 'lucide-react'
 import CommTab from './CommTab'
+import { useFabOpen } from '../fabPanel'
 
 // v3.61.0: Chat als schwebende Bubble (wie bei Support-/KI-Bots) statt fester Seite.
 // Wiederverwendet die bestehende Chat-Ansicht (<CommTab section="chat">) — Thread
 // auswählen + chatten funktioniert damit genau wie im Chat-Tab. Der Chat wird ERST
 // beim Öffnen gemountet (kein Dauerladen im Hintergrund). Ungelesen-Badge über `unread`.
-export default function ChatWidget({ session, displayName, unread = 0 }) {
-  const [open, setOpen] = useState(false)
+export default function ChatWidget({ session, displayName, unread = 0 , isOpen, onToggle }) {
+  const [open, setOpen] = useFabOpen(isOpen, onToggle)
 
   return (
     <>

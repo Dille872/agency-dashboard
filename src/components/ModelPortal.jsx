@@ -14,6 +14,7 @@ const TODO_PRIORITY = {
   niedrig: { label: 'Niedrig', color: '#06b6d4' },
 }
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
+import { useFabPanels } from '../fabPanel'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -224,6 +225,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const n = new Date()
     return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0')
   })
+  const fab = useFabPanels()   // v4.1.0: Glocke und Chat schließen sich gegenseitig
   const [activeSection, setActiveSection] = useState('home') // home | board | kalender | umsatz | anfragen
   const [myTodos, setMyTodos] = useState([]) // v3.40.0: mir zugewiesene Aufgaben
   const [todoNoteDrafts, setTodoNoteDrafts] = useState({})
@@ -1569,8 +1571,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       {/* v3.99.0: Glocke + Chat-Bubble — wie im Chatter-Portal */}
       {!isPreview && displayName && (
         <>
-          <ModelBell displayName={displayName} onNavigate={(section) => setActiveSection(section)} />
-          <ChatterChat displayName={displayName} contactType="model" />
+          <ModelBell displayName={displayName} onNavigate={(section) => setActiveSection(section)}
+            isOpen={fab.active === 'bell'} onToggle={(v) => fab.set('bell', v)} />
+          <ChatterChat displayName={displayName} contactType="model"
+            isOpen={fab.active === 'chat'} onToggle={(v) => fab.set('chat', v)} />
         </>
       )}
     </div>

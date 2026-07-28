@@ -29,6 +29,7 @@ import SocialTab from './components/SocialTab'
 import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
+import { useFabPanels } from './fabPanel'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -50,6 +51,7 @@ export default function App() {
   const [unreadCustomContent, setUnreadCustomContent] = useState(0)
   const [openTodos, setOpenTodos] = useState(0)
   const [unreadChat, setUnreadChat] = useState(0)
+  const fab = useFabPanels()   // v4.1.0: nur ein schwebendes Fenster gleichzeitig
   const [commFocus, setCommFocus] = useState(null) // v3.65.0: Sprung-Ziel aus dem Aktivitäts-Feed
   const [userRole, setUserRole] = useState(null)
   const [accountBlocked, setAccountBlocked] = useState(null) // v3.18.0: {status, note} wenn stillgelegt/offboarded
@@ -828,10 +830,15 @@ export default function App() {
       {/* v3.61.0: Chat als schwebende Bubble (nur Admin/Manager) */}
       {(isAdmin || isManager) && (
         <>
-          <ChatWidget session={session} displayName={userDisplayName} unread={unreadChat} />
-          <ActivityWidget onNavigate={(tab, focus) => { setActiveTab(tab); if (focus) setCommFocus({ ...focus, ts: Date.now() }) }} />
+          {/* v4.1.0: Es ist immer nur EINES der drei Fenster offen — der Zustand
+              liegt hier oben statt in jedem Widget einzeln. Escape schließt. */}
+          <ChatWidget session={session} displayName={userDisplayName} unread={unreadChat}
+            isOpen={fab.active === 'chat'} onToggle={(v) => fab.set('chat', v)} />
+          <ActivityWidget onNavigate={(tab, focus) => { setActiveTab(tab); if (focus) setCommFocus({ ...focus, ts: Date.now() }) }}
+            isOpen={fab.active === 'activity'} onToggle={(v) => fab.set('activity', v)} />
           {/* v3.97.0: dritte Glocke — was die ANDEREN Admins gemacht haben */}
-          <AdminBell me={userDisplayName} onNavigate={(tab) => setActiveTab(tab)} />
+          <AdminBell me={userDisplayName} onNavigate={(tab) => setActiveTab(tab)}
+            isOpen={fab.active === 'admin'} onToggle={(v) => fab.set('admin', v)} />
         </>
       )}
     </div>

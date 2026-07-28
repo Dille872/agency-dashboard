@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Bell, ChevronDown } from 'lucide-react'
 import { supabase } from '../supabase'
+import { useFabOpen } from '../fabPanel'
 
 /**
  * ModelBell v3.99.0 — Benachrichtigungs-Glocke für das Model-Portal.
@@ -61,8 +62,8 @@ const CHIPS = [
   { key: 'board', label: 'Board' },
 ]
 
-export default function ModelBell({ displayName, onNavigate }) {
-  const [open, setOpen] = useState(false)
+export default function ModelBell({ displayName, onNavigate , isOpen, onToggle }) {
+  const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [filter, setFilter] = useState('all')
   const [items, setItems] = useState([])
   const [lastSeen, setLastSeen] = useState(() => {

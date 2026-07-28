@@ -13,6 +13,7 @@ import { sendTelegramMessage, notifyAdmins } from '../telegram'
 import { APP_VERSION } from '../version'
 import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
+import { useFabPanels } from '../fabPanel'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -468,6 +469,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // v3.98.0: In "Meine Schichten" ist nur die heutige Schicht offen. null = Standard
   // (heute offen, Rest zu); sonst der Index der manuell aufgeklappten Zeile.
   const [openShiftIdx, setOpenShiftIdx] = useState(null)
+  const fab = useFabPanels()   // v4.1.0: Glocke und Chat schließen sich gegenseitig
   const [announcements, setAnnouncements] = useState([])
   const [showAnnArchive, setShowAnnArchive] = useState(false)
   const [showNewRequestForm, setShowNewRequestForm] = useState(false)
@@ -2821,6 +2823,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       {!isPreview && displayName && !showSocialPortal && (
         <>
           <ChatterBell
+            isOpen={fab.active === 'bell'} onToggle={(v) => fab.set('bell', v)}
             displayName={displayName}
             shifts={myNext7Shifts}
             todos={myTodos}
@@ -2829,7 +2832,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             onCheckIn={(shiftName) => checkIn(shiftName)}
             onNavigate={(t, panel) => { goTab(t); if (panel) openPanel(panel) }}
           />
-          <ChatterChat displayName={displayName} />
+          <ChatterChat displayName={displayName}
+            isOpen={fab.active === 'chat'} onToggle={(v) => fab.set('chat', v)} />
         </>
       )}
     </div>

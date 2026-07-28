@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Users, ChevronDown, CalendarCog, Send, ClipboardList, Megaphone, BookOpen, Settings, ShieldCheck, Sparkles, Bot, Inbox, Euro, Bell } from 'lucide-react'
 import { supabase } from '../supabase'
 import { ACTION_LABELS } from '../activity'
+import { useFabOpen } from '../fabPanel'
 
 /**
  * AdminBell v3.97.0 — dritte Glocke: was die ANDEREN Admins gemacht haben.
@@ -74,8 +75,8 @@ const short = (s, n = 90) => {
   return t.length > n ? t.slice(0, n) + '…' : t
 }
 
-export default function AdminBell({ me, onNavigate }) {
-  const [open, setOpen] = useState(false)
+export default function AdminBell({ me, onNavigate , isOpen, onToggle }) {
+  const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [filter, setFilter] = useState('all')
   const [items, setItems] = useState([])
   const [lastSeen, setLastSeen] = useState(() => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Bell, ChevronDown, Check, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand, LogIn, LogOut } from 'lucide-react'
 import { supabase } from '../supabase'
+import { useFabOpen } from '../fabPanel'
 
 // v3.61.0: Aktivitäts-Feed. v3.61.4: lucide-Icons + Pills.
 // v3.62.0: Klick öffnet den passenden Tab · Ungelesen-Markierung · "Alles gelesen" · Filter-Chips.
@@ -60,8 +61,8 @@ function renderBody(text) {
   })
 }
 
-export default function ActivityWidget({ onNavigate }) {
-  const [open, setOpen] = useState(false)
+export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
+  const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [items, setItems] = useState([])
   const [filter, setFilter] = useState('all')
   const [hovered, setHovered] = useState(null)

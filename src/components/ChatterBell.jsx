@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Bell, ChevronDown } from 'lucide-react'
 import { supabase } from '../supabase'
+import { useFabOpen } from '../fabPanel'
 
 /**
  * ChatterBell v3.96.0 — Benachrichtigungs-Glocke für das Chatter-Portal.
@@ -87,8 +88,9 @@ export default function ChatterBell({
   isOnline = false,
   onCheckIn,            // (shiftName) => void
   onNavigate,           // (tab, panel) => void
+  isOpen, onToggle,     // v4.1.0: von außen gesteuert — es ist immer nur ein Fenster offen
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [filter, setFilter] = useState('all')
   const [offers, setOffers] = useState([])
   const [schedules, setSchedules] = useState([])

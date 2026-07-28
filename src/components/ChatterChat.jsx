@@ -3,6 +3,7 @@ import { MessageCircle, ChevronDown, Send } from 'lucide-react'
 import { supabase } from '../supabase'
 import { notifyAdmins } from '../telegram'
 import { parseSystemMessage } from '../systemMessage'
+import { useFabOpen } from '../fabPanel'
 
 /**
  * ChatterChat v3.96.0 — schwebender Chat für Chatter- UND Model-Portal (ab v3.99.0).
@@ -30,9 +31,9 @@ const fmtTime = (iso) => {
   return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function ChatterChat({ displayName, onUnreadChange, contactType = 'chatter' }) {
+export default function ChatterChat({ displayName, onUnreadChange, contactType = 'chatter' , isOpen, onToggle }) {
   const contactTable = contactType === 'model' ? 'models_contact' : 'chatters_contact'
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [msgs, setMsgs] = useState([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
