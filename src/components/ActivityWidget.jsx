@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Bell, ChevronDown, Check, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand, LogIn, LogOut } from 'lucide-react'
+import { Bell, ChevronDown, Check, StickyNote, Film, Inbox, Lightbulb, Palmtree, Megaphone, Repeat, Hand, LogIn, LogOut, MessageCircle, CheckCircle2, Sparkles } from 'lucide-react'
 import { supabase } from '../supabase'
 import { useFabOpen } from '../fabPanel'
 
@@ -7,11 +7,15 @@ import { useFabOpen } from '../fabPanel'
 // v3.62.0: Klick öffnet den passenden Tab · Ungelesen-Markierung · "Alles gelesen" · Filter-Chips.
 const SEEN_KEY = 'activity_last_seen'
 
+// v4.2.0: 'chatter' bündelt ALLES, was eine Person aus dem Team getan hat —
+// quer über die Kategorien. Damit liest sich der Feed wie die Team-intern-Glocke,
+// nur für Chatter statt für Admins.
 const CHIPS = [
   { key: 'all', label: 'Alle' },
+  { key: 'chatter', label: 'Chatter' },
+  { key: 'shifts', label: 'Schichten' },
   { key: 'notes', label: 'Notizen' },
   { key: 'content', label: 'Content' },
-  { key: 'shifts', label: 'Schichten' },
   { key: 'models', label: 'Models' },
 ]
 
@@ -70,6 +74,7 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
     try { return localStorage.getItem(SEEN_KEY) || '' } catch { return '' }
   })
   const [seenAtOpen, setSeenAtOpen] = useState('') // Schnappschuss für Hervorhebung während des Öffnens
+  const [personFilter, setPersonFilter] = useState('') // v4.2.0: eine bestimmte Person herausgreifen
 
   const load = useCallback(async () => {
     const since = new Date()
@@ -78,35 +83,61 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
     const q = (table, limit) =>
       supabase.from(table).select('*').gte('created_at', sinceIso).order('created_at', { ascending: false }).limit(limit)
 
-    const [notes, board, reqs, ideas, absences, swaps, reactions, logs] = await Promise.allSettled([
+    const [notes, board, reqs, ideas, absences, swaps, reactions, logs, done, portalMsgs] = await Promise.allSettled([
       q('notes', 40), q('model_board_activity', 60), q('content_requests', 40), q('content_ideas', 40),
       q('absences', 40), q('shift_swaps', 40), q('swap_reactions', 40),
       supabase.from('shift_logs').select('*').gte('checked_in_at', sinceIso).order('checked_in_at', { ascending: false }).limit(60),
+      // v4.2.0: erledigte Aufgaben + Nachrichten aus den Portalen/Telegram
+      supabase.from('todos').select('*').eq('completed', true).gte('completed_at', sinceIso)
+        .order('completed_at', { ascending: false }).limit(40),
+      supabase.from('messages').select('id, created_at, model_name, contact_type, text, direction')
+        .eq('direction', 'in').gte('created_at', sinceIso)
+        .order('created_at', { ascending: false }).limit(50),
     ])
     const rows = (r) => (r.status === 'fulfilled' ? (r.value.data || []) : [])
     const merged = []
     for (const n of rows(notes)) {
       const clean = (n.text || '').replace(/^Schichtnotiz von .+?\s·\s/, '')
-      merged.push({ id: 'note-' + n.id, when: n.created_at, cat: 'notes', tab: 'notes', Icon: StickyNote, color: '#a78bfa', title: 'Neue Notiz' + (n.author ? ` · ${n.author}` : ''), text: clean })
+      merged.push({ id: 'note-' + n.id, when: n.created_at, cat: 'notes', who: n.author, person: true, tab: 'notes', Icon: StickyNote, color: '#a78bfa', title: `${n.author || 'Jemand'} hat eine Notiz geschrieben`, text: clean })
     }
     for (const a of rows(board)) merged.push({ id: 'board-' + a.id, when: a.created_at, cat: 'models', tab: 'models', Icon: Film, color: '#06b6d4', title: `${a.model_name || 'Model'} · ${a.action || 'Board aktualisiert'}${a.category ? ` (${a.category})` : ''}`, text: a.details })
     for (const r of rows(reqs)) merged.push({ id: 'req-' + r.id, when: r.created_at, cat: 'content', tab: 'models-comm', focus: { section: 'content-requests', id: r.id }, Icon: Inbox, color: '#f59e0b', title: `Neue Anfrage · ${r.model_name || ''}`, text: r.edited_text || r.request_text })
     for (const i of rows(ideas)) merged.push({ id: 'idea-' + i.id, when: i.created_at, cat: 'content', tab: 'models-comm', focus: { section: 'content-ideas' }, Icon: Lightbulb, color: '#10b981', title: `Content-Idee · ${i.model_name || ''}`, text: i.idea_text })
-    for (const a of rows(absences)) merged.push({ id: 'abs-' + a.id, when: a.created_at, cat: 'shifts', tab: 'schedule', Icon: Palmtree, color: '#22d3ee', title: `Freie Tage · ${a.chatter_name || ''}`, text: `${a.date_from || ''}${a.date_to && a.date_to !== a.date_from ? '–' + a.date_to : ''}${a.reason ? ' · ' + a.reason : ''}` })
+    for (const a of rows(absences)) merged.push({ id: 'abs-' + a.id, when: a.created_at, cat: 'shifts', who: a.chatter_name, person: true, tab: 'schedule', Icon: Palmtree, color: '#22d3ee', title: `${a.chatter_name || 'Jemand'} hat sich abgemeldet`, text: `${a.date_from || ''}${a.date_to && a.date_to !== a.date_from ? '–' + a.date_to : ''}${a.reason ? ' · ' + a.reason : ''}` })
     for (const s of rows(swaps)) {
       if (s.block_label || s.target) merged.push({ id: 'swap-' + s.id, when: s.created_at, cat: 'shifts', tab: 'chatters-comm', Icon: Megaphone, color: '#f59e0b', title: 'Schicht ausgeschrieben', text: `${s.block_label || `${s.shift_date || ''} ${s.shift || ''}`}${s.model_name ? ' · ' + s.model_name : ''}` })
-      else merged.push({ id: 'swap-' + s.id, when: s.created_at, cat: 'shifts', tab: 'chatters-comm', Icon: Repeat, color: '#a78bfa', title: `Tausch-Anfrage · ${s.requester_name || ''}`, text: `${s.shift_date || ''} ${s.shift || ''}${s.model_name ? ' · ' + s.model_name : ''}${s.reason ? ' · ' + s.reason : ''}` })
+      else merged.push({ id: 'swap-' + s.id, when: s.created_at, cat: 'shifts', who: s.requester_name, person: true, tab: 'chatters-comm', Icon: Repeat, color: '#a78bfa', title: `${s.requester_name || 'Jemand'} möchte tauschen`, text: `${s.shift_date || ''} ${s.shift || ''}${s.model_name ? ' · ' + s.model_name : ''}${s.reason ? ' · ' + s.reason : ''}` })
     }
-    for (const r of rows(reactions)) merged.push({ id: 'react-' + r.id, when: r.created_at, cat: 'shifts', tab: 'chatters-comm', Icon: Hand, color: '#10b981', title: `Schicht-Bewerbung · ${r.chatter_name || ''}`, text: r.reaction ? `Reaktion: ${r.reaction}` : 'hat sich auf eine Schicht beworben' })
+    for (const r of rows(reactions)) merged.push({ id: 'react-' + r.id, when: r.created_at, cat: 'shifts', who: r.chatter_name, person: true, tab: 'chatters-comm', Icon: Hand, color: '#10b981', title: `${r.chatter_name || 'Jemand'} hat auf ein Angebot reagiert`, text: r.reaction ? `Reaktion: ${r.reaction}` : 'hat sich auf eine Schicht beworben' })
     for (const l of rows(logs)) {
-      merged.push({ id: 'login-' + l.id, when: l.checked_in_at, cat: 'shifts', tab: 'schedule', Icon: LogIn, color: '#10b981', title: `Schicht begonnen · ${l.display_name || ''}`, text: `${l.shift ? l.shift + ' · ' : ''}um ${clockTime(l.checked_in_at)} Uhr` })
+      merged.push({ id: 'login-' + l.id, when: l.checked_in_at, cat: 'shifts', who: l.display_name, person: true, tab: 'schedule', Icon: LogIn, color: '#10b981', title: `${l.display_name || 'Jemand'} hat die Schicht begonnen`, text: `${l.shift ? l.shift + ' · ' : ''}um ${clockTime(l.checked_in_at)} Uhr` })
       if (l.checked_out_at) {
         const dur = durationText(l.checked_in_at, l.checked_out_at)
-        merged.push({ id: 'logout-' + l.id, when: l.checked_out_at, cat: 'shifts', tab: 'schedule', Icon: LogOut, color: '#94a3b8', title: `Schicht beendet · ${l.display_name || ''}`, text: `um ${clockTime(l.checked_out_at)} Uhr${dur ? ' · Dauer ' + dur : ''}` })
+        merged.push({ id: 'logout-' + l.id, when: l.checked_out_at, cat: 'shifts', who: l.display_name, person: true, tab: 'schedule', Icon: LogOut, color: '#94a3b8', title: `${l.display_name || 'Jemand'} hat die Schicht beendet`, text: `um ${clockTime(l.checked_out_at)} Uhr${dur ? ' · Dauer ' + dur : ''}` })
       }
     }
+    // v4.2.0: erledigte Aufgaben
+    for (const t of rows(done)) {
+      merged.push({
+        id: 'done-' + t.id, when: t.completed_at, cat: 'tasks', who: t.completed_by || t.assigned_to, person: true,
+        tab: 'todos', Icon: CheckCircle2, color: '#22c55e',
+        title: `${t.completed_by || t.assigned_to || 'Jemand'} hat eine Aufgabe erledigt`,
+        text: t.title,
+      })
+    }
+    // v4.2.0: eingehende Nachrichten aus Portal oder Telegram
+    for (const m of rows(portalMsgs)) {
+      if (!m.text || m.text.startsWith('[')) continue   // Statusmarker sind keine Aktivität
+      merged.push({
+        id: 'pmsg-' + m.id, when: m.created_at, cat: m.contact_type === 'model' ? 'models' : 'chatter-msg',
+        who: m.model_name, person: m.contact_type === 'chatter', tab: 'chat', Icon: MessageCircle, color: '#06b6d4',
+        title: `${m.model_name || 'Jemand'} hat geschrieben`,
+        text: m.text.length > 90 ? m.text.slice(0, 90) + '…' : m.text,
+      })
+    }
+
     merged.sort((a, b) => new Date(b.when) - new Date(a.when))
-    setItems(merged.slice(0, 120))
+    setItems(merged.slice(0, 160))
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -128,7 +159,13 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
   const unread = items.filter(i => i.when && (!lastSeen || new Date(i.when) > new Date(lastSeen))).length
   const isNew = (it) => it.when && (!seenAtOpen || new Date(it.when) > new Date(seenAtOpen))
   const newCount = items.filter(isNew).length
-  const visible = items.filter(it => filter === 'all' || it.cat === filter)
+  // v4.2.0: Der Chatter-Chip filtert nicht nach Kategorie, sondern danach OB eine
+  // Person dahintersteht — so sieht man eine Person quer durch alle Bereiche.
+  const visible = items.filter(it => {
+    if (filter === 'all') return true
+    if (filter === 'chatter') return !!it.person && (!personFilter || it.who === personFilter)
+    return it.cat === filter
+  })
 
   const toggle = () => {
     setOpen(o => {
@@ -201,6 +238,33 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
               )
             })}
           </div>
+
+          {/* v4.2.0: Namensfilter — nur im Chatter-Modus, sonst nimmt er nur Platz weg */}
+          {filter === 'chatter' && (() => {
+            const names = [...new Set(items.filter(i => i.person && i.who).map(i => i.who))].sort()
+            if (names.length === 0) return null
+            return (
+              <div style={{ display: 'flex', gap: 6, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0, overflowX: 'auto' }}>
+                <button onClick={() => setPersonFilter('')} style={{
+                  flexShrink: 0, padding: '3px 10px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                  background: !personFilter ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.04)',
+                  color: !personFilter ? '#a78bfa' : 'var(--text-muted)',
+                  border: `1px solid ${!personFilter ? 'rgba(124,58,237,0.45)' : 'var(--border)'}`,
+                }}>Alle</button>
+                {names.map(n => {
+                  const on = personFilter === n
+                  return (
+                    <button key={n} onClick={() => setPersonFilter(on ? '' : n)} style={{
+                      flexShrink: 0, padding: '3px 10px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                      background: on ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.04)',
+                      color: on ? '#a78bfa' : 'var(--text-muted)',
+                      border: `1px solid ${on ? 'rgba(124,58,237,0.45)' : 'var(--border)'}`,
+                    }}>{n}</button>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
           <div style={{ flex: 1, overflow: 'auto' }}>
             {visible.length === 0 ? (
