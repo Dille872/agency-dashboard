@@ -65,6 +65,7 @@ export default function SuggestionsAdmin() {
   const [chatters, setChatters] = useState([])
   const [statModel, setStatModel] = useState('alle')
   const [statOcc, setStatOcc] = useState('alle')
+  const [statRange, setStatRange] = useState('30')
   const [lib, setLib] = useState([])
   const [aggRows, setAggRows] = useState([])
   const [hist, setHist] = useState([])
@@ -153,40 +154,56 @@ export default function SuggestionsAdmin() {
   }
   useEffect(() => { if (tab === 'stats') loadAgg() }, [tab, statModel])
   const loadAgg = async () => {
-    let q = supabase.from('message_suggestions').select('occasion, chatter, used, rating')
+    let q = supabase.from('suggestion_stats').select('*')
     if (statModel && statModel !== 'alle') q = q.eq('model_name', statModel)
-    const { data } = await q.limit(5000)
+    const { data } = await q.limit(30000)
     setAggRows(data || [])
   }
 
-  // Anlass-Ranking: was wird generiert / genommen / bewertet (letzte 7 Tage)
+  // Zeitraum-Filter über die Tages-Aggregate
+  const cutoff = useMemo(() => {
+    const now = new Date()
+    if (statRange === '7') { const d = new Date(now); d.setDate(d.getDate() - 6); return d.toISOString().slice(0, 10) }
+    if (statRange === '30') { const d = new Date(now); d.setDate(d.getDate() - 29); return d.toISOString().slice(0, 10) }
+    if (statRange === 'month') return now.toISOString().slice(0, 7) + '-01'
+    return '0000-01-01' // alles
+  }, [statRange])
+  const rangeRows = useMemo(() => aggRows.filter(r => (r.day || '') >= cutoff), [aggRows, cutoff])
+
+  // Anlass-Ranking: was wird generiert / genommen / bewertet
   const occStats = useMemo(() => {
     const m = {}
-    for (const r of aggRows) {
+    for (const r of rangeRows) {
       const k = r.occasion || '—'
       if (!m[k]) m[k] = { occ: k, gen: 0, used: 0, up: 0, down: 0 }
-      m[k].gen++
-      if (r.used) m[k].used++
-      if (r.rating === 'up') m[k].up++
-      else if (r.rating === 'down') m[k].down++
+      m[k].gen += r.generated || 0; m[k].used += r.used || 0; m[k].up += r.up || 0; m[k].down += r.down || 0
     }
     return Object.values(m).sort((a, b) => (b.gen ? b.used / b.gen : 0) - (a.gen ? a.used / a.gen : 0))
-  }, [aggRows])
+  }, [rangeRows])
 
   // Chatter-Übersicht: wer holt / nimmt / bewertet (optional auf einen Anlass gefiltert)
   const chatterStats = useMemo(() => {
-    const rows = (statOcc && statOcc !== 'alle') ? aggRows.filter(r => r.occasion === statOcc) : aggRows
+    const rows = (statOcc && statOcc !== 'alle') ? rangeRows.filter(r => r.occasion === statOcc) : rangeRows
     const m = {}
     for (const r of rows) {
       const k = r.chatter || '—'
       if (!m[k]) m[k] = { chatter: k, gen: 0, used: 0, up: 0, down: 0 }
-      m[k].gen++
-      if (r.used) m[k].used++
-      if (r.rating === 'up') m[k].up++
-      else if (r.rating === 'down') m[k].down++
+      m[k].gen += r.generated || 0; m[k].used += r.used || 0; m[k].up += r.up || 0; m[k].down += r.down || 0
     }
     return Object.values(m).sort((a, b) => b.used - a.used || b.gen - a.gen)
-  }, [aggRows, statOcc])
+  }, [rangeRows, statOcc])
+
+  // Monats-Verlauf: ganze Historie des gewählten Models (Trend über die Zeit)
+  const monthStats = useMemo(() => {
+    const m = {}
+    for (const r of aggRows) {
+      const k = (r.day || '').slice(0, 7); if (!k) continue
+      if (!m[k]) m[k] = { month: k, gen: 0, used: 0 }
+      m[k].gen += r.generated || 0; m[k].used += r.used || 0
+    }
+    return Object.values(m).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12)
+  }, [aggRows])
+  const monthDE = (ym) => { const [y, mo] = ym.split('-'); return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) }
 
   // History
   useEffect(() => { if (tab === 'hist') loadHist() }, [tab])
@@ -336,10 +353,11 @@ export default function SuggestionsAdmin() {
       {/* AUSWERTUNG */}
       {tab === 'stats' && (
         <div style={card}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>Grundlage: die Vorschläge der letzten 7 Tage (danach löschen sie sich). „Genommen" = Chatter hat „✓ Nehm ich" gedrückt.</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>Dauerhafte Statistik (bleibt erhalten, auch nachdem die einzelnen Vorschläge nach 7 Tagen gelöscht werden). „Genommen" = Chatter hat „✓ Nehm ich" gedrückt.</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
             <select value={statModel} onChange={e => setStatModel(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Models</option>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
             <select value={statOcc} onChange={e => setStatOcc(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Anlässe</option>{occasions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}</select>
+            <select value={statRange} onChange={e => setStatRange(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="month">Dieser Monat</option><option value="all">Alles</option></select>
           </div>
 
           {/* Anlass-Ranking */}
@@ -383,6 +401,29 @@ export default function SuggestionsAdmin() {
                   </tr>
                 ))}
                 {chatterStats.length === 0 && <tr><td style={{ ...td, color: 'var(--text-muted)' }} colSpan={5}>Noch keine Daten.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Monats-Verlauf (ganze Historie, unabhängig vom Zeitraum-Filter) */}
+          <span style={{ ...lbl, color: ACC2, fontSize: 11 }}>Verlauf pro Monat{statModel !== 'alle' ? ` · ${statModel}` : ''}</span>
+          <div style={{ overflowX: 'auto', marginBottom: 24 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead><tr>{['Monat', 'Generiert', 'Genommen', 'Quote'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {monthStats.map(s => {
+                  const q = s.gen ? Math.round((s.used / s.gen) * 100) : 0
+                  const qCol = q >= 15 ? '#22c55e' : q >= 6 ? '#fbbf24' : '#ef4444'
+                  return (
+                    <tr key={s.month}>
+                      <td style={{ ...td, fontWeight: 700 }}>{monthDE(s.month)}</td>
+                      <td style={td}>{s.gen}</td>
+                      <td style={td}>{s.used}</td>
+                      <td style={td}><span style={{ color: qCol, fontWeight: 800 }}>{q}%</span></td>
+                    </tr>
+                  )
+                })}
+                {monthStats.length === 0 && <tr><td style={{ ...td, color: 'var(--text-muted)' }} colSpan={4}>Noch keine Daten.</td></tr>}
               </tbody>
             </table>
           </div>
