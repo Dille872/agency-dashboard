@@ -2,10 +2,18 @@
 // Erzeugt Nachrichten-Vorschläge für ein Model + Anlass + Schicht via Anthropic (Claude).
 // - Auth-Gate: nur eingeloggte Dashboard-User.
 // - Steckbrief-Pflicht: fehlt der Steckbrief oder ist er inaktiv -> keine Vorschläge.
-// - Nutzt gut bewertete Bibliotheks-Nachrichten als Vorlage, meidet kürzlich Gezeigtes.
-// - Speichert jeden Vorschlag (mit Model/Anlass/Schicht/Chatter) und räumt >7 Tage auf.
 //
-// Nötige Secrets: ANTHROPIC_API_KEY  (optional: ANTHROPIC_MODEL)
+// v4.3.0 – Menschlicher + frischer:
+//   * Prompt komplett umgebaut: weg von Bauform-Regeln, hin zu "Verankerung" +
+//     Anti-Bot-Verbotsliste (aufgesetzte Meta-Gags), einfache echte Zeilen erlaubt.
+//   * FRISCHE: zuletzt (letzte 48h, ÜBER ALLE Schichten) verschickte Nachrichten
+//     werden mit Schicht + Uhrzeit gelabelt als "NICHT wiederholen"-Liste übergeben.
+//   * WICHTIGER FIX: zuletzt genommene Nachrichten galten bisher als Vorlage zum
+//     Nachahmen (verstärkte Wiederholung) -> jetzt gehören sie in die Frische-Sperre.
+//   * PFLICHT-MIX: die N Vorschläge werden in feste Sorten aufgeteilt
+//     (Einzelfrage / Entweder-oder / geteilter Moment / neckisch), skaliert mit N.
+//
+// Nötige Secrets: ANTHROPIC_API_KEY  (optional: ANTHROPIC_MODEL, empfohlen: claude-sonnet-5)
 // Vorhanden von Supabase: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -14,7 +22,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
-// Aktuelles günstiges Modell (Stand 2026). Per Env ANTHROPIC_MODEL überschreibbar:
+// Modell per Env überschreibbar. Für menschlich klingende DMs empfohlen: claude-sonnet-5
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-haiku-4-5'
 
 const cors = {
@@ -26,6 +34,21 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } })
 
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+// --- Helfer: Schicht-Label + Berliner Zeitstempel (Wochentag + HH:MM) ---
+function shiftLabel(s: string | null | undefined): string {
+  return s === 'frueh' ? 'Frühschicht'
+    : s === 'spaet' ? 'Spätschicht'
+    : s === 'nacht' ? 'Nachtschicht' : '—'
+}
+function berlinStamp(iso: string): string {
+  try {
+    const d = new Date(iso)
+    const wd = d.toLocaleDateString('de-DE', { weekday: 'short', timeZone: 'Europe/Berlin' })
+    const hm = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
+    return `${wd} ${hm}`
+  } catch { return '?' }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -67,38 +90,67 @@ serve(async (req) => {
     const { data: settings } = await db.from('suggestion_settings').select('global_rules').eq('id', 1).maybeSingle()
     const globalRules = settings?.global_rules || ''
 
-    // --- Gut bewertete Vorlagen + kürzlich Gezeigtes (Anti-Wiederholung) ---
+    // --- STIL-Vorlagen: nur Stimme/Ton (Persona-Beispiele + gut bewertete Bibliothek) ---
     const { data: lib } = await db.from('message_library')
       .select('text, up, down').eq('model_name', model).eq('occasion', occasion)
       .order('up', { ascending: false }).limit(6)
     const goodOnes = (lib || []).filter((r) => (r.up || 0) > (r.down || 0)).map((r) => r.text)
+    const examples = [...new Set([...(persona.examples || []), ...goodOnes])].slice(0, 10)
 
-    // v3.92.0: zuletzt "genommene" Nachrichten als zusätzliche Vorlage (starkes Signal)
-    const { data: usedRows } = await db.from('message_suggestions')
-      .select('text').eq('model_name', model).eq('occasion', occasion).eq('used', true)
-      .order('created_at', { ascending: false }).limit(5)
-    const usedOnes = (usedRows || []).map((r) => r.text)
+    // --- FRISCHE: was ging in den letzten 48h raus? (über ALLE Schichten) ---
+    // Wird als "NICHT wiederholen"-Liste mit Schicht + Uhrzeit übergeben. Zuletzt
+    // GENOMMENE (used) Nachrichten sind hier ebenfalls drin -> keine Wiederholung.
+    const since48 = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+    const { data: recentRows } = await db.from('message_suggestions')
+      .select('text, shift, created_at, used')
+      .eq('model_name', model).eq('occasion', occasion)
+      .gte('created_at', since48)
+      .order('created_at', { ascending: false }).limit(60)
+    const seenTexts = new Set<string>()
+    const freshList: string[] = []
+    for (const r of recentRows || []) {
+      const key = String(r.text || '').trim().toLowerCase()
+      if (!key || seenTexts.has(key)) continue
+      seenTexts.add(key)
+      freshList.push(`- [${berlinStamp(r.created_at)} · ${shiftLabel(r.shift)}${r.used ? ' · ✓ verschickt' : ''}] ${r.text}`)
+      if (freshList.length >= 30) break
+    }
 
-    const since = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString()
-    const { data: recent } = await db.from('message_suggestions')
-      .select('text').eq('model_name', model).eq('occasion', occasion).gte('created_at', since).limit(60)
-    const avoid = (recent || []).map((r) => r.text)
+    // --- PFLICHT-MIX: N Vorschläge in feste Sorten aufteilen (skaliert mit N) ---
+    const cats = [
+      { n: 0, label: 'echte Einzelfrage (neugierig, konkret – z.B. "was hört sich dein tag heute an?")' },
+      { n: 0, label: 'Entweder-oder MIT echtem Inhalt (nie leer wie "da oder AFK?" – z.B. "noch ne runde oder film mit dir?")' },
+      { n: 0, label: 'geteilter Moment / Aussage, die zum Reagieren einlädt (ohne Fragezeichen – z.B. "sitz hier mit chips… fehlt nur du")' },
+      { n: 0, label: 'spielerisch / neckisch (kleiner Tease oder Mini-Herausforderung)' },
+    ]
+    const base = Math.floor(count / cats.length)
+    let rem = count % cats.length
+    for (let i = 0; i < cats.length; i++) cats[i].n = base + (i < rem ? 1 : 0)
+    const mixLines = cats.filter((c) => c.n > 0).map((c) => `- ${c.n}× ${c.label}`).join('\n')
 
     // --- Prompt bauen ---
     const shiftText = shift === 'frueh' ? 'Frühschicht (Vormittag)'
       : shift === 'spaet' ? 'Spätschicht (Nachmittag/Abend)'
       : shift === 'nacht' ? 'Nachtschicht (spät nachts)' : 'unbestimmte Tageszeit'
 
-    const examples = [...new Set([...(persona.examples || []), ...usedOnes, ...goodOnes])].slice(0, 10)
-
     const system = [
-      `Du schreibst kurze Direktnachrichten im Namen des Models "${model}" für zahlende Fans auf einer Creator-Plattform.`,
+      `Du bist NICHT ein Chatbot und schreibst NICHT wie einer. Du bist "${model}" – ein echter Mensch, der jemandem, den sie mag (ein zahlender Fan auf einer Creator-Plattform), spontan aufs Handy tippt.`,
       globalRules ? `GRUNDREGELN (gelten immer, für alle Models – unbedingt befolgen): ${globalRules}` : '',
-      `Beschreibung: ${persona.description || '—'}`,
-      persona.persona_tags?.length ? `Charakter: ${persona.persona_tags.join(', ')}.` : '',
+
+      `GOLDENE REGEL – Verankerung: Jede Nachricht steckt in etwas KONKRETEM – was sie GERADE macht, ein echter Gedanke, ein Detail aus ihrem Tag, eine Mini-Szene. Nichts Austauschbares. Wenn man die Nachricht wortgleich an eine beliebige andere Person schicken könnte, ist sie falsch.`,
+
+      `EINFACH IST GUT: Kurze, natürliche Zeilen wie "Bist du da? 🙈" sind völlig okay – so tippt ein echter Mensch. Der Fehler ist NICHT kurz/simpel, sondern BEMÜHT-clever.`,
+
+      `VERBOTEN (klingt sofort nach Bot – NIE verwenden): aufgesetzte Themen-Gags oder Meta-Sprüche, die cool sein wollen ("bist du im AFK-Modus?", "lädt dein Akku noch?", gezwungene Gaming-/Tech-Wortspiele als Gimmick); Umfrage-/Callcenter-Ton; "Ich wollte nur mal...", "Ich hoffe es geht dir gut"; Marketing-Sprech; alles Generische, das nicht zu DIESEM Model und DIESEM Moment passt.`,
+
+      `GESPRÄCHSOPENER richtig gedacht: Ziel ist, dass der Fan ANTWORTEN WILL – durch echten INHALT, nicht durch eine mechanische Frage. Erzähl kurz etwas Konkretes und lass daraus natürlich Raum für eine Antwort.`,
+
+      `PFLICHT-MIX der ${count} Vorschläge – halte diese Verteilung GENAU ein:\n${mixLines}`,
+
+      `Beschreibung von "${model}": ${persona.description || '—'}`,
+      persona.persona_tags?.length ? `Charakter: ${persona.persona_tags.join(', ')}. Nutze diese Details als echten STOFF für konkrete Nachrichten (z.B. bei einer Gamerin eine konkrete Szene im Match), nicht nur als Etikett.` : '',
       `Anrede: ${persona.anrede === 'sie' ? 'Sie' : 'Du'}. Sprache/Dialekt: ${persona.dialekt}. Emoji-Menge: ${persona.emoji}. Direktheit: ${persona.direktheit}.`,
-      `Länge: ${laengeHint}. WICHTIG: Halte jede Nachricht knapp und natürlich – lieber zu kurz als zu lang. Keine langen Sätze, kein Gelaber, keine Aufzählungen.`,
-      `ZIEL: Jede Nachricht ist ein GESPRÄCHSOPENER, der den Fan zum Antworten bringt – NICHT nur eine Aussage/Ansage. Nutze entweder eine proaktive, neugierig machende Frage ODER eine Entweder-oder-Wahl (z.B. "Kaffee oder lieber kuscheln?", "Netflix oder rausgehen?"). Variiere über die Vorschläge hinweg zwischen echten Fragen und Entweder-oder. Am Ende soll der Fan das Gefühl haben, dass er reagieren MUSS.`,
+      `Länge: ${laengeHint}. Halte jede Nachricht knapp und natürlich – lieber zu kurz als zu lang. Kein Gelaber, keine Aufzählungen.`,
       persona.nogos?.length ? `Absolute No-Gos (niemals): ${persona.nogos.join('; ')}.` : '',
       persona.emojis?.length ? `Erlaubte Emojis – verwende AUSSCHLIESSLICH diese, KEINE anderen: ${persona.emojis.join(' ')}` : '',
       `Anlass: ${occLabel}. ${guardrail}`,
@@ -106,9 +158,14 @@ serve(async (req) => {
       `Schreibe die Nachrichten auf ${language}. Kein Klarname, keine echten Treffen, keine Links.`,
       language !== 'Deutsch' ? `Hinweis: Die Dialekt-Einstellung ist deutschspezifisch. In ${language} den Charakter und Ton des Models beibehalten, aber natürlich und muttersprachlich in ${language} schreiben (kein deutscher Dialekt).` : '',
       persona.extra ? `WICHTIGE Extra-Anweisungen (unbedingt befolgen): ${persona.extra}` : '',
-      examples.length ? `Ton-Vorlagen (Stil nachahmen, NICHT kopieren):\n- ${examples.join('\n- ')}` : '',
-      avoid.length ? `Vermeide Nachrichten, die diesen zu ähnlich sind:\n- ${avoid.slice(0, 25).join('\n- ')}` : '',
-      `Antworte AUSSCHLIESSLICH als JSON: {"messages":["...","..."]} mit genau ${count} unterschiedlichen Nachrichten. Kein weiterer Text.`,
+
+      examples.length ? `So KLINGT "${model}" (nur die STIMME/den Ton nachahmen, Inhalt NICHT kopieren):\n- ${examples.join('\n- ')}` : '',
+
+      freshList.length ? `ZULETZT GESCHICKT (letzte 48h, über ALLE Schichten) – Wortlaut UND Muster NICHT wiederholen, auch nicht in einer anderen Schicht. Wenn ein Opener heute früh schon dran war, benutz ihn heute nicht nochmal:\n${freshList.join('\n')}` : '',
+
+      `SELBSTCHECK vor der Ausgabe: Lies jede Nachricht und frag dich – "Würde ein echter Mensch das so tippen, oder klingt das nach Bot/Umfrage?" Klingt es nach Bot: neu schreiben, konkreter und persönlicher.`,
+
+      `Antworte AUSSCHLIESSLICH als JSON: {"messages":["...","..."]} mit genau ${count} unterschiedlichen Nachrichten (in der Reihenfolge des Pflicht-Mix). Kein weiterer Text.`,
     ].filter(Boolean).join('\n')
 
     // --- Anthropic ---
@@ -124,7 +181,7 @@ serve(async (req) => {
         max_tokens: 1024,
         temperature: 1,
         system,
-        messages: [{ role: 'user', content: `Gib mir ${count} Vorschläge für "${occLabel}".` }],
+        messages: [{ role: 'user', content: `Gib mir ${count} Vorschläge für "${occLabel}". Halte den Pflicht-Mix ein und wiederhole nichts aus der 48h-Liste.` }],
       }),
     })
     if (!aiRes.ok) {
