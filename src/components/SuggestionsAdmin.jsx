@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { Lightbulb, Trash2, Plus, Save } from 'lucide-react'
 import { logActivity } from '../activity'
 
 // v3.83.0: Admin-Bereich für die Nachrichten-Vorschläge.
 // Steckbriefe pflegen, Anlässe verwalten, Freigabe pro Chatter, Auswertung, History.
+// v4.4.0: History nach Model/Chatter filterbar + echte Auswertung
+//         (Anlass-Ranking „was wird genommen" + Chatter-Übersicht).
 
 const TABS = [
   { k: 'basics', label: '⚙️ Basics' },
@@ -18,6 +20,10 @@ const card = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', border
 const lbl = { fontSize: 10, fontWeight: 700, letterSpacing: '.5px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 7 }
 const inp = { width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 8, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
 const ACC = '#7c3aed', ACC2 = '#a78bfa'
+const th = { textAlign: 'left', color: 'var(--text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', padding: '7px 10px', borderBottom: '1px solid #1e1e3a', whiteSpace: 'nowrap' }
+const td = { padding: '7px 10px', borderBottom: '1px solid #1e1e3a', whiteSpace: 'nowrap' }
+
+const shiftDE = (s) => s === 'frueh' ? 'Früh' : s === 'spaet' ? 'Spät' : s === 'nacht' ? 'Nacht' : (s || '—')
 
 function Seg({ options, value, onChange }) {
   return (
@@ -60,7 +66,10 @@ export default function SuggestionsAdmin() {
   const [statModel, setStatModel] = useState('alle')
   const [statOcc, setStatOcc] = useState('alle')
   const [lib, setLib] = useState([])
+  const [aggRows, setAggRows] = useState([])
   const [hist, setHist] = useState([])
+  const [histModel, setHistModel] = useState('alle')
+  const [histChatter, setHistChatter] = useState('alle')
   const [basics, setBasics] = useState('')
   const [basicsSaving, setBasicsSaving] = useState(false)
 
@@ -133,7 +142,7 @@ export default function SuggestionsAdmin() {
     if (error) alert('Fehler: ' + error.message)
   }
 
-  // Auswertung
+  // Auswertung: Bewertungs-Bibliothek (Top-Nachrichten) + Roh-Vorschläge (Aggregation)
   useEffect(() => { if (statModel && statOcc) loadLib() }, [statModel, statOcc])
   const loadLib = async () => {
     let q = supabase.from('message_library').select('*')
@@ -142,12 +151,54 @@ export default function SuggestionsAdmin() {
     const { data } = await q.order('up', { ascending: false }).limit(80)
     setLib(data || [])
   }
+  useEffect(() => { if (tab === 'stats') loadAgg() }, [tab, statModel])
+  const loadAgg = async () => {
+    let q = supabase.from('message_suggestions').select('occasion, chatter, used, rating')
+    if (statModel && statModel !== 'alle') q = q.eq('model_name', statModel)
+    const { data } = await q.limit(5000)
+    setAggRows(data || [])
+  }
+
+  // Anlass-Ranking: was wird generiert / genommen / bewertet (letzte 7 Tage)
+  const occStats = useMemo(() => {
+    const m = {}
+    for (const r of aggRows) {
+      const k = r.occasion || '—'
+      if (!m[k]) m[k] = { occ: k, gen: 0, used: 0, up: 0, down: 0 }
+      m[k].gen++
+      if (r.used) m[k].used++
+      if (r.rating === 'up') m[k].up++
+      else if (r.rating === 'down') m[k].down++
+    }
+    return Object.values(m).sort((a, b) => (b.gen ? b.used / b.gen : 0) - (a.gen ? a.used / a.gen : 0))
+  }, [aggRows])
+
+  // Chatter-Übersicht: wer holt / nimmt / bewertet (optional auf einen Anlass gefiltert)
+  const chatterStats = useMemo(() => {
+    const rows = (statOcc && statOcc !== 'alle') ? aggRows.filter(r => r.occasion === statOcc) : aggRows
+    const m = {}
+    for (const r of rows) {
+      const k = r.chatter || '—'
+      if (!m[k]) m[k] = { chatter: k, gen: 0, used: 0, up: 0, down: 0 }
+      m[k].gen++
+      if (r.used) m[k].used++
+      if (r.rating === 'up') m[k].up++
+      else if (r.rating === 'down') m[k].down++
+    }
+    return Object.values(m).sort((a, b) => b.used - a.used || b.gen - a.gen)
+  }, [aggRows, statOcc])
+
   // History
   useEffect(() => { if (tab === 'hist') loadHist() }, [tab])
   const loadHist = async () => {
-    const { data } = await supabase.from('message_suggestions').select('*').order('created_at', { ascending: false }).limit(120)
+    const { data } = await supabase.from('message_suggestions').select('*').order('created_at', { ascending: false }).limit(400)
     setHist(data || [])
   }
+  const histChatters = useMemo(() => [...new Set(hist.map(r => r.chatter).filter(Boolean))].sort(), [hist])
+  const filteredHist = useMemo(() => hist.filter(r =>
+    (histModel === 'alle' || r.model_name === histModel) &&
+    (histChatter === 'alle' || r.chatter === histChatter)
+  ), [hist, histModel, histChatter])
 
   const missing = models.filter(m => !personas[m])
   const occMap = Object.fromEntries(occasions.map(o => [o.key, o.label]))
@@ -285,10 +336,59 @@ export default function SuggestionsAdmin() {
       {/* AUSWERTUNG */}
       {tab === 'stats' && (
         <div style={card}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>Grundlage: die Vorschläge der letzten 7 Tage (danach löschen sie sich). „Genommen" = Chatter hat „✓ Nehm ich" gedrückt.</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
             <select value={statModel} onChange={e => setStatModel(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Models</option>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
             <select value={statOcc} onChange={e => setStatOcc(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Anlässe</option>{occasions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}</select>
           </div>
+
+          {/* Anlass-Ranking */}
+          <span style={{ ...lbl, color: ACC2, fontSize: 11 }}>Anlässe – was wird genommen?</span>
+          <div style={{ overflowX: 'auto', marginBottom: 24 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead><tr>{['Anlass', 'Generiert', 'Genommen', 'Quote', '👍', '👎'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {occStats.map(s => {
+                  const q = s.gen ? Math.round((s.used / s.gen) * 100) : 0
+                  const qCol = q >= 15 ? '#22c55e' : q >= 6 ? '#fbbf24' : '#ef4444'
+                  return (
+                    <tr key={s.occ}>
+                      <td style={{ ...td, fontWeight: 700 }}>{occMap[s.occ] || s.occ}</td>
+                      <td style={td}>{s.gen}</td>
+                      <td style={td}>{s.used}</td>
+                      <td style={td}><span style={{ color: qCol, fontWeight: 800 }}>{q}%</span></td>
+                      <td style={{ ...td, color: '#22c55e' }}>{s.up || ''}</td>
+                      <td style={{ ...td, color: '#ef4444' }}>{s.down || ''}</td>
+                    </tr>
+                  )
+                })}
+                {occStats.length === 0 && <tr><td style={{ ...td, color: 'var(--text-muted)' }} colSpan={6}>Noch keine Daten.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Chatter-Übersicht */}
+          <span style={{ ...lbl, color: ACC2, fontSize: 11 }}>Chatter – wer nutzt es{statOcc !== 'alle' ? ` · ${occMap[statOcc] || statOcc}` : ''}</span>
+          <div style={{ overflowX: 'auto', marginBottom: 24 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead><tr>{['Chatter', 'Geholt', 'Genommen', '👍', '👎'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {chatterStats.map(s => (
+                  <tr key={s.chatter}>
+                    <td style={{ ...td, fontWeight: 700 }}>{s.chatter}</td>
+                    <td style={td}>{s.gen}</td>
+                    <td style={td}>{s.used}</td>
+                    <td style={{ ...td, color: '#22c55e' }}>{s.up || ''}</td>
+                    <td style={{ ...td, color: '#ef4444' }}>{s.down || ''}</td>
+                  </tr>
+                ))}
+                {chatterStats.length === 0 && <tr><td style={{ ...td, color: 'var(--text-muted)' }} colSpan={5}>Noch keine Daten.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Top-Nachrichten (aus Bewertungen) */}
+          <span style={{ ...lbl, color: ACC2, fontSize: 11 }}>Einzelne Nachrichten (aus 👍/👎)</span>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <span style={{ ...lbl, color: '#22c55e' }}>Läuft gut 👍</span>
@@ -309,7 +409,7 @@ export default function SuggestionsAdmin() {
               ))}
             </div>
           </div>
-          {lib.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>Noch keine Bewertungen für diese Auswahl.</div>}
+          {lib.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>Noch keine 👍/👎-Bewertungen für diese Auswahl.</div>}
         </div>
       )}
 
@@ -317,25 +417,31 @@ export default function SuggestionsAdmin() {
       {tab === 'hist' && (
         <div style={card}>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>Wer hat wann was geholt/bewertet. Löscht sich automatisch nach 7 Tagen.</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+            <select value={histModel} onChange={e => setHistModel(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Models</option>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
+            <select value={histChatter} onChange={e => setHistChatter(e.target.value)} style={{ ...inp, width: 'auto', fontWeight: 600 }}><option value="alle">Alle Chatter</option>{histChatters.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)', alignSelf: 'center' }}>{filteredHist.length} Einträge</span>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead><tr>{['Zeit', 'Chatter', 'Model', 'Schicht', 'Anlass', 'Nachricht', 'Bew.'].map(h => <th key={h} style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', padding: '8px 10px', borderBottom: '1px solid #1e1e3a' }}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Zeit', 'Chatter', 'Model', 'Schicht', 'Anlass', 'Nachricht', 'Genommen', 'Bew.'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
-                {hist.map(r => (
+                {filteredHist.map(r => (
                   <tr key={r.id}>
-                    <td style={{ padding: '8px 10px', borderBottom: '1px solid #1e1e3a', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
-                    <td style={{ padding: '8px 10px', borderBottom: '1px solid #1e1e3a', fontWeight: 700 }}>{r.chatter || '—'}</td>
-                    <td style={{ padding: '8px 10px', borderBottom: '1px solid #1e1e3a' }}>{r.model_name}</td>
-                    <td style={{ padding: '8px 10px', borderBottom: '1px solid #1e1e3a' }}>{r.shift || '—'}</td>
-                    <td style={{ padding: '8px 10px', borderBottom: '1px solid #1e1e3a' }}>{r.occasion}</td>
-                    <td style={{ padding: '8px 10px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-muted)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.text}</td>
-                    <td style={{ padding: '8px 10px', borderBottom: '1px solid #1e1e3a' }}>{r.rating === 'up' ? '👍' : r.rating === 'down' ? '👎' : ''}</td>
+                    <td style={td}>{new Date(r.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>{r.chatter || '—'}</td>
+                    <td style={td}>{r.model_name}</td>
+                    <td style={td}>{shiftDE(r.shift)}</td>
+                    <td style={td}>{occMap[r.occasion] || r.occasion}</td>
+                    <td style={{ ...td, color: 'var(--text-muted)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.text}</td>
+                    <td style={td}>{r.used ? '✓' : ''}</td>
+                    <td style={td}>{r.rating === 'up' ? '👍' : r.rating === 'down' ? '👎' : ''}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {hist.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>Noch keine Aktivität.</div>}
+          {filteredHist.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>Keine Aktivität für diese Auswahl.</div>}
         </div>
       )}
     </div>
