@@ -59,6 +59,14 @@ export default function SettingsTab() {
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
   const [users, setUsers] = useState([])
+  // v4.11.0: Freischaltungen für die Selbst-Registrierung
+  const [invites, setInvites] = useState([])
+  const [inviteName, setInviteName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('chatter')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteMsg, setInviteMsg] = useState('')
+  const [inviteErr, setInviteErr] = useState('')
   const [editingRole, setEditingRole] = useState(null)
   const [offboarding, setOffboarding] = useState(null)
 
@@ -92,10 +100,70 @@ export default function SettingsTab() {
   useEffect(() => {
     loadUsers(); loadModels(); loadChatters()
     loadModelAliases(); loadChatterAliases(); loadBotMessages()
-    loadSurveys()
+    loadSurveys(); loadInvites()
   }, [])
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
+
+  // ── v4.11.0: Selbst-Registrierung ───────────────────────────────────────
+  // Statt selbst einen Login anzulegen, wird hier nur eine E-Mail-Adresse
+  // freigeschaltet. Die Person legt ihr Passwort auf der Anmeldeseite selbst
+  // fest; die Prüfung macht die Edge Function `self-signup`.
+  const loadInvites = async () => {
+    const { data } = await supabase.from('signup_invites').select('*').order('created_at', { ascending: false })
+    setInvites(data || [])
+  }
+
+  const addInvite = async () => {
+    const mail = inviteEmail.trim().toLowerCase()
+    const name = inviteName.trim()
+    if (!mail || !name) return
+    setInviteBusy(true); setInviteErr(''); setInviteMsg('')
+
+    // Doppelte Anzeigenamen führen zu Fehlzuordnungen (online_status, Dienstplan
+    // und CSV-Aliase hängen am Namen) — deshalb hier abfangen statt hinterher suchen.
+    if (users.some(u => (u.display_name || '').toLowerCase() === name.toLowerCase())) {
+      setInviteErr(`„${name}" gibt es schon als Mitglied. Bitte einen eindeutigen Namen nehmen.`)
+      setInviteBusy(false); return
+    }
+    const offen = invites.find(i => !i.used_at && i.email === mail)
+    if (offen) {
+      setInviteErr('Für diese Adresse ist schon eine Freischaltung offen.')
+      setInviteBusy(false); return
+    }
+
+    // Wer freigeschaltet hat, kommt aus der Anmeldung — SettingsTab bekommt
+    // keinen Namen als Prop übergeben.
+    const { data: { user } } = await supabase.auth.getUser()
+    const wer = user?.user_metadata?.full_name || user?.email?.split('@')[0] || null
+
+    const { error } = await supabase.from('signup_invites').insert({
+      email: mail, display_name: name, role: inviteRole, roles: [inviteRole],
+      created_by: wer,
+    })
+    if (error) {
+      setInviteErr(`Freischalten fehlgeschlagen: ${error.message}`)
+      setInviteBusy(false); return
+    }
+    logActivity('user.invite', { entity: name, detail: `${mail} · ${inviteRole}` })
+    setInviteMsg(`${mail} ist freigeschaltet. Die Person kann jetzt auf der Anmeldeseite „Konto erstellen" wählen.`)
+    setInviteName(''); setInviteEmail('')
+    setInviteBusy(false)
+    loadInvites()
+  }
+
+  const revokeInvite = async (inv) => {
+    if (!confirm(`Freischaltung für ${inv.email} zurückziehen?\n\nDie Person kann dann kein Konto mehr anlegen. Ein bereits angelegtes Konto bleibt bestehen.`)) return
+    await supabase.from('signup_invites').delete().eq('id', inv.id)
+    logActivity('user.invite.revoke', { entity: inv.display_name, detail: inv.email })
+    loadInvites()
+  }
+
+  const extendInvite = async (inv) => {
+    const neu = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString()
+    await supabase.from('signup_invites').update({ expires_at: neu }).eq('id', inv.id)
+    loadInvites()
+  }
   const loadModels = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id, in_schedule').order('name'); setModels(data || []) }
   // v3.24.1: stillgelegte Chatter (active === false) global ausblenden.
   // Wirkt auf alle Stellen, die `chatters` nutzen: Chatter-CSV-Liste, "Neue Zuordnung"-Dropdown
@@ -776,9 +844,108 @@ export default function SettingsTab() {
             </div>
           </div>
 
-          {/* Einladen */}
+          {/* v4.11.0: Freischalten — der empfohlene Weg.
+              Kein Mailversand, kein Passwort das herumgeschickt wird: Die Person
+              legt ihr Passwort auf der Anmeldeseite selbst fest. */}
           <div style={cardS}>
-            <div style={labelS}>Neues Mitglied einladen</div>
+            <div style={labelS}>E-Mail zur Registrierung freischalten</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+              Adresse und Namen eintragen, Rolle wählen. Die Person geht dann auf die
+              Anmeldeseite, wählt <b style={{ color: 'var(--text-secondary)' }}>„Konto erstellen"</b> und
+              legt ihr Passwort selbst fest. Rolle und Name sind dabei schon hinterlegt —
+              du musst hinterher nichts mehr in Supabase nachtragen.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Name (wie im Dienstplan)</label>
+                  <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="z.B. Noa" style={inputS} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>E-Mail</label>
+                  <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="noa@example.com" type="email" style={inputS} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {ROLES.map(r => (
+                  <button key={r.key} onClick={() => setInviteRole(r.key)} style={{
+                    padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
+                    background: inviteRole === r.key ? r.color + '22' : 'transparent',
+                    color: inviteRole === r.key ? r.color : 'var(--text-muted)',
+                    border: `1px solid ${inviteRole === r.key ? r.color : 'var(--border)'}`,
+                  }}>{r.label}</button>
+                ))}
+              </div>
+              <button onClick={addInvite} disabled={inviteBusy || !inviteEmail || !inviteName}
+                style={{ padding: '9px', borderRadius: 7, background: inviteEmail && inviteName ? '#10b981' : 'var(--border)', color: inviteEmail && inviteName ? '#04211a' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {inviteBusy ? '⏳ Wird freigeschaltet…' : '✓ Freischalten'}
+              </button>
+              {inviteMsg && <div style={{ fontSize: 12, color: '#10b981', padding: '8px 12px', background: 'rgba(16,185,129,0.1)', borderRadius: 7, border: '1px solid rgba(16,185,129,0.3)', lineHeight: 1.5 }}>{inviteMsg}</div>}
+              {inviteErr && <div style={{ fontSize: 12, color: '#ef4444', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)', lineHeight: 1.5 }}>{inviteErr}</div>}
+            </div>
+
+            {/* Offene und verbrauchte Freischaltungen */}
+            {invites.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 8 }}>
+                  Freischaltungen ({invites.filter(i => !i.used_at).length} offen)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {invites.slice(0, 20).map(inv => {
+                    const rc = ROLES.find(r => r.key === inv.role)
+                    const abgelaufen = !inv.used_at && inv.expires_at && new Date(inv.expires_at) < new Date()
+                    const tage = inv.expires_at ? Math.ceil((new Date(inv.expires_at) - new Date()) / 86400000) : null
+                    const ton = inv.used_at ? '#10b981' : abgelaufen ? '#ef4444' : '#f59e0b'
+                    return (
+                      <div key={inv.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                        padding: '8px 11px', background: 'var(--bg-card2)', borderRadius: 8,
+                        border: `1px solid ${ton}33`,
+                      }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: ton, background: ton + '22', padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                          {inv.used_at ? '✓ REGISTRIERT' : abgelaufen ? 'ABGELAUFEN' : 'OFFEN'}
+                        </span>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {inv.display_name}
+                            {rc && <span style={{ fontSize: 10, fontWeight: 700, color: rc.color, background: rc.color + '22', padding: '1px 6px', borderRadius: 4, marginLeft: 7 }}>{rc.label}</span>}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>{inv.email}</div>
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          {inv.used_at
+                            ? new Date(inv.used_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+                            : abgelaufen ? 'abgelaufen' : `noch ${tage} T.`}
+                        </div>
+                        {!inv.used_at && (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {abgelaufen && (
+                              <button onClick={() => extendInvite(inv)} title="Um 14 Tage verlängern"
+                                style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>+14 T.</button>
+                            )}
+                            <button onClick={() => revokeInvite(inv)} title="Freischaltung zurückziehen"
+                              style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)', cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Einladen per E-Mail — der alte Weg.
+              Bleibt drin, funktioniert aber nur, wenn in Supabase ein eigener
+              Mail-Anbieter hinterlegt ist. Ohne den werden die Mails gedrosselt
+              und landen im Spam. */}
+          <div style={cardS}>
+            <div style={labelS}>Alternativ: Einladung per E-Mail</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+              Verschickt eine Einladungs-Mail von Supabase. Nur zuverlässig, wenn dort ein
+              eigener Mail-Anbieter eingerichtet ist — sonst kommt die Mail oft nicht an.
+              Im Zweifel den Weg oben nehmen.
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
