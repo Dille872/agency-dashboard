@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import Logo from './Logo'
 
 export default function SetPasswordPage({ onDone }) {
   const [password, setPassword] = useState('')
@@ -29,9 +30,12 @@ export default function SetPasswordPage({ onDone }) {
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-sans)' }}>
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '40px 44px', width: '100%', maxWidth: 400, boxShadow: '0 0 60px rgba(124,58,237,0.1)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: '#fff' }}>T</div>
+          {/* v4.7.0: gleiches Logo wie im Admin-Dashboard (vorher "T" in Lila/Indigo) */}
+          <div style={{ width: 36, height: 36, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Logo size={36} />
+          </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>Thirteen 87</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Thirteen 87 Collective</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Passwort festlegen</div>
           </div>
         </div>

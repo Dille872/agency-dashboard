@@ -28,6 +28,7 @@ import TodoTab from './components/TodoTab'
 import SocialTab from './components/SocialTab'
 import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
+import Logo from './components/Logo'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 import { useFabPanels } from './fabPanel'
 
@@ -491,18 +492,10 @@ export default function App() {
       }}>
         {/* Left */}
         <div onClick={() => setActiveTab('models')} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer' }}>
+          {/* v4.7.0: Logo liegt jetzt in src/components/Logo.jsx — dieselbe Datei
+              nutzen Chatter-Portal, Model-Portal, Login und Passwort-Seite. */}
           <div style={{ width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Thirteen 87 Collective">
-              <defs>
-                <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stopColor="#8b8cf9" />
-                  <stop offset="1" stopColor="#c98bff" />
-                </linearGradient>
-              </defs>
-              <path d="M14 3 L24 13 L14 25 L4 13 Z" stroke="url(#logoGrad)" strokeWidth="1.6" strokeLinejoin="round" />
-              <path d="M7 13 L21 13" stroke="url(#logoGrad)" strokeWidth="1" />
-              <path d="M14 3 L7 13 L14 25 M14 3 L21 13 L14 25" stroke="url(#logoGrad)" strokeWidth="1" strokeOpacity="0.55" />
-            </svg>
+            <Logo size={28} />
           </div>
           <div style={{ minWidth: 0 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Thirteen 87 Collective</span>

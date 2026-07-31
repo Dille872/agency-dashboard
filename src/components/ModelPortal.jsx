@@ -15,6 +15,7 @@ const TODO_PRIORITY = {
 }
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
 import { useFabPanels } from '../fabPanel'
+import Logo from './Logo'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -629,10 +630,13 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       {/* Header */}
       <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(7,7,16,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #1e1e3a', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #f59e0b, #ef4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff' }}>T</div>
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Thirteen 87</span>
-            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>Model Portal</span>
+          {/* v4.7.0: gleiches Logo wie im Admin-Dashboard (vorher "T" in Orange/Rot) */}
+          <div style={{ width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Logo size={28} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Thirteen 87 Collective</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6, letterSpacing: '0.05em' }}>Model Portal</span>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

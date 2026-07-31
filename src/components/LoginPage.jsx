@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { supabase } from '../supabase'
+import Logo from './Logo'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -36,16 +37,13 @@ export default function LoginPage() {
       }}>
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: 'linear-gradient(135deg, #7c3aed, #06b6d4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 16, fontWeight: 800, color: '#fff', fontFamily: 'monospace',
-            boxShadow: '0 0 20px rgba(124,58,237,0.4)',
-          }}>A</div>
+          {/* v4.7.0: gleiches Logo wie im Admin-Dashboard (vorher "A" in Lila/Cyan) */}
+          <div style={{ width: 36, height: 36, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Logo size={36} />
+          </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Agency Dashboard</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Internes Performance-System</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Thirteen 87 Collective</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Agency Dashboard</div>
           </div>
         </div>
 

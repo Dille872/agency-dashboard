@@ -14,6 +14,7 @@ import { APP_VERSION } from '../version'
 import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
 import { useFabPanels } from '../fabPanel'
+import Logo from './Logo'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -1594,10 +1595,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         minHeight: 56, flexWrap: 'wrap', gap: 8,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #06b6d4, #7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff', fontFamily: 'monospace' }}>T</div>
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Thirteen 87</span>
-            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>Chatter Portal</span>
+          {/* v4.7.0: gleiches Logo wie im Admin-Dashboard (vorher "T" in Cyan/Lila) */}
+          <div style={{ width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Logo size={28} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Thirteen 87 Collective</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6, letterSpacing: '0.05em' }}>Chatter Portal</span>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
