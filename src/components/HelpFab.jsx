@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { useFabOpen } from '../fabPanel'
-import { HELP_TOPICS } from '../help/chatterHelp'
-import { HelpSheet } from './Help'
+import { HelpSheet, useHelp } from './Help'
 
 // v4.10.0 — Der Hilfe-Knopf über der Glocke.
 //
@@ -18,6 +17,7 @@ const ACCENT = '#a78bfa'
 export default function HelpFab({ isOpen, onToggle, onStartTour }) {
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [topic, setTopic] = useState(null)
+  const { topics } = useHelp()
 
   return (
     <>
@@ -59,7 +59,7 @@ export default function HelpFab({ isOpen, onToggle, onStartTour }) {
               >▶ Einführung noch einmal ansehen</button>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {HELP_TOPICS.map(t => (
+              {topics.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTopic(t.id)}

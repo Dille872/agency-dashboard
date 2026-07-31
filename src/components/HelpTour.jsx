@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { HELP_BY_ID, TOUR_IDS } from '../help/chatterHelp'
-import { HelpBody } from './Help'
+import { HelpBody, useHelp } from './Help'
 
 // v4.9.0 — Geführte Einführung für neue Chatter.
 //
@@ -17,12 +16,14 @@ import { HelpBody } from './Help'
 const Z = 9500
 const PAD = 6
 
-export default function HelpTour({ ids = TOUR_IDS, onGoTab, onFinish }) {
+export default function HelpTour({ ids: idsProp, onGoTab, onFinish }) {
+  const { byId, tour } = useHelp()
+  const ids = idsProp || tour
   const [i, setI] = useState(0)
   const [rect, setRect] = useState(null)
   const pollRef = useRef(null)
 
-  const topic = HELP_BY_ID[ids[i]]
+  const topic = byId[ids[i]]
   const isFirst = i === 0
   const isLast = i === ids.length - 1
 

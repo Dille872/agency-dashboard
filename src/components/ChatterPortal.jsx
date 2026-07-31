@@ -15,10 +15,10 @@ import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
 import { useFabPanels } from '../fabPanel'
 import Logo from './Logo'
-import { HelpDot, HelpSheet } from './Help'
+import { HelpProvider, HelpDot, HelpSheet } from './Help'
 import HelpTour from './HelpTour'
 import HelpFab from './HelpFab'
-import { HELP_TOPICS } from '../help/chatterHelp'
+import { HELP_TOPICS, TOUR_IDS } from '../help/chatterHelp'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -1620,6 +1620,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   return (
+    <HelpProvider topics={HELP_TOPICS} tour={TOUR_IDS}>
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       {/* Header */}
       <header ref={headerRef} style={{
@@ -2931,6 +2932,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       )}
       {helpTopic && <HelpSheet topic={helpTopic} onClose={() => setHelpTopic(null)} />}
     </div>
+    </HelpProvider>
   )
 }
 

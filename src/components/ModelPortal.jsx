@@ -16,6 +16,10 @@ const TODO_PRIORITY = {
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
 import { useFabPanels } from '../fabPanel'
 import Logo from './Logo'
+import { HelpProvider, HelpDot } from './Help'
+import HelpTour from './HelpTour'
+import HelpFab from './HelpFab'
+import { HELP_TOPICS as MODEL_HELP, TOUR_IDS as MODEL_TOUR } from '../help/modelHelp'
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -228,6 +232,23 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   })
   const fab = useFabPanels()   // v4.1.0: Glocke und Chat schließen sich gegenseitig
   const [activeSection, setActiveSection] = useState('home') // home | board | kalender | umsatz | anfragen
+  // v4.13.0: Helpcenter — Einführung beim ersten Öffnen, danach nie wieder von
+  // allein. Merker am Anzeigenamen, damit ein zweiter Account auf demselben
+  // Gerät seine eigene Einführung bekommt.
+  const [tourOpen, setTourOpen] = useState(false)
+  const TOUR_KEY = `modelportal_tour_v1_${displayName || 'default'}`
+  useEffect(() => {
+    if (!displayName || isPreview) return
+    let gesehen = null
+    try { gesehen = localStorage.getItem(TOUR_KEY) } catch {}
+    if (gesehen) return
+    const t = setTimeout(() => setTourOpen(true), 1200)
+    return () => clearTimeout(t)
+  }, [displayName, isPreview, TOUR_KEY])
+  const finishTour = () => {
+    setTourOpen(false)
+    try { localStorage.setItem(TOUR_KEY, new Date().toISOString()) } catch {}
+  }
   const [myTodos, setMyTodos] = useState([]) // v3.40.0: mir zugewiesene Aufgaben
   const [todoNoteDrafts, setTodoNoteDrafts] = useState({})
 
@@ -623,9 +644,22 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
   const inputS = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: '100%' }
   const itemS = { padding: '9px 11px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }
+  // v4.13.0: Kopfzeile je Bereich — gibt der Einführung einen Anker und dem
+  // ?-Symbol einen festen Platz. Die Bereiche hatten vorher keine Überschrift,
+  // weil die Navigation sie ersetzt hat; auf dem Handy scrollt die aber weg.
+  const SektionsKopf = ({ id, titel }) => (
+    <div data-help={id} style={{
+      display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 8,
+      borderBottom: '1px solid var(--border)', marginBottom: 4,
+    }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{titel}</span>
+      <HelpDot topic={id} />
+    </div>
+  )
   const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }
 
   return (
+    <HelpProvider topics={MODEL_HELP} tour={MODEL_TOUR}>
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       {/* Header */}
       <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(7,7,16,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #1e1e3a', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 }}>
@@ -662,7 +696,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       <main style={{ padding: '20px', maxWidth: 1100, margin: '0 auto' }}>
 
         {/* Nav */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div data-help="navigation" style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
             { key: 'home', label: <><Icon name="home" /> Übersicht</> },
             { key: 'board', label: <><Icon name="clipboard" /> Mein Board{unreadCustomContent > 0 ? ` (${unreadCustomContent})` : ''}</> },
@@ -689,7 +723,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
         {/* HOME */}
         {activeSection === 'home' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div data-help="home" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {/* Status Banner */}
         {(() => {
@@ -701,12 +735,12 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           const border = s === 'available' ? 'rgba(16,185,129,0.25)' : s === 'pause' ? 'rgba(245,158,11,0.25)' : s === 'unavailable' ? 'rgba(239,68,68,0.2)' : '#1e1e3a'
           const label = s === 'available' ? 'Ich bin verfügbar' : s === 'pause' ? `Pause${untilStr ? ` bis ${untilStr}` : ''}` : s === 'unavailable' ? `Nicht verfügbar${untilStr ? ` bis ${untilStr}` : ''}` : 'Status nicht gesetzt'
           return (
-            <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 18px' }}>
+            <div data-help="status" style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 18px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, flexShrink: 0 }} />
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color }}>{label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color, display: 'flex', alignItems: 'center', gap: 7 }}>{label}<HelpDot topic="status" /></div>
                     {modelStatus?.status_note && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{modelStatus.status_note}</div>}
                   </div>
                 </div>
@@ -735,9 +769,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
         {/* v3.40.0: Meine Aufgaben (vom Team zugewiesen) */}
         {myTodos.length > 0 && (
-          <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '0 10px 10px 0', padding: '14px 18px' }}>
+          <div data-help="todos" style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '0 10px 10px 0', padding: '14px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>📋 Meine Aufgaben</span>
+              <HelpDot topic="todos" />
               {myTodos.filter(t => !t.completed).length > 0 && (
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 10, background: '#ef4444', color: '#fff' }}>{myTodos.filter(t => !t.completed).length}</span>
               )}
@@ -1005,7 +1040,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
               {/* Bot Commands */}
               <div style={cardS}>
-                <div style={{ ...labelS, marginBottom: 12 }}><span style={{ width: 3, height: 11, background: '#a78bfa', borderRadius: 2, display: 'inline-block', marginRight: 6 }} />Bot-Befehle · @thirteen87agency_bot</div>
+                <div style={{ ...labelS, marginBottom: 12 }}><span style={{ width: 3, height: 11, background: '#a78bfa', borderRadius: 2, display: 'inline-block', marginRight: 6 }} />Bot-Befehle · @thirteen87agency_bot<HelpDot topic="bot" /></div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {[
                     { cmd: 'verfügbar', desc: 'Status auf verfügbar setzen', color: '#10b981' },
@@ -1029,14 +1064,16 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* BOARD */}
         {activeSection === 'board' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <SektionsKopf id="board" titel="Mein Board" />
             {/* Social Media Kanäle */}
-            <SocialLinksEditor modelName={displayName} />
+            <div data-help="sociallinks"><SocialLinksEditor modelName={displayName} /></div>
 
             {/* Services Ja/Nein */}
             <div style={{ ...cardS, borderLeft: '3px solid #f97316', borderRadius: '0 10px 10px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <span style={{ width: 3, height: 14, background: '#f97316', borderRadius: 2, display: 'inline-block' }} />
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Services</span>
+                <HelpDot topic="services" />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
                 {SERVICE_ITEMS.map(svc => {
@@ -1071,6 +1108,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 3, height: 14, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
                   <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Custom Content</span>
+                  <HelpDot topic="customcontent" />
                   <span style={{ fontSize: 10, background: 'var(--bg-card2)', color: 'var(--text-muted)', padding: '1px 7px', borderRadius: 10, border: '1px solid var(--border)' }}>{customContent.filter(c => !c.completed).length} offen</span>
                 </div>
                 <button onClick={() => setShowAddContent(!showAddContent)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.15)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>+ Neu</button>
@@ -1260,6 +1298,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* KALENDER */}
         {activeSection === 'kalender' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <SektionsKopf id="kalender" titel="Kalender" />
             <div style={cardS}>
               <div style={{ ...labelS, marginBottom: 16 }}><span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />Neuer Eintrag</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -1334,6 +1373,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* VIDEOS */}
         {activeSection === 'videos' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <SektionsKopf id="videos" titel="Videos" />
             {!showAddVideo ? (
               <button onClick={() => setShowAddVideo(true)} style={{ padding: '10px', borderRadius: 8, background: 'var(--bg-card)', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
                 + Neues Video eintragen
@@ -1514,6 +1554,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           }
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <SektionsKopf id="anfragen" titel="Anfragen" />
               {/* Aktive Aufträge */}
               {activeReqs.length > 0 && (
                 <>
@@ -1546,13 +1587,16 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
         {/* SOCIAL */}
         {activeSection === 'social' && (
-          <SocialModelView displayName={displayName} cardS={cardS} itemS={itemS} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <SektionsKopf id="social" titel="Social" />
+            <SocialModelView displayName={displayName} cardS={cardS} itemS={itemS} />
+          </div>
         )}
 
         {/* UMSATZ */}
         {activeSection === 'umsatz' && (
-          <div style={cardS}>
-            <div style={{ ...labelS, marginBottom: 16 }}><span style={{ width: 3, height: 11, background: '#10b981', borderRadius: 2, display: 'inline-block' }} />Umsatz {monthName}</div>
+          <div data-help="umsatz" style={cardS}>
+            <div style={{ ...labelS, marginBottom: 16 }}><span style={{ width: 3, height: 11, background: '#10b981', borderRadius: 2, display: 'inline-block' }} />Umsatz {monthName}<HelpDot topic="umsatz" /></div>
             <div style={{ fontSize: 36, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)', marginBottom: 4 }}>{formatMoney(totalRevenue)}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 20 }}>Laufender Monat</div>
             {multiAccount && (
@@ -1584,8 +1628,18 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             isOpen={fab.active === 'bell'} onToggle={(v) => fab.set('bell', v)} />
           <ChatterChat displayName={displayName} contactType="model"
             isOpen={fab.active === 'chat'} onToggle={(v) => fab.set('chat', v)} />
+          {/* v4.13.0: Hilfe-Knopf über der Glocke (20 Chat · 86 Glocke · 152 Hilfe) */}
+          <HelpFab
+            isOpen={fab.active === 'help'} onToggle={(v) => fab.set('help', v)}
+            onStartTour={() => setTourOpen(true)}
+          />
         </>
       )}
+
+      {tourOpen && !isPreview && (
+        <HelpTour onGoTab={setActiveSection} onFinish={finishTour} />
+      )}
     </div>
+    </HelpProvider>
   )
 }

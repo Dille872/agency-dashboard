@@ -1,13 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { HELP_BY_ID } from '../help/chatterHelp'
+import React, { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react'
 
 // v4.9.0 — Helpcenter-Bausteine.
+// v4.13.0 — portal-unabhängig: Die Texte kommen über den HelpProvider herein,
+//           damit Chatter- und Model-Portal dieselben Bausteine nutzen können.
 //
-//   HelpDot   Das kleine ? neben einer Überschrift. Öffnet die Erklärung.
-//   HelpSheet Das Fenster mit der Erklärung. Auch einzeln nutzbar (Liste im
-//             Tab „Mehr" öffnet damit dasselbe Fenster).
+//   HelpProvider  Legt fest, WELCHE Themen gelten (chatterHelp.js / modelHelp.js).
+//   HelpDot       Das kleine ? neben einer Überschrift. Öffnet die Erklärung.
+//   HelpSheet     Das Fenster mit der Erklärung. Auch einzeln nutzbar.
+//   HelpBody      Der Inhalt eines Themas — auch von der Tour benutzt.
 //
-// Die Texte stehen in src/help/chatterHelp.js — hier steht nur die Darstellung.
+// Hier steht nur die Darstellung, kein einziger Erklärtext.
+
+const HelpCtx = createContext({ topics: [], byId: {}, tour: [] })
+export const useHelp = () => useContext(HelpCtx)
+
+export function HelpProvider({ topics = [], tour = [], children }) {
+  const wert = useMemo(() => ({
+    topics, tour,
+    byId: Object.fromEntries(topics.map(t => [t.id, t])),
+  }), [topics, tour])
+  return <HelpCtx.Provider value={wert}>{children}</HelpCtx.Provider>
+}
 
 const Z = 9000
 
@@ -17,7 +30,8 @@ const Z = 9000
 // ist ungültiges HTML — der Browser zerlegt dann das Markup.
 export function HelpDot({ topic, size = 16 }) {
   const [open, setOpen] = useState(false)
-  const t = HELP_BY_ID[topic]
+  const { byId } = useHelp()
+  const t = byId[topic]
   if (!t) return null
   const stop = (e) => { e.stopPropagation(); e.preventDefault() }
   return (
@@ -45,7 +59,8 @@ export function HelpDot({ topic, size = 16 }) {
 
 // ── Das Erklär-Fenster ─────────────────────────────────────────────────────
 export function HelpSheet({ topic, onClose }) {
-  const t = HELP_BY_ID[topic]
+  const { byId } = useHelp()
+  const t = byId[topic]
   const esc = useCallback((e) => { if (e.key === 'Escape') onClose() }, [onClose])
   useEffect(() => {
     window.addEventListener('keydown', esc)
