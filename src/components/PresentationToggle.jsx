@@ -29,6 +29,13 @@ export default function PresentationToggle() {
       if (obsRef.current) { obsRef.current.disconnect(); obsRef.current = null }
       clearTimeout(timerRef.current)
       document.querySelectorAll('.' + BLUR_CLASS).forEach(el => el.classList.remove(BLUR_CLASS))
+      // v4.14.0: Klasse am <html> ebenfalls entfernen. Seit der Schalter nur noch
+      // im Admin-Dashboard hängt, wird diese Komponente beim Wechsel in ein Portal
+      // ausgebaut — die Klasse würde sonst hängenbleiben und dort alles mit
+      // className="private" dauerhaft verwischen, ohne dass es einen Knopf zum
+      // Abschalten gäbe. Beim blossen Umschalten ist das harmlos: der Effekt
+      // setzt sie direkt danach wieder.
+      document.documentElement.classList.remove('presentation-mode')
     }
 
     if (!on) { cleanup(); return }

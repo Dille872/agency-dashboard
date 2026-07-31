@@ -28,6 +28,7 @@ import TodoTab from './components/TodoTab'
 import SocialTab from './components/SocialTab'
 import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
+import PresentationToggle from './components/PresentationToggle'
 import Logo from './components/Logo'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 import { useFabPanels } from './fabPanel'
@@ -478,6 +479,12 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
+      {/* v4.14.0: Inkognito-Schalter — bewusst HIER und nicht mehr in main.jsx.
+          Dort lag er über allem, also auch über Login, Chatter- und Model-Portal.
+          Diese Stelle wird nur erreicht, wenn wirklich das Admin-Dashboard läuft:
+          Login, Sperr-Screen, Passwort-Seite und beide Portale sind vorher schon
+          per return abgehandelt. */}
+      <PresentationToggle />
       {/* SurveyModal wird in ChatterPortal/ModelPortal selbst gerendert */}
       {/* ── HEADER ── */}
       <header style={{
