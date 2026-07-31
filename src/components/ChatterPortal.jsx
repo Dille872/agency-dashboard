@@ -15,6 +15,9 @@ import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
 import { useFabPanels } from '../fabPanel'
 import Logo from './Logo'
+import { HelpDot, HelpSheet } from './Help'
+import HelpTour from './HelpTour'
+import { HELP_TOPICS } from '../help/chatterHelp'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -268,9 +271,11 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
 // v3.95.0: `hidden` blendet das Panel aus, ohne es zu unmounten (display:none statt
 // return null). So bleiben Zustand und bereits geladene Daten der Kinder beim
 // Tab-Wechsel erhalten — wichtig z.B. für generierte Nachrichten-Vorschläge.
-function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = 'var(--text-muted)', children, hidden = false }) {
+// v4.9.0: helpId — setzt das ?-Symbol neben die Überschrift und markiert den
+// Bereich zugleich als Ziel für die Einführungs-Tour (data-help).
+function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = 'var(--text-muted)', children, hidden = false, helpId = null }) {
   return (
-    <div style={{
+    <div data-help={helpId || undefined} style={{
       display: hidden ? 'none' : 'block',
       marginBottom: 12,
       background: 'var(--bg-card)',
@@ -278,10 +283,11 @@ function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = '
       borderRadius: 10,
       overflow: 'hidden'
     }}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
       <button
         onClick={onToggle}
         style={{
-          width: '100%',
+          flex: 1, minWidth: 0,
           padding: '12px 16px',
           background: 'transparent',
           border: 'none',
@@ -306,6 +312,8 @@ function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = '
         </span>
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{isCollapsed ? '▶' : '▼'}</span>
       </button>
+      {helpId && <span style={{ paddingRight: 14, display: 'flex', alignItems: 'center' }}><HelpDot topic={helpId} /></span>}
+      </div>
       {!isCollapsed && (
         <div style={{ padding: '0 16px 16px' }}>
           {children}
@@ -509,6 +517,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       stats: false,      // Mehr: offen
       guidelines: true,
       bot: true,
+      help: true,        // Mehr: zu (v4.9.0 — Nachschlagewerk, kein Dauerbegleiter)
     }
   })
   const toggleCollapse = (key) => {
@@ -534,6 +543,31 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     setTab(key)
     try { localStorage.setItem(TAB_KEY, key) } catch {}
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  // v4.9.0: Tabwechsel OHNE Scroll — die Tour scrollt selbst zum erklärten
+  // Element; ein zusätzlicher Sprung nach oben würde dagegen arbeiten.
+  const setTabQuiet = React.useCallback((key) => {
+    setTab(key)
+    try { localStorage.setItem(TAB_KEY, key) } catch {}
+  }, [TAB_KEY])
+
+  // v4.9.0: Helpcenter — Einführungs-Tour beim ersten Öffnen, danach nie wieder
+  // von allein. Der Merker hängt am Anzeigenamen, damit ein zweiter Account auf
+  // demselben Gerät seine eigene Einführung bekommt.
+  const TOUR_KEY = `chatterportal_tour_v1_${displayName || 'default'}`
+  const [tourOpen, setTourOpen] = useState(false)
+  const [helpTopic, setHelpTopic] = useState(null)
+  useEffect(() => {
+    if (!displayName) return
+    let seen = null
+    try { seen = localStorage.getItem(TOUR_KEY) } catch {}
+    if (seen) return
+    const t = setTimeout(() => setTourOpen(true), 1200)
+    return () => clearTimeout(t)
+  }, [displayName, TOUR_KEY])
+  const finishTour = () => {
+    setTourOpen(false)
+    try { localStorage.setItem(TOUR_KEY, new Date().toISOString()) } catch {}
   }
   // v3.95.0: Panel gezielt aufklappen (für die Handlungs-Chips im Cockpit)
   const openPanel = (key) => {
@@ -1709,7 +1743,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             (mehr) erkannt wird — z. B. manueller Check-in, nur Co-Chatter/Trainee, Fenster vorbei
             oder Plan nachträglich geändert. Sonst gäbe es keinen "Schicht beenden"-Button. */}
         {(todayShifts.length > 0 || isOnline) && (
-          <div style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 12, padding: '11px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div data-help="schichtleiste" style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 12, padding: '11px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: isOnline ? '#10b981' : 'var(--text-primary)', marginBottom: 3 }}>
                 {isOnline ? '🟢 Schicht aktiv' : '⚪ Schicht noch nicht gestartet'}
@@ -1759,7 +1793,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             Stats vom {new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12 }}>
+        <div data-help="cockpit" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12 }}>
           {[
             { label: 'Revenue', val: formatMoney(chatterStats?.revenue || 0), good: revDelta >= 0, accent: '#10b981' },
             { label: 'Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(0)}%` : '—', good: (chatterStats?.buyRate || 0) >= 25, accent: '#06b6d4' },
@@ -1803,7 +1837,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           })
           if (chips.length === 0) return null
           return (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div data-help="chips" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
               {chips.map(c => {
                 const inner = (
                   <>
@@ -1847,7 +1881,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             { key: 'mehr', icon: '📚', label: 'Mehr', badge: 0 },
           ]
           return (
-            <div style={{
+            <div data-help="tabs" style={{
               display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4,
               borderBottom: '1px solid var(--border)', marginBottom: 16,
               scrollbarWidth: 'none',
@@ -1880,7 +1914,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )
         })()}
 
-        <Collapsible hidden={tab !== 'heute' || myTodos.length === 0} isCollapsed={collapsed.todos} onToggle={() => toggleCollapse('todos')} icon="📋" title="Meine Aufgaben" badge={myTodos.filter(t => !t.completed).length || null} badgeColor="#ef4444">
+        <Collapsible helpId="todos" hidden={tab !== 'heute' || myTodos.length === 0} isCollapsed={collapsed.todos} onToggle={() => toggleCollapse('todos')} icon="📋" title="Meine Aufgaben" badge={myTodos.filter(t => !t.completed).length || null} badgeColor="#ef4444">
           {myTodos.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px 2px' }}>Aktuell keine Aufgaben für dich.</div>
           ) : (
@@ -1931,7 +1965,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )}
         </Collapsible>
 
-        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={todayShifts.length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
+        <Collapsible helpId="shifts" hidden={tab !== 'heute'} isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={todayShifts.length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
           {/* My Shifts – next 7 days */}
           <div>
             {myNext7Shifts.length === 0 ? (
@@ -2016,7 +2050,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* v3.98.0: Abwesenheit aus dem Schichten-Panel herausgelöst und in den
             Organisation-Tab verschoben — das Schichten-Panel war zu voll. */}
-        <Collapsible hidden={tab !== 'orga'} isCollapsed={collapsed.absence} onToggle={() => toggleCollapse('absence')} icon="🌴" title="Ich bin nicht verfügbar am" badge={myAbsences.length || null} badgeColor="#ef4444">
+        <Collapsible helpId="absence" hidden={tab !== 'orga'} isCollapsed={collapsed.absence} onToggle={() => toggleCollapse('absence')} icon="🌴" title="Ich bin nicht verfügbar am" badge={myAbsences.length || null} badgeColor="#ef4444">
           <div>
               {/* v3.49.0: Info-Hinweis zur Vorlauf-Orientierung (nur Erklärtext, keine Sperre) */}
               <div style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.22)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
@@ -2077,7 +2111,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {/* v3.98.0: Die Liste "Nachrichten vom Team" ist raus — die Chat-Bubble unten
             rechts zeigt denselben Verlauf, nur vollständig und in beide Richtungen.
             Übrig bleibt die Schichtnotiz, die hier ihren angestammten Platz hat. */}
-        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="📝" title="Schichtnotiz" badge={isOnline && !hasShiftNote ? 'offen' : null} badgeColor="#f59e0b">
+        <Collapsible helpId="messages" hidden={tab !== 'heute'} isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="📝" title="Schichtnotiz" badge={isOnline && !hasShiftNote ? 'offen' : null} badgeColor="#f59e0b">
           <div>
             <div ref={noteRef}>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -2134,7 +2168,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* Meine Models – Board & Videos */}
         {Object.keys(assignedModelBoards).length > 0 && (
-          <Collapsible hidden={tab !== 'models'} isCollapsed={collapsed.models} onToggle={() => toggleCollapse('models')} icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
+          <Collapsible helpId="models" hidden={tab !== 'models'} isCollapsed={collapsed.models} onToggle={() => toggleCollapse('models')} icon="🎬" title="Meine Models" badge={Object.keys(assignedModelBoards).length} badgeColor="#f59e0b">
           <div>
             {/* v3.98.0: Ohne Hinweis war nicht erkennbar, dass die Namen anklickbar sind */}
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 9, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2250,7 +2284,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         )}
 
         {/* Content Requests */}
-        <Collapsible hidden={tab !== 'content'} isCollapsed={collapsed.content} onToggle={() => toggleCollapse('content')} icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
+        <Collapsible helpId="content" hidden={tab !== 'content'} isCollapsed={collapsed.content} onToggle={() => toggleCollapse('content')} icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
         <div>
             {!showNewRequestForm ? (
               <button onClick={() => setShowNewRequestForm(true)} style={{
@@ -2546,6 +2580,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* v3.55.0: Kunden-Historie / Bibliothek */}
         <Collapsible
+          helpId="history"
           hidden={tab !== 'content'}
           isCollapsed={collapsed.history ?? true}
           onToggle={() => setCollapsed(prev => { const cur = prev.history ?? true; const next = { ...prev, history: !cur }; try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)) } catch {} return next })}
@@ -2556,7 +2591,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Content-Ideen */}
-        <Collapsible hidden={tab !== 'content'} isCollapsed={collapsed.ideas} onToggle={() => toggleCollapse('ideas')} icon="💡" title="Content-Ideen" badge={contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length || null} badgeColor="#a78bfa">
+        <Collapsible helpId="ideas" hidden={tab !== 'content'} isCollapsed={collapsed.ideas} onToggle={() => toggleCollapse('ideas')} icon="💡" title="Content-Ideen" badge={contentIdeas.filter(i => i.status === 'offen' || i.status === 'in_arbeit').length || null} badgeColor="#a78bfa">
           <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
             Wünsche & Ideen für Content der demnächst gemacht werden sollte. Wird vom Admin reviewed und ggf. ans Model weitergeleitet.
           </div>
@@ -2688,7 +2723,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* v3.2.0: Guidelines (von Admin in Einstellungen gepflegt) */}
-        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon={<BookOpen size={16} />} title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
+        <Collapsible helpId="guidelines" hidden={tab !== 'mehr'} isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon={<BookOpen size={16} />} title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
           {guidelines.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '12px 0', textAlign: 'center' }}>
               Noch keine Guidelines hinterlegt.
@@ -2708,12 +2743,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Schicht-Tausch */}
-        <Collapsible hidden={tab !== 'orga'} isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
+        <Collapsible helpId="swap" hidden={tab !== 'orga'} isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
           <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
         </Collapsible>
 
         {/* Week Stats */}
-        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.stats} onToggle={() => toggleCollapse('stats')} icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
+        <Collapsible helpId="stats" hidden={tab !== 'mehr'} isCollapsed={collapsed.stats} onToggle={() => toggleCollapse('stats')} icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
             {[
               { label: `Revenue ${new Date().toLocaleString('de-DE', { month: 'long' })}`, val: formatMoney(monthRevenue), good: monthRevenue > 2000 },
@@ -2731,7 +2766,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* Bot Commands */}
-        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.bot} onToggle={() => toggleCollapse('bot')} icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
+        <Collapsible helpId="bot" hidden={tab !== 'mehr'} isCollapsed={collapsed.bot} onToggle={() => toggleCollapse('bot')} icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
               { cmd: '/on', desc: 'Schicht starten', color: '#10b981' },
@@ -2742,6 +2777,41 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: b.color, background: b.color + '20', padding: '2px 7px', borderRadius: 4 }}>{b.cmd}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.desc}</span>
               </div>
+            ))}
+          </div>
+        </Collapsible>
+
+        {/* v4.9.0: HILFE — alle Erklärungen an einem Ort, plus Neustart der Tour. */}
+        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.help} onToggle={() => toggleCollapse('help')} icon="❓" title="Hilfe & Einführung" badgeColor="#a78bfa">
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+            Jeder Bereich im Portal hat oben rechts ein <span style={{ color: '#a78bfa', fontWeight: 700 }}>?</span> — dort steht,
+            wozu er da ist. Hier findest du alle Erklärungen auf einen Blick.
+          </div>
+          <button
+            onClick={() => setTourOpen(true)}
+            style={{
+              width: '100%', marginBottom: 14, padding: '10px', borderRadius: 8,
+              background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)',
+              color: '#a78bfa', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >▶ Einführung noch einmal ansehen</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {HELP_TOPICS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setHelpTopic(t.id)}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left',
+                  padding: '10px 12px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                  background: 'var(--bg-card2)', border: '1px solid var(--border)', width: '100%',
+                }}
+              >
+                <span style={{ fontSize: 15, lineHeight: 1.3 }}>{t.icon}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{t.title}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 2 }}>{t.short}</span>
+                </span>
+              </button>
             ))}
           </div>
         </Collapsible>
@@ -2846,6 +2916,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             isOpen={fab.active === 'chat'} onToggle={(v) => fab.set('chat', v)} />
         </>
       )}
+
+      {/* v4.9.0: Helpcenter — Einführungs-Tour und Einzel-Erklärungen */}
+      {tourOpen && (
+        <HelpTour onGoTab={setTabQuiet} onFinish={finishTour} />
+      )}
+      {helpTopic && <HelpSheet topic={helpTopic} onClose={() => setHelpTopic(null)} />}
     </div>
   )
 }
