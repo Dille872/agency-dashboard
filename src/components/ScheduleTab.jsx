@@ -50,6 +50,29 @@ const ALL_SHIFTS = [EXTRA_SHIFT, ...SHIFTS]
 const SHIFT_COLORS = { 'Vorschicht': '#3b82f6', 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
 // v3.69.0: Schicht-Icons statt Emojis (Früh/Spät/Nacht)
 const SHIFT_ICON = { 'Vorschicht': Clock, 'Früh': Sunrise, 'Spät': Sunset, 'Nacht': Moon }
+// v4.6.0: Zell-Farbtöne. Die Vorschicht wird in BLAU dargestellt statt grün/orange —
+// eingeschaltet sah sie vorher exakt aus wie Früh/Spät/Nacht, was beim Planen irritiert hat.
+// Bewusst NICHT angetastet: Rot (Abwesenheit, Doppelschicht), Gelb (Suchtreffer),
+// Cyan (Anlernen) und Lila (ausgeschrieben) — das sind echte Warnungen und behalten Vorrang.
+const CELL_TONES = {
+  normal: {
+    freiBg: 'rgba(16,185,129,0.06)', freiBorder: 'rgba(16,185,129,0.4)', freiText: '#10b981',
+    takenBg: 'rgba(16,185,129,0.05)', takenBorder: 'rgba(16,185,129,0.35)',
+    pendBg: 'rgba(245,158,11,0.06)', pendBorder: 'rgba(245,158,11,0.4)', pendDashed: false,
+    okChipBg: 'rgba(16,185,129,0.15)', okChipText: '#10b981',
+    pendChipBg: 'rgba(245,158,11,0.15)', pendChipText: '#f59e0b',
+  },
+  vorschicht: {
+    freiBg: 'rgba(59,130,246,0.10)', freiBorder: 'rgba(59,130,246,0.45)', freiText: '#60a5fa',
+    takenBg: 'rgba(59,130,246,0.10)', takenBorder: 'rgba(59,130,246,0.45)',
+    // Unbestätigt bleibt blau, wird aber über einen gestrichelten Rahmen unterscheidbar
+    // (kein Orange, damit die Zeile durchgängig als Vorschicht lesbar bleibt).
+    pendBg: 'rgba(59,130,246,0.05)', pendBorder: 'rgba(96,165,250,0.6)', pendDashed: true,
+    okChipBg: 'rgba(59,130,246,0.18)', okChipText: '#60a5fa',
+    pendChipBg: 'rgba(96,165,250,0.18)', pendChipText: '#93c5fd',
+  },
+}
+const cellTone = (shift) => shift === EXTRA_SHIFT ? CELL_TONES.vorschicht : CELL_TONES.normal
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 function berlinDate(date) {
@@ -1160,8 +1183,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const ShiftIcon = SHIFT_ICON[shift] || null
                   const shiftColor = SHIFT_COLORS[shift] || 'var(--text-muted)'
 
-                  const bgBase = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.06)' : isPending ? 'rgba(245,158,11,0.06)' : cell.chatter ? 'rgba(16,185,129,0.04)' : 'var(--bg-card2)'
-                  const borderBase = isChatterAbsent ? 'rgba(239,68,68,0.4)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.3)' : 'var(--border)'
+                  // v4.6.0: Farbton je Schicht — Vorschicht blau statt grün/orange
+                  const tone = cellTone(shift)
+                  const bgBase = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? tone.freiBg : isPending ? tone.pendBg : cell.chatter ? tone.takenBg : 'var(--bg-card2)'
+                  const borderBase = isChatterAbsent ? 'rgba(239,68,68,0.4)' : isFrei ? tone.freiBorder : isPending ? tone.pendBorder : cell.chatter ? tone.takenBorder : 'var(--border)'
                   const bg = isTrainee ? 'rgba(6,182,212,0.10)' : bgBase
                   const border = isTrainee ? '#06b6d4' : borderBase
                   const borderWidth = isTrainee ? 2 : 1
@@ -1175,10 +1200,12 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const cellBorderF = showSwap ? 'rgba(167,139,250,0.55)' : border
                   const cellBorderWidthF = showSwap ? 1 : borderWidth
                   const cellBoxShadowF = boxShadow
+                  // v4.6.0: unbestätigte Vorschicht = gestrichelter Rahmen (statt Orange)
+                  const cellBorderStyleF = (tone.pendDashed && isPending && !isChatterAbsent && !isTrainee && !showSwap) ? 'dashed' : 'solid'
 
                   return (
                     <div key={shift} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
-                      style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: cellBgF, border: `${cellBorderWidthF}px solid ${cellBorderF}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: cellBoxShadowF }}>
+                      style={{ position: 'relative', marginBottom: 6, padding: '10px 12px', background: cellBgF, border: `${cellBorderWidthF}px ${cellBorderStyleF} ${cellBorderF}`, borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: cellBoxShadowF }}>
                       {showSwap && (
                         <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Angebot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 10, right: isTrainee ? 10 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
                           {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH'}
@@ -1190,7 +1217,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 11, color: shiftColor, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>{ShiftIcon && <ShiftIcon size={12} strokeWidth={2.4} />}<span>{shift}{timeStr ? ` · ${timeStr}` : ''}</span></div>
                         {isFrei ? (
-                          <div style={{ fontSize: 14, fontWeight: 700, color: '#10b981' }}>✓ Freischicht</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: tone.freiText }}>✓ Freischicht</div>
                         ) : cell.chatter ? (
                           <div>
                             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
@@ -1383,8 +1410,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       const confirmed = cell.confirmed !== false
                       const isPending = cell.chatter && !isFrei && !confirmed
 
-                      const cellBg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? 'rgba(16,185,129,0.05)' : isPending ? 'rgba(245,158,11,0.05)' : cell.chatter ? 'rgba(16,185,129,0.04)' : isToday(day) ? 'rgba(56,130,246,0.04)' : 'var(--bg-card)'
-                      const cellBorder = isChatterAbsent ? 'rgba(239,68,68,0.5)' : isFrei ? 'rgba(16,185,129,0.4)' : isPending ? 'rgba(245,158,11,0.4)' : cell.chatter ? 'rgba(16,185,129,0.35)' : isToday(day) ? 'rgba(56,130,246,0.3)' : '#1e1e3a'
+                      // v4.6.0: Farbton je Schicht — Vorschicht blau statt grün/orange
+                      const tone = cellTone(shift)
+                      const cellBg = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? tone.freiBg : isPending ? tone.pendBg : cell.chatter ? tone.takenBg : isToday(day) ? 'rgba(56,130,246,0.04)' : 'var(--bg-card)'
+                      const cellBorder = isChatterAbsent ? 'rgba(239,68,68,0.5)' : isFrei ? tone.freiBorder : isPending ? tone.pendBorder : cell.chatter ? tone.takenBorder : isToday(day) ? 'rgba(56,130,246,0.3)' : '#1e1e3a'
                       // Search-Highlight: gelb glühend wenn cell matched
                       const isSearchMatch = cellMatchesSearch(cell)
                       const isTrainee = !!cell.trainee && !isFrei
@@ -1393,11 +1422,14 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       let finalBg = isTrainee ? 'rgba(6,182,212,0.10)' : cellBg
                       let finalBorder = isTrainee ? '#06b6d4' : cellBorder
                       let finalBorderWidth = isTrainee ? 2 : 1
+                      // v4.6.0: unbestätigte Vorschicht = gestrichelter Rahmen (statt Orange)
+                      let finalBorderStyle = (tone.pendDashed && isPending && !isChatterAbsent && !isTrainee) ? 'dashed' : 'solid'
                       // v3.1.0: Doppel-Schicht-Warnung — rote Border + roter Hintergrund. Hat Vorrang vor Trainee-Style.
                       if (showDoppelWarn) {
                         finalBg = 'rgba(239,68,68,0.14)'
                         finalBorder = '#ef4444'
                         finalBorderWidth = 2
+                        finalBorderStyle = 'solid'
                       }
                       const searchBoxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
                                               showDoppelWarn ? '0 0 12px rgba(239,68,68,0.5)' :
@@ -1410,12 +1442,13 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       if (showSwap) {
                         finalBg = 'rgba(167,139,250,0.13)'
                         finalBorder = 'rgba(167,139,250,0.55)'
+                        finalBorderStyle = 'solid'
                       }
                       const finalBoxShadow = searchBoxShadow
 
                       return (
                         <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
-                          style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px solid ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
+                          style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px ${finalBorderStyle} ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
                           {showSwap && (
                             <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Angebot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 6, right: isTrainee ? 6 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
                               {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH'}
@@ -1554,8 +1587,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
                             <div style={{ flex: 1 }}>
                               {isFrei ? (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: '#10b981' }}>Freischicht</span>
-                                  <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: 'rgba(16,185,129,0.2)', color: '#10b981' }}>✓</span>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: tone.freiText }}>Freischicht</span>
+                                  <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: tone.okChipBg, color: tone.okChipText }}>✓</span>
                                 </div>
                               ) : (
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
@@ -1571,8 +1604,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                   })()}
                                 </div>
                                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
-                                  background: isPending ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)',
-                                  color: isPending ? '#f59e0b' : '#10b981' }}>
+                                  background: isPending ? tone.pendChipBg : tone.okChipBg,
+                                  color: isPending ? tone.pendChipText : tone.okChipText }}>
                                   {isPending ? '! Klarung' : 'v'}
                                 </span>
                               </div>
