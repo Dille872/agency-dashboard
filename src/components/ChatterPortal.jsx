@@ -1594,7 +1594,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         minHeight: 56, flexWrap: 'wrap', gap: 8,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+        {/* v4.8.0: Klick aufs Logo fuehrt zurueck auf die Startseite — wie im Admin-Dashboard.
+            goTab() setzt den Tab, merkt ihn in localStorage und scrollt nach oben. */}
+        <div
+          onClick={() => goTab('heute')}
+          title="Zur Startseite"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer' }}
+        >
           {/* v4.7.0: gleiches Logo wie im Admin-Dashboard (vorher "T" in Cyan/Lila) */}
           <div style={{ width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Logo size={28} />

@@ -629,7 +629,12 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       {/* Header */}
       <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(7,7,16,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #1e1e3a', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* v4.8.0: Klick aufs Logo fuehrt zurueck auf die Startseite — wie im Admin-Dashboard. */}
+        <div
+          onClick={() => { setActiveSection('home'); if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          title="Zur Startseite"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+        >
           {/* v4.7.0: gleiches Logo wie im Admin-Dashboard (vorher "T" in Orange/Rot) */}
           <div style={{ width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Logo size={28} />
