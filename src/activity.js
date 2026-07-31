@@ -67,6 +67,8 @@ export const ACTION_LABELS = {
   'user.invite': 'hat eine E-Mail zur Registrierung freigeschaltet',
   'user.invite.revoke': 'hat eine Freischaltung zurückgezogen',
   'user.selfsignup': 'hat sich selbst registriert',
+  'user.pwreset': 'hat ein Passwort-Zurücksetzen freigegeben',
+  'user.pwset': 'hat ein neues Passwort gesetzt',
   'bot.message': 'hat eine Bot-Nachricht geändert',
   'suggestions.basics': 'hat die KI-Basics geändert',
   'persona.edit': 'hat einen Steckbrief bearbeitet',

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { BookOpen } from 'lucide-react'
-import { supabase } from '../supabase'
+import { supabase, FUNCTIONS_URL } from '../supabase'
 import BillingTab from './BillingTab'
 import ExportTab from './ExportTab'
 import { logActivity } from '../activity'
@@ -52,12 +52,6 @@ export default function SettingsTab() {
   const [activeSection, setActiveSection] = useState('team')
 
   // Team
-  const [email, setEmail] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [role, setRole] = useState('chatter')
-  const [sending, setSending] = useState(false)
-  const [success, setSuccess] = useState('')
-  const [error, setError] = useState('')
   const [users, setUsers] = useState([])
   // v4.11.0: Freischaltungen für die Selbst-Registrierung
   const [invites, setInvites] = useState([])
@@ -67,6 +61,10 @@ export default function SettingsTab() {
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteMsg, setInviteMsg] = useState('')
   const [inviteErr, setInviteErr] = useState('')
+  // v4.12.0: Passwort-Anfragen
+  const [resets, setResets] = useState([])
+  const [resetBusy, setResetBusy] = useState(null)
+  const [resetCode, setResetCode] = useState(null)   // { id, code, per_telegram }
   const [editingRole, setEditingRole] = useState(null)
   const [offboarding, setOffboarding] = useState(null)
 
@@ -100,7 +98,7 @@ export default function SettingsTab() {
   useEffect(() => {
     loadUsers(); loadModels(); loadChatters()
     loadModelAliases(); loadChatterAliases(); loadBotMessages()
-    loadSurveys(); loadInvites()
+    loadSurveys(); loadInvites(); loadResets()
   }, [])
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
@@ -150,6 +148,38 @@ export default function SettingsTab() {
     setInviteName(''); setInviteEmail('')
     setInviteBusy(false)
     loadInvites()
+  }
+
+  // ── v4.12.0: Passwort vergessen ─────────────────────────────────────────
+  // Die Freigabe läuft über die Edge Function, weil dabei ein Code erzeugt und
+  // per Telegram verschickt wird — beides gehört nicht in den Browser.
+  const loadResets = async () => {
+    const { data } = await supabase.from('password_resets').select('*').order('requested_at', { ascending: false })
+    setResets(data || [])
+  }
+
+  const approveReset = async (r) => {
+    if (!confirm(`Neues Passwort für ${r.display_name || r.email} freigeben?\n\nNur freigeben, wenn du weisst, dass diese Person gerade danach gefragt hat.`)) return
+    setResetBusy(r.id); setResetCode(null)
+    const { data: { session } } = await supabase.auth.getSession()
+    const resp = await fetch(`${FUNCTIONS_URL}/password-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || ''}` },
+      body: JSON.stringify({ action: 'approve', id: r.id }),
+    })
+    const data = await resp.json().catch(() => ({}))
+    setResetBusy(null)
+    if (!data.ok) { alert(data.error || 'Freigabe fehlgeschlagen.'); return }
+    // Ging der Code per Telegram raus, muss ihn niemand abschreiben. Sonst
+    // zeigen wir ihn hier — dann gibst du ihn selbst weiter.
+    setResetCode({ id: r.id, code: data.code, per_telegram: data.per_telegram })
+    loadResets()
+  }
+
+  const rejectReset = async (r) => {
+    if (!confirm(`Anfrage von ${r.display_name || r.email} ablehnen?`)) return
+    await supabase.from('password_resets').delete().eq('id', r.id)
+    loadResets()
   }
 
   const revokeInvite = async (inv) => {
@@ -419,41 +449,6 @@ export default function SettingsTab() {
       for (const item of data) map[item.key] = item.value
       setBotMessages(map)
     }
-  }
-
-  const sendInvite = async () => {
-    if (!email.trim() || !displayName.trim()) return
-    setSending(true); setError(''); setSuccess('')
-    try {
-      // v3.26.0: User-Token mitschicken, damit die Edge Function die Rolle des Aufrufers prüfen kann
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) { setError('Nicht angemeldet'); setSending(false); return }
-      const resp = await fetch(`https://xdchyruasjxvrjduchoc.supabase.co/functions/v1/invite-user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ email: email.trim(), display_name: displayName.trim(), role }),
-      })
-      const data = await resp.json()
-      if (data.ok) {
-        // Auto-create contact entry based on role
-        if (role === 'chatter') {
-          await supabase.from('chatters_contact').upsert({ name: displayName.trim() }, { onConflict: 'name' })
-        } else if (role === 'model') {
-          await supabase.from('models_contact').upsert({ name: displayName.trim() }, { onConflict: 'name' })
-        }
-        setSuccess(`Einladung an ${email} gesendet!`)
-        setEmail(''); setDisplayName('')
-        loadUsers()
-      } else {
-        setError(data.error || 'Fehler beim Einladen')
-      }
-    } catch (e) {
-      setError(`Fehler: ${e.message}`)
-    }
-    setSending(false)
   }
 
   const toggleRole = async (userId, currentRole, newRole) => {
@@ -935,46 +930,68 @@ export default function SettingsTab() {
             )}
           </div>
 
-          {/* Einladen per E-Mail — der alte Weg.
-              Bleibt drin, funktioniert aber nur, wenn in Supabase ein eigener
-              Mail-Anbieter hinterlegt ist. Ohne den werden die Mails gedrosselt
-              und landen im Spam. */}
-          <div style={cardS}>
-            <div style={labelS}>Alternativ: Einladung per E-Mail</div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
-              Verschickt eine Einladungs-Mail von Supabase. Nur zuverlässig, wenn dort ein
-              eigener Mail-Anbieter eingerichtet ist — sonst kommt die Mail oft nicht an.
-              Im Zweifel den Weg oben nehmen.
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Name</label>
-                  <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="z.B. Noa" style={inputS} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>E-Mail</label>
-                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="noa@example.com" type="email" style={inputS} />
-                </div>
+          {/* v4.12.0: Passwort-Anfragen — erscheint nur, wenn etwas offen ist */}
+          {resets.filter(r => r.status !== 'verbraucht').length > 0 && (
+            <div style={{ ...cardS, border: '1px solid rgba(245,158,11,0.4)' }}>
+              <div style={{ ...labelS, color: '#f59e0b' }}>🔑 Passwort-Anfragen ({resets.filter(r => r.status !== 'verbraucht').length})</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                Jemand hat auf der Anmeldeseite ein neues Passwort angefragt. Bei der Freigabe
+                entsteht ein Code, der 60 Minuten gilt — er geht per Telegram an die Person,
+                falls eine Telegram-ID hinterlegt ist. <b style={{ color: 'var(--text-secondary)' }}>Nur
+                freigeben, wenn du weisst, dass diese Person gerade danach gefragt hat.</b>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {ROLES.map(r => (
-                  <button key={r.key} onClick={() => setRole(r.key)} style={{
-                    padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
-                    background: role === r.key ? r.color + '22' : 'transparent',
-                    color: role === r.key ? r.color : 'var(--text-muted)',
-                    border: `1px solid ${role === r.key ? r.color : 'var(--border)'}`,
-                  }}>{r.label}</button>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resets.filter(r => r.status !== 'verbraucht').map(r => {
+                  const frei = r.status === 'freigegeben'
+                  const abgelaufen = frei && r.expires_at && new Date(r.expires_at) < new Date()
+                  const zeigeCode = resetCode?.id === r.id
+                  return (
+                    <div key={r.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, border: `1px solid ${frei ? 'rgba(16,185,129,0.35)' : 'rgba(245,158,11,0.35)'}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap',
+                          color: abgelaufen ? '#ef4444' : frei ? '#10b981' : '#f59e0b',
+                          background: (abgelaufen ? '#ef4444' : frei ? '#10b981' : '#f59e0b') + '22' }}>
+                          {abgelaufen ? 'ABGELAUFEN' : frei ? 'FREIGEGEBEN' : 'WARTET'}
+                        </span>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{r.display_name || '—'}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.email}</div>
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          {new Date(r.requested_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          {(!frei || abgelaufen) && (
+                            <button onClick={() => approveReset(r)} disabled={resetBusy === r.id}
+                              style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.45)', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                              {resetBusy === r.id ? '⏳' : '✓ Freigeben'}
+                            </button>
+                          )}
+                          <button onClick={() => rejectReset(r)}
+                            style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)', cursor: 'pointer', fontFamily: 'inherit' }}>Ablehnen</button>
+                        </div>
+                      </div>
+                      {zeigeCode && (
+                        <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 7, background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.35)' }}>
+                          {resetCode.per_telegram ? (
+                            <div style={{ fontSize: 12, color: '#a78bfa', lineHeight: 1.5 }}>
+                              ✓ Der Code <b style={{ fontFamily: 'monospace', letterSpacing: '0.15em' }}>{resetCode.code}</b> ist per Telegram raus. Du musst nichts weiter tun.
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 12, color: '#a78bfa', lineHeight: 1.5 }}>
+                              Keine Telegram-ID hinterlegt — gib diesen Code selbst weiter:
+                              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.25em', color: 'var(--text-primary)', margin: '8px 0 4px' }}>{resetCode.code}</div>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Gültig 60 Minuten.</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-              <button onClick={sendInvite} disabled={sending || !email || !displayName}
-                style={{ padding: '9px', borderRadius: 7, background: email && displayName ? '#7c3aed' : 'var(--border)', color: email && displayName ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                {sending ? '⏳ Wird gesendet...' : '✉ Einladung senden'}
-              </button>
-              {success && <div style={{ fontSize: 12, color: '#10b981', padding: '8px 12px', background: 'rgba(16,185,129,0.1)', borderRadius: 7, border: '1px solid rgba(16,185,129,0.3)' }}>{success}</div>}
-              {error && <div style={{ fontSize: 12, color: '#ef4444', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)' }}>{error}</div>}
             </div>
-          </div>
+          )}
 
           {/* Mitglieder (aktiv) */}
           <div style={cardS}>
