@@ -2162,7 +2162,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* v3.81.0: KI-Nachrichten-Vorschläge · v3.95.0: im Models-Tab.
             display:none statt Ausbau — sonst gingen erzeugte Vorschläge beim Tab-Wechsel verloren. */}
-        <div style={{ display: tab === 'models' ? 'block' : 'none' }}>
+        <div data-help="suggestions" style={{ display: tab === 'models' ? 'block' : 'none' }}>
           <MessageSuggestions displayName={displayName} />
         </div>
 
@@ -2782,7 +2782,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* v4.9.0: HILFE — alle Erklärungen an einem Ort, plus Neustart der Tour. */}
-        <Collapsible hidden={tab !== 'mehr'} isCollapsed={collapsed.help} onToggle={() => toggleCollapse('help')} icon="❓" title="Hilfe & Einführung" badgeColor="#a78bfa">
+        {/* helpId={null}: die Hilfe selbst braucht kein ?-Symbol — der Prüfer
+            (npm run check:help) erkennt daran, dass das Absicht ist. */}
+        <Collapsible helpId={null} hidden={tab !== 'mehr'} isCollapsed={collapsed.help} onToggle={() => toggleCollapse('help')} icon="❓" title="Hilfe & Einführung" badgeColor="#a78bfa">
           <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
             Jeder Bereich im Portal hat oben rechts ein <span style={{ color: '#a78bfa', fontWeight: 700 }}>?</span> — dort steht,
             wozu er da ist. Hier findest du alle Erklärungen auf einen Blick.
