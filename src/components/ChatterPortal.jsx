@@ -17,6 +17,7 @@ import { useFabPanels } from '../fabPanel'
 import Logo from './Logo'
 import { HelpDot, HelpSheet } from './Help'
 import HelpTour from './HelpTour'
+import HelpFab from './HelpFab'
 import { HELP_TOPICS } from '../help/chatterHelp'
 
 const CHRIS_TG = '1538601588'
@@ -2916,6 +2917,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           />
           <ChatterChat displayName={displayName}
             isOpen={fab.active === 'chat'} onToggle={(v) => fab.set('chat', v)} />
+          {/* v4.10.0: Hilfe-Knopf über der Glocke (20 Chat · 86 Glocke · 152 Hilfe) */}
+          <HelpFab
+            isOpen={fab.active === 'help'} onToggle={(v) => fab.set('help', v)}
+            onStartTour={() => setTourOpen(true)}
+          />
         </>
       )}
 

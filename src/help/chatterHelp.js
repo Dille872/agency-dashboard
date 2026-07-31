@@ -33,6 +33,7 @@ export const HELP_TOPICS = [
     body: [
       'Das Portal ist die Anlaufstelle für alles rund um deine Schicht. Du startest hier deine Schicht, siehst deinen Dienstplan, schlägst nach was bei „deinen" Models erlaubt ist, stellst Content-Anfragen und meldest dich beim Team.',
       'Alles was du hier machst, sieht das Team sofort — du musst nichts zusätzlich per Telegram melden. Umgekehrt erreichen dich Neuigkeiten über die Glocke unten rechts.',
+      'Wenn du irgendwo nicht weiterweißt: Unten rechts über der Glocke sitzt ein „?" — dort findest du alle Erklärungen. Und neben jeder Bereichsüberschrift steht ein kleines „?" mit der Erklärung genau zu diesem Bereich.',
     ],
     watch: [
       'Das Portal ersetzt nicht die Absprache im Team-Chat — es ergänzt sie. Bei allem Dringenden: kurz schreiben.',
