@@ -1024,6 +1024,24 @@ export default function ScheduleTab({ session, userDisplayName }) {
   // Wer tatsächlich etwas bekommen kann: Telegram-ID UND mindestens eine Schicht.
   const empfangsbereit = (c) => !!c.telegram_id && zaehleSchichten(c.name) > 0
 
+  // v4.16.2: Karteileiche direkt aus der Versandliste entfernen.
+  // Bisher musste man dafür in die Einstellungen (oder in Supabase) — genau da
+  // fällt einem so ein Eintrag aber nie auf, sondern hier beim Verschicken.
+  // Angeboten wird das NUR bei Leuten, die ohnehin nichts bekommen können,
+  // damit niemand versehentlich einen aktiven Chatter entfernt.
+  const chatterAusblenden = async (chatter) => {
+    if (!window.confirm(
+      `„${chatter.name}" aus allen Chatter-Listen ausblenden?\n\n` +
+      'Danach verschwindet der Name aus dieser Liste, aus den Dropdowns im Dienstplan ' +
+      'und aus den Umfrage-Empfängern.\n\n' +
+      'Es wird nichts gelöscht — Schichtnotizen, Check-ins und Verläufe bleiben. ' +
+      'Rückgängig geht es in den Einstellungen unter Team.',
+    )) return
+    await supabase.from('chatters_contact').update({ active: false }).eq('name', chatter.name)
+    logActivity('user.status', { entity: chatter.name, detail: 'aus den Chatter-Listen ausgeblendet' })
+    await loadChatters()
+  }
+
   // Vorauswahl erst setzen, wenn das Modal aufgeht — dann sind Chatter und Plan da.
   useEffect(() => {
     if (!sendModalOpen) return
@@ -2262,6 +2280,18 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         {shiftCount === 0 ? 'Keine Schichten diese Woche' : `${shiftCount} Schicht${shiftCount !== 1 ? 'en' : ''} diese Woche`}
                       </div>
                     </div>
+                    {/* v4.16.2: Nur bei Leuten, die ohnehin nichts bekommen können */}
+                    {!kannEmpfangen && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); chatterAusblenden(chatter) }}
+                        title="Aus allen Chatter-Listen ausblenden"
+                        style={{
+                          flexShrink: 0, fontSize: 10, padding: '4px 9px', borderRadius: 5,
+                          background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
+                          color: 'rgba(239,68,68,0.75)', cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                      >Ausblenden</button>
+                    )}
                   </label>
                 )
               })}
