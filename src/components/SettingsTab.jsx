@@ -123,11 +123,24 @@ export default function SettingsTab() {
       supabase.from('models_contact').select('name, active'),
     ])
     const inaktiv = new Set((ur || []).filter(u => u.status && u.status !== 'active').map(u => norm(u.display_name)))
+    const bekannt = new Set((ur || []).map(u => norm(u.display_name)).filter(Boolean))
     const gefunden = []
     for (const [liste, tabelle, label] of [[ch, 'chatters_contact', 'Chatter'], [mo, 'models_contact', 'Model']]) {
       for (const k of liste || []) {
         if (k.active === false) continue
-        if (inaktiv.has(norm(k.name))) gefunden.push({ tabelle, label, name: k.name })
+        const n = norm(k.name)
+        if (inaktiv.has(n)) {
+          gefunden.push({ tabelle, label, name: k.name, grund: 'offboardet' })
+        } else if (tabelle === 'chatters_contact' && !bekannt.has(n)) {
+          // Nur für Chatter: Wer chattet, braucht einen Login. Steht jemand in
+          // der Kontaktliste, hat aber kein Konto, ist er entweder vom
+          // Telegram-Bot angelegt worden oder aus user_roles verschwunden.
+          // In beiden Fällen taucht er in Dienstplan und Versandliste auf, ohne
+          // dass ein Offboarding je greifen könnte — das Feld active ist dann
+          // der einzige Hebel.
+          // Models sind hier ausgenommen: nicht jedes Model hat einen Zugang.
+          gefunden.push({ tabelle, label, name: k.name, grund: 'kein Konto' })
+        }
       }
     }
     setKontaktProbleme(gefunden)
@@ -916,23 +929,34 @@ export default function SettingsTab() {
           {/* v4.16.0: Altlasten — erscheint nur, wenn es welche gibt */}
           {kontaktProbleme.length > 0 && (
             <div style={{ ...cardS, border: '1px solid rgba(239,68,68,0.45)' }}>
-              <div style={{ ...labelS, color: '#ef4444' }}>⚠ Offboarding unvollständig ({kontaktProbleme.length})</div>
+              <div style={{ ...labelS, color: '#ef4444' }}>⚠ Karteileichen ({kontaktProbleme.length})</div>
               <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
-                Diese Leute sind stillgelegt oder offboardet, stehen in der Kontaktliste aber
-                weiter auf aktiv. Dadurch tauchen sie im <b style={{ color: 'var(--text-secondary)' }}>Dienstplan</b> und
-                in der <b style={{ color: 'var(--text-secondary)' }}>Empfängerliste beim Telegram-Versand</b> auf,
-                obwohl sie aus der Mitgliederliste verschwunden sind. Ursache ist meist eine
-                abweichende Schreibweise des Namens.
+                Diese Einträge stehen in der Kontaktliste auf aktiv und tauchen deshalb im{' '}
+                <b style={{ color: 'var(--text-secondary)' }}>Dienstplan</b> und in der{' '}
+                <b style={{ color: 'var(--text-secondary)' }}>Empfängerliste beim Telegram-Versand</b> auf,
+                obwohl sie dort nicht hingehören.
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                <b style={{ color: '#ef4444' }}>offboardet</b> — Account ist stillgelegt, der Kontakt-Eintrag
+                wurde aber nicht mitgezogen. Ursache ist meist eine abweichende Schreibweise des Namens.<br />
+                <b style={{ color: '#f59e0b' }}>kein Konto</b> — es gibt gar keinen Login unter diesem Namen.
+                Entweder vom Telegram-Bot angelegt oder der Account wurde entfernt. Ein Offboarding
+                kann hier nie greifen — nur Ausblenden hilft.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {kontaktProbleme.map(e => (
                   <div key={`${e.tabelle}-${e.name}`} style={{
                     display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
                     padding: '8px 11px', background: 'var(--bg-card2)', borderRadius: 8,
-                    border: '1px solid rgba(239,68,68,0.25)',
+                    border: `1px solid ${e.grund === 'offboardet' ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
                   }}>
                     <span style={{ fontSize: 9, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.15)', padding: '2px 7px', borderRadius: 4 }}>{e.label}</span>
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{e.name}</span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap',
+                      color: e.grund === 'offboardet' ? '#ef4444' : '#f59e0b',
+                      background: (e.grund === 'offboardet' ? '#ef4444' : '#f59e0b') + '22',
+                    }}>{e.grund}</span>
                     <button onClick={() => kontaktAusblenden(e)} style={{
                       fontSize: 11, padding: '5px 12px', borderRadius: 6, fontWeight: 700,
                       background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
