@@ -4,6 +4,7 @@ import { supabase, FUNCTIONS_URL } from '../supabase'
 import BillingTab from './BillingTab'
 import ExportTab from './ExportTab'
 import { logActivity } from '../activity'
+import { ladeInaktiveNamen, ohneInaktive } from '../people'
 
 const SECTIONS = [
   { key: 'team', label: 'Team' },
@@ -65,6 +66,11 @@ export default function SettingsTab() {
   const [resets, setResets] = useState([])
   const [resetBusy, setResetBusy] = useState(null)
   const [resetCode, setResetCode] = useState(null)   // { id, code, per_telegram }
+  // v4.16.0: Archiv standardmäßig zugeklappt — offboardete Leute sollen nicht
+  // dauerhaft in einer Liste stehen.
+  const [archivOffen, setArchivOffen] = useState(false)
+  // v4.16.0: Altlasten aus fehlgeschlagenen Offboardings
+  const [kontaktProbleme, setKontaktProbleme] = useState([])
   const [editingRole, setEditingRole] = useState(null)
   const [offboarding, setOffboarding] = useState(null)
 
@@ -98,10 +104,40 @@ export default function SettingsTab() {
   useEffect(() => {
     loadUsers(); loadModels(); loadChatters()
     loadModelAliases(); loadChatterAliases(); loadBotMessages()
-    loadSurveys(); loadInvites(); loadResets()
+    loadSurveys(); loadInvites(); loadResets(); loadKontaktCheck()
   }, [])
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
+
+  // ── v4.16.0: Altlasten finden ───────────────────────────────────────────
+  // Sucht Leute, die als stillgelegt/offboardet in user_roles stehen, deren
+  // Kontakt-Eintrag aber noch auf aktiv steht. Genau diese Kombination hat dafür
+  // gesorgt, dass jemand aus der Mitgliederliste verschwindet, im Dienstplan und
+  // beim Telegram-Versand aber weiterläuft. Ab v4.16.0 kann das nicht mehr neu
+  // entstehen — bestehende Fälle müssen einmal aufgeräumt werden.
+  const loadKontaktCheck = async () => {
+    const norm = (x) => String(x || '').trim().toLowerCase()
+    const [{ data: ur }, { data: ch }, { data: mo }] = await Promise.all([
+      supabase.from('user_roles').select('display_name, status'),
+      supabase.from('chatters_contact').select('name, active'),
+      supabase.from('models_contact').select('name, active'),
+    ])
+    const inaktiv = new Set((ur || []).filter(u => u.status && u.status !== 'active').map(u => norm(u.display_name)))
+    const gefunden = []
+    for (const [liste, tabelle, label] of [[ch, 'chatters_contact', 'Chatter'], [mo, 'models_contact', 'Model']]) {
+      for (const k of liste || []) {
+        if (k.active === false) continue
+        if (inaktiv.has(norm(k.name))) gefunden.push({ tabelle, label, name: k.name })
+      }
+    }
+    setKontaktProbleme(gefunden)
+  }
+
+  const kontaktAusblenden = async (eintrag) => {
+    await supabase.from(eintrag.tabelle).update({ active: false }).eq('name', eintrag.name)
+    logActivity('user.status', { entity: eintrag.name, detail: 'Kontakt nachträglich ausgeblendet' })
+    loadKontaktCheck(); loadModels(); loadChatters()
+  }
 
   // ── v4.11.0: Selbst-Registrierung ───────────────────────────────────────
   // Statt selbst einen Login anzulegen, wird hier nur eine E-Mail-Adresse
@@ -194,11 +230,25 @@ export default function SettingsTab() {
     await supabase.from('signup_invites').update({ expires_at: neu }).eq('id', inv.id)
     loadInvites()
   }
-  const loadModels = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id, in_schedule').order('name'); setModels(data || []) }
+  // v4.16.0: `active` fehlte hier — dadurch standen offboardete Models weiter in
+  // den Umfrage-Empfängern, im CSV-Alias-Dropdown und in der Model-Telegram-Liste.
+  const loadModels = async () => {
+    const [{ data }, inaktive] = await Promise.all([
+      supabase.from('models_contact').select('name, telegram_id, in_schedule, active').order('name'),
+      ladeInaktiveNamen(),
+    ])
+    setModels(ohneInaktive(data, inaktive))
+  }
   // v3.24.1: stillgelegte Chatter (active === false) global ausblenden.
   // Wirkt auf alle Stellen, die `chatters` nutzen: Chatter-CSV-Liste, "Neue Zuordnung"-Dropdown
   // und Umfrage-Empfänger. active === null gilt weiterhin als aktiv (neu angelegte Chatter ohne Flag).
-  const loadChatters = async () => { const { data } = await supabase.from('chatters_contact').select('name, active').order('name'); setChatters((data || []).filter(c => c.active !== false)) }
+  const loadChatters = async () => {
+    const [{ data }, inaktive] = await Promise.all([
+      supabase.from('chatters_contact').select('name, active').order('name'),
+      ladeInaktiveNamen(),
+    ])
+    setChatters(ohneInaktive(data, inaktive))
+  }
   const loadModelAliases = async () => { const { data } = await supabase.from('model_aliases').select('*').order('model_name'); setModelAliases(data || []) }
   const loadModelTelegramIds = async () => { const { data } = await supabase.from('models_contact').select('name, telegram_id'); return data || [] }
   const loadChatterAliases = async () => { const { data } = await supabase.from('chatter_aliases').select('*').order('chatter_name'); setChatterAliases(data || []) }
@@ -414,11 +464,35 @@ export default function SettingsTab() {
       //    v3.23.0: Models bekommen ein eigenes 'active'-Flag (analog zu chatters_contact).
       //    'in_schedule' bleibt davon unberührt — das ist weiterhin der manuelle
       //    "im Dienstplan / nicht im Plan"-Schalter und hat nichts mit Offboarding zu tun.
+      //
+      //    v4.16.0 — zwei stille Fehlschläge behoben:
+      //    a) Bisher entschied `user.role`, also die EINZELNE Rolle. Bei jemandem mit
+      //       roles = ['dienstplan','chatter'] ist role = 'dienstplan' — dann griff
+      //       kein Zweig und der Kontakt blieb aktiv. Jetzt zählt das ganze Array.
+      //    b) `.eq('name', display_name)` trifft bei abweichender Schreibweise NULL
+      //       Zeilen — und Supabase meldet dabei keinen Fehler. Jetzt wird erst exakt,
+      //       dann ohne Rücksicht auf Groß-/Kleinschreibung gesucht, und wenn immer
+      //       noch nichts passt, sagt das Dashboard Bescheid statt so zu tun als wäre
+      //       alles erledigt.
       const showInPlan = newStatus === 'active'
-      if (role === 'model') {
-        await supabase.from('models_contact').update({ active: showInPlan }).eq('name', name)
-      } else if (role === 'chatter') {
-        await supabase.from('chatters_contact').update({ active: showInPlan }).eq('name', name)
+      const rollen = user.roles?.length ? user.roles : [user.role]
+      const nichtGefunden = []
+      for (const [rolle, tabelle] of [['model', 'models_contact'], ['chatter', 'chatters_contact']]) {
+        if (!rollen.includes(rolle)) continue
+        const { data: exakt } = await supabase.from(tabelle)
+          .update({ active: showInPlan }).eq('name', name).select('name')
+        if (exakt?.length) continue
+        const { data: locker } = await supabase.from(tabelle)
+          .update({ active: showInPlan }).ilike('name', name).select('name')
+        if (!locker?.length) nichtGefunden.push(tabelle === 'models_contact' ? 'Models' : 'Chatter')
+      }
+      if (nichtGefunden.length > 0) {
+        alert(
+          `Achtung: Unter „${name}" gibt es keinen Eintrag in der ${nichtGefunden.join('- und ')}-Kontaktliste.\n\n` +
+          'Der Login ist gesperrt, aber im Dienstplan und beim Telegram-Versand taucht die Person ' +
+          'möglicherweise weiter auf, falls dort ein anderer Name hinterlegt ist.\n\n' +
+          'Bitte die Schreibweise in den Kontakten prüfen.',
+        )
       }
 
       // 3) Live-Status nicht mehr als "online" führen, wenn inaktiv
@@ -839,6 +913,37 @@ export default function SettingsTab() {
             </div>
           </div>
 
+          {/* v4.16.0: Altlasten — erscheint nur, wenn es welche gibt */}
+          {kontaktProbleme.length > 0 && (
+            <div style={{ ...cardS, border: '1px solid rgba(239,68,68,0.45)' }}>
+              <div style={{ ...labelS, color: '#ef4444' }}>⚠ Offboarding unvollständig ({kontaktProbleme.length})</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                Diese Leute sind stillgelegt oder offboardet, stehen in der Kontaktliste aber
+                weiter auf aktiv. Dadurch tauchen sie im <b style={{ color: 'var(--text-secondary)' }}>Dienstplan</b> und
+                in der <b style={{ color: 'var(--text-secondary)' }}>Empfängerliste beim Telegram-Versand</b> auf,
+                obwohl sie aus der Mitgliederliste verschwunden sind. Ursache ist meist eine
+                abweichende Schreibweise des Namens.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {kontaktProbleme.map(e => (
+                  <div key={`${e.tabelle}-${e.name}`} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    padding: '8px 11px', background: 'var(--bg-card2)', borderRadius: 8,
+                    border: '1px solid rgba(239,68,68,0.25)',
+                  }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.15)', padding: '2px 7px', borderRadius: 4 }}>{e.label}</span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{e.name}</span>
+                    <button onClick={() => kontaktAusblenden(e)} style={{
+                      fontSize: 11, padding: '5px 12px', borderRadius: 6, fontWeight: 700,
+                      background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
+                      color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit',
+                    }}>Jetzt ausblenden</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* v4.11.0: Freischalten — der empfohlene Weg.
               Kein Mailversand, kein Passwort das herumgeschickt wird: Die Person
               legt ihr Passwort auf der Anmeldeseite selbst fest. */}
@@ -1045,11 +1150,25 @@ export default function SettingsTab() {
           {/* v3.18.0: History / Archiv — stillgelegte & offboardete Mitglieder. Daten bleiben erhalten. */}
           {users.some(u => u.status && u.status !== 'active') && (
             <div style={cardS}>
-              <div style={labelS}>History / Archiv ({users.filter(u => u.status && u.status !== 'active').length})</div>
+              <button
+                onClick={() => setArchivOffen(o => !o)}
+                style={{
+                  width: '100%', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'inherit',
+                  marginBottom: archivOffen ? 10 : 0,
+                }}
+              >
+                <span style={{ ...labelS, marginBottom: 0 }}>
+                  History / Archiv ({users.filter(u => u.status && u.status !== 'active').length})
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{archivOffen ? '▼' : '▶'}</span>
+              </button>
+              {archivOffen && (
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
                 Login gesperrt und aus dem Dienstplan ausgeblendet. Alle Daten (Schichtnotizen, Logs, Umsätze) bleiben erhalten und können jederzeit reaktiviert werden.
               </div>
-              {users.filter(u => u.status && u.status !== 'active').map(u => {
+              )}
+              {archivOffen && users.filter(u => u.status && u.status !== 'active').map(u => {
                 const rc = ROLES.find(r => r.key === u.role)
                 const color = rc?.color || '#555580'
                 const isSuspended = u.status === 'suspended'

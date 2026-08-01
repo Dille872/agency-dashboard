@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
 import BlockOfferModal from './BlockOfferModal'
 import { logActivity } from '../activity'
+import { ladeInaktiveNamen, ohneInaktive } from '../people'
 
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
@@ -457,17 +458,27 @@ export default function ScheduleTab({ session, userDisplayName }) {
     // Bestehende Models ohne den Flag (NULL) werden auch geladen — gilt als "an"
     // v3.23.0: zusätzlich offboardete/stillgelegte Models ausblenden (active != false).
     //   in_schedule = manueller "nicht im Plan"-Schalter, active = Offboarding — getrennt.
-    const { data } = await supabase.from('models_contact').select('*')
-      .or('in_schedule.is.null,in_schedule.eq.true')
-      .or('active.is.null,active.eq.true')
-      .order('name')
-    setModels(data || [])
+    // v4.16.0: zwei getrennte .or() auf derselben Query sind fragil (supabase-js
+    //   hängt zweimal or=(…) an die URL). Jetzt nur noch in_schedule serverseitig,
+    //   das Aussortieren erledigt ohneInaktive() — das prüft AUCH user_roles.status
+    //   und fängt damit fehlgeschlagene Offboardings ab.
+    const [{ data }, inaktive] = await Promise.all([
+      supabase.from('models_contact').select('*')
+        .or('in_schedule.is.null,in_schedule.eq.true')
+        .order('name'),
+      ladeInaktiveNamen(),
+    ])
+    setModels(ohneInaktive(data, inaktive))
   }
   const loadChatters = async () => {
     // v3.18.0: Nur aktive Chatter im Dienstplan (active != false).
     // Bestehende ohne Flag (NULL) gelten als aktiv. Stillgelegte/offboardete werden ausgeblendet.
-    const { data } = await supabase.from('chatters_contact').select('*').or('active.is.null,active.eq.true').order('name')
-    setChatters(data || [])
+    // v4.16.0: zusätzlich gegen user_roles.status — siehe src/people.js.
+    const [{ data }, inaktive] = await Promise.all([
+      supabase.from('chatters_contact').select('*').order('name'),
+      ladeInaktiveNamen(),
+    ])
+    setChatters(ohneInaktive(data, inaktive))
   }
   const loadAdmins = async () => {
     // v2.9.2: Admins aus user_roles für Co-Schicht-Dropdown
@@ -994,6 +1005,31 @@ export default function ScheduleTab({ session, userDisplayName }) {
 
   // v3.28.0: Lookup für Dienstplan-Markierung. Key: `${model_name}__${dayIso}__${shift}`
   // Admin-Angebot (requester_name=null) hat Vorrang in der Anzeige, falls beides existiert.
+  // v4.16.0: Schichten dieser Woche je Chatter — EINE Berechnung für Vorauswahl,
+  // Zähler und Liste im Sende-Modal. Vorher hat die Vorschau alle angehakt und der
+  // Versand die ohne Schichten stillschweigend übersprungen: "An 12 senden" ->
+  // "an 7 versendet".
+  const zaehleSchichten = (chatterName) => {
+    let n = 0
+    for (const day of weekDays) {
+      const dayIso = isoDate(day)
+      for (const shift of ALL_SHIFTS) {
+        for (const model of models) {
+          if (getCell(model.id, dayIso, shift).chatter === chatterName) n++
+        }
+      }
+    }
+    return n
+  }
+  // Wer tatsächlich etwas bekommen kann: Telegram-ID UND mindestens eine Schicht.
+  const empfangsbereit = (c) => !!c.telegram_id && zaehleSchichten(c.name) > 0
+
+  // Vorauswahl erst setzen, wenn das Modal aufgeht — dann sind Chatter und Plan da.
+  useEffect(() => {
+    if (!sendModalOpen) return
+    setSendSelection(new Set(chatters.filter(empfangsbereit).map(c => c.id)))
+  }, [sendModalOpen, chatters, schedule])
+
   const openSwapMap = {}
   for (const s of openSwaps) {
     const key = `${s.model_name}__${s.shift_date}__${s.shift}`
@@ -1041,7 +1077,12 @@ export default function ScheduleTab({ session, userDisplayName }) {
             cursor: 'pointer', fontFamily: 'inherit',
             whiteSpace: 'nowrap',
           }}>Verlauf</button>
-          <button onClick={() => { setSendSelection(new Set(chatters.filter(c => c.telegram_id).map(c => c.id))); setSendModalOpen(true) }} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={async () => {
+              // v4.16.0: Liste frisch holen — wird jemand in den Einstellungen
+              // offboardet, während dieser Tab offen ist, stand er sonst weiter drin.
+              await loadChatters()
+              setSendModalOpen(true)
+            }} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {sending ? 'Sende...' : '✈ Plan versenden...'}
           </button>
           <button onClick={autoGeneratePlan} disabled={autoPlanning} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -2170,10 +2211,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
             {/* Aktions-Buttons oben: Alle / Keine */}
             <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                {sendSelection.size} von {chatters.filter(c => c.telegram_id).length} ausgewählt
+                {sendSelection.size} von {chatters.filter(empfangsbereit).length} ausgewählt
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => setSendSelection(new Set(chatters.filter(c => c.telegram_id).map(c => c.id)))} style={{
+                <button onClick={() => setSendSelection(new Set(chatters.filter(empfangsbereit).map(c => c.id)))} style={{
                   background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)',
                   fontSize: 10, padding: '4px 9px', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
                 }}>Alle</button>
@@ -2189,27 +2230,20 @@ export default function ScheduleTab({ session, userDisplayName }) {
               {chatters.map(chatter => {
                 const hasTg = !!chatter.telegram_id
                 const isSelected = sendSelection.has(chatter.id)
-                // Wie viele Schichten hat dieser Chatter diese Woche?
-                let shiftCount = 0
-                for (const day of weekDays) {
-                  const dayIso = isoDate(day)
-                  for (const shift of ALL_SHIFTS) {
-                    for (const model of models) {
-                      const c = getCell(model.id, dayIso, shift)
-                      if (c.chatter === chatter.name) shiftCount++
-                    }
-                  }
-                }
+                const shiftCount = zaehleSchichten(chatter.name)
+                // v4.16.0: Ohne Schicht gibt es nichts zu senden — die Zeile wird
+                // gesperrt statt beim Senden stillschweigend übersprungen.
+                const kannEmpfangen = hasTg && shiftCount > 0
                 return (
                   <label key={chatter.id} style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px',
-                    cursor: hasTg ? 'pointer' : 'not-allowed',
-                    opacity: hasTg ? 1 : 0.4,
+                    cursor: kannEmpfangen ? 'pointer' : 'not-allowed',
+                    opacity: kannEmpfangen ? 1 : 0.4,
                     borderBottom: '1px solid rgba(255,255,255,0.04)',
                   }}>
                     <input
                       type="checkbox"
-                      disabled={!hasTg}
+                      disabled={!kannEmpfangen}
                       checked={isSelected}
                       onChange={e => {
                         const next = new Set(sendSelection)
