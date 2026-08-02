@@ -291,7 +291,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
   useEffect(() => {
     if (!weekKey) return
     if (Object.keys(schedule).length === 0 && !hasSavedData) return
-    const timer = setTimeout(() => { saveSchedule() }, 2000)
+    // v4.17.0: still — kein Protokoll-Eintrag. Siehe Kommentar an saveSchedule.
+    const timer = setTimeout(() => { saveSchedule({ protokollieren: false }) }, 2000)
     return () => clearTimeout(timer)
   }, [schedule, dayNotes, shiftTimes, extraShifts]) // v3.80.0: extraShifts ergänzt — nur Vorschicht-Umschalten wurde sonst nicht gespeichert
 
@@ -554,7 +555,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
     }
   }
 
-  const saveSchedule = async () => {
+  // v4.17.0: `protokollieren` trennt Speichern von Protokollieren.
+  // Vorher schrieb JEDER Speichervorgang eine Zeile ins activity_log — und
+  // gespeichert wird automatisch 2 Sekunden nach jeder Änderung. Dadurch stand
+  // in der Glocke dutzendfach "hat den Dienstplan bearbeitet", und schon das
+  // blosse Durchblättern einer Woche erzeugte einen Eintrag: loadSchedule setzt
+  // die States, das löst den Auto-Save aus.
+  // Jetzt protokollieren nur noch die beiden echten Knopfdrücke — Speichern und
+  // Veröffentlichen. Der Auto-Save speichert weiter, aber still.
+  const saveSchedule = async ({ protokollieren = true } = {}) => {
     setSaving(true)
     const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', weekKey).single()
     if (existing) {
@@ -566,7 +575,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setSaving(false)
     // v3.97.0: protokollieren — schedule.assignments wird beim Speichern
     // überschrieben, ohne Protokoll wäre der Bearbeiter nicht rekonstruierbar.
-    logActivity('schedule.edit', { entity: `KW ${getKW(weekStart)}`, detail: `Woche ab ${weekKey}` })
+    if (protokollieren) {
+      logActivity('schedule.edit', { entity: `KW ${getKW(weekStart)}`, detail: `Woche ab ${weekKey}` })
+    }
   }
 
   const togglePublish = async () => {
@@ -1114,7 +1125,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
           }}>
             {publishing ? '...' : scheduleStatus === 'live' ? '⏸ Entwurf' : '▶ Veröffentlichen'}
           </button>
-          <button onClick={saveSchedule} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => saveSchedule()} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             {saving ? '↻ Speichert...' : '✓ Speichern'}
           </button>
         </div>
