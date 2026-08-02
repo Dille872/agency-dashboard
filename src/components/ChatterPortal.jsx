@@ -950,13 +950,25 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         .eq('display_name', displayName)
         .is('checked_out_at', null)
         .maybeSingle()
+      // v4.18.0: Wechsel in eine ANDERE Schicht.
+      // Vorher wurde bei offenem Log immer abgebrochen — dadurch übernahm die
+      // zweite Schicht des Tages still den Namen der ersten, und in shift_logs,
+      // Export und Stats wurden aus zwei Schichten buchstäblich eine.
+      // Jetzt: gleiche Schicht -> nur Zustand herstellen (wie bisher).
+      //        andere Schicht  -> die laufende sauber beenden und neu einchecken.
+      const zielSchicht = shiftName || selectedShift || null
       if (existingLog) {
-        // Already logged in - just set state
-        setCurrentLogId(existingLog.id)
-        setCurrentShift(existingLog.shift || null) // v3.77.1
-        setIsOnline(true)
-        await sendHeartbeat(true)
-        return
+        const gleiche = !zielSchicht || (existingLog.shift || '') === zielSchicht
+        if (gleiche) {
+          setCurrentLogId(existingLog.id)
+          setCurrentShift(existingLog.shift || null) // v3.77.1
+          setIsOnline(true)
+          await sendHeartbeat(true)
+          return
+        }
+        await supabase.from('shift_logs')
+          .update({ checked_out_at: new Date().toISOString() })
+          .eq('id', existingLog.id)
       }
 
       // v2.9.5/6: Schicht aus Plan ermitteln statt 'Manuell'
@@ -1619,6 +1631,27 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
   }
 
+  // v4.18.0: Welche Schicht läuft gerade, und was steht heute sonst noch an?
+  // `currentShift` kommt aus dem offenen shift_logs-Eintrag und ist damit die
+  // Wahrheit — nicht die Liste aller Schichten des Tages.
+  const laufendeSchicht = currentShift || selectedShift || (todayShifts.length === 1 ? todayShifts[0].shift : null)
+  const laufenderEintrag = todayShifts.find(s => s.shift === laufendeSchicht)
+  const laufendeModels = [...new Set((laufenderEintrag?.models || []).map(m => m.modelName || m))]
+  const lokaleZeit = (d) => {
+    try { return d.toLocaleTimeString('de-DE', { timeZone: LOCAL_TZ, hour: '2-digit', minute: '2-digit' }) }
+    catch { return '' }
+  }
+  const jetztMs = Date.now()
+  const weitereSchichten = todayShifts
+    .filter(s => s.shift !== laufendeSchicht)
+    .map(s => ({
+      ...s,
+      zeit: s.window ? `${lokaleZeit(s.window.start)}–${lokaleZeit(s.window.end)}` : '',
+      // „läuft" = Fenster hat begonnen und ist noch nicht vorbei. Nur dann ist
+      // ein Wechsel sinnvoll.
+      laeuft: !!s.window && s.window.start.getTime() <= jetztMs && s.window.end.getTime() > jetztMs,
+    }))
+
   return (
     <HelpProvider topics={HELP_TOPICS} tour={TOUR_IDS}>
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
@@ -1747,15 +1780,51 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {(todayShifts.length > 0 || isOnline) && (
           <div data-help="schichtleiste" style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 12, padding: '11px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
+              {/* v4.18.0: Vorher wurden ALLE Schichten des Tages in eine Zeile
+                  geklebt ("Spät + Nacht + Früh + Spät") und die Models aller
+                  Schichten zusammengemischt. Wer in Asien sitzt, hat oft
+                  Schichten aus zwei Berliner Tagen an einem lokalen Tag — dann
+                  standen dort vier Schichten und es sah aus, als wäre alles eine.
+                  Jetzt: nur die Schicht, in die tatsächlich eingecheckt wurde. */}
               <div style={{ fontSize: 14, fontWeight: 700, color: isOnline ? '#10b981' : 'var(--text-primary)', marginBottom: 3 }}>
                 {isOnline ? '🟢 Schicht aktiv' : '⚪ Schicht noch nicht gestartet'}
                 {isOnline
-                  ? ` · ${selectedShift || todayShifts.map(s => s.shift).join(' + ')}`
+                  ? (laufendeSchicht ? ` · ${laufendeSchicht}` : '')
                   : todayShifts.length === 1 ? ` · ${todayShifts[0].shift}` : ''}
               </div>
-              {isOnline && todayShifts.length > 0 && (
+              {isOnline && laufendeModels.length > 0 && (
                 <div style={{ fontSize: 11, color: '#10b981', marginBottom: 2 }}>
-                  Models: {[...new Set(todayShifts.flatMap(s => s.models.map(m => m.modelName || m)))].join(', ')}
+                  Models: {laufendeModels.join(', ')}
+                </div>
+              )}
+              {/* Weitere Schichten desselben lokalen Tages — einzeln, mit lokaler Zeit */}
+              {weitereSchichten.length > 0 && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <span>Heute außerdem:</span>
+                  {weitereSchichten.map(s => (
+                    <span key={s.shift + s.dayIso} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '2px 8px', borderRadius: 5,
+                      background: s.laeuft ? 'rgba(245,158,11,0.15)' : 'var(--bg-card2)',
+                      border: `1px solid ${s.laeuft ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
+                      color: s.laeuft ? '#f59e0b' : 'var(--text-secondary)',
+                    }}>
+                      <b>{s.shift}</b>
+                      {s.zeit && <span style={{ fontFamily: 'monospace' }}>{s.zeit}</span>}
+                      {isOnline && s.laeuft && (
+                        <button
+                          onClick={() => checkIn(s.shift)}
+                          disabled={isCheckingIn}
+                          title="Laufende Schicht beenden und diese starten"
+                          style={{
+                            background: 'transparent', border: 'none', color: '#f59e0b',
+                            cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700,
+                            padding: 0, textDecoration: 'underline',
+                          }}
+                        >wechseln</button>
+                      )}
+                    </span>
+                  ))}
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
