@@ -130,6 +130,24 @@ serve(async (_req) => {
       else staleLogs.push(`${l.display_name} (seit ${l.checked_in_at})`)
     }
 
+    // v4.20.0: Zellen von inaktiven oder gelöschten Models überspringen.
+    // Der Dienstplan blendet offboardete Models aus (`ohneInaktive`), die
+    // Einträge bleiben aber in der assignments-JSON stehen. Der Alarm las die
+    // JSON roh und meldete Schichten, die im Dienstplan gar nicht sichtbar sind
+    // (Vorfall 04.08.2026: Toni auf Model 13/Sophi, active=false).
+    // Fail-open: Kann die Model-Liste nicht geladen werden, wird NICHT gefiltert —
+    // lieber eine Meldung zu viel als eine ganze Nacht ohne Alarm.
+    const { data: modelData, error: modelErr } = await supabase
+      .from('models_contact').select('id, active')
+    let activeModelIds: Set<string> | null = null
+    if (modelErr || !modelData || modelData.length === 0) {
+      console.error('shift-alert: models_contact nicht ladbar — Filter aus', modelErr?.message || 'leer')
+    } else {
+      activeModelIds = new Set(
+        modelData.filter((m: any) => m.active !== false).map((m: any) => String(m.id))
+      )
+    }
+
     // v3.95.0: abgemeldete (abwesende) Chatter nicht alarmieren
     const { data: absData } = await supabase.from('absences').select('*')
     const isAbsent = (name: string, iso: string, sh: string) =>
@@ -146,6 +164,7 @@ serve(async (_req) => {
     const alerted: string[] = []
     const skippedAlreadyOnline: string[] = []
     const skippedNoTime: string[] = []   // v4.19.0: sichtbar machen statt still schlucken
+    const skippedInactiveModel: string[] = []  // v4.20.0
 
     for (const [key, val] of Object.entries(assignments) as [string, any][]) {
       const parts = key.split('__')
@@ -163,6 +182,13 @@ serve(async (_req) => {
       if (alreadyAlerted.has(alertKey)) continue
 
       const modelId = parts[0]
+
+      // v4.20.0: inaktives/gelöschtes Model -> die Schicht ist im Dienstplan
+      // unsichtbar, also auch kein Alarm.
+      if (activeModelIds && !activeModelIds.has(modelId)) {
+        skippedInactiveModel.push(`${alertKey} (Model ${modelId} inaktiv)`)
+        continue
+      }
 
       // v4.19.0: Zell-Override hat Vorrang vor der Standardzeit — genau wie im
       // Chatter-Portal und im Dienstplan. Vorher wurde NUR die Standardzeit
@@ -230,6 +256,7 @@ serve(async (_req) => {
       alerted,
       skipped_already_online: skippedAlreadyOnline,
       skipped_no_time: skippedNoTime,
+      skipped_inactive_model: skippedInactiveModel,
       stale_logs_ignored: staleLogs,
     }), { status: 200 })
   } catch (err) {
