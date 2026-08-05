@@ -4645,7 +4645,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           background: swap.status === 'offen' ? 'rgba(245,158,11,0.15)' : swap.status === 'angenommen' ? 'rgba(16,185,129,0.15)' : 'rgba(100,100,120,0.15)',
                           color: swap.status === 'offen' ? '#f59e0b' : swap.status === 'angenommen' ? '#10b981' : 'var(--text-muted)',
                         }}>
-                          {swap.status === 'offen' ? 'Offen' : swap.status === 'angenommen' ? `✓ ${swap.accepted_by}` : 'Abgeschlossen'}
+                          {/* v4.22.0: 'abgelaufen' eigens benennen — sonst sieht ein
+                              automatisch geschlossener Eintrag aus wie ein von Hand
+                              abgeschlossener. */}
+                          {swap.status === 'offen' ? 'Offen'
+                            : swap.status === 'angenommen' ? `✓ ${swap.accepted_by}`
+                            : swap.status === 'abgelaufen' ? '⏱ Abgelaufen'
+                            : 'Abgeschlossen'}
                         </span>
 
                         {swap.status === 'offen' && isAdminOffer && (

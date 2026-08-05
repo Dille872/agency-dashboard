@@ -165,8 +165,12 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
 
   const loadMySwaps = async () => {
     if (!displayName) return
+    // v4.22.0: 'abgelaufen' ist für den Chatter kein Ergebnis, sondern Rauschen —
+    // die Schicht hat begonnen und bleibt bei ihm. Für Admins bleibt der Eintrag
+    // unter „Schicht-Anfragen" sichtbar, damit die Historie vollständig ist.
     const { data } = await supabase.from('shift_swaps').select('*')
       .eq('requester_name', displayName)
+      .neq('status', 'abgelaufen')
       .order('shift_date', { ascending: true })
       .limit(10)
     setMySwaps(data || [])

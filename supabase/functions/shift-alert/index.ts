@@ -257,7 +257,55 @@ serve(async (_req) => {
       await sendTelegram(REY_TG, msg)
     }
 
-    // ── 7. Tages-Hausputz, einmal um 9 Uhr Berlin. Die Sperre ist wieder der
+    // ── 7. v4.22.0: Abgelaufene Ausschreibungen schließen.
+    //
+    //       Eine Schicht, die bereits begonnen hat, lässt sich nicht mehr
+    //       vergeben — sie ab da noch als „offen" zu führen, erzeugt nur
+    //       Handarbeit (jedes Mal zurückziehen) und eine Liste, der man nicht
+    //       mehr trauen kann. Ab Schichtbeginn also `status = 'abgelaufen'`.
+    //
+    //       Bewusst still: keine Telegram-Nachricht, weder an Admins noch an
+    //       den Anfragenden. Für die Chatter waren Angebote vergangener Tage
+    //       ohnehin nie sichtbar (`SwapModal` und `ChatterBell` filtern über
+    //       `shift_date >= heute`), und `abgelaufen` blendet das Portal aus.
+    //
+    //       Die Startzeit kommt aus derselben Quelle wie beim Alarm: erst der
+    //       Zell-Override, dann die Standardzeit. Findet sich für heute keine
+    //       verwertbare Zeit, bleibt die Ausschreibung offen — lieber einmal zu
+    //       viel stehen lassen als eine noch vergebbare Schicht schließen.
+    const abgelaufen: string[] = []
+    {
+      const { data: offeneSwaps } = await supabase
+        .from('shift_swaps').select('id, shift_date, shift, model_name')
+        .eq('status', 'offen').lte('shift_date', todayIso)
+
+      if (offeneSwaps && offeneSwaps.length > 0) {
+        // Model-Name -> Id. Bewusst ohne active-Filter: Auch Ausschreibungen
+        // stillgelegter Models sollen ablaufen.
+        const modelIdByName = new Map<string, string>()
+        for (const m of modelData || []) modelIdByName.set(lc(m.name), String(m.id))
+
+        const faellig: number[] = []
+        for (const sw of offeneSwaps) {
+          if (sw.shift_date < todayIso) { faellig.push(sw.id); abgelaufen.push(`${sw.shift_date} ${sw.shift} ${sw.model_name}`); continue }
+          const mid = modelIdByName.get(lc(sw.model_name))
+          if (!mid) continue
+          const zelle = assignments[`${mid}__${sw.shift_date}__${sw.shift}`]
+          const sp = parseSpanne(zelle?.time_override) ?? parseSpanne(shiftTimes[`${mid}__${sw.shift}`])
+          if (!sp) continue
+          if (nowMins >= sp.start) { faellig.push(sw.id); abgelaufen.push(`${sw.shift_date} ${sw.shift} ${sw.model_name}`) }
+        }
+
+        if (faellig.length > 0) {
+          const { error: expErr } = await supabase
+            .from('shift_swaps').update({ status: 'abgelaufen' })
+            .in('id', faellig).eq('status', 'offen')
+          if (expErr) console.error('shift-alert: Ausschreibungen ablaufen fehlgeschlagen', expErr.message)
+        }
+      }
+    }
+
+    // ── 8. Tages-Hausputz, einmal um 9 Uhr Berlin. Die Sperre ist wieder der
     //       Marker-Insert und nicht das Zeitfenster: Ein Minutenfenster hinge
     //       davon ab, auf welcher Minute der pg_cron-Job sitzt.
     let hausputz: Record<string, unknown> | null = null
@@ -296,6 +344,7 @@ serve(async (_req) => {
       eingecheckt,
       uebersprungen_model_unsichtbar: modelUnsichtbar,
       uebersprungen_ohne_zeit: ohneZeit,
+      abgelaufene_ausschreibungen: abgelaufen,
       hausputz,
     }), { status: 200 })
   } catch (err) {
