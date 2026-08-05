@@ -456,6 +456,50 @@ export default function SettingsTab() {
     URL.revokeObjectURL(url)
   }
 
+  // v4.21.0: Montag der laufenden Woche als ISO-Datum (lokale Zeit, wie im Dienstplan).
+  const montagIso = () => {
+    const x = new Date()
+    const wd = x.getDay()
+    x.setDate(x.getDate() + (wd === 0 ? -6 : 1 - wd))
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+  }
+
+  // v4.21.0: Ein stillgelegtes Model aus dem Dienstplan nehmen.
+  //
+  // Warum das nötig ist: Der Dienstplan blendet inaktive Models nur AUS, die
+  // Zellen bleiben in der assignments-JSON stehen. Für alles, was die JSON roh
+  // liest (z. B. der Schicht-Alarm), existiert die Schicht dann weiter — im
+  // Dienstplan sieht sie aber niemand und kann sie folglich auch nicht
+  // korrigieren. Genau so kam am 04.08.2026 eine Alarm-Meldung für Toni auf
+  // einem längst offboardeten Model zustande.
+  //
+  // Bewusst nur ab der LAUFENDEN Woche: Vergangene Wochen sind Historie und
+  // werden nicht angefasst.
+  const modelAusDienstplanNehmen = async (modelName) => {
+    const { data: treffer } = await supabase.from('models_contact').select('id').ilike('name', modelName)
+    const ids = (treffer || []).map(m => String(m.id))
+    if (ids.length === 0) return 0
+
+    const { data: wochen } = await supabase
+      .from('schedule').select('week_start, assignments').gte('week_start', montagIso())
+
+    let entferntGesamt = 0
+    for (const w of wochen || []) {
+      const alt = w.assignments || {}
+      const neu = {}
+      let entfernt = 0
+      for (const [k, v] of Object.entries(alt)) {
+        if (ids.includes(k.split('__')[0])) { entfernt++; continue }
+        neu[k] = v
+      }
+      if (entfernt === 0) continue
+      const { error } = await supabase.from('schedule').update({ assignments: neu }).eq('week_start', w.week_start)
+      if (error) { console.error('Dienstplan-Aufräumen fehlgeschlagen', w.week_start, error.message); continue }
+      entferntGesamt += entfernt
+    }
+    return entferntGesamt
+  }
+
   // v3.18.0: Status setzen (active | suspended | offboarded).
   // WICHTIG: Es werden KEINE Daten gelöscht. Wir markieren nur den Account-Status
   // (steuert Login) und blenden die Person aus der aktiven Dienstplan-Auswahl aus.
@@ -511,6 +555,17 @@ export default function SettingsTab() {
       // 3) Live-Status nicht mehr als "online" führen, wenn inaktiv
       if (!showInPlan) {
         await supabase.from('online_status').update({ shift_online: false }).eq('display_name', name)
+      }
+
+      // 4) v4.21.0: Beim Stilllegen eines Models dessen Einteilungen aus der
+      //    laufenden und allen künftigen Wochen entfernen — sonst bleiben sie
+      //    unsichtbar im Plan stehen (siehe modelAusDienstplanNehmen).
+      if (!showInPlan && rollen.includes('model')) {
+        const entfernt = await modelAusDienstplanNehmen(name)
+        if (entfernt > 0) {
+          logActivity('schedule.cleanup', { entity: name, detail: `${entfernt} Zelle(n) ab dieser Woche entfernt` })
+          alert(`${name} wurde außerdem aus ${entfernt} Dienstplan-Zelle(n) ab dieser Woche entfernt.\n\nVergangene Wochen bleiben unverändert.`)
+        }
       }
     } catch (e) {
       alert('Fehler beim Status-Update: ' + (e.message || e))

@@ -1,17 +1,52 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// shift-alert v4.21.0 — neu gedacht
+//
+// Die Regel in einem Satz:
+//   Der Dienstplan sagt, wer arbeitet. Ein Check-in ist ein Ereignis mit
+//   Zeitstempel. Fehlt das Ereignis, kommt eine Meldung.
+//
+// Was dafür WEGGEFALLEN ist (v4.20.1 und früher):
+//
+//   - `online_status` als Anwesenheits-Quelle. Bei Chattern wird `shift_online`
+//     ohnehin ausschließlich durch den Portal-Check-in gesetzt (App.jsx nimmt
+//     Chatter vom Heartbeat aus) — die Tabelle sagte also nichts, was
+//     `shift_logs` nicht auch sagt, nur unzuverlässiger: nach 5 Minuten ohne
+//     Heartbeat galt jemand wieder als abwesend.
+//
+//   - Die Frage, ob ein shift_log OFFEN ist. `checked_out_at` spielt keine
+//     Rolle mehr. Damit ist das Karteileichen-Problem nicht entschärft, sondern
+//     weg: Ein vergessener Check-out kann niemanden mehr stumm schalten, weil
+//     ein Zeitstempel von gestern schlicht nicht in das Zeitfenster von heute
+//     fällt. `CHECKIN_MAX_AGE_H` ist ersatzlos gestrichen.
+//
+//   - Der 10-Minuten-Schlitz. Gemeldet wird ab Start +10 bis Schichtende;
+//     dass es trotzdem bei genau EINER Meldung bleibt, sichert der Marker.
+//     Vorher konnte ein einzelner ausgefallener Cron-Lauf die Meldung
+//     dauerhaft verschlucken.
+//
+//   - Marker als Pseudo-Zeilen in `online_status`. Sie liegen jetzt in
+//     `alert_markers` (siehe sql/alert-markers.sql).
+//
+// Aufruf: pg_cron, alle 5 Minuten.
+// ─────────────────────────────────────────────────────────────────────────────
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
 const CHRIS_TG = '1538601588'
 const REY_TG = '528328429'
 
-// v4.19.0: Ein offener shift_log gilt nur noch so lange als "eingecheckt".
-// Grund: Auto-Checkout und das Aufräumen alter Logs laufen NUR im Chatter-Portal
-// im Browser. Wer per Telegram /on eincheckt und nie /off schickt, hatte vorher
-// einen für immer offenen Log — und wurde nie wieder alarmiert.
-const CHECKIN_MAX_AGE_H = 16
+// Ab wie vielen Minuten nach Schichtbeginn gemeldet wird.
+const MELDUNG_AB_MIN = 10
+// Wie lange vor Schichtbeginn ein Check-in schon für diese Schicht zählt.
+// Nötig, damit die zweite Schicht am selben Tag nicht durch den Check-in der
+// ersten stillgelegt wird — wer Früh UND Nacht hat, checkt zweimal ein.
+const CHECKIN_VORLAUF_MIN = 60
+// Fallback-Schichtlänge, wenn im Zeit-String kein Ende steht.
+const FALLBACK_DAUER_MIN = 240
 
 async function sendTelegram(chatId: string, text: string) {
   await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -29,17 +64,24 @@ function getWeekStart(date: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-// v4.19.0: Startzeit robust aus einem Zeit-String lesen.
-// Verkraftet: "08:00-14:00", "08:00 - 12:00", "21:00-01.00" (Punkt statt
-// Doppelpunkt), "20" (nur Stunde), " (DE)"-Anhängsel.
-// Gibt Minuten seit Mitternacht zurück — oder null, wenn nichts Brauchbares
-// drinsteht ("manuella", "Fernando", leer).
-function parseStartMins(raw: unknown): number | null {
+// Berliner Datum + Uhrzeit eines Zeitstempels, ohne Zeitzonen-Bibliothek.
+// 'sv-SE' liefert "YYYY-MM-DD HH:MM:SS" — daraus lassen sich Tag und Minute
+// direkt ablesen, egal in welcher Zeitzone die Funktion läuft.
+function berlinParts(d: Date): { day: string; mins: number } {
+  const s = d.toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' })
+  const day = s.slice(0, 10)
+  const h = Number(s.slice(11, 13))
+  const m = Number(s.slice(14, 16))
+  return { day, mins: h * 60 + m }
+}
+
+// Eine Uhrzeit aus einem Zeit-String lesen. Verkraftet: "08:00-14:00",
+// "08:00 - 12:00", "21:00-01.00" (Punkt statt Doppelpunkt), "20" (nur Stunde),
+// " (DE)"-Anhängsel. null = nichts Brauchbares ("manuella", "Fernando", leer).
+function parseClock(raw: string | undefined | null): number | null {
   if (!raw) return null
-  const s = String(raw).replace(/\s*\(DE\)/gi, '').trim()
-  if (!s) return null
-  const start = s.split('-')[0].trim().replace(/\./g, ':')
-  const m = start.match(/^(\d{1,2})(?::(\d{1,2}))?$/)
+  const t = raw.trim().replace(/\./g, ':')
+  const m = t.match(/^(\d{1,2})(?::(\d{1,2}))?$/)
   if (!m) return null
   const h = Number(m[1])
   const min = m[2] ? Number(m[2]) : 0
@@ -47,38 +89,46 @@ function parseStartMins(raw: unknown): number | null {
   return h * 60 + min
 }
 
-// v4.19.0: "Vorschichtschicht" war unschön.
+function parseSpanne(raw: unknown): { start: number; ende: number } | null {
+  if (!raw) return null
+  const s = String(raw).replace(/\s*\(DE\)/gi, '').trim()
+  if (!s) return null
+  const teile = s.split('-')
+  const start = parseClock(teile[0])
+  if (start == null) return null
+  let ende = parseClock(teile[1])
+  // Kein Ende oder Ende vor Beginn (Nachtschicht über Mitternacht):
+  // Das Fenster endet spätestens um 23:59 — nach Mitternacht ist die Zelle
+  // ohnehin die von gestern und fällt aus der Tagesprüfung.
+  if (ende == null) ende = Math.min(start + FALLBACK_DAUER_MIN, 1439)
+  if (ende <= start) ende = 1439
+  return { start, ende }
+}
+
 function shiftLabel(shift: string): string {
   return shift === 'Vorschicht' ? 'Vorschicht' : `${shift}schicht`
 }
 
 function minsToClock(mins: number): string {
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
 }
+
+const lc = (s: unknown) => String(s || '').trim().toLowerCase()
 
 serve(async (_req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    const now = new Date()
-    const berlinStr = now.toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' })
-    const berlinDate = new Date(berlinStr)
-    const currentHour = berlinDate.getHours()
-    const currentMin = berlinDate.getMinutes()
-    const todayIso = berlinStr.slice(0, 10)
-    const weekStartIso = getWeekStart(berlinDate)
+    const jetzt = berlinParts(new Date())
+    const todayIso = jetzt.day
+    const nowMins = jetzt.mins
+    const weekStartIso = getWeekStart(new Date(todayIso + 'T12:00:00Z'))
 
-    // v4.19.0: maybeSingle statt single. Bei .single() warf PostgREST einen
-    // Fehler, sobald es KEINE oder ZWEI Zeilen für die Woche gab — dann kam
-    // die ganze Woche kein einziger Alarm, ohne dass es jemand merkte.
+    // ── 1. Der Dienstplan. Ohne live geschalteten Plan gibt es keine Wahrheit,
+    //       über die sich reden ließe.
     const { data: schedData, error: schedErr } = await supabase
-      .from('schedule')
-      .select('*')
-      .eq('week_start', weekStartIso)
-      .eq('status', 'live')
-      .maybeSingle()
+      .from('schedule').select('assignments, shift_times')
+      .eq('week_start', weekStartIso).eq('status', 'live').maybeSingle()
 
     if (schedErr) {
       console.error('shift-alert: schedule-Abfrage fehlgeschlagen', schedErr.message)
@@ -89,175 +139,164 @@ serve(async (_req) => {
       return new Response(JSON.stringify({ message: 'No live schedule found', week_start: weekStartIso }), { status: 200 })
     }
 
-    // Online-Map case-insensitive aufbauen
-    const { data: onlineData } = await supabase.from('online_status').select('*')
-    const shiftOnlineMap: Record<string, boolean> = {}
-    const cutoff = new Date(Date.now() - 5 * 60 * 1000)
-    for (const s of onlineData || []) {
-      if (s.display_name?.startsWith('ALERTED_')) continue
-      if (!s.display_name) continue
-      if (s.shift_online && s.last_seen && new Date(s.last_seen) > cutoff) {
-        // KEY: lowercase damit Mario/mario gleich behandelt werden
-        shiftOnlineMap[s.display_name.toLowerCase().trim()] = true
-      }
-    }
-
-    const { data: alertedData } = await supabase
-      .from('online_status')
-      .select('display_name')
-      .like('display_name', `ALERTED_${todayIso}_%`)
-    const alreadyAlerted = new Set((alertedData || []).map((a: any) =>
-      a.display_name.replace(`ALERTED_${todayIso}_`, '')
-    ))
-
-    // v3.95.0: ECHTES Eincheck-Signal — ein offener shift_log bedeutet "eingecheckt",
-    // auch wenn der Browser/das Handy zu ist und online_status längst veraltet.
-    // v4.19.0: aber nur, wenn der Check-in nicht älter als CHECKIN_MAX_AGE_H ist.
-    // Ältere offene Logs sind Karteileichen (kein /off, Portal nie geöffnet) und
-    // hätten den Chatter sonst dauerhaft vom Alarm ausgenommen.
-    const { data: openLogs } = await supabase
-      .from('shift_logs')
-      .select('display_name, checked_in_at')
-      .is('checked_out_at', null)
-    const staleCutoff = Date.now() - CHECKIN_MAX_AGE_H * 60 * 60 * 1000
-    const checkedIn = new Set<string>()
-    const staleLogs: string[] = []
-    for (const l of openLogs || []) {
-      const name = (l.display_name || '').toLowerCase().trim()
-      if (!name) continue
-      const t = l.checked_in_at ? new Date(l.checked_in_at).getTime() : 0
-      if (t >= staleCutoff) checkedIn.add(name)
-      else staleLogs.push(`${l.display_name} (seit ${l.checked_in_at})`)
-    }
-
-    // v4.20.0: Zellen von inaktiven oder gelöschten Models überspringen.
-    // Der Dienstplan blendet offboardete Models aus (`ohneInaktive`), die
-    // Einträge bleiben aber in der assignments-JSON stehen. Der Alarm las die
-    // JSON roh und meldete Schichten, die im Dienstplan gar nicht sichtbar sind
-    // (Vorfall 04.08.2026: Toni auf Model 13/Sophi, active=false).
-    // Fail-open: Kann die Model-Liste nicht geladen werden, wird NICHT gefiltert —
-    // lieber eine Meldung zu viel als eine ganze Nacht ohne Alarm.
-    const { data: modelData, error: modelErr } = await supabase
-      .from('models_contact').select('id, active')
-    let activeModelIds: Set<string> | null = null
+    // ── 2. Welche Models sind im Dienstplan überhaupt sichtbar?
+    //       Zwei Gründe für unsichtbar, beide müssen greifen — sonst meldet der
+    //       Alarm Schichten, die im Dienstplan niemand sehen und damit auch
+    //       niemand korrigieren kann (Vorfall 04.08.2026: Toni auf Sophi):
+    //         a) models_contact.active === false
+    //         b) Name steht in user_roles mit status != 'active'
+    //       Das ist exakt die Logik von `ohneInaktive` in src/people.js.
+    //       Fail-open: Lässt sich die Liste nicht laden, wird NICHT gefiltert.
+    const [{ data: modelData, error: modelErr }, { data: roleData }] = await Promise.all([
+      supabase.from('models_contact').select('id, name, active'),
+      supabase.from('user_roles').select('display_name, status'),
+    ])
+    const inaktiveNamen = new Set(
+      (roleData || []).filter((u: any) => u.status && u.status !== 'active').map((u: any) => lc(u.display_name)).filter(Boolean),
+    )
+    let sichtbareModelIds: Set<string> | null = null
     if (modelErr || !modelData || modelData.length === 0) {
-      console.error('shift-alert: models_contact nicht ladbar — Filter aus', modelErr?.message || 'leer')
+      console.error('shift-alert: models_contact nicht ladbar — Model-Filter aus', modelErr?.message || 'leer')
     } else {
-      activeModelIds = new Set(
-        modelData.filter((m: any) => m.active !== false).map((m: any) => String(m.id))
+      sichtbareModelIds = new Set(
+        modelData
+          .filter((m: any) => m.active !== false && !inaktiveNamen.has(lc(m.name)))
+          .map((m: any) => String(m.id)),
       )
     }
 
-    // v3.95.0: abgemeldete (abwesende) Chatter nicht alarmieren
+    // ── 3. Die Check-ins von heute. Ein Zeitstempel, mehr nicht.
+    //       `checked_out_at` interessiert bewusst nicht: Wer eingecheckt und den
+    //       Check-out vergessen hat, HAT sich gemeldet — das war die Frage.
+    const seit = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
+    const { data: logData } = await supabase
+      .from('shift_logs').select('display_name, checked_in_at')
+      .gte('checked_in_at', seit)
+    // name -> [Minute seit Berliner Mitternacht] (nur Check-ins von heute)
+    const checkinsHeute: Record<string, number[]> = {}
+    for (const l of logData || []) {
+      if (!l.checked_in_at) continue
+      const p = berlinParts(new Date(l.checked_in_at))
+      if (p.day !== todayIso) continue
+      const k = lc(l.display_name)
+      if (!k) continue
+      ;(checkinsHeute[k] ||= []).push(p.mins)
+    }
+
+    // ── 4. Wer heute abgemeldet ist, wird nicht alarmiert.
     const { data: absData } = await supabase.from('absences').select('*')
-    const isAbsent = (name: string, iso: string, sh: string) =>
+    const istAbwesend = (name: string, sh: string) =>
       (absData || []).some((a: any) => {
-        if ((a.chatter_name || '').toLowerCase().trim() !== name.toLowerCase().trim()) return false
-        if (iso < a.date_from || iso > a.date_to) return false
+        if (lc(a.chatter_name) !== lc(name)) return false
+        if (todayIso < a.date_from || todayIso > a.date_to) return false
         const avail = a.available_shifts
         if (!avail || avail.length === 0) return true
         return !avail.includes(sh)
       })
 
+    // ── 5. Wofür heute schon gemeldet wurde.
+    const { data: markerData } = await supabase
+      .from('alert_markers').select('alert_key')
+      .eq('alert_date', todayIso).eq('alert_type', 'no_show')
+    const schonGemeldet = new Set((markerData || []).map((m: any) => m.alert_key))
+
+    // ── 6. Durch den Plan gehen.
     const assignments = schedData.assignments || {}
     const shiftTimes = schedData.shift_times || {}
-    const alerted: string[] = []
-    const skippedAlreadyOnline: string[] = []
-    const skippedNoTime: string[] = []   // v4.19.0: sichtbar machen statt still schlucken
-    const skippedInactiveModel: string[] = []  // v4.20.0
+
+    const gemeldet: string[] = []
+    const eingecheckt: string[] = []
+    const ohneZeit: string[] = []
+    const modelUnsichtbar: string[] = []
 
     for (const [key, val] of Object.entries(assignments) as [string, any][]) {
       const parts = key.split('__')
       if (parts.length < 3) continue
-      const dayIso = parts[1]
-      const shift = parts[2]
-      const chatterName = val?.chatter
+      const [modelId, dayIso, shift] = parts
+      const chatter = val?.chatter
 
-      // v3.89.0: Freischicht (__FREI__) ist keine echte Schicht -> kein Alert
-      if (dayIso !== todayIso || !chatterName || chatterName === '__FREI__') continue
-      // v3.95.0: abwesende Chatter nicht alarmieren
-      if (isAbsent(chatterName, dayIso, shift)) continue
+      if (dayIso !== todayIso || !chatter || chatter === '__FREI__') continue
 
-      const alertKey = `${chatterName}_${shift}`
-      if (alreadyAlerted.has(alertKey)) continue
+      const alertKey = `${chatter}_${shift}`
+      if (schonGemeldet.has(alertKey)) continue
 
-      const modelId = parts[0]
+      if (sichtbareModelIds && !sichtbareModelIds.has(modelId)) {
+        modelUnsichtbar.push(`${alertKey} (Model ${modelId})`)
+        continue
+      }
+      if (istAbwesend(chatter, shift)) continue
 
-      // v4.20.0: inaktives/gelöschtes Model -> die Schicht ist im Dienstplan
-      // unsichtbar, also auch kein Alarm.
-      if (activeModelIds && !activeModelIds.has(modelId)) {
-        skippedInactiveModel.push(`${alertKey} (Model ${modelId} inaktiv)`)
+      // Zell-Override schlägt Standardzeit — wie im Portal und im Dienstplan.
+      // Ohne diesen Vorrang wären Vorschichten unsichtbar (für sie gibt es gar
+      // keine Standardzeit) und Nachtschichten würden zu früh gemeldet.
+      const spanne = parseSpanne(val?.time_override) ?? parseSpanne(shiftTimes[`${modelId}__${shift}`])
+      if (!spanne) { ohneZeit.push(`${alertKey} (Model ${modelId})`); continue }
+
+      const faelligAb = spanne.start + MELDUNG_AB_MIN
+      if (nowMins < faelligAb || nowMins > spanne.ende) continue
+
+      // Hat er sich für DIESE Schicht gemeldet?
+      const meine = checkinsHeute[lc(chatter)] || []
+      if (meine.some(m => m >= spanne.start - CHECKIN_VORLAUF_MIN)) {
+        eingecheckt.push(alertKey)
         continue
       }
 
-      // v4.19.0: Zell-Override hat Vorrang vor der Standardzeit — genau wie im
-      // Chatter-Portal und im Dienstplan. Vorher wurde NUR die Standardzeit
-      // gelesen. Folge: Vorschichten (für die es gar keine Standardzeit gibt)
-      // lösten nie einen Alarm aus, und Nacht-/Spätschichten mit abweichender
-      // Startzeit feuerten bis zu zwei Stunden zu früh.
-      const shiftStartMins =
-        parseStartMins(val?.time_override) ??
-        parseStartMins(shiftTimes[`${modelId}__${shift}`])
+      // Der Marker-Insert IST die Sperre — schlägt er fehl (Unique-Verletzung),
+      // hat ein paralleler Lauf die Meldung schon verschickt.
+      const { error: markerErr } = await supabase.from('alert_markers').insert({
+        alert_key: alertKey, alert_date: todayIso, alert_type: 'no_show',
+      })
+      if (markerErr) { console.log(`shift-alert: ${alertKey} schon gemeldet`, markerErr.message); continue }
 
-      if (shiftStartMins == null) {
-        skippedNoTime.push(`${alertKey} (Model ${modelId}: keine verwertbare Zeit)`)
-        continue
-      }
-
-      const nowMins = currentHour * 60 + currentMin
-
-      if (nowMins >= shiftStartMins + 15 && nowMins <= shiftStartMins + 25) {
-        const chatterKey = chatterName.toLowerCase().trim()
-        // per Dashboard/Telegram eingecheckt (frischer offener shift_log) -> kein Alert,
-        // egal ob online_status noch aktuell ist
-        if (checkedIn.has(chatterKey)) { skippedAlreadyOnline.push(alertKey); continue }
-        if (shiftOnlineMap[chatterKey]) {
-          skippedAlreadyOnline.push(alertKey)
-          continue
-        }
-
-        // Marker zuerst
-        const markerKey = `ALERTED_${todayIso}_${alertKey}`
-        const { error: markerErr } = await supabase
-          .from('online_status')
-          .insert({
-            display_name: markerKey,
-            last_seen: new Date().toISOString(),
-            shift_online: false,
-          })
-
-        if (markerErr) {
-          console.log(`Skipping ${alertKey}: marker exists`, markerErr.message)
-          continue
-        }
-
-        alerted.push(alertKey)
-        const startTime = minsToClock(shiftStartMins)
-        const msg = `⚠️ <b>${chatterName}</b> hat ${shiftLabel(shift)} aber ist noch nicht eingecheckt!\n\nSchichtbeginn: ${startTime} Uhr (DE-Zeit)`
-        await sendTelegram(CHRIS_TG, msg)
-        await sendTelegram(REY_TG, msg)
-      }
-    }
-
-    // v4.19.0: Karteileichen einmal täglich melden — sonst merkt es niemand.
-    // Fenster 09:00–09:05 Berlin, damit es genau einen Lauf trifft.
-    if (staleLogs.length > 0 && currentHour === 9 && currentMin < 5) {
-      const msg = `🧹 <b>Hängende Check-ins</b> (älter als ${CHECKIN_MAX_AGE_H}h, gelten nicht mehr als eingecheckt):\n\n${staleLogs.map(s => `● ${s}`).join('\n')}`
+      gemeldet.push(alertKey)
+      const verspaetung = nowMins - spanne.start
+      const msg = `⚠️ <b>${chatter}</b> hat ${shiftLabel(shift)}, aber nicht eingecheckt.\n\n` +
+        `Schichtbeginn: ${minsToClock(spanne.start)} Uhr (DE-Zeit) — seit ${verspaetung} Minuten überfällig.`
       await sendTelegram(CHRIS_TG, msg)
       await sendTelegram(REY_TG, msg)
     }
 
-    if (skippedNoTime.length > 0) console.log('shift-alert: ohne Zeit übersprungen', skippedNoTime)
+    // ── 7. Tages-Hausputz, einmal um 9 Uhr Berlin. Die Sperre ist wieder der
+    //       Marker-Insert und nicht das Zeitfenster: Ein Minutenfenster hinge
+    //       davon ab, auf welcher Minute der pg_cron-Job sitzt.
+    let hausputz: Record<string, unknown> | null = null
+    if (jetzt.mins >= 540 && jetzt.mins < 600) {
+      const { error: hkErr } = await supabase.from('alert_markers').insert({
+        alert_key: 'HAUSPUTZ', alert_date: todayIso, alert_type: 'housekeeping',
+      })
+      if (!hkErr) {
+        // Hängende Check-ins melden. Für den Alarm sind sie egal geworden, für
+        // Schicht-Statistik und Export sind sie es nicht.
+        const grenze = new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString()
+        const { data: offen } = await supabase
+          .from('shift_logs').select('display_name, shift, checked_in_at')
+          .is('checked_out_at', null).lt('checked_in_at', grenze)
+          .order('checked_in_at')
+        if (offen && offen.length > 0) {
+          const zeilen = offen.map((l: any) => `● ${l.display_name} — ${l.shift || 'Schicht'}, seit ${l.checked_in_at?.slice(0, 16).replace('T', ' ')}`)
+          const msg = `🧹 <b>Hängende Check-ins</b> (kein Check-out, älter als 16 Stunden):\n\n${zeilen.join('\n')}\n\nSie verfälschen Schicht-Dauer und Export.`
+          await sendTelegram(CHRIS_TG, msg)
+          await sendTelegram(REY_TG, msg)
+        }
+        // Alte Marker wegräumen — als Sperre nur am selben Tag nötig.
+        const markerGrenze = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        await supabase.from('alert_markers').delete().lt('alert_date', markerGrenze)
+        hausputz = { haengende_checkins: offen?.length || 0 }
+      }
+    }
+
+    if (ohneZeit.length > 0) console.log('shift-alert: ohne verwertbare Zeit', ohneZeit)
 
     return new Response(JSON.stringify({
       ok: true,
-      checked: todayIso,
+      stand: `${todayIso} ${minsToClock(nowMins)} (DE)`,
       week_start: weekStartIso,
-      alerted,
-      skipped_already_online: skippedAlreadyOnline,
-      skipped_no_time: skippedNoTime,
-      skipped_inactive_model: skippedInactiveModel,
-      stale_logs_ignored: staleLogs,
+      gemeldet,
+      eingecheckt,
+      uebersprungen_model_unsichtbar: modelUnsichtbar,
+      uebersprungen_ohne_zeit: ohneZeit,
+      hausputz,
     }), { status: 200 })
   } catch (err) {
     console.error('shift-alert error:', err)

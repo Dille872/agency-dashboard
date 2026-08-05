@@ -59,6 +59,7 @@ export const ACTION_LABELS = {
   'schedule.publish': 'hat den Dienstplan veröffentlicht',
   'schedule.unpublish': 'hat den Dienstplan zurückgezogen',
   'schedule.autoplan': 'hat den Dienstplan automatisch erzeugt',
+  'schedule.cleanup': 'hat ein stillgelegtes Model aus dem Dienstplan genommen',
   'guideline.create': 'hat eine Guideline angelegt',
   'guideline.edit': 'hat eine Guideline bearbeitet',
   'guideline.delete': 'hat eine Guideline gelöscht',
