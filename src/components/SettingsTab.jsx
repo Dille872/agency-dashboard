@@ -631,10 +631,11 @@ export default function SettingsTab() {
 
   const addModelAlias = async () => {
     if (!newMA.model_name || !newMA.csv_name.trim()) return
-    const { error } = await supabase.from('model_aliases').insert({ model_name: newMA.model_name, csv_name: newMA.csv_name, alias_label: newMA.alias_label })
+    const csvName = newMA.csv_name.trim()
+    const { error } = await supabase.from('model_aliases').insert({ model_name: newMA.model_name, csv_name: csvName, alias_label: newMA.alias_label })
     if (error) {
       alert(error.code === '23505'
-        ? `Der CSV-Name "${newMA.csv_name}" ist bereits vergeben.`
+        ? `Der CSV-Name "${csvName}" ist bereits vergeben.`
         : 'Alias konnte nicht gespeichert werden: ' + error.message)
       return
     }
@@ -662,10 +663,11 @@ export default function SettingsTab() {
 
   const addChatterAlias = async () => {
     if (!newCA.chatter_name || !newCA.csv_name.trim()) return
-    const { error } = await supabase.from('chatter_aliases').insert(newCA)
+    const csvName = newCA.csv_name.trim()
+    const { error } = await supabase.from('chatter_aliases').insert({ ...newCA, csv_name: csvName })
     if (error) {
       alert(error.code === '23505'
-        ? `Der CSV-Name "${newCA.csv_name}" ist bereits vergeben.`
+        ? `Der CSV-Name "${csvName}" ist bereits vergeben.`
         : 'Alias konnte nicht gespeichert werden: ' + error.message)
       return
     }
