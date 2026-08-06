@@ -143,11 +143,17 @@ function ModelAliasManager({ models }) {
 
   const addAlias = async () => {
     if (!newModel || !newCsvName.trim()) return
-    await supabase.from('model_aliases').insert({
+    const { error } = await supabase.from('model_aliases').insert({
       model_name: newModel,
       csv_name: newCsvName.trim(),
       alias_label: newLabel.trim() || null,
     })
+    if (error) {
+      alert(error.code === '23505'
+        ? `Der CSV-Name "${newCsvName.trim()}" ist bereits vergeben.`
+        : 'Alias konnte nicht gespeichert werden: ' + error.message)
+      return
+    }
     setNewModel(''); setNewCsvName(''); setNewLabel('')
     loadAliases()
   }

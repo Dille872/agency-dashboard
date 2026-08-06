@@ -631,7 +631,13 @@ export default function SettingsTab() {
 
   const addModelAlias = async () => {
     if (!newMA.model_name || !newMA.csv_name.trim()) return
-    await supabase.from('model_aliases').insert({ model_name: newMA.model_name, csv_name: newMA.csv_name, alias_label: newMA.alias_label })
+    const { error } = await supabase.from('model_aliases').insert({ model_name: newMA.model_name, csv_name: newMA.csv_name, alias_label: newMA.alias_label })
+    if (error) {
+      alert(error.code === '23505'
+        ? `Der CSV-Name "${newMA.csv_name}" ist bereits vergeben.`
+        : 'Alias konnte nicht gespeichert werden: ' + error.message)
+      return
+    }
     if (newMA.telegram_id) await supabase.from('models_contact').update({ telegram_id: newMA.telegram_id.trim() }).eq('name', newMA.model_name)
     setNewMA({ model_name: '', csv_name: '', alias_label: '', telegram_id: '' }); loadModelAliases()
   }
@@ -656,7 +662,13 @@ export default function SettingsTab() {
 
   const addChatterAlias = async () => {
     if (!newCA.chatter_name || !newCA.csv_name.trim()) return
-    await supabase.from('chatter_aliases').insert(newCA)
+    const { error } = await supabase.from('chatter_aliases').insert(newCA)
+    if (error) {
+      alert(error.code === '23505'
+        ? `Der CSV-Name "${newCA.csv_name}" ist bereits vergeben.`
+        : 'Alias konnte nicht gespeichert werden: ' + error.message)
+      return
+    }
     if (newCA.telegram_id) await supabase.from('chatters_contact').update({ telegram_id: newCA.telegram_id.trim() }).eq('name', newCA.chatter_name)
     setNewCA({ chatter_name: '', csv_name: '', telegram_id: '' }); loadChatterAliases()
   }
