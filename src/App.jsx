@@ -99,8 +99,12 @@ export default function App() {
   // ── Load data from Supabase ───────────────────────────────────────────────
   useEffect(() => {
     if (!session) return
-    loadUserRole()
-    loadAllData()
+    // v4.24.0: loadAllData() erst NACH der Rollenpruefung — und nur fuer Staff.
+    // Vorher lief es unmittelbar nach dem Login fuer jeden Account und lieferte
+    // saemtliche Umsaetze aller Models und Chatter an den Browser aus.
+    loadUserRole().then(res => {
+      if (res && needsSnapshots(res.role, res.roles)) loadAllData()
+    })
     loadBadgeCounts()
     const interval = setInterval(() => {
       loadBadgeCounts()
@@ -130,6 +134,19 @@ export default function App() {
 
   const [userRoles, setUserRoles] = useState([])
 
+  // v4.24.0: Nur Admin/Manager brauchen die Umsatz-Snapshots im App-State.
+  // Chatter- und Model-Portal laden ihre eigenen Zahlen selbst und gefiltert;
+  // dienstplan/creator_manager/social_media kommen laut canAccess() nie an die
+  // Tabs, die Snapshots anzeigen (models, chatters, briefing, performance).
+  // Vorher lud loadAllData() fuer JEDEN eingeloggten User die komplette
+  // Umsatzhistorie aller Models und Chatter in den Browser.
+  const needsSnapshots = (role, roles) => {
+    const all = [role, ...(Array.isArray(roles) ? roles : [])]
+    return all.includes('admin') || all.includes('manager')
+  }
+
+  // Gibt {role, roles} zurueck, oder null wenn der Account gesperrt/unvollstaendig
+  // ist — in dem Fall werden bewusst gar keine Daten nachgeladen.
   const loadUserRole = async () => {
     try {
       const { data } = await supabase
@@ -143,7 +160,7 @@ export default function App() {
           setAccountBlocked({ status: data.status, note: data.status_note || null })
           setUserRole(data.role) // damit der Lade-Screen endet
           setUserDisplayName(name)
-          return // kein online_status-Heartbeat für gesperrte User
+          return null // kein online_status-Heartbeat, keine Daten für gesperrte User
         }
         setAccountBlocked(null)
         const roles = data.roles && data.roles.length > 0 ? data.roles : [data.role]
@@ -159,6 +176,7 @@ export default function App() {
             shift_online: false,
           }, { onConflict: 'display_name' })
         }
+        return { role: data.role, roles }
       } else {
         // v3.57.0: Kein sauberer user_roles-Eintrag (fehlende Rolle oder fehlender
         // display_name). Früher wurde hier still auf 'chatter' zurückgefallen — dadurch
@@ -169,12 +187,14 @@ export default function App() {
         setUserRole('blocked') // Sentinel != null, damit der Lade-Screen endet
         setUserRoles([])
         setUserDisplayName(null)
+        return null
       }
     } catch (err) {
       console.error('loadUserRole error:', err)
       setUserRole('chatter')
       setUserRoles(['chatter'])
       setUserDisplayName(null)
+      return null
     }
   }
 
@@ -421,6 +441,13 @@ export default function App() {
   }
 
   if (needsPassword) return <SetPasswordPage onDone={() => setNeedsPassword(false)} />
+
+  // v4.24.0: Nur diese Tabs zeigen Snapshot-Daten. Das "Noch keine Daten"-Gate
+  // im Main-Bereich galt vorher fuer ALLE Tabs — ein dienstplan-User haette nach
+  // der Umstellung (keine Snapshots mehr fuer Nicht-Staff) statt seines
+  // Dienstplans den Leer-Screen gesehen. Betraf auch heute schon jeden, der sich
+  // vor dem ersten CSV-Upload einloggt.
+  const SNAPSHOT_TABS = ['models', 'chatters', 'briefing', 'performance']
 
   // Role permissions
   const showChatterPortal = userRole !== null && ((userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter')
@@ -789,7 +816,7 @@ export default function App() {
       <main style={{ padding: '16px', maxWidth: 1600, margin: '0 auto' }}>
         {dataLoading ? (
           <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '80px 0', fontSize: 14 }}>Daten werden geladen...</div>
-        ) : modelSnapshots.length === 0 && chatterSnapshots.length === 0 ? (
+        ) : SNAPSHOT_TABS.includes(activeTab) && modelSnapshots.length === 0 && chatterSnapshots.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 16, color: 'var(--text-muted)' }}>
             <div style={{ fontSize: 48, opacity: 0.3 }}>📊</div>
             <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-secondary)' }}>Noch keine Daten vorhanden</div>
