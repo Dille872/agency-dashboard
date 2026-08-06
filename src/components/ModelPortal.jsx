@@ -380,9 +380,18 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     setAliases(myAliases)
     const now = new Date()
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-    // Load last 14 days for chart
-    const { data: snaps } = await supabase.from('model_snapshots').select('rows, business_date').gte('business_date', monthStart)
-    const { data: snapsAll } = await supabase.from('model_snapshots').select('rows, business_date').order('business_date')
+    // v4.25.0: eine RPC statt zwei select('*')-Abfragen. Vorher lud das Portal
+    // die Umsaetze ALLER Models (197 kB) und filterte erst clientseitig auf die
+    // eigenen Accounts. get_my_model_snapshots filtert serverseitig ueber
+    // user_roles -> model_aliases und liefert dasselbe Format zurueck.
+    // Der Monatsausschnitt wird hier gefiltert — das spart die zweite Abfrage.
+    const { data: snapsAll, error: snapsError } = await supabase.rpc('get_my_model_snapshots')
+    if (snapsError) {
+      // Nicht still scheitern — sonst sieht eine kaputte RPC aus wie "kein Umsatz".
+      console.error('get_my_model_snapshots fehlgeschlagen:', snapsError)
+      return
+    }
+    const snaps = (snapsAll || []).filter(s => s.business_date >= monthStart)
     const csvNames = myAliases.length > 0 ? myAliases.map(a => a.csv_name) : [displayName]
     // FIX v2.8.1: Whitespace + Punkte erhalten, nur Emojis/Sonderzeichen strippen
     // Vorher wurden "Emma Victoria" und "EmmaVictoria" beide zu "emmavictoria" → identisch

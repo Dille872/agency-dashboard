@@ -1434,10 +1434,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const csvName = aliasData?.csv_name || displayName
     setChatterCsvName(csvName)
 
-    const { data } = await supabase
-      .from('chatter_snapshots')
-      .select('*')
-      .order('business_date', { ascending: true })
+    // v4.25.0: RPC statt select('*'). Vorher kamen 158 Tage mit den Zahlen aller
+    // 67 Chatter in den Browser und wurden erst hier clientseitig gefiltert.
+    // get_my_chatter_snapshots filtert serverseitig ueber
+    // user_roles -> chatter_aliases -> csv_name und liefert dasselbe Format
+    // (business_date + rows), deshalb bleibt die Auswertung unten unveraendert.
+    const { data, error } = await supabase.rpc('get_my_chatter_snapshots')
+    if (error) {
+      // Nicht still scheitern: ohne Hinweis saehe eine fehlende oder kaputte RPC
+      // exakt so aus wie "dieser Chatter hat noch keine Daten".
+      console.error('get_my_chatter_snapshots fehlgeschlagen:', error)
+      return
+    }
     const snapshots = (data || []).map(s => ({
       businessDate: s.business_date,
       rows: s.rows,
