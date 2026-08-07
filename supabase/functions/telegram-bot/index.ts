@@ -16,14 +16,29 @@ async function q(table: string, params = '') {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, { headers: H })
   return r.json()
 }
+// v4.26.0: Schreibende Aufrufe haben ihren Response-Status nie geprueft. Ein
+// abgelehnter Insert in `messages` — RLS, Constraint, Tippfehler im Spaltennamen —
+// verschwand spurlos: der Absender bekam trotzdem "Danke, weitergeleitet", die
+// Nachricht war aber nirgends. Jetzt landet der Fehlertext in den Function-Logs
+// (Supabase -> Edge Functions -> telegram-bot -> Logs).
+async function chk(r: Response, table: string, op: string) {
+  if (!r.ok) {
+    const body = await r.text().catch(() => '<keine Antwort lesbar>')
+    console.error(`[db] ${op} auf ${table} fehlgeschlagen: ${r.status} ${r.statusText} — ${body}`)
+  }
+  return r.ok
+}
 async function ins(table: string, data: object) {
-  await fetch(`${SUPABASE_URL}/rest/v1/${table}`, { method: 'POST', headers: { ...H, 'Prefer': 'return=minimal' }, body: JSON.stringify(data) })
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, { method: 'POST', headers: { ...H, 'Prefer': 'return=minimal' }, body: JSON.stringify(data) })
+  return chk(r, table, 'insert')
 }
 async function upd(table: string, params: string, data: object) {
-  await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, { method: 'PATCH', headers: { ...H, 'Prefer': 'return=minimal' }, body: JSON.stringify(data) })
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, { method: 'PATCH', headers: { ...H, 'Prefer': 'return=minimal' }, body: JSON.stringify(data) })
+  return chk(r, table, 'update')
 }
 async function ups(table: string, data: object, conflict: string) {
-  await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflict}`, { method: 'POST', headers: { ...H, 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(data) })
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflict}`, { method: 'POST', headers: { ...H, 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(data) })
+  return chk(r, table, 'upsert')
 }
 async function tg(chatId: string, text: string) {
   await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }) })

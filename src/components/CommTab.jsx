@@ -298,6 +298,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [editImages, setEditImages] = useState([])           // v3.46.0: Bild-URLs im Edit-Modal
   const [editImgBusy, setEditImgBusy] = useState(false)      // v3.46.0: Upload läuft gerade
   const [unreadCount, setUnreadCount] = useState(0)
+  const [messagesTruncated, setMessagesTruncated] = useState(false) // v4.26.0
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
   const [replyText, setReplyText] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
@@ -568,9 +569,20 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     const { data } = await supabase.from('chatters_contact').select('*').order('name')
     setChatters(data || [])
   }
+  // v4.26.0: Limit von 200 auf 1000 angehoben und das Erreichen sichtbar
+  // gemacht. Vorher fielen aeltere Threads still aus der Ansicht — ein Chat,
+  // der laenger nicht aktiv war, verschwand einfach, ohne dass irgendwo stand,
+  // dass nur ein Ausschnitt geladen ist.
+  const MESSAGE_LIMIT = 1000
   const loadMessages = async () => {
-    const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(200)
+    const { data, error } = await supabase.from('messages').select('*')
+      .order('created_at', { ascending: false }).limit(MESSAGE_LIMIT)
+    if (error) {
+      console.error('loadMessages fehlgeschlagen:', error)
+      return
+    }
     setMessages(data || [])
+    setMessagesTruncated((data || []).length >= MESSAGE_LIMIT)
     setUnreadCount((data || []).filter(m => m.direction === 'in' && !m.read).length)
   }
 
@@ -2349,15 +2361,21 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           : activeSection === 'chat-chatters' ? 'chatter'
                           : (activeThreadType || 'chatter') // unified: nutze type vom aktiven Thread (für Senden)
         // Welche contact_types in der Thread-Liste anzeigen?
+        // v4.26.0: 'unknown' ist nicht mehr ausgeschlossen. Nachrichten von
+        // Absendern ohne telegram_id in models_contact/chatters_contact landeten
+        // in der DB, waren aber in der gesamten UI unsichtbar — der Bot leitet
+        // sie per Telegram an die Admins weiter, im Dashboard fehlten sie
+        // komplett. Betraf zuletzt Bennet und Manuela.
         const allowedContactTypes = isUnified
-          ? (chatTypeFilter === 'all' ? ['model', 'chatter'] : [chatTypeFilter])
+          ? (chatTypeFilter === 'all' ? ['model', 'chatter', 'unknown'] : [chatTypeFilter])
           : [contactType]
         // v3.45.0: Chat-Verlauf zeigt jetzt ALLE Nachrichten (auch Tickets, Ansagen,
         // Content-Anfragen) — damit Antworten der Models/Chatter im Kontext der
         // rausgeschickten Nachricht stehen, statt kontextlos im Verlauf zu hängen.
-        const chatMsgs = messages.filter(m =>
-          allowedContactTypes.includes(m.contact_type) && m.contact_type !== 'unknown'
-        )
+        const chatMsgs = messages.filter(m => allowedContactTypes.includes(m.contact_type))
+        const unknownCount = new Set(
+          messages.filter(m => m.contact_type === 'unknown' && m.model_name).map(m => m.model_name)
+        ).size
         // Threads gruppieren nach `${contact_type}:${model_name}` für unified, sonst nur model_name
         const threadsMap = {}
         for (const msg of chatMsgs) {
@@ -2436,12 +2454,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       { key: 'all', label: 'Alle' },
                       { key: 'chatter', label: 'Chatters' },
                       { key: 'model', label: 'Models' },
+                      // v4.26.0: eigener Filter fuer nicht zugeordnete Absender.
+                      // Erscheint nur, wenn es welche gibt — sonst waere es ein
+                      // Knopf, der bei den meisten immer ins Leere fuehrt.
+                      ...(unknownCount > 0 ? [{ key: 'unknown', label: `Unbekannt (${unknownCount})`, warn: true }] : []),
                     ].map(opt => (
                       <button key={opt.key} onClick={() => setChatTypeFilter(opt.key)} style={{
                         padding: '4px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
-                        background: chatTypeFilter === opt.key ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.04)',
-                        color: chatTypeFilter === opt.key ? '#a78bfa' : 'var(--text-muted)',
-                        border: `1px solid ${chatTypeFilter === opt.key ? 'rgba(124,58,237,0.45)' : 'var(--border)'}`,
+                        background: chatTypeFilter === opt.key ? (opt.warn ? 'rgba(245,158,11,0.18)' : 'rgba(124,58,237,0.18)') : 'rgba(255,255,255,0.04)',
+                        color: chatTypeFilter === opt.key ? (opt.warn ? '#f59e0b' : '#a78bfa') : (opt.warn ? '#f59e0b' : 'var(--text-muted)'),
+                        border: `1px solid ${chatTypeFilter === opt.key ? (opt.warn ? 'rgba(245,158,11,0.45)' : 'rgba(124,58,237,0.45)') : (opt.warn ? 'rgba(245,158,11,0.3)' : 'var(--border)')}`,
                       }}>{opt.label}</button>
                     ))}
                   </div>
@@ -2450,6 +2472,23 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
               {/* Thread-Liste */}
               <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                {/* v4.26.0: Hinweis auf nicht zugeordnete Absender. Die Telegram-ID
+                    steht in model_telegram_id — eintragen in models_contact bzw.
+                    chatters_contact, dann laeuft der Chat normal weiter. */}
+                {chatTypeFilter === 'unknown' && (
+                  <div style={{ margin: '10px 12px', padding: '8px 10px', borderRadius: 7, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b', fontSize: 11, lineHeight: 1.5 }}>
+                    Diese Absender haben keine <code>telegram_id</code> in den Stammdaten.
+                    Trag die ID aus dem Chat bei der Person ein, dann landen ihre
+                    Nachrichten künftig im richtigen Bereich.
+                  </div>
+                )}
+                {/* v4.26.0: sichtbar machen, dass nur ein Ausschnitt geladen ist */}
+                {messagesTruncated && (
+                  <div style={{ margin: '10px 12px', padding: '8px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>
+                    Nur die letzten {MESSAGE_LIMIT} Nachrichten sind geladen — ältere
+                    Threads fehlen in dieser Liste.
+                  </div>
+                )}
                 {threadList.length === 0 && (
                   <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                     {chatSearch ? 'Keine Treffer' : 'Noch keine Konversationen'}
