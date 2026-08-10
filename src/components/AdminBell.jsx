@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Users, ChevronDown, CalendarCog, Send, ClipboardList, Megaphone, BookOpen, Settings, ShieldCheck, Sparkles, Bot, Inbox, Euro, Bell } from 'lucide-react'
+import { Users, ChevronDown, CalendarCog, Send, ClipboardList, Megaphone, BookOpen, Settings, ShieldCheck, Sparkles, Bot, Inbox, Euro, Bell, Eye } from 'lucide-react'
 import { supabase } from '../supabase'
 import { ACTION_LABELS } from '../activity'
 import { useFabOpen } from '../fabPanel'
 // v4.27.0: Chatter-Ziele — dieselbe Rechnung wie in der Chatter-Ansicht.
 import { ladeChatterZiele, ladeSchichtstunden, berechneChatterZiele, berechneZielAlerts } from '../chatterTargets'
+// v4.28.0: Beobachtungsliste — einmal täglich Status je markiertem Model/Chatter.
+import {
+  ladeBeobachtungen, ladeModelAliase, beobachtungsMeldungen,
+  quittiereAbschluss, beendeBeobachtung, heuteIso, RICHTUNG_FARBE,
+} from '../watchlist'
 
 /**
  * AdminBell v3.97.0 — dritte Glocke: was die ANDEREN Admins gemacht haben.
@@ -78,7 +83,7 @@ const short = (s, n = 90) => {
   return t.length > n ? t.slice(0, n) + '…' : t
 }
 
-export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSnapshots = [] }) {
+export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSnapshots = [], modelSnapshots = [] }) {
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [filter, setFilter] = useState('all')
   const [items, setItems] = useState([])
@@ -250,9 +255,39 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSn
   // Eigene Aktionen zählen nicht — es geht um die anderen
   const isOther = (it) => !me || !it.actor || norm(it.actor) !== norm(me)
   const isNew = (it) => it.when && (!lastSeen || new Date(it.when) > new Date(lastSeen))
+  // ── v4.28.0: Beobachtungen ──
+  // Einmal täglich eine Zeile je markiertem Model/Chatter — auch wenn es gut
+  // läuft. Stille wäre sonst mehrdeutig: unauffällig oder vergessen?
+  const [beobItems, setBeobItems] = useState([])
+  const abzuschliessenRef = React.useRef([])
+  useEffect(() => {
+    let abgebrochen = false
+    ;(async () => {
+      const [eintraege, aliase] = await Promise.all([ladeBeobachtungen(), ladeModelAliase()])
+      if (abgebrochen) return
+      if (!eintraege.length) { setBeobItems([]); abzuschliessenRef.current = []; return }
+      const heute = heuteIso()
+      const meldungen = beobachtungsMeldungen(eintraege, { modelSnapshots, chatterSnapshots, aliase, heute })
+      // Abgelaufene erst quittieren, wenn die Glocke als gelesen markiert wird
+      // (siehe markSeen) — sonst verschwindet die Abschlussmeldung, bevor sie
+      // jemand gesehen hat.
+      abzuschliessenRef.current = meldungen.filter(m => m.abschluss).map(m => m.eintrag.id)
+      setBeobItems(meldungen.map((m, i) => ({
+        id: `beob-${m.eintrag.id}-${heute}`,
+        when: m.when, actor: null, cat: 'umsatz',
+        Icon: Eye,
+        color: RICHTUNG_FARBE[m.fortschritt.richtung] || '#8888aa',
+        title: m.titel,
+        text: m.text,
+        nav: { tab: m.eintrag.subjekt_typ === 'model' ? 'models' : 'chatters' },
+      })))
+    })()
+    return () => { abgebrochen = true }
+  }, [modelSnapshots, chatterSnapshots])
+
   const alleItems = React.useMemo(
-    () => [...items, ...zielItems].sort((a, b) => new Date(b.when) - new Date(a.when)),
-    [items, zielItems]
+    () => [...items, ...zielItems, ...beobItems].sort((a, b) => new Date(b.when) - new Date(a.when)),
+    [items, zielItems, beobItems]
   )
   const unread = alleItems.filter(it => isOther(it) && isNew(it)).length
   const visible = alleItems.filter(it => filter === 'all' || it.cat === filter)
@@ -261,6 +296,17 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSn
     const now = new Date().toISOString()
     setLastSeen(now)
     try { localStorage.setItem(SEEN_KEY, now) } catch {}
+    // v4.28.0: Abgelaufene Beobachtungen sind jetzt gesehen → quittieren und
+    // schließen. Erst hier, nicht schon beim Berechnen: sonst wäre die
+    // Abschlussmeldung weg, bevor sie jemand gelesen hat.
+    const ids = abzuschliessenRef.current
+    if (ids.length) {
+      abzuschliessenRef.current = []
+      const heute = heuteIso()
+      Promise.all(ids.flatMap(id => [quittiereAbschluss(id, heute), beendeBeobachtung(id)]))
+        .then(() => setBeobItems(prev => prev.filter(it => !ids.some(id => it.id.includes(id)))))
+        .catch(e => console.warn('Beobachtung abschließen fehlgeschlagen:', e?.message))
+    }
   }
   const toggle = () => {
     setOpen(o => {

@@ -15,6 +15,11 @@ import {
   ladeChatterZiele, ladeSchichtstunden, berechneChatterZiele, berechneZielAlerts,
   minRphFuerSchicht, ZIEL_SCHICHTEN, STANDARD_ZIEL,
 } from '../chatterTargets'
+// v4.28.0: derselbe Beobachten-Marker wie in der Model-Zieltabelle.
+import {
+  ladeBeobachtungen, beobachtungsMap, starteBeobachtung, beendeBeobachtung,
+  beobachtungsFortschritt, fortschrittsText, BEOBACHTUNG_DAUERN, RICHTUNG_FARBE,
+} from '../watchlist'
 
 const statusColors = {
   'Strong': 'var(--green)',
@@ -295,9 +300,22 @@ function scoreBg(color) {
 // Ohne diese dritte Zahl sieht man einen Chatter mit ordentlichen Stundenwerten
 // und zu wenigen Schichten nicht — genau der Fall, der hier gefehlt hat.
 // ============================================================================
-function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile }) {
+function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatterSnapshots, selectedDate, beobachtungen, onBeobachtungGeaendert }) {
   const [offen, setOffen] = useState(null)      // Chatter mit aufgeklappten Schicht-Zielen
   const [speichert, setSpeichert] = useState(null)
+  const [dauerMenu, setDauerMenu] = useState(null)
+
+  const beobMap = beobachtungsMap(beobachtungen)
+  const beobachtungFuer = (name) => beobMap[`chatter::${(name || '').trim().toLowerCase()}`] || null
+  const markiere = async (name, tage) => {
+    setDauerMenu(null)
+    await starteBeobachtung({ typ: 'chatter', name, tage, startDatum: selectedDate })
+    onBeobachtungGeaendert?.()
+  }
+  const beende = async (id) => {
+    await beendeBeobachtung(id)
+    onBeobachtungGeaendert?.()
+  }
 
   const speichereFeld = async (chatterName, feld, rohWert) => {
     const leer = rohWert === '' || rohWert === null || rohWert === undefined
@@ -382,6 +400,7 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile }) {
                 <th style={th}>Verdienst bisher</th>
                 <th style={th}>Hochrechnung</th>
                 <th style={th}>Status</th>
+                <th style={th}>Beobachten</th>
               </tr>
             </thead>
             <tbody>
@@ -431,10 +450,54 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile }) {
                         </div>
                       )}
                     </td>
+                    {/* v4.28.0: Beobachten — gleiche Mechanik wie in der Model-Zieltabelle */}
+                    <td style={td}>
+                      {(() => {
+                        const b = beobachtungFuer(z.name)
+                        if (b) {
+                          const f = beobachtungsFortschritt(b, { modelSnapshots: [], chatterSnapshots, aliase: {} })
+                          const farbe = RICHTUNG_FARBE[f.richtung] || 'var(--text-muted)'
+                          return (
+                            <span title={fortschrittsText(b, f)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{
+                                background: `${farbe}22`, color: farbe, border: `1px solid ${farbe}44`,
+                                padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                              }}>
+                                👁 Tag {f.tageVergangen}/{f.tageGesamt}
+                                {f.deltaPct != null && ` · ${f.deltaPct >= 0 ? '+' : ''}${f.deltaPct.toFixed(0)}%`}
+                              </span>
+                              <button onClick={() => beende(b.id)} title="Beobachtung beenden"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+                            </span>
+                          )
+                        }
+                        if (dauerMenu === z.name) {
+                          return (
+                            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                              {BEOBACHTUNG_DAUERN.map(t => (
+                                <button key={t} onClick={() => markiere(z.name, t)}
+                                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  {t}T
+                                </button>
+                              ))}
+                              <button onClick={() => setDauerMenu(null)}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0 }}>×</button>
+                            </span>
+                          )
+                        }
+                        return (
+                          <button onClick={() => setDauerMenu(z.name)}
+                            title="Chatter für die nächsten Tage beobachten — täglich eine Statusmeldung in der Glocke"
+                            style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'inherit' }}>
+                            👁 beobachten
+                          </button>
+                        )
+                      })()}
+                    </td>
                   </tr>
                   {offen === z.name && (
                     <tr>
-                      <td colSpan={10} style={{ ...td, background: 'var(--bg-card2)', whiteSpace: 'normal' }}>
+                      <td colSpan={11} style={{ ...td, background: 'var(--bg-card2)', whiteSpace: 'normal' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
                           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                             Mindest-$/Std je Schicht — leer heißt: es gilt der Grundwert links.
@@ -501,6 +564,17 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
     })()
     return () => { abgebrochen = true }
   }, [selectedDate])
+  // v4.28.0: laufende Beobachtungen
+  const [beobachtungen, setBeobachtungen] = useState([])
+  const [beobachtungsVersion, setBeobachtungsVersion] = useState(0)
+  useEffect(() => {
+    let abgebrochen = false
+    ;(async () => {
+      const b = await ladeBeobachtungen()
+      if (!abgebrochen) setBeobachtungen(b)
+    })()
+    return () => { abgebrochen = true }
+  }, [beobachtungsVersion])
   // v3.31.0: kompakte/gestapelte Alert-Zeilen auf Mobile
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
   useEffect(() => {
@@ -879,6 +953,10 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
         ziele={ziele}
         onZielGespeichert={() => setZielVersion(v => v + 1)}
         isMobile={isMobile}
+        chatterSnapshots={chatterSnapshots}
+        selectedDate={selectedDate}
+        beobachtungen={beobachtungen}
+        onBeobachtungGeaendert={() => setBeobachtungsVersion(v => v + 1)}
       />
 
       {/* v3.6.0: Top-Performer-Karte (positives Gegenstück zur Alert-Sektion) */}

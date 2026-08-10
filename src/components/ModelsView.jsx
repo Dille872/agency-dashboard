@@ -8,6 +8,11 @@ import RankingBar from './RankingBar'
 import DeltaList from './DeltaList'
 import Heatmap from './Heatmap'
 import FallingAlert from './FallingAlert'
+// v4.28.0: Beobachtungsliste — markieren, täglich Status in der Admin-Glocke.
+import {
+  ladeBeobachtungen, beobachtungsMap, starteBeobachtung, beendeBeobachtung,
+  beobachtungsFortschritt, fortschrittsText, BEOBACHTUNG_DAUERN, RICHTUNG_FARBE,
+} from '../watchlist'
 import {
   formatMoney, pctChange, safeDivide,
   getLast7Snapshots, getPreviousSnapshot,
@@ -322,10 +327,24 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
   const [shiftLogs, setShiftLogs] = useState([])
   const [expandedHealth, setExpandedHealth] = useState(null)
 
+  // v4.28.0: laufende Beobachtungen
+  const [beobachtungen, setBeobachtungen] = useState([])
+  const [beobachtungsVersion, setBeobachtungsVersion] = useState(0)
+  const [dauerMenu, setDauerMenu] = useState(null)   // Model, für das die Dauer gewählt wird
+
   useEffect(() => {
     loadAliasesAndTargets()
     loadRecentShiftLogs()
   }, [])
+
+  useEffect(() => {
+    let abgebrochen = false
+    ;(async () => {
+      const b = await ladeBeobachtungen()
+      if (!abgebrochen) setBeobachtungen(b)
+    })()
+    return () => { abgebrochen = true }
+  }, [beobachtungsVersion])
 
   // v3.7.0: 14 Tage shift_logs laden für Chatter-Dependency-Analyse
   // model_names ist text mit komma-getrennten Model-Namen (csv_name)
@@ -579,6 +598,28 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
 
     return { groupRows: enriched, dayOfMonth, daysInMonth }
   })()
+
+  // v4.28.0: Beobachtungen als Map + Helfer für die Tabellenzelle
+  const beobMap = beobachtungsMap(beobachtungen)
+  // csv_name → model_name, damit der Fortschritt dieselben Gruppen bildet wie
+  // die Zieltabelle (ein Model kann mehrere CSV-Varianten haben).
+  const aliasMap = React.useMemo(
+    () => Object.fromEntries((aliases || []).map(a => [a.csv_name, a.model_name])),
+    [aliases]
+  )
+  const beobachtungFuer = (modelName) => beobMap[`model::${(modelName || '').trim().toLowerCase()}`] || null
+  const markiere = async (modelName, tage) => {
+    setDauerMenu(null)
+    // Startdatum ist der GEWÄHLTE Business-Tag, nicht "heute": wer sich einen
+    // älteren Tag ansieht und dort etwas entdeckt, will ab genau diesem Tag
+    // vergleichen.
+    await starteBeobachtung({ typ: 'model', name: modelName, tage, startDatum: selectedDate })
+    setBeobachtungsVersion(v => v + 1)
+  }
+  const beende = async (id) => {
+    await beendeBeobachtung(id)
+    setBeobachtungsVersion(v => v + 1)
+  }
 
   // ── Unified Model-Alerts: Monatsfortschritt + Trend-Probleme ──
   // Kritisch: < 40% Monatssoll bei aktiven Models
@@ -983,7 +1024,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
             <table>
               <thead>
                 <tr>
-                  {['Model', 'Heute Msg+Tips', 'Heute Total', 'Tagesziel', 'Heute %', 'Monat Msg+Tips', 'Monat Total', 'Monatsziel', 'Soll bis heute', 'Monat %', 'Status', 'Varianten'].map(h => (
+                  {['Model', 'Heute Msg+Tips', 'Heute Total', 'Tagesziel', 'Heute %', 'Monat Msg+Tips', 'Monat Total', 'Monatsziel', 'Soll bis heute', 'Monat %', 'Status', 'Beobachten', 'Varianten'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -1047,6 +1088,50 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                       </td>
                       <td style={tdStyle}>
                         <span style={{ background: `${g.statusColor}22`, color: g.statusColor, padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>{g.status}</span>
+                      </td>
+                      {/* v4.28.0: Beobachten — markieren, täglich Status in der Glocke */}
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          const b = beobachtungFuer(g.modelName)
+                          if (b) {
+                            const f = beobachtungsFortschritt(b, { modelSnapshots, chatterSnapshots, aliase: aliasMap })
+                            const farbe = RICHTUNG_FARBE[f.richtung] || 'var(--text-muted)'
+                            return (
+                              <span title={fortschrittsText(b, f)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{
+                                  background: `${farbe}22`, color: farbe, border: `1px solid ${farbe}44`,
+                                  padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                                }}>
+                                  👁 Tag {f.tageVergangen}/{f.tageGesamt}
+                                  {f.deltaPct != null && ` · ${f.deltaPct >= 0 ? '+' : ''}${f.deltaPct.toFixed(0)}%`}
+                                </span>
+                                <button onClick={() => beende(b.id)} title="Beobachtung beenden"
+                                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+                              </span>
+                            )
+                          }
+                          if (dauerMenu === g.modelName) {
+                            return (
+                              <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                                {BEOBACHTUNG_DAUERN.map(t => (
+                                  <button key={t} onClick={() => markiere(g.modelName, t)}
+                                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                    {t}T
+                                  </button>
+                                ))}
+                                <button onClick={() => setDauerMenu(null)}
+                                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0 }}>×</button>
+                              </span>
+                            )
+                          }
+                          return (
+                            <button onClick={() => setDauerMenu(g.modelName)}
+                              title="Model für die nächsten Tage beobachten — täglich eine Statusmeldung in der Glocke"
+                              style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'inherit' }}>
+                              👁 beobachten
+                            </button>
+                          )
+                        })()}
                       </td>
                       <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: 11 }}>
                         {g.variants.length > 1 ? g.variants.join(' + ') : g.variants[0]}

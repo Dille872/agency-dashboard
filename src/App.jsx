@@ -865,7 +865,7 @@ export default function App() {
             isOpen={fab.active === 'activity'} onToggle={(v) => fab.set('activity', v)} />
           {/* v3.97.0: dritte Glocke — was die ANDEREN Admins gemacht haben */}
           <AdminBell me={userDisplayName} onNavigate={(tab) => setActiveTab(tab)}
-            chatterSnapshots={chatterSnapshots}
+            chatterSnapshots={chatterSnapshots} modelSnapshots={modelSnapshots}
             isOpen={fab.active === 'admin'} onToggle={(v) => fab.set('admin', v)} />
         </>
       )}
