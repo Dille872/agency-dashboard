@@ -3,6 +3,8 @@ import { Users, ChevronDown, CalendarCog, Send, ClipboardList, Megaphone, BookOp
 import { supabase } from '../supabase'
 import { ACTION_LABELS } from '../activity'
 import { useFabOpen } from '../fabPanel'
+// v4.27.0: Chatter-Ziele — dieselbe Rechnung wie in der Chatter-Ansicht.
+import { ladeChatterZiele, ladeSchichtstunden, berechneChatterZiele, berechneZielAlerts } from '../chatterTargets'
 
 /**
  * AdminBell v3.97.0 — dritte Glocke: was die ANDEREN Admins gemacht haben.
@@ -26,6 +28,7 @@ const norm = (s) => (s || '').trim().toLowerCase()
 
 const CHIPS = [
   { key: 'all', label: 'Alle' },
+  { key: 'umsatz', label: 'Umsatz' },
   { key: 'schedule', label: 'Dienstplan' },
   { key: 'messages', label: 'Nachrichten' },
   { key: 'tasks', label: 'Aufgaben' },
@@ -75,7 +78,7 @@ const short = (s, n = 90) => {
   return t.length > n ? t.slice(0, n) + '…' : t
 }
 
-export default function AdminBell({ me, onNavigate , isOpen, onToggle }) {
+export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSnapshots = [] }) {
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [filter, setFilter] = useState('all')
   const [items, setItems] = useState([])
@@ -204,11 +207,55 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle }) {
     return () => { clearTimeout(t); supabase.removeChannel(ch) }
   }, [load])
 
+  // ── v4.27.0: Chatter unter Ziel ──
+  // Keine Admin-Aktion, sondern ein Zustand — steht trotzdem hier, weil diese
+  // Glocke der Ort ist, an dem ihr ohnehin nachschaut. Der Zeitstempel ist der
+  // Tag des jüngsten Snapshots: dadurch ist die Meldung genau einmal pro
+  // Datenstand ungelesen und nicht dauerhaft rot.
+  const [zielItems, setZielItems] = useState([])
+  useEffect(() => {
+    let abgebrochen = false
+    ;(async () => {
+      if (!chatterSnapshots || chatterSnapshots.length === 0) { setZielItems([]); return }
+      const letzterTag = [...chatterSnapshots]
+        .sort((a, b) => b.businessDate.localeCompare(a.businessDate))[0]?.businessDate
+      if (!letzterTag) { setZielItems([]); return }
+      let inaktiv = new Set()
+      try {
+        const { data } = await supabase.from('user_roles').select('display_name, status').in('status', ['suspended', 'offboarded'])
+        inaktiv = new Set((data || []).map(r => r.display_name).filter(Boolean))
+      } catch { /* fail-open: lieber eine Meldung zu viel als keine */ }
+      const [ziele, schichtStunden] = await Promise.all([
+        ladeChatterZiele(),
+        ladeSchichtstunden(letzterTag.slice(0, 8) + '01', letzterTag),
+      ])
+      if (abgebrochen) return
+      const { zeilen } = berechneChatterZiele({
+        chatterSnapshots, selectedDate: letzterTag, ziele, schichtStunden, inaktiveNamen: inaktiv,
+      })
+      const when = new Date(letzterTag + 'T12:00:00').toISOString()
+      setZielItems(berechneZielAlerts(zeilen).map((a, i) => ({
+        id: `ziel-${letzterTag}-${i}`,
+        when, actor: null, cat: 'umsatz',
+        Icon: Euro,
+        color: a.severity === 'critical' ? '#ef4444' : '#f59e0b',
+        title: `${a.name} · ${a.tag}`,
+        text: a.headline,
+        nav: { tab: 'chatters' },
+      })))
+    })()
+    return () => { abgebrochen = true }
+  }, [chatterSnapshots])
+
   // Eigene Aktionen zählen nicht — es geht um die anderen
   const isOther = (it) => !me || !it.actor || norm(it.actor) !== norm(me)
   const isNew = (it) => it.when && (!lastSeen || new Date(it.when) > new Date(lastSeen))
-  const unread = items.filter(it => isOther(it) && isNew(it)).length
-  const visible = items.filter(it => filter === 'all' || it.cat === filter)
+  const alleItems = React.useMemo(
+    () => [...items, ...zielItems].sort((a, b) => new Date(b.when) - new Date(a.when)),
+    [items, zielItems]
+  )
+  const unread = alleItems.filter(it => isOther(it) && isNew(it)).length
+  const visible = alleItems.filter(it => filter === 'all' || it.cat === filter)
 
   const markSeen = () => {
     const now = new Date().toISOString()

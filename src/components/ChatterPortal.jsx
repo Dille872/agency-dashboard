@@ -1337,21 +1337,32 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const loadNext7Days = async () => {
-    const today = new Date()
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(today)
-      d.setDate(today.getDate() + i)
-      return d
-    })
-    // Get both Monday-based and Sunday-based week starts to cover all schedule formats
+    // v4.27.0: Wochenstarts aus dem BERLINER Tag ableiten, nicht aus dem lokalen.
+    //
+    // Vorher lief die Rechnung über `new Date()` in der Zeitzone des Browsers.
+    // Für einen Chatter in Manila (+6 h) ist ab 18:00 deutscher Zeit schon der
+    // nächste Kalendertag — Sonntagabend also bereits Montag. Dadurch wurde
+    // ausgerechnet die Woche mit seiner Sonntag-Nachtschicht nicht mehr geladen:
+    // die Schicht verschwand aus "Meine nächsten Schichten" UND aus der
+    // Check-in-Leiste, tauchte am Montag aber wieder auf. Für Chatter in
+    // Deutschland fiel das nie auf, weil dort lokaler Tag = Berliner Tag ist.
+    //
+    // Zusätzlich beginnt das Fenster jetzt bei -1 Tag: eine Nachtschicht, die
+    // gestern (Berliner Zeit) begonnen hat, läuft real bis in den heutigen
+    // Morgen und muss weiterhin ladbar sein.
+    const basis = new Date(todayBerlin() + 'T12:00:00')  // Mittag = DST-sicher
     const weekStartsSet = new Set()
-    for (const d of days) {
-      const mondayStart = isoDate(getWeekStart(d))
-      weekStartsSet.add(mondayStart)
-      // Also add Sunday-based (one day before Monday)
-      const sundayStart = new Date(getWeekStart(d))
-      sundayStart.setDate(sundayStart.getDate() - 1)
-      weekStartsSet.add(isoDate(sundayStart))
+    for (let i = -1; i <= 7; i++) {
+      const d = new Date(basis)
+      d.setDate(basis.getDate() + i)
+      const wd = d.getDay()
+      const monday = new Date(d)
+      monday.setDate(d.getDate() + (wd === 0 ? -6 : 1 - wd))
+      weekStartsSet.add(isoDate(monday))
+      // Sonntags-basierte Wochenstarts mitnehmen (Altbestand mit anderem Format)
+      const sunday = new Date(monday)
+      sunday.setDate(monday.getDate() - 1)
+      weekStartsSet.add(isoDate(sunday))
     }
     const weekStarts = [...weekStartsSet]
     const { data } = await supabase.from('schedule').select('*').in('week_start', weekStarts).eq('status', 'live')
@@ -1557,7 +1568,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
     for (const g of Object.values(groups)) {
       const window = shiftWindowInstants(g.berlinDate, g.timeStr)
-      const startMs = window ? window.start.getTime() : new Date(g.berlinDate + 'T00:00:00').getTime()
+      // v4.27.0: Fallback für Zellen OHNE hinterlegte Zeit (weder time_override
+      // noch shift_times) auf Berliner Mitternacht umgestellt. Vorher stand hier
+      // `new Date(berlinDate + 'T00:00:00')` — das ist Mitternacht im BROWSER.
+      // In Manila lief eine solche Schicht dadurch sechs Stunden zu früh ab und
+      // verschwand mitten in der Nachtschicht aus der Liste.
+      const fallbackStart = berlinWallToInstant(g.berlinDate, 0, 0)
+      const startMs = window ? window.start.getTime() : (fallbackStart ? fallbackStart.getTime() : Date.now())
       const endMs = window ? window.end.getTime() : startMs + 24 * 60 * 60 * 1000
       if (endMs < nowMsN7) continue            // schon vorbei -> raus (ersetzt altes isExpired)
       if (startMs > horizonMsN7) continue       // weiter als 7 Tage in der Zukunft -> raus

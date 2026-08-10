@@ -8,6 +8,13 @@ import DeltaList from './DeltaList'
 import Heatmap from './Heatmap'
 import FallingAlert from './FallingAlert'
 import { formatMoney, pctChange, safeDivide, getLast7Snapshots, getPreviousSnapshot, computeChatterStatus, computeChatterTrendFromSnapshots } from '../utils'
+// v4.27.0: Zielwerte je Chatter (Mindest-$/Std je Schicht + Monats-Verdienstziel).
+// Die Rechnung liegt bewusst in einer eigenen Datei, damit Chatter-Ansicht und
+// Admin-Glocke garantiert dieselben Zahlen zeigen.
+import {
+  ladeChatterZiele, ladeSchichtstunden, berechneChatterZiele, berechneZielAlerts,
+  minRphFuerSchicht, ZIEL_SCHICHTEN, STANDARD_ZIEL,
+} from '../chatterTargets'
 
 const statusColors = {
   'Strong': 'var(--green)',
@@ -277,6 +284,188 @@ function scoreBg(color) {
 }
 
 
+// ============================================================================
+// v4.27.0 — Ziele & Verdienst
+//
+// Das Chatter-Gegenstück zur Tagesziel-Tabelle der Models. Zwei Dinge stehen
+// hier bewusst nebeneinander:
+//   $/Aktivstd   — wie gut jemand arbeitet
+//   $/Schichtstd — was die bezahlte Schicht tatsächlich einbringt
+// und darunter die Hochrechnung, was am Monatsende an Provision rauskommt.
+// Ohne diese dritte Zahl sieht man einen Chatter mit ordentlichen Stundenwerten
+// und zu wenigen Schichten nicht — genau der Fall, der hier gefehlt hat.
+// ============================================================================
+function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile }) {
+  const [offen, setOffen] = useState(null)      // Chatter mit aufgeklappten Schicht-Zielen
+  const [speichert, setSpeichert] = useState(null)
+
+  const speichereFeld = async (chatterName, feld, rohWert) => {
+    const leer = rohWert === '' || rohWert === null || rohWert === undefined
+    const wert = leer ? null : Number(String(rohWert).replace(',', '.'))
+    if (!leer && (isNaN(wert) || wert < 0)) return
+    setSpeichert(chatterName + feld)
+    let actor = null
+    try {
+      const { data } = await supabase.auth.getUser()
+      actor = data?.user?.user_metadata?.full_name || data?.user?.email || null
+    } catch { /* Urheber ist nice-to-have, darf das Speichern nicht blockieren */ }
+    // Bewusst nur das eine Feld schreiben: ein Upsert mit allen Spalten würde
+    // Werte überschreiben, die jemand anderes zwischenzeitlich gesetzt hat.
+    const { error } = await supabase.from('chatter_targets').upsert({
+      chatter_name: chatterName,
+      [feld]: wert,
+      updated_at: new Date().toISOString(),
+      updated_by: actor,
+    }, { onConflict: 'chatter_name' })
+    setSpeichert(null)
+    if (error) { console.warn('chatter_targets speichern fehlgeschlagen:', error.message); return }
+    onZielGespeichert?.()
+  }
+
+  const zeilen = zielDaten?.zeilen || []
+  const mitZiel = zeilen.filter(z => z.monatsziel > 0).length
+
+  const th = { padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border-bright)', whiteSpace: 'nowrap', textAlign: 'left' }
+  const td = { padding: '9px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12, whiteSpace: 'nowrap' }
+  const inputStyle = {
+    width: 62, background: 'var(--bg-input)', border: '1px solid var(--border-bright)',
+    color: 'var(--text-primary)', borderRadius: 5, padding: '4px 6px', fontSize: 12,
+    fontFamily: 'var(--font-mono)', outline: 'none',
+  }
+
+  // Bewusst eine Funktion und keine eigene Komponente: als <Komponente/> würde
+  // React das Feld bei jedem Render der Karte neu einhängen und der Cursor
+  // spränge beim Tippen heraus.
+  const zahlFeld = (z, feld, platzhalter) => (
+    <input
+      key={z.name + feld}
+      type="text"
+      inputMode="decimal"
+      defaultValue={z.ziel?.[feld] ?? ''}
+      placeholder={platzhalter}
+      disabled={speichert === z.name + feld}
+      onBlur={e => {
+        const alt = z.ziel?.[feld]
+        const neu = e.target.value.trim()
+        if (String(alt ?? '') === neu) return   // nichts geändert → kein Schreibzugriff
+        speichereFeld(z.name, feld, neu)
+      }}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+      style={inputStyle}
+    />
+  )
+
+  return (
+    <Card title={<><Icon name="target" /> Ziele & Verdienst ({zielDaten?.tagImMonat || 0}. von {zielDaten?.tageImMonat || 0} Tagen)</>}>
+      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+        Hochrechnung = Umsatz bis heute, linear auf den ganzen Monat gerechnet, mal Provisionssatz.
+        Leere Felder bedeuten Standard ({STANDARD_ZIEL.min_rph} $/Std, Nacht {STANDARD_ZIEL.min_rph_nacht} $/Std, {STANDARD_ZIEL.provision_pct}% Provision).
+        Ohne Monatsziel gibt es keine Verdienst-Warnung — aktuell für {mitZiel} von {zeilen.length} Chattern gesetzt.
+      </div>
+
+      {zeilen.length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '6px 0' }}>
+          Für diesen Monat liegen noch keine Chatter-Daten vor.
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? 720 : 0 }}>
+            <thead>
+              <tr>
+                <th style={th}>Chatter</th>
+                <th style={th}>Ziel $/Std</th>
+                <th style={th}>Monatsziel $</th>
+                <th style={th}>%</th>
+                <th style={th} title="Umsatz geteilt durch Aktivminuten aus der CSV">Ø $/Aktivstd</th>
+                <th style={th} title="Umsatz geteilt durch die Zeit zwischen Check-in und Check-out">Ø $/Schichtstd</th>
+                <th style={th}>Umsatz Monat</th>
+                <th style={th}>Verdienst bisher</th>
+                <th style={th}>Hochrechnung</th>
+                <th style={th}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {zeilen.map(z => (
+                <React.Fragment key={z.name}>
+                  <tr>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      {z.name}
+                      <button
+                        onClick={() => setOffen(offen === z.name ? null : z.name)}
+                        title="Ziele je Schicht"
+                        style={{
+                          marginLeft: 7, background: 'transparent', border: '1px solid var(--border-bright)',
+                          color: 'var(--text-muted)', borderRadius: 4, padding: '0 6px',
+                          fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                        }}>{offen === z.name ? '−' : '+'}</button>
+                      {z.offeneCheckouts > 0 && (
+                        <span title={`${z.offeneCheckouts} Schicht(en) ohne Check-out — diese Stunden fehlen in $/Schichtstd`}
+                          style={{ marginLeft: 6, fontSize: 10, color: 'var(--orange)' }}>⚠</span>
+                      )}
+                    </td>
+                    <td style={td}>{zahlFeld(z, 'min_rph', String(STANDARD_ZIEL.min_rph))}</td>
+                    <td style={td}>{zahlFeld(z, 'monatsziel_verdienst', '—')}</td>
+                    <td style={td}>{zahlFeld(z, 'provision_pct', String(STANDARD_ZIEL.provision_pct))}</td>
+                    <td style={{ ...td, fontFamily: 'var(--font-mono)', color: z.rphAktivMonat > 0 && z.rphAktivMonat < z.schwelleMonat ? 'var(--red)' : 'var(--text-primary)' }}>
+                      ${z.rphAktivMonat.toFixed(0)}
+                    </td>
+                    <td style={{ ...td, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                      {z.rphSchichtMonat != null ? `$${z.rphSchichtMonat.toFixed(0)}` : '—'}
+                      {z.monatSchichtH > 0 && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}> · {z.monatSchichtH.toFixed(0)}h</span>
+                      )}
+                    </td>
+                    <td style={{ ...td, fontFamily: 'var(--font-mono)' }}>{formatMoney(z.monatUmsatz)}</td>
+                    <td style={{ ...td, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>${z.verdienstBisher.toFixed(0)}</td>
+                    <td style={{ ...td, fontFamily: 'var(--font-mono)', fontWeight: 700, color: z.statusFarbe }}>
+                      ${z.hochrechnungVerdienst.toFixed(0)}
+                      {z.zielVerhaeltnis !== null && (
+                        <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 11 }}> · {Math.round(z.zielVerhaeltnis * 100)}%</span>
+                      )}
+                    </td>
+                    <td style={{ ...td, color: z.statusFarbe, fontWeight: 600 }}>
+                      {z.status}
+                      {z.ursache && (
+                        <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)' }}>
+                          {z.ursache === 'stunden' ? 'zu wenig Schichten' : z.ursache === 'leistung' ? 'Stundenleistung' : 'beides'}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                  {offen === z.name && (
+                    <tr>
+                      <td colSpan={10} style={{ ...td, background: 'var(--bg-card2)', whiteSpace: 'normal' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Mindest-$/Std je Schicht — leer heißt: es gilt der Grundwert links.
+                          </span>
+                          {ZIEL_SCHICHTEN.map(s => {
+                            const feld = { 'Vorschicht': 'min_rph_vorschicht', 'Früh': 'min_rph_frueh', 'Spät': 'min_rph_spaet', 'Nacht': 'min_rph_nacht' }[s]
+                            return (
+                              <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                <span style={{ color: 'var(--text-secondary)' }}>{s}</span>
+                                {zahlFeld(z, feld, String(minRphFuerSchicht(z.ziel, s)))}
+                              </label>
+                            )
+                          })}
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {z.aktiveTage} Tage gearbeitet · {(z.monatAktivMin / 60).toFixed(0)}h aktiv
+                            {z.monatSchichtH > 0 ? ` · ${z.monatSchichtH.toFixed(0)}h eingecheckt` : ''}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function ChattersView({ selectedDate, chatterSnapshots, onDateChange }) {
   // v3.4.0: aufgeklappte Health-Detail-Row
   const [expandedHealth, setExpandedHealth] = useState(null)
@@ -288,6 +477,30 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
       setInactiveNames(new Set((data || []).map(r => r.display_name).filter(Boolean)))
     })()
   }, [])
+  // v4.27.0: Zielwerte + tatsächlich geleistete Schichtstunden.
+  // Die Schichtstunden werden für den laufenden Monat bis zum gewählten Tag
+  // geladen — mehr braucht die Hochrechnung nicht.
+  const [ziele, setZiele] = useState({})
+  const [schichtStunden, setSchichtStunden] = useState({})
+  const [zielVersion, setZielVersion] = useState(0)
+  useEffect(() => {
+    let abgebrochen = false
+    ;(async () => {
+      const z = await ladeChatterZiele()
+      if (!abgebrochen) setZiele(z)
+    })()
+    return () => { abgebrochen = true }
+  }, [zielVersion])
+  useEffect(() => {
+    if (!selectedDate) return
+    let abgebrochen = false
+    ;(async () => {
+      const monatsStart = selectedDate.slice(0, 8) + '01'
+      const s = await ladeSchichtstunden(monatsStart, selectedDate)
+      if (!abgebrochen) setSchichtStunden(s)
+    })()
+    return () => { abgebrochen = true }
+  }, [selectedDate])
   // v3.31.0: kompakte/gestapelte Alert-Zeilen auf Mobile
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
   useEffect(() => {
@@ -393,67 +606,24 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
   const thStyle = { padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border-bright)', whiteSpace: 'nowrap' }
   const deltaStyle = (v) => ({ fontFamily: 'var(--font-mono)', fontSize: 11, color: v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text-muted)' })
 
-  // ── Unified Alerts: kombiniert Trend-Probleme + $/Std unter Minimum ──
-  // Berechne pro Chatter: wieviele Tage in Folge unter $100/Std bei min 90 Min Aktivität
+  // ── v4.27.0: Zielwerte, Monats-Hochrechnung, Schichtstunden ──
+  // Ersetzt die früher hier hartcodierten $100/$60 pro Stunde. Die Schwelle ist
+  // jetzt der Wert des jeweiligen Chatters, gewichtet nach den Schichten, die er
+  // an dem Tag tatsächlich gearbeitet hat.
+  const zielDaten = berechneChatterZiele({
+    chatterSnapshots, selectedDate, ziele, schichtStunden, inaktiveNamen: inactiveNames,
+  })
+
+  // ── Unified Alerts: Verdienst-Hochrechnung + $/Std unter Ziel + Trend + Health ──
   const chatterAlerts = (() => {
     const alerts = []
-    // Sortierte Snapshots ab heute zurück
     const sortedDesc = [...chatterSnapshots].sort((a, b) => b.businessDate.localeCompare(a.businessDate))
     const cutoffIdx = sortedDesc.findIndex(s => s.businessDate === selectedDate)
     if (cutoffIdx === -1) return []
-    const lastSnaps = sortedDesc.slice(cutoffIdx, cutoffIdx + 14) // letzte 14 Tage Backwindow
 
-    // Alle Chatter-Namen die heute aktiv sind
-    const todayNames = (rows || []).filter(r => (r.activeMinutes || 0) >= 90).map(r => r.name)
-
-    for (const name of todayNames) {
-      // Streak: wieviele Tage am Stück (von heute zurück) unter $100/Std bei ≥90min?
-      let streak = 0
-      let totalActiveDays = 0
-      let lastRph = null
-      for (const snap of lastSnaps) {
-        const r = snap.rows.find(rr => rr.name === name)
-        if (!r || (r.activeMinutes || 0) < 90) {
-          // Inaktiv-Tag bricht Streak nicht zwingend, aber wir zählen nur aktive Tage
-          if (totalActiveDays === 0) continue // führende Off-Days vor dem ersten aktiven Tag → skip
-          break
-        }
-        totalActiveDays++
-        if (lastRph === null) lastRph = r.revenuePerHour || 0
-        if ((r.revenuePerHour || 0) < 100) streak++
-        else break
-      }
-
-      // Heute überhaupt aktiv?
-      const todayRow = (rows || []).find(r => r.name === name)
-      if (!todayRow) continue
-      const rph = todayRow.revenuePerHour || 0
-      const activeMin = todayRow.activeMinutes || 0
-
-      if (streak >= 3) {
-        alerts.push({
-          severity: 'critical',
-          name,
-          headline: `$${rph.toFixed(0)}/Std · ${(activeMin / 60).toFixed(1)}h aktiv · weit unter Minimum`,
-          tag: `Tag ${streak} in Folge < $100/Std`,
-        })
-      } else if (streak >= 2) {
-        alerts.push({
-          severity: 'warning',
-          name,
-          headline: `$${rph.toFixed(0)}/Std · ${(activeMin / 60).toFixed(1)}h aktiv · unter Minimum`,
-          tag: `Tag ${streak} in Folge < $100/Std`,
-        })
-      } else if (rph > 0 && rph < 60 && activeMin >= 90) {
-        // Heute alleine schon kritisch schwach (aber kein Streak)
-        alerts.push({
-          severity: 'warning',
-          name,
-          headline: `$${rph.toFixed(0)}/Std · ${(activeMin / 60).toFixed(1)}h aktiv · stark unter Minimum`,
-          tag: 'Schwacher Tag',
-        })
-      }
-    }
+    // Ziel-basierte Meldungen (Verdienst-Hochrechnung, Stundenleistung,
+    // Schicht-ohne-Aktivität) kommen aus dem gemeinsamen Rechenkern.
+    alerts.push(...berechneZielAlerts(zielDaten.zeilen))
 
     // Trend-basierte Alerts: 3-Tage-Abwärtstrend
     for (const r of (rows || [])) {
@@ -526,15 +696,11 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
     }
 
     // Auch bestehende Alerts mit group + explain anreichern (damit Gruppierung funktioniert)
+    // v4.27.0: Ziel- und Health-Alerts bringen ihre Gruppe schon mit; hier bleiben
+    // nur noch die Trend-Meldungen übrig.
     for (const a of alerts) {
-      if (a.group) continue // neue health alerts haben schon
-      if (a.tag && a.tag.includes('< $100/Std')) {
-        a.group = 'under_min'
-        a.explain = 'Chatter liegt unter $100/Std an mehreren Tagen in Folge. Stundenleistung dauerhaft schwach.'
-      } else if (a.tag === 'Schwacher Tag') {
-        a.group = 'under_min'
-        a.explain = 'Heute deutlich unter $100/Std bei ausreichend Aktivität. Einzelner schwacher Tag (noch kein Streak).'
-      } else if (a.tag === '3-Tage-Abwärtstrend') {
+      if (a.group) continue
+      if (a.tag === '3-Tage-Abwärtstrend') {
         a.group = 'trend'
         a.explain = 'Revenue ist über die letzten 3 Tage rückläufig. Beobachten ob es weitergeht.'
       } else {
@@ -588,10 +754,14 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
             {/* v3.5.0: Gruppierte Alert-Anzeige (Option A) */}
             {(() => {
               const groupConfig = [
+                // v4.27.0: Verdienst steht bewusst ganz oben. Das ist der Fall, der
+                // monatelang unsichtbar war, weil nur auf Gesamtumsätze geschaut wurde.
+                { key: 'verdienst', label: <><Icon name="alert" /> Verdienst unter Ziel (Monat)</>, color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
+                  desc: 'Hochrechnung auf den ganzen Monat liegt unter dem hinterlegten Verdienstziel des Chatters.' },
                 { key: 'critical_health', label: <><Icon name="alert" /> Kritisch (Health)</>, color: 'var(--red)', bg: 'rgba(239,68,68,0.06)', defaultOpen: true,
                   desc: 'Fan-Burnout und Spam-Risiko – Chatter-Verhalten gefährdet Fan-Beziehung.' },
-                { key: 'under_min', label: <><Icon name="alert" /> Performance unter Minimum</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: true,
-                  desc: 'Chatter unter $100/Std an einem oder mehreren Tagen.' },
+                { key: 'under_min', label: <><Icon name="alert" /> Stundenleistung unter Ziel</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: true,
+                  desc: 'Chatter unter seinem eigenen Mindest-$/Std — gewichtet nach den Schichten, die er an dem Tag hatte.' },
                 { key: 'trend', label: <><Icon name="trending-down" /> Abwärtstrend</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
                   desc: 'Revenue rückläufig — 3-Tage Trend oder schleichender Rückgang (5-Tage MA).' },
                 { key: 'stability', label: <><Icon name="activity" /> Stabilität & Abhängigkeit</>, color: 'var(--yellow)', bg: 'rgba(245,158,11,0.06)', defaultOpen: false,
@@ -702,6 +872,14 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
           </>
         )}
       </Card>
+
+      {/* ═══════════ v4.27.0: Ziele & Verdienst ═══════════ */}
+      <ChatterZieleCard
+        zielDaten={zielDaten}
+        ziele={ziele}
+        onZielGespeichert={() => setZielVersion(v => v + 1)}
+        isMobile={isMobile}
+      />
 
       {/* v3.6.0: Top-Performer-Karte (positives Gegenstück zur Alert-Sektion) */}
       <Card title={<><Icon name="star" /> Top-Performer</>}>
