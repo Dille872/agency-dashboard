@@ -290,20 +290,28 @@ function scoreBg(color) {
 
 
 // ============================================================================
-// v4.27.0 — Ziele & Verdienst
+// v4.27.0 — Ziele & Verdienst   ·   v4.29.0 — auf fünf Spalten eingedampft
 //
-// Das Chatter-Gegenstück zur Tagesziel-Tabelle der Models. Zwei Dinge stehen
-// hier bewusst nebeneinander:
+// Das Chatter-Gegenstück zur Tagesziel-Tabelle der Models.
+//
+// In v4.27.0 standen elf Spalten nebeneinander, davon drei Eingabefelder — das
+// war unruhiger als die Model-Tabelle und damit genau das Gegenteil von dem,
+// wofür eine Übersicht da ist. Sichtbar bleibt jetzt nur, was eine Entscheidung
+// auslöst: Stundenleistung, Hochrechnung, Status, Beobachten. Alles zum
+// Einstellen und Nachrechnen liegt eine Zeile tiefer hinter dem +.
+//
+// Zwei Zahlen bleiben zusammen gedacht:
 //   $/Aktivstd   — wie gut jemand arbeitet
-//   $/Schichtstd — was die bezahlte Schicht tatsächlich einbringt
-// und darunter die Hochrechnung, was am Monatsende an Provision rauskommt.
-// Ohne diese dritte Zahl sieht man einen Chatter mit ordentlichen Stundenwerten
-// und zu wenigen Schichten nicht — genau der Fall, der hier gefehlt hat.
+//   $/Schichtstd — was die bezahlte Schicht tatsächlich einbringt (aufgeklappt)
+// dazu die Hochrechnung, was am Monatsende an Provision rauskommt. Ohne diese
+// dritte Zahl sieht man einen Chatter mit ordentlichen Stundenwerten und zu
+// wenigen Schichten nicht — genau der Fall, der hier gefehlt hat.
 // ============================================================================
 function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatterSnapshots, selectedDate, beobachtungen, onBeobachtungGeaendert }) {
-  const [offen, setOffen] = useState(null)      // Chatter mit aufgeklappten Schicht-Zielen
+  const [offen, setOffen] = useState(null)      // Chatter mit aufgeklappter Detailzeile
   const [speichert, setSpeichert] = useState(null)
   const [dauerMenu, setDauerMenu] = useState(null)
+  const [zeigeAlle, setZeigeAlle] = useState(false)
 
   const beobMap = beobachtungsMap(beobachtungen)
   const beobachtungFuer = (name) => beobMap[`chatter::${(name || '').trim().toLowerCase()}`] || null
@@ -340,9 +348,6 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
     onZielGespeichert?.()
   }
 
-  const zeilen = zielDaten?.zeilen || []
-  const mitZiel = zeilen.filter(z => z.monatsziel > 0).length
-
   const th = { padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border-bright)', whiteSpace: 'nowrap', textAlign: 'left' }
   const td = { padding: '9px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12, whiteSpace: 'nowrap' }
   const inputStyle = {
@@ -373,11 +378,59 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
     />
   )
 
+  const alleZeilen = zielDaten?.zeilen || []
+  const aktiveZeilen = zielDaten?.aktiveZeilen || alleZeilen
+  const zeilen = zeigeAlle ? alleZeilen : aktiveZeilen
+  const ausgeblendet = alleZeilen.length - aktiveZeilen.length
+  const mitZiel = zeilen.filter(z => z.monatsziel > 0).length
+
+  const beobachtenZelle = (z) => {
+    const b = beobachtungFuer(z.name)
+    if (b) {
+      const f = beobachtungsFortschritt(b, { modelSnapshots: [], chatterSnapshots, aliase: {} })
+      const farbe = RICHTUNG_FARBE[f.richtung] || 'var(--text-muted)'
+      return (
+        <span title={fortschrittsText(b, f)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            background: `${farbe}22`, color: farbe, border: `1px solid ${farbe}44`,
+            padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+          }}>
+            👁 {f.tageVergangen}/{f.tageGesamt} Tage
+            {f.deltaPct != null && ` · ${f.deltaPct >= 0 ? '+' : ''}${f.deltaPct.toFixed(0)}%`}
+          </span>
+          <button onClick={() => beende(b.id)} title="Beobachtung beenden"
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+        </span>
+      )
+    }
+    if (dauerMenu === z.name) {
+      return (
+        <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+          {BEOBACHTUNG_DAUERN.map(t => (
+            <button key={t} onClick={() => markiere(z.name, t)} title={`${t} gearbeitete Tage beobachten`}
+              style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {t}T
+            </button>
+          ))}
+          <button onClick={() => setDauerMenu(null)}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0 }}>×</button>
+        </span>
+      )
+    }
+    return (
+      <button onClick={() => setDauerMenu(z.name)}
+        title="Chatter beobachten — die Zahl meint gearbeitete Tage, nicht Kalendertage"
+        style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'inherit' }}>
+        👁 beobachten
+      </button>
+    )
+  }
+
   return (
     <Card title={<><Icon name="target" /> Ziele & Verdienst ({zielDaten?.tagImMonat || 0}. von {zielDaten?.tageImMonat || 0} Tagen)</>}>
       <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
         Hochrechnung = Umsatz bis heute, linear auf den ganzen Monat gerechnet, mal Provisionssatz.
-        Leere Felder bedeuten Standard ({STANDARD_ZIEL.min_rph} $/Std, Nacht {STANDARD_ZIEL.min_rph_nacht} $/Std, {STANDARD_ZIEL.provision_pct}% Provision).
+        Ziele, Schichtstunden und Monatsumsatz stehen hinter dem <b>+</b> neben dem Namen.
         Ohne Monatsziel gibt es keine Verdienst-Warnung — aktuell für {mitZiel} von {zeilen.length} Chattern gesetzt.
       </div>
 
@@ -387,18 +440,12 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? 720 : 0 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? 560 : 0 }}>
             <thead>
               <tr>
                 <th style={th}>Chatter</th>
-                <th style={th}>Ziel $/Std</th>
-                <th style={th}>Monatsziel $</th>
-                <th style={th}>%</th>
-                <th style={th} title="Umsatz geteilt durch Aktivminuten aus der CSV">Ø $/Aktivstd</th>
-                <th style={th} title="Umsatz geteilt durch die Zeit zwischen Check-in und Check-out">Ø $/Schichtstd</th>
-                <th style={th}>Umsatz Monat</th>
-                <th style={th}>Verdienst bisher</th>
-                <th style={th}>Hochrechnung</th>
+                <th style={th} title="Umsatz geteilt durch Aktivminuten aus der CSV">Ø $/Std</th>
+                <th style={th} title="Umsatz bis heute, hochgerechnet auf den Monat, mal Provisionssatz">Hochrechnung</th>
                 <th style={th}>Status</th>
                 <th style={th}>Beobachten</th>
               </tr>
@@ -411,7 +458,7 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
                       {z.name}
                       <button
                         onClick={() => setOffen(offen === z.name ? null : z.name)}
-                        title="Ziele je Schicht"
+                        title="Ziele, Schichtstunden und Monatsumsatz"
                         style={{
                           marginLeft: 7, background: 'transparent', border: '1px solid var(--border-bright)',
                           color: 'var(--text-muted)', borderRadius: 4, padding: '0 6px',
@@ -422,21 +469,12 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
                           style={{ marginLeft: 6, fontSize: 10, color: 'var(--orange)' }}>⚠</span>
                       )}
                     </td>
-                    <td style={td}>{zahlFeld(z, 'min_rph', String(STANDARD_ZIEL.min_rph))}</td>
-                    <td style={td}>{zahlFeld(z, 'monatsziel_verdienst', '—')}</td>
-                    <td style={td}>{zahlFeld(z, 'provision_pct', String(STANDARD_ZIEL.provision_pct))}</td>
                     <td style={{ ...td, fontFamily: 'var(--font-mono)', color: z.rphAktivMonat > 0 && z.rphAktivMonat < z.schwelleMonat ? 'var(--red)' : 'var(--text-primary)' }}>
                       ${z.rphAktivMonat.toFixed(0)}
+                      <span style={{ color: 'var(--text-muted)', fontSize: 10 }}> / {z.schwelleMonat.toFixed(0)}</span>
                     </td>
-                    <td style={{ ...td, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                      {z.rphSchichtMonat != null ? `$${z.rphSchichtMonat.toFixed(0)}` : '—'}
-                      {z.monatSchichtH > 0 && (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}> · {z.monatSchichtH.toFixed(0)}h</span>
-                      )}
-                    </td>
-                    <td style={{ ...td, fontFamily: 'var(--font-mono)' }}>{formatMoney(z.monatUmsatz)}</td>
-                    <td style={{ ...td, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>${z.verdienstBisher.toFixed(0)}</td>
-                    <td style={{ ...td, fontFamily: 'var(--font-mono)', fontWeight: 700, color: z.statusFarbe }}>
+                    <td style={{ ...td, fontFamily: 'var(--font-mono)', fontWeight: 700, color: z.statusFarbe }}
+                      title={`Umsatz Monat ${formatMoney(z.monatUmsatz)} · Verdienst bisher $${z.verdienstBisher.toFixed(0)} · ${z.provisionPct}% Provision`}>
                       ${z.hochrechnungVerdienst.toFixed(0)}
                       {z.zielVerhaeltnis !== null && (
                         <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 11 }}> · {Math.round(z.zielVerhaeltnis * 100)}%</span>
@@ -450,57 +488,28 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
                         </div>
                       )}
                     </td>
-                    {/* v4.28.0: Beobachten — gleiche Mechanik wie in der Model-Zieltabelle */}
-                    <td style={td}>
-                      {(() => {
-                        const b = beobachtungFuer(z.name)
-                        if (b) {
-                          const f = beobachtungsFortschritt(b, { modelSnapshots: [], chatterSnapshots, aliase: {} })
-                          const farbe = RICHTUNG_FARBE[f.richtung] || 'var(--text-muted)'
-                          return (
-                            <span title={fortschrittsText(b, f)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{
-                                background: `${farbe}22`, color: farbe, border: `1px solid ${farbe}44`,
-                                padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-                              }}>
-                                👁 Tag {f.tageVergangen}/{f.tageGesamt}
-                                {f.deltaPct != null && ` · ${f.deltaPct >= 0 ? '+' : ''}${f.deltaPct.toFixed(0)}%`}
-                              </span>
-                              <button onClick={() => beende(b.id)} title="Beobachtung beenden"
-                                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
-                            </span>
-                          )
-                        }
-                        if (dauerMenu === z.name) {
-                          return (
-                            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                              {BEOBACHTUNG_DAUERN.map(t => (
-                                <button key={t} onClick={() => markiere(z.name, t)}
-                                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                  {t}T
-                                </button>
-                              ))}
-                              <button onClick={() => setDauerMenu(null)}
-                                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: 0 }}>×</button>
-                            </span>
-                          )
-                        }
-                        return (
-                          <button onClick={() => setDauerMenu(z.name)}
-                            title="Chatter für die nächsten Tage beobachten — täglich eine Statusmeldung in der Glocke"
-                            style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'inherit' }}>
-                            👁 beobachten
-                          </button>
-                        )
-                      })()}
-                    </td>
+                    <td style={td}>{beobachtenZelle(z)}</td>
                   </tr>
                   {offen === z.name && (
                     <tr>
-                      <td colSpan={11} style={{ ...td, background: 'var(--bg-card2)', whiteSpace: 'normal' }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
+                      <td colSpan={5} style={{ ...td, background: 'var(--bg-card2)', whiteSpace: 'normal' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', marginBottom: 8 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>Ziel $/Std</span>
+                            {zahlFeld(z, 'min_rph', String(STANDARD_ZIEL.min_rph))}
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>Monatsziel $</span>
+                            {zahlFeld(z, 'monatsziel_verdienst', '—')}
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>Provision %</span>
+                            {zahlFeld(z, 'provision_pct', String(STANDARD_ZIEL.provision_pct))}
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', marginBottom: 8 }}>
                           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            Mindest-$/Std je Schicht — leer heißt: es gilt der Grundwert links.
+                            Ziel je Schicht — leer heißt: es gilt der Grundwert oben.
                           </span>
                           {ZIEL_SCHICHTEN.map(s => {
                             const feld = { 'Vorschicht': 'min_rph_vorschicht', 'Früh': 'min_rph_frueh', 'Spät': 'min_rph_spaet', 'Nacht': 'min_rph_nacht' }[s]
@@ -511,10 +520,18 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
                               </label>
                             )
                           })}
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {z.aktiveTage} Tage gearbeitet · {(z.monatAktivMin / 60).toFixed(0)}h aktiv
-                            {z.monatSchichtH > 0 ? ` · ${z.monatSchichtH.toFixed(0)}h eingecheckt` : ''}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                          <span>Umsatz Monat <b style={{ fontFamily: 'var(--font-mono)' }}>{formatMoney(z.monatUmsatz)}</b></span>
+                          <span>Verdienst bisher <b style={{ fontFamily: 'var(--font-mono)' }}>${z.verdienstBisher.toFixed(0)}</b></span>
+                          <span>
+                            Ø $/Schichtstd{' '}
+                            <b style={{ fontFamily: 'var(--font-mono)' }}>
+                              {z.rphSchichtMonat != null ? `$${z.rphSchichtMonat.toFixed(0)}` : '—'}
+                            </b>
+                            {z.monatSchichtH > 0 && <span style={{ color: 'var(--text-muted)' }}> ({z.monatSchichtH.toFixed(0)}h eingecheckt)</span>}
                           </span>
+                          <span>{z.aktiveTage} Tage gearbeitet · {(z.monatAktivMin / 60).toFixed(0)}h aktiv</span>
                         </div>
                       </td>
                     </tr>
@@ -523,6 +540,14 @@ function ChatterZieleCard({ zielDaten, ziele, onZielGespeichert, isMobile, chatt
               ))}
             </tbody>
           </table>
+          {ausgeblendet > 0 && (
+            <button onClick={() => setZeigeAlle(v => !v)}
+              style={{ marginTop: 10, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {zeigeAlle
+                ? `${ausgeblendet} selten aktive wieder ausblenden`
+                : `${ausgeblendet} selten aktive einblenden (unter ${zielDaten?.aktivGrenze || 4} gearbeiteten Tagen)`}
+            </button>
+          )}
         </div>
       )}
     </Card>
@@ -697,7 +722,9 @@ export default function ChattersView({ selectedDate, chatterSnapshots, onDateCha
 
     // Ziel-basierte Meldungen (Verdienst-Hochrechnung, Stundenleistung,
     // Schicht-ohne-Aktivität) kommen aus dem gemeinsamen Rechenkern.
-    alerts.push(...berechneZielAlerts(zielDaten.zeilen))
+    // v4.29.0: nur aktive Chatter — für eine Aushilfe mit zwei Tagen im Monat
+    // ist jede Hochrechnung Zufall.
+    alerts.push(...berechneZielAlerts(zielDaten.aktiveZeilen))
 
     // Trend-basierte Alerts: 3-Tage-Abwärtstrend
     for (const r of (rows || [])) {

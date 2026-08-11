@@ -1102,7 +1102,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                                   background: `${farbe}22`, color: farbe, border: `1px solid ${farbe}44`,
                                   padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
                                 }}>
-                                  👁 Tag {f.tageVergangen}/{f.tageGesamt}
+                                  👁 {f.tageVergangen}/{f.tageGesamt} Tage
                                   {f.deltaPct != null && ` · ${f.deltaPct >= 0 ? '+' : ''}${f.deltaPct.toFixed(0)}%`}
                                 </span>
                                 <button onClick={() => beende(b.id)} title="Beobachtung beenden"
@@ -1114,7 +1114,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                             return (
                               <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                                 {BEOBACHTUNG_DAUERN.map(t => (
-                                  <button key={t} onClick={() => markiere(g.modelName, t)}
+                                  <button key={t} onClick={() => markiere(g.modelName, t)} title={`${t} gearbeitete Tage beobachten`}
                                     style={{ background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                                     {t}T
                                   </button>
@@ -1126,7 +1126,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                           }
                           return (
                             <button onClick={() => setDauerMenu(g.modelName)}
-                              title="Model für die nächsten Tage beobachten — täglich eine Statusmeldung in der Glocke"
+                              title="Model beobachten — die Zahl meint Tage mit neuen Zahlen, nicht Kalendertage"
                               style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'inherit' }}>
                               👁 beobachten
                             </button>

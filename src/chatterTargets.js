@@ -40,6 +40,11 @@ export const STANDARD_ZIEL = {
 // für ein Urteil (identisch zur bisherigen Logik in ChattersView).
 export const MIN_AKTIVMINUTEN = 90
 
+// v4.29.0: Ab so vielen gearbeiteten Tagen im Monat gilt ein Chatter als aktiv
+// und steht in der Übersicht. Wer einmal ausgeholfen hat, macht die Tabelle
+// sonst lang, ohne dass jemand etwas mit der Zeile anfangen kann.
+export const AKTIV_GRENZE_TAGE = 4
+
 const SCHICHT_SPALTE = {
   'Vorschicht': 'min_rph_vorschicht',
   'Früh': 'min_rph_frueh',
@@ -259,7 +264,13 @@ export function berechneChatterZiele({ chatterSnapshots = [], selectedDate, ziel
     return b.monatUmsatz - a.monatUmsatz
   })
 
-  return { zeilen, tagImMonat, tageImMonat }
+  // v4.29.0: "Aktiv" heißt genug gearbeitete Tage im Monat. Die Grenze wächst in
+  // den ersten Tagen mit, sonst wäre die Tabelle Anfang des Monats leer — am
+  // 2. reichen 2 Tage, ab dem 4. gilt der volle Wert.
+  const aktivGrenze = Math.min(AKTIV_GRENZE_TAGE, Math.max(1, tagImMonat))
+  const aktiveZeilen = zeilen.filter(z => z.aktiveTage >= aktivGrenze)
+
+  return { zeilen, aktiveZeilen, aktivGrenze, tagImMonat, tageImMonat }
 }
 
 /**

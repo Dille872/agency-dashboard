@@ -235,11 +235,12 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSn
         ladeSchichtstunden(letzterTag.slice(0, 8) + '01', letzterTag),
       ])
       if (abgebrochen) return
-      const { zeilen } = berechneChatterZiele({
+      const { aktiveZeilen } = berechneChatterZiele({
         chatterSnapshots, selectedDate: letzterTag, ziele, schichtStunden, inaktiveNamen: inaktiv,
       })
       const when = new Date(letzterTag + 'T12:00:00').toISOString()
-      setZielItems(berechneZielAlerts(zeilen).map((a, i) => ({
+      // v4.29.0: nur aktive Chatter melden (mind. 4 gearbeitete Tage im Monat)
+      setZielItems(berechneZielAlerts(aktiveZeilen).map((a, i) => ({
         id: `ziel-${letzterTag}-${i}`,
         when, actor: null, cat: 'umsatz',
         Icon: Euro,

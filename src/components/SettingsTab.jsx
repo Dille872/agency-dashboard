@@ -4,6 +4,8 @@ import { supabase, FUNCTIONS_URL } from '../supabase'
 import BillingTab from './BillingTab'
 import ExportTab from './ExportTab'
 import { logActivity } from '../activity'
+// v4.30.0: Regeln fuers Freiraeumen von Dienstplan-Zellen (rein, testbar)
+import { assignmentsOhnePerson, assignmentsOhneModels } from '../dienstplanAufraeumen'
 import { ladeInaktiveNamen, ohneInaktive } from '../people'
 
 const SECTIONS = [
@@ -71,6 +73,10 @@ export default function SettingsTab() {
   const [archivOffen, setArchivOffen] = useState(false)
   // v4.16.0: Altlasten aus fehlgeschlagenen Offboardings
   const [kontaktProbleme, setKontaktProbleme] = useState([])
+  // v4.30.0: Wer stillgelegt ist, aber noch im Dienstplan oder in den
+  // Dauerschichten steht (Altbestand aus der Zeit vor dem automatischen Aufräumen)
+  const [planLeichen, setPlanLeichen] = useState([])
+  const [planBusy, setPlanBusy] = useState(null)
   const [editingRole, setEditingRole] = useState(null)
   const [offboarding, setOffboarding] = useState(null)
 
@@ -104,7 +110,7 @@ export default function SettingsTab() {
   useEffect(() => {
     loadUsers(); loadModels(); loadChatters()
     loadModelAliases(); loadChatterAliases(); loadBotMessages()
-    loadSurveys(); loadInvites(); loadResets(); loadKontaktCheck()
+    loadSurveys(); loadInvites(); loadResets(); loadKontaktCheck(); loadPlanCheck()
   }, [])
 
   const loadUsers = async () => { const { data } = await supabase.from('user_roles').select('*').order('role'); setUsers(data || []) }
@@ -146,10 +152,84 @@ export default function SettingsTab() {
     setKontaktProbleme(gefunden)
   }
 
+  // ── v4.30.0: Wer ist stillgelegt, steht aber noch im Plan? ──────────────
+  // Ab v4.30.0 räumt das Offboarding selbst auf. Was vorher offboardet wurde,
+  // steht aber weiter im Dienstplan — und über `recurring_shifts` sogar in jeder
+  // neu angelegten Woche wieder. Diese Fälle müssen einmal aufgeräumt werden.
+  const loadPlanCheck = async () => {
+    const norm = (x) => String(x || '').trim().toLowerCase()
+    const montag = montagIso()
+    const [{ data: ur }, { data: wochen }, { data: rec }, { data: mo }] = await Promise.all([
+      supabase.from('user_roles').select('display_name, status, roles, role'),
+      supabase.from('schedule').select('week_start, assignments').gte('week_start', montag),
+      supabase.from('recurring_shifts').select('shift_key, chatter, model_id'),
+      supabase.from('models_contact').select('id, name, active'),
+    ])
+
+    const inaktivPersonen = new Map()   // nameLc -> { name, rollen }
+    for (const u of ur || []) {
+      if (!u.display_name || !u.status || u.status === 'active') continue
+      inaktivPersonen.set(norm(u.display_name), {
+        name: u.display_name,
+        rollen: u.roles?.length ? u.roles : [u.role].filter(Boolean),
+      })
+    }
+    // Stillgelegte Models haben nicht zwingend einen Login — die kommen über das
+    // active-Flag der Kontaktliste dazu.
+    const inaktiveModelIds = new Map()  // id -> name
+    for (const m of mo || []) {
+      if (m.active === false) inaktiveModelIds.set(String(m.id), m.name)
+    }
+
+    const treffer = new Map()  // schluessel -> Eintrag
+    const merke = (name, typ, feld, plus = 1) => {
+      const k = `${typ}::${norm(name)}`
+      const e = treffer.get(k) || { name, typ, zellen: 0, dauerschichten: 0 }
+      e[feld] += plus
+      treffer.set(k, e)
+    }
+
+    for (const w of wochen || []) {
+      for (const [key, val] of Object.entries(w.assignments || {})) {
+        const modelId = key.split('__')[0]
+        if (inaktiveModelIds.has(modelId)) merke(inaktiveModelIds.get(modelId), 'model', 'zellen')
+        for (const feld of ['chatter', 'trainee']) {
+          const wer = norm(val?.[feld])
+          if (!wer || wer === '__frei__') continue
+          const p = inaktivPersonen.get(wer)
+          if (p) merke(p.name, 'chatter', 'zellen')
+        }
+      }
+    }
+    for (const r of rec || []) {
+      const p = inaktivPersonen.get(norm(r.chatter))
+      if (p) merke(p.name, 'chatter', 'dauerschichten')
+      if (inaktiveModelIds.has(String(r.model_id))) merke(inaktiveModelIds.get(String(r.model_id)), 'model', 'dauerschichten')
+    }
+    setPlanLeichen([...treffer.values()].sort((a, b) =>
+      (b.zellen + b.dauerschichten) - (a.zellen + a.dauerschichten)))
+  }
+
+  const planAufraeumen = async (eintrag) => {
+    setPlanBusy(eintrag.typ + eintrag.name)
+    try {
+      if (eintrag.typ === 'model') {
+        const entfernt = await modelAusDienstplanNehmen(eintrag.name)
+        logActivity('schedule.cleanup', { entity: eintrag.name, detail: `${entfernt} Zelle(n) nachträglich entfernt` })
+      } else {
+        const { zellen, dauerschichten } = await chatterAusDienstplanNehmen(eintrag.name)
+        logActivity('schedule.cleanup', { entity: eintrag.name, detail: `${zellen} Schicht(en) freigeräumt, ${dauerschichten} Dauerschicht(en) gelöscht` })
+      }
+    } finally {
+      setPlanBusy(null)
+      loadPlanCheck()
+    }
+  }
+
   const kontaktAusblenden = async (eintrag) => {
     await supabase.from(eintrag.tabelle).update({ active: false }).eq('name', eintrag.name)
     logActivity('user.status', { entity: eintrag.name, detail: 'Kontakt nachträglich ausgeblendet' })
-    loadKontaktCheck(); loadModels(); loadChatters()
+    loadKontaktCheck(); loadPlanCheck(); loadModels(); loadChatters()
   }
 
   // ── v4.11.0: Selbst-Registrierung ───────────────────────────────────────
@@ -485,19 +565,59 @@ export default function SettingsTab() {
 
     let entferntGesamt = 0
     for (const w of wochen || []) {
-      const alt = w.assignments || {}
-      const neu = {}
-      let entfernt = 0
-      for (const [k, v] of Object.entries(alt)) {
-        if (ids.includes(k.split('__')[0])) { entfernt++; continue }
-        neu[k] = v
-      }
+      const { assignments: neu, entfernt } = assignmentsOhneModels(w.assignments, ids)
       if (entfernt === 0) continue
       const { error } = await supabase.from('schedule').update({ assignments: neu }).eq('week_start', w.week_start)
       if (error) { console.error('Dienstplan-Aufräumen fehlgeschlagen', w.week_start, error.message); continue }
       entferntGesamt += entfernt
     }
+
+    // v4.30.0: Auch die Dauerschichten des Models löschen. Ohne das trägt der
+    // Wochen-Generator das stillgelegte Model in jeder NEUEN Woche wieder ein —
+    // aufgeräumt war dann nur die Vergangenheit.
+    const { error: recErr } = await supabase.from('recurring_shifts').delete().in('model_id', ids)
+    if (recErr) console.error('Dauerschichten des Models löschen fehlgeschlagen', recErr.message)
+
     return entferntGesamt
+  }
+
+  // v4.30.0: Einen offboardeten/stillgelegten CHATTER aus dem Dienstplan nehmen.
+  //
+  // Anders als beim Model wird die Zelle NICHT gelöscht — sie gehört dem Model.
+  // Entfernt wird nur die Person: die Schicht bleibt stehen und gilt ab sofort
+  // als unbesetzt, taucht also in der Konfliktliste auf und will neu besetzt
+  // werden. Eine gelöschte Zelle würde die Schicht stillschweigend verschwinden
+  // lassen — schlimmer als der Zustand vorher.
+  //
+  // `time_override` und `note` bleiben erhalten: die gehören zur Schicht, nicht
+  // zur Person. Nur wenn danach nichts mehr übrig ist, fliegt der Eintrag raus.
+  //
+  // Der zweite Teil ist der wichtigere: `recurring_shifts`. Steht der Chatter
+  // dort als Dauerschicht, trägt der Wochen-Generator ihn in jede neu angelegte
+  // Woche wieder ein. Wer nur die sichtbaren Wochen aufräumt, hat ihn eine Woche
+  // später zurück.
+  const chatterAusDienstplanNehmen = async (chatterName) => {
+    const gesucht = (chatterName || '').trim().toLowerCase()
+    if (!gesucht) return { zellen: 0, dauerschichten: 0 }
+
+    const { data: wochen, error: ladeErr } = await supabase
+      .from('schedule').select('week_start, assignments').gte('week_start', montagIso())
+    if (ladeErr) { console.error('Dienstplan laden fehlgeschlagen', ladeErr.message); return { zellen: 0, dauerschichten: 0 } }
+
+    let zellenGesamt = 0
+    for (const w of wochen || []) {
+      const { assignments: neu, geaendert } = assignmentsOhnePerson(w.assignments, chatterName)
+      if (geaendert === 0) continue
+      const { error } = await supabase.from('schedule').update({ assignments: neu }).eq('week_start', w.week_start)
+      if (error) { console.error('Dienstplan-Aufräumen fehlgeschlagen', w.week_start, error.message); continue }
+      zellenGesamt += geaendert
+    }
+
+    const { data: recWeg, error: recErr } = await supabase
+      .from('recurring_shifts').delete().ilike('chatter', chatterName).select('shift_key')
+    if (recErr) console.error('Dauerschichten löschen fehlgeschlagen', recErr.message)
+
+    return { zellen: zellenGesamt, dauerschichten: (recWeg || []).length }
   }
 
   // v3.18.0: Status setzen (active | suspended | offboarded).
@@ -567,6 +687,26 @@ export default function SettingsTab() {
           alert(`${name} wurde außerdem aus ${entfernt} Dienstplan-Zelle(n) ab dieser Woche entfernt.\n\nVergangene Wochen bleiben unverändert.`)
         }
       }
+
+      // 5) v4.30.0: Dasselbe für Chatter — das musste bisher von Hand gemacht
+      //    werden. Die Schichten bleiben stehen und sind ab jetzt unbesetzt,
+      //    damit sie in der Konfliktliste auftauchen und neu besetzt werden.
+      if (!showInPlan && rollen.includes('chatter')) {
+        const { zellen, dauerschichten } = await chatterAusDienstplanNehmen(name)
+        if (zellen > 0 || dauerschichten > 0) {
+          logActivity('schedule.cleanup', {
+            entity: name,
+            detail: `${zellen} Schicht(en) freigeräumt, ${dauerschichten} Dauerschicht(en) gelöscht`,
+          })
+          alert(
+            `${name} wurde außerdem aus dem Dienstplan genommen:\n\n` +
+            `· ${zellen} Schicht(en) ab dieser Woche sind jetzt unbesetzt\n` +
+            `· ${dauerschichten} Dauerschicht(en) gelöscht\n\n` +
+            'Die Schichten stehen weiter im Plan und erscheinen unter „Unbesetzt" — sie müssen neu besetzt werden.\n' +
+            'Vergangene Wochen bleiben unverändert.',
+          )
+        }
+      }
     } catch (e) {
       alert('Fehler beim Status-Update: ' + (e.message || e))
       setStatusBusy(false)
@@ -576,7 +716,7 @@ export default function SettingsTab() {
     setOffboardingUser(null)
     setStatusNote('')
     logActivity('user.status', { entity: name, detail: newStatus === 'active' ? 'wieder aktiviert' : `stillgelegt${note ? ': ' + note : ''}` })
-    loadUsers(); loadModels(); loadChatters()
+    loadUsers(); loadModels(); loadChatters(); loadPlanCheck()
   }
 
   const reactivateUser = async (user) => {
@@ -1033,6 +1173,51 @@ export default function SettingsTab() {
                     }}>Jetzt ausblenden</button>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* v4.30.0: Noch im Dienstplan, obwohl stillgelegt — erscheint nur, wenn es Fälle gibt */}
+          {planLeichen.length > 0 && (
+            <div style={{ ...cardS, border: '1px solid rgba(245,158,11,0.45)' }}>
+              <div style={{ ...labelS, color: '#f59e0b' }}>⚠ Noch im Dienstplan ({planLeichen.length})</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                Diese Leute sind stillgelegt oder offboardet, stehen aber weiterhin im Dienstplan
+                dieser oder kommender Wochen. Seit v4.30.0 räumt das Offboarding selbst auf —
+                diese Fälle stammen von vorher.
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
+                <b style={{ color: 'var(--text-secondary)' }}>Dauerschichten</b> sind dabei der
+                unangenehmere Teil: solange die stehen, trägt der Generator die Person in jede neu
+                angelegte Woche wieder ein — Aufräumen von Hand hält also nur bis zur nächsten Woche.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {planLeichen.map(e => (
+                  <div key={`${e.typ}-${e.name}`} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    padding: '8px 11px', background: 'var(--bg-card2)', borderRadius: 8,
+                    border: '1px solid rgba(245,158,11,0.25)',
+                  }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: 4 }}>
+                      {e.typ === 'model' ? 'Model' : 'Chatter'}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{e.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      {e.zellen > 0 && `${e.zellen} Schicht${e.zellen === 1 ? '' : 'en'}`}
+                      {e.zellen > 0 && e.dauerschichten > 0 && ' · '}
+                      {e.dauerschichten > 0 && `${e.dauerschichten} Dauerschicht${e.dauerschichten === 1 ? '' : 'en'}`}
+                    </span>
+                    <button onClick={() => planAufraeumen(e)} disabled={planBusy === e.typ + e.name} style={{
+                      fontSize: 11, padding: '5px 12px', borderRadius: 6, fontWeight: 700,
+                      background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)',
+                      color: '#f59e0b', cursor: planBusy === e.typ + e.name ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                    }}>{planBusy === e.typ + e.name ? '⏳ …' : 'Aus Plan nehmen'}</button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
+                Bei Chattern bleibt die Schicht stehen und gilt als unbesetzt — sie muss neu besetzt werden.
+                Vergangene Wochen bleiben in beiden Fällen unverändert.
               </div>
             </div>
           )}

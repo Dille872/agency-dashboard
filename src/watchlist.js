@@ -13,10 +13,14 @@
 
 import { supabase } from './supabase'
 
+// v4.29.0: Die Zahl meint GEARBEITETE Tage, nicht Kalendertage.
 export const BEOBACHTUNG_DAUERN = [3, 7, 14]
 
-// Tage VOR dem Start, die den Vergleichsmaßstab bilden.
-const VORLAUF_TAGE = 7
+// Notbremse: nach so vielen Kalendertagen endet eine Beobachtung auch dann,
+// wenn die gearbeiteten Tage nie zusammenkommen (Chatter ist weg, Model pausiert).
+// Ohne das läge ein Eintrag ewig auf der Liste.
+export const NOTBREMSE_TAGE = 90
+
 // Chatter-Tage darunter gelten als nicht gearbeitet und verzerren den Schnitt.
 const MIN_AKTIVMINUTEN = 90
 
@@ -59,7 +63,10 @@ export async function starteBeobachtung({ typ, name, tage, notiz = null, startDa
     subjekt_typ: typ,
     subjekt_name: name,
     start_datum: start,
-    bis_datum: plusTage(start, tage),
+    // v4.29.0: `dauer_tage` zählt gearbeitete Tage — das ist die eigentliche
+    // Laufzeit. `bis_datum` ist nur noch die Notbremse.
+    dauer_tage: tage,
+    bis_datum: plusTage(start, NOTBREMSE_TAGE),
     notiz,
     erstellt_von: actor,
   })
@@ -131,7 +138,17 @@ const mittel = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 
 /**
  * Entwicklung seit Beobachtungsbeginn.
  *
- * Vergleich: Durchschnitt der 7 Tage VOR dem Start gegen Durchschnitt ab Start.
+ * v4.29.0: Gezählt werden **gearbeitete Tage**, nicht Kalendertage.
+ *
+ * Vorher lief eine 7-Tage-Beobachtung nach einer Kalenderwoche ab. Wer dreimal
+ * die Woche arbeitet, bekam dadurch eine "Auswertung" über drei gearbeitete
+ * Tage — und an den Tagen ohne Schicht eine Meldung, obwohl es nichts Neues
+ * gab. Jetzt zählt nur, was auch Zahlen geliefert hat.
+ *
+ * Der Vergleichszeitraum davor ist aus demselben Grund gleich lang gewählt:
+ * die letzten `dauer_tage` gearbeiteten Tage VOR dem Start gegen die
+ * gearbeiteten Tage seit Start. Gleiches gegen Gleiches.
+ *
  * Solange seit dem Start noch kein Tag mit Daten vorliegt, gibt es bewusst kein
  * Urteil (`richtung: 'zu-frueh'`) statt einer Zahl, die nichts aussagt.
  */
@@ -140,8 +157,13 @@ export function beobachtungsFortschritt(eintrag, { modelSnapshots, chatterSnapsh
   const werte = tageswerte({
     typ: eintrag.subjekt_typ, name: eintrag.subjekt_name, modelSnapshots, chatterSnapshots, aliase,
   })
-  const vonVorlauf = plusTage(eintrag.start_datum, -VORLAUF_TAGE)
-  const vorher = werte.filter(w => w.datum >= vonVorlauf && w.datum < eintrag.start_datum)
+  // Altbestand ohne dauer_tage: aus der ursprünglichen Kalenderspanne ableiten.
+  const dauer = Number(eintrag.dauer_tage) > 0
+    ? Number(eintrag.dauer_tage)
+    : Math.max(1, Math.round(
+        (new Date(eintrag.bis_datum + 'T12:00:00') - new Date(eintrag.start_datum + 'T12:00:00')) / 86400000
+      ))
+  const vorher = werte.filter(w => w.datum < eintrag.start_datum).slice(-dauer)
   const seither = werte.filter(w => w.datum >= eintrag.start_datum && w.datum <= bisTag)
 
   const vorherWert = mittel(vorher.map(w => w.wert))
@@ -161,18 +183,19 @@ export function beobachtungsFortschritt(eintrag, { modelSnapshots, chatterSnapsh
   else if (deltaPct <= -10) richtung = 'schlechter'
   else richtung = 'gleich'
 
-  const tageGesamt = Math.max(1, Math.round(
-    (new Date(eintrag.bis_datum + 'T12:00:00') - new Date(eintrag.start_datum + 'T12:00:00')) / 86400000
-  ))
-  const tageVergangen = Math.max(0, Math.round(
-    (new Date(bisTag + 'T12:00:00') - new Date(eintrag.start_datum + 'T12:00:00')) / 86400000
-  ))
+  // Abgelaufen ist die Beobachtung, wenn die gearbeiteten Tage voll sind — oder
+  // wenn die Notbremse greift, weil seit Wochen nichts mehr kommt.
+  const notbremse = !!eintrag.bis_datum && bisTag > eintrag.bis_datum
 
   return {
     vorherWert, seitherWert, vorherRph, seitherRph, deltaPct, richtung,
-    tageMitDaten: seither.length, tageGesamt,
-    tageVergangen: Math.min(tageVergangen, tageGesamt),
-    abgelaufen: bisTag > eintrag.bis_datum,
+    tageMitDaten: seither.length,
+    tageGesamt: dauer,
+    tageVergangen: Math.min(seither.length, dauer),
+    vergleichsTage: vorher.length,
+    letzterDatentag: werte.length ? werte[werte.length - 1].datum : null,
+    abgelaufen: seither.length >= dauer || notbremse,
+    perNotbremse: notbremse && seither.length < dauer,
   }
 }
 
@@ -181,7 +204,7 @@ const geld = (v) => (v == null ? '—' : `$${Math.round(v)}`)
 /** Ein Satz für die Glocke. */
 export function fortschrittsText(eintrag, f) {
   const wer = eintrag.subjekt_typ === 'model' ? 'Msg+Tips/Tag' : 'Umsatz/Tag'
-  if (f.richtung === 'zu-frueh') return `Noch keine Daten seit Beobachtungsbeginn (${eintrag.start_datum}).`
+  if (f.richtung === 'zu-frueh') return `Seit ${eintrag.start_datum} noch kein gearbeiteter Tag mit Zahlen.`
   if (f.richtung === 'kein-vergleich') return `${wer} aktuell ${geld(f.seitherWert)} · kein Vergleichszeitraum davor vorhanden.`
   const pfeil = f.richtung === 'besser' ? '▲' : f.richtung === 'schlechter' ? '▼' : '▬'
   const rphText = (eintrag.subjekt_typ === 'chatter' && f.vorherRph != null && f.seitherRph != null)
@@ -209,11 +232,30 @@ export const RICHTUNG_FARBE = {
 export function beobachtungsMeldungen(eintraege, { modelSnapshots, chatterSnapshots, aliase, heute = null }) {
   const tag = heute || heuteIso()
   const when = new Date(tag + 'T08:00:00').toISOString()
+
+  // Jüngster Datenstand je Typ. Maßstab ist NICHT das Kalenderheute: die CSVs
+  // werden nachträglich hochgeladen, "heute" hat also fast nie schon Zahlen.
+  const letzterTag = (snaps) => (snaps || []).reduce(
+    (max, s) => (!max || s.businessDate > max ? s.businessDate : max), null)
+  const datenStand = {
+    model: letzterTag(modelSnapshots),
+    chatter: letzterTag(chatterSnapshots),
+  }
+
   const meldungen = []
   for (const e of eintraege || []) {
     const f = beobachtungsFortschritt(e, { modelSnapshots, chatterSnapshots, aliase, bis: tag })
     const abschluss = f.abgelaufen && e.abschluss_gemeldet_am !== tag
     const label = e.subjekt_typ === 'model' ? 'Model' : 'Chatter'
+
+    // v4.29.0: Keine Meldung an Tagen ohne neue Zahlen. Wer zweimal die Woche
+    // arbeitet, bekam sonst fünfmal die Woche dieselbe Zeile — und genau so
+    // gewöhnt man sich ab, hinzuschauen. Ein fälliger Abschluss geht trotzdem
+    // raus, sonst bliebe der Eintrag unbemerkt liegen.
+    const stand = datenStand[e.subjekt_typ]
+    const neueZahlen = !!f.letzterDatentag && f.letzterDatentag === stand
+    if (!neueZahlen && !abschluss) continue
+
     meldungen.push({
       eintrag: e,
       fortschritt: f,
@@ -221,8 +263,10 @@ export function beobachtungsMeldungen(eintraege, { modelSnapshots, chatterSnapsh
       when,
       severity: f.richtung === 'schlechter' ? 'warning' : 'info',
       titel: abschluss
-        ? `Beobachtung beendet · ${e.subjekt_name} (${label})`
-        : `Beobachtung Tag ${f.tageVergangen}/${f.tageGesamt} · ${e.subjekt_name} (${label})`,
+        ? (f.perNotbremse
+            ? `Beobachtung beendet — keine neuen Zahlen · ${e.subjekt_name} (${label})`
+            : `Beobachtung beendet · ${e.subjekt_name} (${label})`)
+        : `Beobachtung · ${f.tageVergangen}/${f.tageGesamt} gearbeitete Tage · ${e.subjekt_name} (${label})`,
       text: [fortschrittsText(e, f), e.notiz].filter(Boolean).join(' · '),
     })
   }
