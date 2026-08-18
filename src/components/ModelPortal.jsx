@@ -398,17 +398,45 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const normalize = (s) => (s || '').toLowerCase().trim().replace(/[^\w\s.-]/g, '').replace(/\s+/g, ' ').trim()
     // If no aliases, we do a loose match on displayName in all rows
     const noAliases = myAliases.length === 0
-    const revenueMap = {}
-    for (const csvName of csvNames) {
-      revenueMap[csvName] = 0
-      const normCsvName = normalize(csvName)
-      for (const snap of snaps || []) {
-        const row = snap.rows?.find(r => {
-          const rowName = r.creator || r.name || ''
-          const normRow = normalize(rowName)
+    // FIX v4.30.1: Eine CSV-Zeile darf nur EINEM Account gutgeschrieben werden.
+    // Vorher suchte jeder csv_name unabhaengig per .find() seine Zeile. Zwei
+    // aehnlich geschriebene Accounts desselben Models (z.B. "Chiara Sophie 💕"
+    // und "Chiara Sophie") werden von normalize() auf denselben Wert reduziert
+    // — beide fanden dieselbe erste Zeile. Ergebnis: der Hauptaccount zaehlte
+    // doppelt, der zweite Account blieb bei 0. Jetzt wird pro Snapshot
+    // zugeordnet: erst exakte Treffer, dann normalisierte, und jede Zeile
+    // wird hoechstens einmal vergeben.
+    const zeileJeAccount = (snap) => {
+      const zeilen = snap.rows || []
+      const nameVon = (r) => r.creator || r.name || ''
+      const vergeben = new Set()
+      const treffer = {}
+      // Durchgang 1 — exakte Uebereinstimmung (nur Whitespace getrimmt)
+      for (const csvName of csvNames) {
+        if (treffer[csvName]) continue
+        const i = zeilen.findIndex((r, idx) => !vergeben.has(idx) && nameVon(r).trim() === (csvName || '').trim())
+        if (i >= 0) { vergeben.add(i); treffer[csvName] = zeilen[i] }
+      }
+      // Durchgang 2 — normalisiert (Emojis/Sonderzeichen ignoriert)
+      for (const csvName of csvNames) {
+        if (treffer[csvName]) continue
+        const normCsvName = normalize(csvName)
+        const i = zeilen.findIndex((r, idx) => {
+          if (vergeben.has(idx)) return false
+          const normRow = normalize(nameVon(r))
           if (noAliases) return normRow.includes(normCsvName) || normCsvName.includes(normRow)
           return normRow === normCsvName
         })
+        if (i >= 0) { vergeben.add(i); treffer[csvName] = zeilen[i] }
+      }
+      return treffer
+    }
+    const revenueMap = {}
+    for (const csvName of csvNames) revenueMap[csvName] = 0
+    for (const snap of snaps || []) {
+      const treffer = zeileJeAccount(snap)
+      for (const csvName of csvNames) {
+        const row = treffer[csvName]
         if (row) revenueMap[csvName] += row.revenue || 0
       }
     }
@@ -416,14 +444,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     // Build daily subs data per account
     const dailySubsMap = {} // { csvName: { date: subs } }
     for (const snap of snapsAll || []) {
+      const treffer = zeileJeAccount(snap)
       for (const csvName of csvNames) {
-        const normCsvName = normalize(csvName)
-        const row = snap.rows?.find(r => {
-          const rowName = r.creator || r.name || ''
-          const normRow = normalize(rowName)
-          if (noAliases) return normRow.includes(normCsvName) || normCsvName.includes(normRow)
-          return normRow === normCsvName
-        })
+        const row = treffer[csvName]
         if (row && row.subs > 0) {
           if (!dailySubsMap[csvName]) dailySubsMap[csvName] = {}
           dailySubsMap[csvName][snap.business_date] = (dailySubsMap[csvName][snap.business_date] || 0) + (row.subs || 0)
