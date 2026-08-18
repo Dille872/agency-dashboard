@@ -385,11 +385,32 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     // eigenen Accounts. get_my_model_snapshots filtert serverseitig ueber
     // user_roles -> model_aliases und liefert dasselbe Format zurueck.
     // Der Monatsausschnitt wird hier gefiltert — das spart die zweite Abfrage.
-    const { data: snapsAll, error: snapsError } = await supabase.rpc('get_my_model_snapshots')
-    if (snapsError) {
-      // Nicht still scheitern — sonst sieht eine kaputte RPC aus wie "kein Umsatz".
-      console.error('get_my_model_snapshots fehlgeschlagen:', snapsError)
-      return
+    // FIX v4.30.2: Im Vorschau-Modus (Admin/Manager sieht sich ein Model an)
+    // liefert die RPC nichts. Sie filtert serverseitig ueber
+    // user_roles -> model_aliases auf die EIGENEN Accounts — ein Admin ist aber
+    // kein Model, also kam eine leere Liste zurueck und der Umsatz stand auf 0.
+    // In der Vorschau daher direkt auf model_snapshots lesen; Admin/Manager
+    // duerfen das per RLS (macht das Admin-Dashboard in App.jsx genauso).
+    // Gleiches Format: business_date + rows.
+    let snapsAll = null
+    if (isPreview) {
+      const { data, error } = await supabase
+        .from('model_snapshots')
+        .select('business_date, rows')
+        .order('business_date')
+      if (error) {
+        console.error('model_snapshots (Vorschau) fehlgeschlagen:', error)
+        return
+      }
+      snapsAll = data
+    } else {
+      const { data, error } = await supabase.rpc('get_my_model_snapshots')
+      if (error) {
+        // Nicht still scheitern — sonst sieht eine kaputte RPC aus wie "kein Umsatz".
+        console.error('get_my_model_snapshots fehlgeschlagen:', error)
+        return
+      }
+      snapsAll = data
     }
     const snaps = (snapsAll || []).filter(s => s.business_date >= monthStart)
     const csvNames = myAliases.length > 0 ? myAliases.map(a => a.csv_name) : [displayName]
