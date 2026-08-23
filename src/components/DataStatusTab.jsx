@@ -1,0 +1,220 @@
+import React, { useState, useEffect, useMemo } from 'react'
+import { supabase } from '../supabase'
+import { formatMoney, formatShortDate } from '../utils'
+import { TOL_EXAKT } from '../modelChatterMatch'
+import Card from './Card'
+
+// ─── DATENSTAND ──────────────────────────────────────────────────────────────
+//
+// v4.31.0 · Welche Daten sind je Tag da, welche fehlen.
+//
+// WARUM DIE SEITE
+// Bis hierher gab es fuer KEINEN der Uploads eine Uebersicht. Ob die Model-CSV
+// vom 14. je hochgeladen wurde, liess sich nur pruefen, indem man das Datum
+// anwaehlt und nachsieht. Die Seite deckt deshalb bewusst alle drei Quellen ab,
+// nicht nur die neuen Einzeldateien.
+//
+// Die Spalte "Abgleich" ist das eigentliche Vertrauenssignal: Summe der
+// Einzeldateien gegen den Message Revenue der Vergleichsdatei. Steht dort 0,00 $,
+// ist der Tag nachweislich vollstaendig. Steht dort ein Betrag, IST dieser Betrag
+// der fehlende Account.
+
+const ZELLE = { padding: '8px 10px', fontSize: 12, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }
+const KOPF = { ...ZELLE, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, textAlign: 'left' }
+
+function Haken({ da }) {
+  return da
+    ? <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓</span>
+    : <span style={{ color: 'var(--red)', fontWeight: 700 }}>✗</span>
+}
+
+export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = [] }) {
+  const [einzel, setEinzel] = useState([])
+  const [laedt, setLaedt] = useState(true)
+  const [alleTage, setAlleTage] = useState(false)
+
+  useEffect(() => {
+    let abgebrochen = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('model_chatter_daily').select('business_date, creator, revenue')
+      if (error) console.error('Datenstand laden:', error)
+      if (!abgebrochen) { setEinzel(data || []); setLaedt(false) }
+    })()
+    return () => { abgebrochen = true }
+  }, [])
+
+  const zeilen = useMemo(() => {
+    // Einzeldaten nach Tag → Account → Summe
+    const proTag = new Map()
+    for (const r of einzel) {
+      if (!proTag.has(r.business_date)) proTag.set(r.business_date, new Map())
+      const m = proTag.get(r.business_date)
+      m.set(r.creator, (m.get(r.creator) || 0) + (Number(r.revenue) || 0))
+    }
+
+    const modelMap = new Map(modelSnapshots.map(s => [s.businessDate, s]))
+    const chatterMap = new Map(chatterSnapshots.map(s => [s.businessDate, s]))
+    const tage = [...new Set([
+      ...modelMap.keys(), ...chatterMap.keys(), ...proTag.keys(),
+    ])].sort().reverse()
+
+    return tage.map(tag => {
+      const modelSnap = modelMap.get(tag)
+      const erwartet = (modelSnap?.rows || [])
+        .filter(r => r && r.creator && Math.abs(Number(r.messageRevenue) || 0) > TOL_EXAKT)
+      const erfasstMap = proTag.get(tag) || new Map()
+
+      const offen = erwartet.filter(r => !erfasstMap.has(r.creator))
+      const abweichungen = erwartet
+        .filter(r => erfasstMap.has(r.creator))
+        .map(r => ({ creator: r.creator, differenz: erfasstMap.get(r.creator) - (Number(r.messageRevenue) || 0) }))
+        .filter(x => Math.abs(x.differenz) > TOL_EXAKT)
+
+      // Erfasste Accounts, die es in der Vergleichsdatei gar nicht gibt —
+      // deutet auf eine Zuordnung von Hand auf den falschen Account hin.
+      const erwarteteNamen = new Set(erwartet.map(r => r.creator))
+      const verwaist = [...erfasstMap.keys()].filter(c => !erwarteteNamen.has(c))
+
+      return {
+        tag,
+        model: !!modelSnap,
+        chatter: chatterMap.has(tag),
+        erwartet: erwartet.length,
+        erfasst: erwartet.length - offen.length,
+        hatEinzel: erfasstMap.size > 0,
+        fehlenderUmsatz: offen.reduce((s, r) => s + (Number(r.messageRevenue) || 0), 0),
+        offen,
+        abweichungen,
+        verwaist,
+      }
+    })
+  }, [einzel, modelSnapshots, chatterSnapshots])
+
+  const sichtbar = alleTage ? zeilen : zeilen.slice(0, 30)
+
+  // Kopfzahlen ueber die letzten 7 Tage mit Einzeldateien
+  const letzte7 = zeilen.filter(z => z.hatEinzel).slice(0, 7)
+  const sauber = letzte7.filter(z =>
+    z.erwartet > 0 && z.erfasst === z.erwartet && z.abweichungen.length === 0 && z.verwaist.length === 0
+  ).length
+
+  if (laedt) return (
+    <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '60px 0', fontSize: 14 }}>
+      Datenstand wird geladen…
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card title="Datenstand">
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 14 }}>
+          {letzte7.length === 0 ? (
+            <>Für die Model-Einzeldateien liegen noch keine Tage vor. Sobald du sie hochlädst, steht hier
+              der tägliche Abgleich gegen die Vergleichsdatei.</>
+          ) : (
+            <>
+              <strong style={{ color: sauber === letzte7.length ? 'var(--green)' : 'var(--yellow)' }}>
+                {sauber} von {letzte7.length}
+              </strong>{' '}
+              der letzten Tage mit Einzeldateien gehen vollständig auf.{' '}
+              <span style={{ color: 'var(--text-muted)' }}>
+                Abgleich = Summe der Einzeldateien gegen den Message Revenue der Vergleichsdatei.
+                Eine Differenz ist der fehlende Account.
+              </span>
+            </>
+          )}
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+            <thead>
+              <tr>
+                <th style={KOPF}>Datum</th>
+                <th style={{ ...KOPF, textAlign: 'center' }}>Model</th>
+                <th style={{ ...KOPF, textAlign: 'center' }}>Chatter</th>
+                <th style={{ ...KOPF, textAlign: 'center' }}>Einzeldateien</th>
+                <th style={{ ...KOPF, textAlign: 'right' }}>Abgleich</th>
+                <th style={KOPF}>Hinweis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sichtbar.map(z => {
+                const vollstaendig = z.erwartet > 0 && z.erfasst === z.erwartet
+                const sauberTag = vollstaendig && z.abweichungen.length === 0 && z.verwaist.length === 0
+                return (
+                  <tr key={z.tag}>
+                    <td style={{ ...ZELLE, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                      {formatShortDate(z.tag)}
+                      <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 10 }}>{z.tag.slice(0, 4)}</span>
+                    </td>
+                    <td style={{ ...ZELLE, textAlign: 'center' }}><Haken da={z.model} /></td>
+                    <td style={{ ...ZELLE, textAlign: 'center' }}><Haken da={z.chatter} /></td>
+                    <td style={{
+                      ...ZELLE, textAlign: 'center', fontFamily: 'var(--font-mono)',
+                      color: !z.hatEinzel ? 'var(--text-muted)' : vollstaendig ? 'var(--green)' : 'var(--yellow)',
+                    }}>
+                      {z.hatEinzel ? `${z.erfasst} / ${z.erwartet}` : '—'}
+                    </td>
+                    <td style={{
+                      ...ZELLE, textAlign: 'right', fontFamily: 'var(--font-mono)',
+                      color: !z.hatEinzel ? 'var(--text-muted)' : sauberTag ? 'var(--green)' : 'var(--yellow)',
+                    }}>
+                      {!z.hatEinzel ? '—' : sauberTag ? '$0.00' : `−${formatMoney(z.fehlenderUmsatz)}`}
+                    </td>
+                    <td style={{ ...ZELLE, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'normal', maxWidth: 320 }}>
+                      {!z.model && z.chatter && <span style={{ color: 'var(--yellow)' }}>Model-CSV fehlt</span>}
+                      {z.model && !z.chatter && <span style={{ color: 'var(--yellow)' }}>Chatter-CSV fehlt</span>}
+                      {z.hatEinzel && z.offen.length > 0 && (
+                        <div>ohne Datei: {z.offen.map(r => r.creator).join(' · ')}</div>
+                      )}
+                      {z.abweichungen.length > 0 && (
+                        <div style={{ color: 'var(--red)' }}>
+                          ⚠ Summe passt nicht: {z.abweichungen.map(a => `${a.creator} (${formatMoney(a.differenz)})`).join(' · ')}
+                        </div>
+                      )}
+                      {z.verwaist.length > 0 && (
+                        <div style={{ color: 'var(--red)' }}>
+                          ⚠ nicht in der Vergleichsdatei: {z.verwaist.join(' · ')}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {zeilen.length > 30 && (
+          <button onClick={() => setAlleTage(v => !v)} style={{
+            marginTop: 12, padding: '6px 12px', borderRadius: 6, background: 'transparent',
+            border: '1px solid var(--border)', color: 'var(--text-secondary)',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+            {alleTage ? 'Nur letzte 30 Tage' : `Alle ${zeilen.length} Tage zeigen`}
+          </button>
+        )}
+      </Card>
+
+      <Card title="Was hier womit verglichen wird">
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+          <p style={{ margin: '0 0 10px' }}>
+            <strong style={{ color: 'var(--text-primary)' }}>Einzeldateien</strong> zählt Accounts, für die
+            eine Model-Einzeldatei vorliegt, gegen alle Accounts, die an dem Tag überhaupt Message Revenue
+            hatten. Accounts mit 0,00 $ bleiben außen vor — für die gibt es nichts zu erfassen.
+          </p>
+          <p style={{ margin: '0 0 10px' }}>
+            <strong style={{ color: 'var(--text-primary)' }}>Abgleich</strong> ist der Umsatz der Accounts
+            ohne Einzeldatei. Bei 0,00 $ ist der Tag vollständig.
+          </p>
+          <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+            ⚠️ Verglichen wird gegen <strong>Message Revenue</strong>, nicht gegen den Gesamtumsatz. Das
+            Chatter-Leaderboard des OF-Tools enthält keine Subs und keine Tips — am 22.08.2026 waren das
+            3.833 von 4.714 $, also rund 81 % des Umsatzes. Alles andere ist Chattern nicht zurechenbar.
+          </p>
+        </div>
+      </Card>
+    </div>
+  )
+}

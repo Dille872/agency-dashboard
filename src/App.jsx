@@ -6,7 +6,7 @@ import SuggestionsAdmin from './components/SuggestionsAdmin'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight, DollarSign,
+  Eye, ArrowLeftRight, DollarSign, Database,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
@@ -28,6 +28,9 @@ import TodoTab from './components/TodoTab'
 import SocialTab from './components/SocialTab'
 import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
+// v4.31.0: dritter Upload — Chatter-Umsatz je Model, siehe sql/model-chatter-daily.sql
+import ModelChatterUpload from './components/ModelChatterUpload'
+import DataStatusTab from './components/DataStatusTab'
 import PresentationToggle from './components/PresentationToggle'
 import Logo from './components/Logo'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
@@ -45,6 +48,10 @@ export default function App() {
   const [businessDate, setBusinessDate] = useState(todayISO())
   const [modelSnapshots, setModelSnapshots] = useState([])
   const [chatterSnapshots, setChatterSnapshots] = useState([])
+  // v4.31.0: Zaehler, der Upload-Kachel und Datenstand-Seite zum Neuladen zwingt.
+  // model_chatter_daily liegt bewusst NICHT im App-State — die Tabelle waechst
+  // taeglich um ~100 Zeilen und wird nur an zwei Stellen gebraucht.
+  const [einzelReload, setEinzelReload] = useState(0)
   const [dataLoading, setDataLoading] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotes, setUnreadNotes] = useState(0)
@@ -376,16 +383,22 @@ export default function App() {
     await Promise.all([
       supabase.from('model_snapshots').delete().neq('id', 0),
       supabase.from('chatter_snapshots').delete().neq('id', 0),
+      // v4.31.0: die Einzeldateien haengen am selben business_date und muessen mit weg
+      supabase.from('model_chatter_daily').delete().neq('id', 0),
     ])
     setModelSnapshots([])
     setChatterSnapshots([])
+    setEinzelReload(n => n + 1)
     setBusinessDate(todayISO())
   }
 
   const deleteDay = async (date) => {
-    if (!window.confirm(`Tag ${date} löschen? Beide CSVs (Model + Chatter) für diesen Tag werden gelöscht.`)) return
+    if (!window.confirm(`Tag ${date} löschen? Alle drei Quellen (Model-CSV, Chatter-CSV, Model-Einzeldateien) für diesen Tag werden gelöscht.`)) return
     await supabase.from('model_snapshots').delete().eq('business_date', date)
     await supabase.from('chatter_snapshots').delete().eq('business_date', date)
+    // v4.31.0: sonst blieben verwaiste Chatter-x-Model-Zeilen ohne Vergleichsdatei stehen
+    await supabase.from('model_chatter_daily').delete().eq('business_date', date)
+    setEinzelReload(n => n + 1)
     setModelSnapshots(prev => prev.filter(s => s.businessDate !== date))
     setChatterSnapshots(prev => prev.filter(s => s.businessDate !== date))
     const remaining = allDates.filter(d => d !== date)
@@ -565,6 +578,7 @@ export default function App() {
                 { key: 'social', label: 'Social', Icon: Globe },
                 { key: 'billing', label: 'Billing', Icon: DollarSign },
                 { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
+                { key: 'datenstand', label: 'Datenstand', Icon: Database },
               ]
               const visiblePrimary = TABS_PRIMARY.filter(t => t.divider || canAccess(t.key))
               const visibleMore = TABS_MORE.filter(t => canAccess(t.key))
@@ -737,6 +751,7 @@ export default function App() {
               { key: 'social', label: 'Social', Icon: Globe },
               { key: 'billing', label: 'Billing', Icon: DollarSign },
               { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
+              { key: 'datenstand', label: 'Datenstand', Icon: Database },
               { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
             ].filter(t => canAccess(t.key)).map(tab => (
               <button key={tab.key} onClick={() => {
@@ -805,6 +820,15 @@ export default function App() {
             lastFileName={currentChatterSnap?.fileName}
             lastDate={currentChatterSnap?.uploadedAt ? new Date(currentChatterSnap.uploadedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null}
           />
+          {/* v4.31.0: Model-Einzeldateien. Braucht die Model-CSV desselben Tages als
+              Nachschlagewerk — daran werden die Dateien ueber ihre Summe erkannt. */}
+          <ModelChatterUpload
+            key={`mcu_${businessDate}_${einzelReload}`}
+            businessDate={businessDate}
+            modelRows={currentModelSnap?.rows || []}
+            session={session}
+            onSaved={() => setEinzelReload(n => n + 1)}
+          />
         </div>
         {/* Version only */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, marginLeft: 'auto' }}>
@@ -848,6 +872,8 @@ export default function App() {
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (
           <SuggestionsAdmin />
+        ) : activeTab === 'datenstand' ? (
+          <DataStatusTab key={`ds_${einzelReload}`} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (

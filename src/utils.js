@@ -136,6 +136,13 @@ export function parseModelRow(rawRow, headers) {
   const creator = gStr(['creator', 'name', 'model', 'model name'])
   if (!creator) return null
 
+  // v4.31.0: OnlyFans-Handle mitspeichern. Die Spalte steht seit jeher in der
+  // Vergleichsdatei, wurde aber nie uebernommen — dabei ist sie der einzige
+  // eindeutige Schluessel, den das Tool liefert: "Chiara Sophie 🍒" und
+  // "Chiara Sophie 💓" heissen dort chiarabelleme bzw. sophie.chiara.
+  // Genau dieses Emoji-Paar hat die Doppelzaehlung aus v4.30.1 verursacht.
+  const ofName = gStr(['onlyfans name', 'of name', 'onlyfans'])
+
   const revenue = g(['total revenue', 'revenue', 'total rev'])
   const subs = g(['new subs', 'subs', 'new subscribers'])
   const newSubsRevenue = g(['new subs revenue', 'new sub revenue', 'new subs rev'])
@@ -148,7 +155,7 @@ export function parseModelRow(rawRow, headers) {
   const avgChatValue = safeDivide(messageRevenue, sellingChats)
 
   return {
-    creator, revenue, subs, subsRevenue, newSubsRevenue,
+    creator, ofName, revenue, subs, subsRevenue, newSubsRevenue,
     recurringSubsRevenue, tipsRevenue, messageRevenue,
     sellingChats, avgSpend, avgChatValue,
   }
