@@ -187,8 +187,8 @@ export default function ModelChatterUpload({ businessDate, modelRows, session, o
                 </thead>
                 <tbody>
                   {ergebnis.map((e, i) => {
-                    const farbe = e.treffer === 'exakt' ? 'var(--green)'
-                      : e.treffer === 'manuell' ? 'var(--cyan)'
+                    const farbe = (e.treffer === 'exakt' || e.treffer === 'trinkgeld') ? 'var(--green)'
+                      : (e.treffer === 'manuell' || e.treffer === 'uebrig') ? 'var(--cyan)'
                         : e.treffer === 'ungefaehr' ? 'var(--yellow)' : 'var(--red)'
                     return (
                       <tr key={i}>
@@ -223,6 +223,8 @@ export default function ModelChatterUpload({ businessDate, modelRows, session, o
                         </td>
                         <td style={{ ...ZELLE, color: farbe, fontWeight: 600, whiteSpace: 'nowrap' }}>
                           {e.treffer === 'exakt' && '✓ auf den Cent'}
+                          {e.treffer === 'trinkgeld' && '✓ auf den Cent (inkl. Trinkgeld)'}
+                          {e.treffer === 'uebrig' && '↳ als einziges übrig'}
                           {e.treffer === 'manuell' && '✎ von Hand'}
                           {e.treffer === 'ungefaehr' && `≈ ${formatMoney(e.abweichung)} Abweichung`}
                           {!e.treffer && '⚠ kein Treffer'}

@@ -44,13 +44,21 @@ console.log(`ofName erkannt  : ${modelRows.filter(r => r.ofName).length} / ${mod
 console.log(`Einzeldateien   : ${einzel.length}`)
 console.log('')
 
+const LABEL = {
+  exakt:     'exakt        ',
+  trinkgeld: 'exakt +Tips  ',
+  uebrig:    'durch Ausschl',
+  ungefaehr: 'ungefaehr    ',
+  manuell:   'von Hand     ',
+}
+
 const ergebnis = ordneDateienZu(einzel, modelRows)
-let fehler = 0
+let offen = 0
 for (const e of ergebnis) {
-  const status = e.treffer === 'exakt' ? 'exakt   ' : e.treffer === 'ungefaehr' ? 'ungefaehr' : 'OFFEN   '
-  if (e.treffer !== 'exakt') fehler++
+  if (!e.creator) offen++
+  const status = LABEL[e.treffer] || 'OFFEN        '
   console.log(`  ${status}  ${e.summe.toFixed(2).padStart(10)}  →  ${e.creator || '—'}${e.ofName ? `  (${e.ofName})` : ''}`)
-  console.log(`             Datei: ${e.fileName}`)
+  console.log(`               Datei: ${e.fileName}`)
 }
 
 const p = abgleich(ergebnis, modelRows)
@@ -60,8 +68,15 @@ console.log(`Nicht erfasst   : ${p.fehlenderUmsatz.toFixed(2)} $`)
 console.log(`Abweichungen    : ${p.abweichungen.length}`)
 console.log(`Ohne Zuordnung  : ${p.ohneZuordnung}`)
 
-if (fehler > 0 || p.abweichungen.length > 0) {
-  console.log('\n❌ Nicht jede Datei wurde exakt erkannt.')
+// Abweichungen sind KEIN Fehler: Umsatz, der keinem Chatter zugeordnet ist,
+// kommt real vor (Julia am 22.08.2026: 46,15 Message Revenue, 9,60 in der
+// Einzeldatei). Sie werden gemeldet, lassen den Test aber bestehen.
+for (const a of p.abweichungen) {
+  console.log(`  ⚠ ${a.creator}: ${a.differenz > 0 ? '+' : ''}${a.differenz.toFixed(2)} gegen ${a.basis}`)
+}
+
+if (offen > 0) {
+  console.log('\n❌ Nicht jede Datei konnte zugeordnet werden.')
   process.exit(1)
 }
-console.log('\n✅ Jede Einzeldatei wurde auf den Cent genau zugeordnet.')
+console.log('\n✅ Jede Einzeldatei wurde einem Account zugeordnet.')

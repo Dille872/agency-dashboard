@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { formatMoney, formatShortDate } from '../utils'
-import { TOL_EXAKT } from '../modelChatterMatch'
+import { TOL_EXAKT, kandidatenAusSnapshot, bestesZiel } from '../modelChatterMatch'
 import Card from './Card'
 
 // ─── DATENSTAND ──────────────────────────────────────────────────────────────
@@ -61,20 +61,28 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
 
     return tage.map(tag => {
       const modelSnap = modelMap.get(tag)
-      const erwartet = (modelSnap?.rows || [])
-        .filter(r => r && r.creator && Math.abs(Number(r.messageRevenue) || 0) > TOL_EXAKT)
+      // Dieselben Kandidaten und dieselben zwei Bezugsgroessen wie beim Upload —
+      // sonst meldet der Datenstand Abweichungen, die die Erkennung gar nicht hat.
+      const erwartet = kandidatenAusSnapshot(modelSnap?.rows || [])
       const erfasstMap = proTag.get(tag) || new Map()
 
-      const offen = erwartet.filter(r => !erfasstMap.has(r.creator))
+      const offen = erwartet.filter(k => !erfasstMap.has(k.creator))
       const abweichungen = erwartet
-        .filter(r => erfasstMap.has(r.creator))
-        .map(r => ({ creator: r.creator, differenz: erfasstMap.get(r.creator) - (Number(r.messageRevenue) || 0) }))
+        .filter(k => erfasstMap.has(k.creator))
+        .map(k => {
+          const summe = erfasstMap.get(k.creator)
+          const z = bestesZiel(k, summe)
+          return { creator: k.creator, differenz: summe - z.wert }
+        })
         .filter(x => Math.abs(x.differenz) > TOL_EXAKT)
 
       // Erfasste Accounts, die es in der Vergleichsdatei gar nicht gibt —
       // deutet auf eine Zuordnung von Hand auf den falschen Account hin.
-      const erwarteteNamen = new Set(erwartet.map(r => r.creator))
-      const verwaist = [...erfasstMap.keys()].filter(c => !erwarteteNamen.has(c))
+      // v4.31.1: gegen ALLE Accounts der Vergleichsdatei pruefen, nicht nur gegen
+      // die mit Umsatz. Vorher wurde jeder korrekt erfasste 0-$-Account als
+      // "nicht in der Vergleichsdatei" gemeldet — ein Fehlalarm.
+      const alleNamen = new Set((modelSnap?.rows || []).map(r => r?.creator).filter(Boolean))
+      const verwaist = [...erfasstMap.keys()].filter(c => !alleNamen.has(c))
 
       return {
         tag,
@@ -83,7 +91,8 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
         erwartet: erwartet.length,
         erfasst: erwartet.length - offen.length,
         hatEinzel: erfasstMap.size > 0,
-        fehlenderUmsatz: offen.reduce((s, r) => s + (Number(r.messageRevenue) || 0), 0),
+        fehlenderUmsatz: offen.reduce((s, k) => s + k.nachrichten, 0),
+        abweichungSumme: abweichungen.reduce((s, x) => s + x.differenz, 0),
         offen,
         abweichungen,
         verwaist,
@@ -160,7 +169,10 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
                       ...ZELLE, textAlign: 'right', fontFamily: 'var(--font-mono)',
                       color: !z.hatEinzel ? 'var(--text-muted)' : sauberTag ? 'var(--green)' : 'var(--yellow)',
                     }}>
-                      {!z.hatEinzel ? '—' : sauberTag ? '$0.00' : `−${formatMoney(z.fehlenderUmsatz)}`}
+                      {!z.hatEinzel ? '—'
+                        : sauberTag ? '$0.00'
+                          : z.fehlenderUmsatz > TOL_EXAKT ? `−${formatMoney(z.fehlenderUmsatz)}`
+                            : `${z.abweichungSumme > 0 ? '+' : '−'}${formatMoney(Math.abs(z.abweichungSumme))}`}
                     </td>
                     <td style={{ ...ZELLE, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'normal', maxWidth: 320 }}>
                       {!z.model && z.chatter && <span style={{ color: 'var(--yellow)' }}>Model-CSV fehlt</span>}
