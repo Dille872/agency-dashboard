@@ -297,6 +297,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [editingRequest, setEditingRequest] = useState(null) // {...request} - öffnet Edit-Modal
   const [editImages, setEditImages] = useState([])           // v3.46.0: Bild-URLs im Edit-Modal
   const [editImgBusy, setEditImgBusy] = useState(false)      // v3.46.0: Upload läuft gerade
+  // v4.33.0: Das Edit-Modal deckt jetzt ALLE Felder ab, die der Chatter beim
+  // Anlegen ausfüllt — vorher nur Preis/Typ/Kunde/Status/Text. Damit muss für
+  // eine Korrektur niemand mehr in Supabase. Model/Profil/Chatter sind bewusst
+  // mit dabei (Fehlzuordnungen kamen vor), stehen im Modal aber getrennt und
+  // mit Warnhinweis, weil sie Abrechnung und Model-Portal verschieben.
+  const [editForm, setEditForm] = useState({})
+  const [reqAliases, setReqAliases] = useState([])           // model_aliases für die Profil-Auswahl
   const [unreadCount, setUnreadCount] = useState(0)
   const [messagesTruncated, setMessagesTruncated] = useState(false) // v4.26.0
   const [replyingTo, setReplyingTo] = useState(null) // msg.id
@@ -345,6 +352,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [editingIdeaId, setEditingIdeaId] = useState(null)
   const [editingIdeaText, setEditingIdeaText] = useState('')
   const [editingAdminNote, setEditingAdminNote] = useState('')
+  // v4.33.0: Ideen waren bisher nur im Text + Admin-Hinweis änderbar. Model,
+  // Kategorie, Priorität und Status ließen sich nur über Supabase korrigieren.
+  const [editingIdeaModel, setEditingIdeaModel] = useState('')
+  const [editingIdeaCategory, setEditingIdeaCategory] = useState('bilder')
+  const [editingIdeaPriority, setEditingIdeaPriority] = useState('normal')
+  const [editingIdeaStatus, setEditingIdeaStatus] = useState('offen')
   const [ideasFilter, setIdeasFilter] = useState('open')
   // Crew-Tab Collapse
   const [crewCollapse, setCrewCollapse] = useState({
@@ -357,7 +370,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
   useEffect(() => {
     loadModels(); loadChatters(); loadMessages(); loadOnlineStatuses()
-    loadAnnouncements()
+    loadAnnouncements(); loadReqAliases()
     // Load section-specific data
     if (section === 'models') { loadContentRequests(); loadModelBoardActivity(); loadContentIdeas() }
     if (section === 'chatters') { loadShiftLogs(); loadSwaps(); loadNewAbsences() }
@@ -381,9 +394,36 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   }, [activeThreadName, messages])
 
   // v3.46.0: Beim Öffnen des Edit-Modals die vorhandenen Bilder der Anfrage laden
+  // v4.33.0: dazu das komplette Formular vorbefüllen. Bewusst als State und nicht
+  // mehr über document.getElementById — bei 15 Feldern ist das sonst nicht mehr
+  // nachvollziehbar, und ein Feld, das gerade nicht gerendert wird, riss vorher
+  // beim Speichern den ganzen Vorgang mit einem null-Zugriff ab.
   useEffect(() => {
     setEditImages(editingRequest?.image_urls || [])
+    if (!editingRequest) { setEditForm({}); return }
+    const r = editingRequest
+    setEditForm({
+      model_name: r.model_name || '',
+      account_csv: r.account_csv || '',
+      chatter_name: r.chatter_name || '',
+      content_type: r.content_type || '',
+      // Der Wunschtext wird NIE ins Original geschrieben (siehe saveEditedRequest).
+      text: r.edited_text || r.request_text || '',
+      outfit: r.outfit || '',
+      special_notes: r.special_notes || '',
+      duration: r.duration || '',
+      quantity: r.quantity ?? 1,
+      price: r.price ?? '',
+      deposit: r.deposit ?? '',
+      customer_id: r.customer_id || '',
+      deadline: r.deadline || '',
+      status: r.status || 'neu',
+      deposit_paid: !!r.deposit_paid,
+      remainder_paid: !!r.remainder_paid,
+    })
   }, [editingRequest])
+
+  const setF = (key, val) => setEditForm(prev => ({ ...prev, [key]: val }))
 
   // Mobile-Detection für Chat-Layout
   useEffect(() => {
@@ -435,14 +475,23 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     loadContentIdeas()
   }
 
+  // v4.33.0: speichert jetzt alle Felder der Idee, nicht nur Text + Hinweis.
+  // `idea_text` (der Wortlaut des Chatters) bleibt unangetastet — Änderungen
+  // gehen wie bisher nach `edited_text`, das Original bleibt darunter lesbar.
   const saveIdeaEdit = async (id) => {
+    if (!editingIdeaModel.trim()) { alert('Ohne Model geht es nicht — bitte eins auswählen.'); return }
     const updates = {
       edited_text: editingIdeaText.trim() || null,
       admin_note: editingAdminNote.trim() || null,
+      model_name: editingIdeaModel.trim(),
+      category: editingIdeaCategory || null,
+      priority: editingIdeaPriority || null,
+      status: editingIdeaStatus || null,
       reviewed_by: displayName,
       reviewed_at: new Date().toISOString(),
     }
-    await supabase.from('content_ideas').update(updates).eq('id', id)
+    const { error } = await supabase.from('content_ideas').update(updates).eq('id', id)
+    if (error) { alert('Fehler: ' + error.message); return }
     setEditingIdeaId(null)
     setEditingIdeaText('')
     setEditingAdminNote('')
@@ -568,6 +617,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const loadChatters = async () => {
     const { data } = await supabase.from('chatters_contact').select('*').order('name')
     setChatters(data || [])
+  }
+  // v4.33.0: Profile (csv_name) pro Model — dieselbe Quelle, aus der das
+  // Chatter-Portal seine Profil-Auswahl baut, damit im Modal nichts anderes
+  // zur Wahl steht als beim Anlegen.
+  const loadReqAliases = async () => {
+    const { data } = await supabase.from('model_aliases').select('model_name, csv_name').order('model_name')
+    setReqAliases(data || [])
   }
   // v4.26.0: Limit von 200 auf 1000 angehoben und das Erreichen sichtbar
   // gemacht. Vorher fielen aeltere Threads still aus der Ansicht — ein Chat,
@@ -827,6 +883,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       edited_by: displayName,
       edited_at: new Date().toISOString(),
     }
+    // v4.33.0: `request_text` ist der Wortlaut, den der Chatter geschickt hat, und
+    // bleibt unangetastet. Änderungen gehen nach `edited_text` — die Anzeige nimmt
+    // ohnehin `edited_text || request_text`, und das Original bleibt nachlesbar.
+    // Vorher hat das Modal `request_text` überschrieben; damit war nicht mehr
+    // feststellbar, was ursprünglich angefragt wurde.
+    if ('request_text' in payload) delete payload.request_text
     // deposit_paid_at / remainder_paid_at automatisch setzen wenn Status auf "bezahlt" toggelt
     if (updates.deposit_paid === true && !editingRequest.deposit_paid) {
       payload.deposit_paid_at = new Date().toISOString()
@@ -834,6 +896,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (updates.remainder_paid === true && !editingRequest.remainder_paid) {
       payload.remainder_paid_at = new Date().toISOString()
     }
+    // v4.33.0: und andersherum — wird ein Haken wieder entfernt, muss auch das
+    // Datum weg. Sonst steht "bezahlt am 12.08." an einer unbezahlten Anfrage.
+    if (updates.deposit_paid === false && editingRequest.deposit_paid) payload.deposit_paid_at = null
+    if (updates.remainder_paid === false && editingRequest.remainder_paid) payload.remainder_paid_at = null
     const { error } = await supabase.from('content_requests').update(payload).eq('id', editingRequest.id)
     if (error) { alert('Fehler: ' + error.message); return }
     setEditingRequest(null)
@@ -3636,14 +3702,23 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {req.deadline && DEADLINE_META[req.deadline] && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, background: DEADLINE_META[req.deadline].color + '26', color: DEADLINE_META[req.deadline].color }}>
                             {deadlineShort(req)}
                           </span>}
-                          <button onClick={() => {
-                            setEditingText(req.id)
-                            setEditTextValue(req.edited_text || req.request_text)
-                            // v3.13.0: vorhandene Beträge in Edit-Felder vorausfüllen
-                            setEditPrice(req.price ? String(req.price) : '')
-                            setEditDeposit(req.deposit ? String(req.deposit) : '')
-                          }}
-                            style={{ marginLeft: 'auto', fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ Text bearbeiten</button>
+                          {/* v4.33.0: Admins bekommen hier das volle Formular (alle Felder,
+                              wie der Chatter sie beim Anlegen sieht) statt nur Text + Beträge.
+                              Für alle anderen bleibt der bisherige Schnell-Editor erhalten —
+                              das volle Modal ist auf Chris/Rey begrenzt. */}
+                          {isAdminUser ? (
+                            <button onClick={() => setEditingRequest(req)} title="Alle Felder bearbeiten"
+                              style={{ marginLeft: 'auto', fontSize: 9, padding: '2px 8px', borderRadius: 3, background: 'rgba(124,58,237,0.14)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.35)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✎ Bearbeiten</button>
+                          ) : (
+                            <button onClick={() => {
+                              setEditingText(req.id)
+                              setEditTextValue(req.edited_text || req.request_text)
+                              // v3.13.0: vorhandene Beträge in Edit-Felder vorausfüllen
+                              setEditPrice(req.price ? String(req.price) : '')
+                              setEditDeposit(req.deposit ? String(req.deposit) : '')
+                            }}
+                              style={{ marginLeft: 'auto', fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎ Text bearbeiten</button>
+                          )}
                         </div>
                         {req.edited_text && (
                           <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 4 }}>
@@ -3953,6 +4028,45 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       </>
                     ) : (
                       <div style={{ marginBottom: 8 }}>
+                        {/* v4.33.0: Model / Kategorie / Priorität / Status mit-editierbar */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 8 }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Model</span>
+                            <select value={editingIdeaModel} onChange={e => setEditingIdeaModel(e.target.value)} style={inputS}>
+                              <option value="">—</option>
+                              {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                              {editingIdeaModel && !models.some(m => m.name === editingIdeaModel) && (
+                                <option value={editingIdeaModel}>{editingIdeaModel} (nicht in der Liste)</option>
+                              )}
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Kategorie</span>
+                            <select value={editingIdeaCategory} onChange={e => setEditingIdeaCategory(e.target.value)} style={inputS}>
+                              <option value="bilder">📸 Bilder</option>
+                              <option value="videos">🎬 Videos</option>
+                              <option value="audio">🎙 Audio</option>
+                              <option value="sonstiges">💭 Sonstiges</option>
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Priorität</span>
+                            <select value={editingIdeaPriority} onChange={e => setEditingIdeaPriority(e.target.value)} style={inputS}>
+                              <option value="urgent">🔥 Dringend</option>
+                              <option value="normal">📅 Normal</option>
+                              <option value="nice">💭 Wenn Zeit</option>
+                            </select>
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Status</span>
+                            <select value={editingIdeaStatus} onChange={e => setEditingIdeaStatus(e.target.value)} style={inputS}>
+                              <option value="offen">Offen</option>
+                              <option value="in_arbeit">In Arbeit</option>
+                              <option value="erledigt">Erledigt</option>
+                              <option value="abgelehnt">Abgelehnt</option>
+                            </select>
+                          </label>
+                        </div>
                         <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Idee (editieren)</label>
                         <textarea value={editingIdeaText} onChange={e => setEditingIdeaText(e.target.value)} rows={3}
                           style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 6 }} />
@@ -3966,7 +4080,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {!isEditing ? (
                         <>
-                          <button onClick={() => { setEditingIdeaId(idea.id); setEditingIdeaText(idea.edited_text || idea.idea_text); setEditingAdminNote(idea.admin_note || '') }} style={{
+                          <button onClick={() => {
+                            setEditingIdeaId(idea.id)
+                            setEditingIdeaText(idea.edited_text || idea.idea_text)
+                            setEditingAdminNote(idea.admin_note || '')
+                            // v4.33.0: restliche Felder mit vorbefüllen
+                            setEditingIdeaModel(idea.model_name || '')
+                            setEditingIdeaCategory(idea.category || 'bilder')
+                            setEditingIdeaPriority(idea.priority || 'normal')
+                            setEditingIdeaStatus(idea.status || 'offen')
+                          }} style={{
                             fontSize: 11, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
                             background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontFamily: 'inherit', fontWeight: 600
                           }}>✎ Bearbeiten</button>
@@ -4271,21 +4394,64 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 }}>✕</button>
               </div>
 
+              {/* v4.33.0 – ZUORDNUNG. Getrennt und mit Hinweis, weil eine Änderung
+                  hier den Eintrag in Abrechnung und Model-Portal verschiebt. */}
+              <div style={{ padding: 10, borderRadius: 8, background: 'var(--bg-card2)', border: '1px solid var(--border)', marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '.4px' }}>Zuordnung</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700 }}>Model</span>
+                    <select value={editForm.model_name || ''} onChange={e => { setF('model_name', e.target.value); setF('account_csv', '') }} style={inputS}>
+                      <option value="">—</option>
+                      {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                      {editForm.model_name && !models.some(m => m.name === editForm.model_name) && (
+                        <option value={editForm.model_name}>{editForm.model_name} (nicht in der Liste)</option>
+                      )}
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700 }}>Profil</span>
+                    {/* Auswahl aus den Aliasen des Models, Freitext bleibt möglich */}
+                    <input list="edit-profile-list" value={editForm.account_csv || ''}
+                      onChange={e => setF('account_csv', e.target.value)} placeholder="— keins —" style={inputS} />
+                    <datalist id="edit-profile-list">
+                      {reqAliases.filter(a => !editForm.model_name || a.model_name === editForm.model_name)
+                        .map(a => <option key={a.csv_name} value={a.csv_name} />)}
+                    </datalist>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700 }}>Chatter</span>
+                    <select value={editForm.chatter_name || ''} onChange={e => setF('chatter_name', e.target.value)} style={inputS}>
+                      <option value="">—</option>
+                      {chatters.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      {editForm.chatter_name && !chatters.some(c => c.name === editForm.chatter_name) && (
+                        <option value={editForm.chatter_name}>{editForm.chatter_name} (nicht in der Liste)</option>
+                      )}
+                    </select>
+                  </label>
+                </div>
+                {(editForm.model_name !== r.model_name || editForm.chatter_name !== r.chatter_name) && (
+                  <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 7 }}>
+                    ⚠ Zuordnung geändert – der Eintrag wandert damit in Abrechnung und Model-Portal mit.
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                 {/* Preis */}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Preis ($)</span>
-                  <input type="number" step="0.01" defaultValue={r.price ?? ''} id="edit-price" style={inputS} />
+                  <input type="number" step="0.01" value={editForm.price ?? ''} onChange={e => setF('price', e.target.value)} style={inputS} />
                 </label>
                 {/* Anzahlung Betrag */}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Anzahlung ($)</span>
-                  <input type="number" step="0.01" defaultValue={r.deposit ?? ''} id="edit-deposit" style={inputS} />
+                  <input type="number" step="0.01" value={editForm.deposit ?? ''} onChange={e => setF('deposit', e.target.value)} style={inputS} />
                 </label>
                 {/* Typ */}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Typ</span>
-                  <select defaultValue={r.content_type || ''} id="edit-type" style={inputS}>
+                  <select value={editForm.content_type || ''} onChange={e => setF('content_type', e.target.value)} style={inputS}>
                     <option value="">—</option>
                     {/* v3.50.0: kanonische Typen (Keys wie im ChatterPortal) */}
                     <option value="videocall">Videocall</option>
@@ -4294,16 +4460,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     <option value="audio">Sprachnachricht</option>
                     <option value="bild">Bild</option>
                     <option value="sonstiges">Sonstiges</option>
-                    {/* Legacy-Wert des Eintrags wählbar lassen, damit defaultValue greift */}
-                    {r.content_type && !['videocall','telefonat','video','audio','bild','sonstiges'].includes(r.content_type) && (
-                      <option value={r.content_type}>{contentTypeLabel(r.content_type)} (alt)</option>
+                    {/* Legacy-Wert des Eintrags wählbar lassen */}
+                    {editForm.content_type && !['videocall','telefonat','video','audio','bild','sonstiges'].includes(editForm.content_type) && (
+                      <option value={editForm.content_type}>{contentTypeLabel(editForm.content_type)} (alt)</option>
                     )}
                   </select>
                 </label>
                 {/* Dringlichkeit */}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Dringlichkeit</span>
-                  <select defaultValue={r.deadline || ''} id="edit-deadline" style={inputS}>
+                  <select value={editForm.deadline || ''} onChange={e => setF('deadline', e.target.value)} style={inputS}>
                     <option value="">—</option>
                     <option value="asap">⚡ ASAP</option>
                     <option value="hours">⏰ Heute</option>
@@ -4314,25 +4480,53 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 {/* Kunde */}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Kunden-ID</span>
-                  <input type="text" defaultValue={r.customer_id || ''} id="edit-customer" style={inputS} />
+                  <input type="text" value={editForm.customer_id || ''} onChange={e => setF('customer_id', e.target.value)} style={inputS} />
                 </label>
                 {/* Status */}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Status</span>
-                  <select defaultValue={r.status || ''} id="edit-status" style={inputS}>
+                  <select value={editForm.status || 'neu'} onChange={e => setF('status', e.target.value)} style={inputS}>
                     <option value="neu">neu</option>
+                    <option value="angefragt">angefragt</option>
                     <option value="bestaetigt">bestätigt</option>
                     <option value="erledigt">erledigt</option>
                     <option value="abgelehnt">abgelehnt</option>
                   </select>
                 </label>
+                {/* v4.33.0: Menge + Dauer — kamen im Modal bisher nicht vor */}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Menge</span>
+                  <input type="number" min="1" step="1" value={editForm.quantity ?? 1} onChange={e => setF('quantity', e.target.value)} style={inputS} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Dauer</span>
+                  <input type="text" value={editForm.duration || ''} onChange={e => setF('duration', e.target.value)} placeholder="z.B. 5 Min" style={inputS} />
+                </label>
               </div>
 
               {/* Wunsch */}
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
                 <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Wunsch</span>
-                <textarea defaultValue={r.request_text || ''} id="edit-request-text" rows={3} style={{ ...inputS, resize: 'vertical' }} />
+                <textarea value={editForm.text || ''} onChange={e => setF('text', e.target.value)} rows={5} style={{ ...inputS, resize: 'vertical' }} />
               </label>
+              {/* v4.33.0: Das Original des Chatters bleibt stehen und sichtbar. */}
+              {r.edited_text && r.request_text && r.edited_text !== r.request_text && (
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 9px', marginBottom: 12, lineHeight: 1.5 }}>
+                  <strong>Original vom Chatter:</strong> {r.request_text}
+                </div>
+              )}
+
+              {/* v4.33.0: Outfit + Besonderheiten — der Chatter kann sie setzen, der Admin bisher nicht */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>👗 Outfit</span>
+                  <textarea value={editForm.outfit || ''} onChange={e => setF('outfit', e.target.value)} rows={2} style={{ ...inputS, resize: 'vertical' }} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>⭐ Besonderheiten</span>
+                  <textarea value={editForm.special_notes || ''} onChange={e => setF('special_notes', e.target.value)} rows={2} style={{ ...inputS, resize: 'vertical' }} />
+                </label>
+              </div>
 
               {/* v3.46.0: Bilder / Referenzen — hinzufügen & entfernen */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
@@ -4370,11 +4564,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               {/* Zahl-Status Toggles */}
               <div style={{ display: 'flex', gap: 14, marginBottom: 18, padding: 10, background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <input type="checkbox" defaultChecked={!!r.deposit_paid} id="edit-deposit-paid" style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                  <input type="checkbox" checked={!!editForm.deposit_paid} onChange={e => setF('deposit_paid', e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Anzahlung bezahlt</span>
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <input type="checkbox" defaultChecked={!!r.remainder_paid} id="edit-remainder-paid" style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                  <input type="checkbox" checked={!!editForm.remainder_paid} onChange={e => setF('remainder_paid', e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Rest bezahlt</span>
                 </label>
               </div>
@@ -4393,16 +4587,28 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   cursor: 'pointer', fontFamily: 'inherit',
                 }}>Abbrechen</button>
                 <button onClick={() => {
+                  const f = editForm
+                  const zahl = (v) => (v === '' || v === null || v === undefined ? null : (parseFloat(v) || 0))
+                  const txt = (v) => (String(v ?? '').trim() || null)
+                  if (!txt(f.model_name)) { alert('Ohne Model geht es nicht — bitte eins auswählen.'); return }
                   const updates = {
-                    price: parseFloat(document.getElementById('edit-price').value) || null,
-                    deposit: parseFloat(document.getElementById('edit-deposit').value) || null,
-                    content_type: document.getElementById('edit-type').value || null,
-                    deadline: document.getElementById('edit-deadline').value || null,
-                    customer_id: document.getElementById('edit-customer').value || null,
-                    status: document.getElementById('edit-status').value || null,
-                    request_text: document.getElementById('edit-request-text').value || null,
-                    deposit_paid: document.getElementById('edit-deposit-paid').checked,
-                    remainder_paid: document.getElementById('edit-remainder-paid').checked,
+                    model_name: txt(f.model_name),
+                    account_csv: txt(f.account_csv),
+                    chatter_name: txt(f.chatter_name),
+                    content_type: txt(f.content_type),
+                    // Der Wunschtext landet in edited_text, nie im Original (siehe saveEditedRequest).
+                    edited_text: txt(f.text),
+                    outfit: txt(f.outfit),
+                    special_notes: txt(f.special_notes),
+                    duration: txt(f.duration),
+                    quantity: parseInt(f.quantity) > 0 ? parseInt(f.quantity) : 1,
+                    price: zahl(f.price),
+                    deposit: zahl(f.deposit),
+                    customer_id: txt(f.customer_id),
+                    deadline: txt(f.deadline),
+                    status: txt(f.status),
+                    deposit_paid: !!f.deposit_paid,
+                    remainder_paid: !!f.remainder_paid,
                     image_urls: editImages.length > 0 ? editImages : null,
                   }
                   saveEditedRequest(updates)
