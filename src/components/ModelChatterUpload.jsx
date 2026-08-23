@@ -251,9 +251,17 @@ export default function ModelChatterUpload({ businessDate, modelRows, session, o
                     ohne Datei: {pruefung.offen.map(k => k.creator).join(' · ')}
                   </div>
                 )}
-                {pruefung.abweichungen.length > 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--yellow)' }}>
-                    ⚠ Summe passt nicht exakt: {pruefung.abweichungen.map(a => `${a.creator} (${formatMoney(a.differenz)})`).join(' · ')}
+                {/* v4.31.2: Unterdeckung ist normal (das OF-Tool ordnet nicht jeden
+                    Umsatz einem Chatter zu), Ueberdeckung kann nur eine
+                    Fehlzuordnung sein. Deshalb getrennt und unterschiedlich laut. */}
+                {pruefung.abweichungen.some(a => a.differenz < 0) && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    nicht zugeordnet (kein Chatter): {pruefung.abweichungen.filter(a => a.differenz < 0).map(a => `${a.creator} (${formatMoney(a.differenz)})`).join(' · ')}
+                  </div>
+                )}
+                {pruefung.abweichungen.some(a => a.differenz > 0) && (
+                  <div style={{ fontSize: 11, color: 'var(--red)' }}>
+                    ⚠ mehr erfasst als vorhanden — sehr wahrscheinlich falsch zugeordnet: {pruefung.abweichungen.filter(a => a.differenz > 0).map(a => `${a.creator} (+${formatMoney(a.differenz)})`).join(' · ')}
                   </div>
                 )}
                 {pruefung.ohneZuordnung > 0 && (

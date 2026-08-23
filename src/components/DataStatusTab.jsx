@@ -84,6 +84,20 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
       const alleNamen = new Set((modelSnap?.rows || []).map(r => r?.creator).filter(Boolean))
       const verwaist = [...erfasstMap.keys()].filter(c => !alleNamen.has(c))
 
+      // v4.31.2 · Zwei grundverschiedene Faelle, vorher in einen Topf geworfen:
+      //
+      //   unterdeckung (negativ) — in der Einzeldatei steht WENIGER als der
+      //     Account an Message Revenue hatte. Das ist NORMAL: das OF-Tool
+      //     schreibt nicht jeden Umsatz einem Chatter zu (Julia am 22.08.:
+      //     46,15 Message Revenue, 9,60 in der Datei). Kein Erfassungsfehler,
+      //     sondern eine Eigenschaft der Quelle. Nur zur Kenntnis.
+      //
+      //   ueberdeckung (positiv) — es wurde MEHR erfasst, als der Account
+      //     ueberhaupt hatte. Das kann nur eine Fehlzuordnung sein und muss
+      //     auffallen.
+      const unterdeckung = abweichungen.filter(x => x.differenz < 0)
+      const ueberdeckung = abweichungen.filter(x => x.differenz > 0)
+
       return {
         tag,
         model: !!modelSnap,
@@ -92,9 +106,11 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
         erfasst: erwartet.length - offen.length,
         hatEinzel: erfasstMap.size > 0,
         fehlenderUmsatz: offen.reduce((s, k) => s + k.nachrichten, 0),
-        abweichungSumme: abweichungen.reduce((s, x) => s + x.differenz, 0),
+        nichtZugeordnet: unterdeckung.reduce((s, x) => s + x.differenz, 0),
+        ueberdeckungSumme: ueberdeckung.reduce((s, x) => s + x.differenz, 0),
         offen,
-        abweichungen,
+        unterdeckung,
+        ueberdeckung,
         verwaist,
       }
     })
@@ -103,10 +119,14 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
   const sichtbar = alleTage ? zeilen : zeilen.slice(0, 30)
 
   // Kopfzahlen ueber die letzten 7 Tage mit Einzeldateien
+  // v4.31.2: "sauber" heisst VOLLSTAENDIG ERFASST — jeder Account mit Umsatz hat
+  // eine Datei, nichts ist falsch zugeordnet. Nicht zugeordneter Umsatz (§
+  // unterdeckung) zaehlt bewusst NICHT dagegen; sonst waere jeder Tag rot, an
+  // dem das OF-Tool Umsatz keinem Chatter zuschreibt — und das ist der Normalfall.
   const letzte7 = zeilen.filter(z => z.hatEinzel).slice(0, 7)
-  const sauber = letzte7.filter(z =>
-    z.erwartet > 0 && z.erfasst === z.erwartet && z.abweichungen.length === 0 && z.verwaist.length === 0
-  ).length
+  const istSauber = (z) =>
+    z.erwartet > 0 && z.erfasst === z.erwartet && z.ueberdeckung.length === 0 && z.verwaist.length === 0
+  const sauber = letzte7.filter(istSauber).length
 
   if (laedt) return (
     <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '60px 0', fontSize: 14 }}>
@@ -126,10 +146,11 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
               <strong style={{ color: sauber === letzte7.length ? 'var(--green)' : 'var(--yellow)' }}>
                 {sauber} von {letzte7.length}
               </strong>{' '}
-              der letzten Tage mit Einzeldateien gehen vollständig auf.{' '}
+              der letzten Tage mit Einzeldateien sind vollständig erfasst.{' '}
               <span style={{ color: 'var(--text-muted)' }}>
-                Abgleich = Summe der Einzeldateien gegen den Message Revenue der Vergleichsdatei.
-                Eine Differenz ist der fehlende Account.
+                Abgleich = Umsatz der Accounts, für die keine Einzeldatei vorliegt. Bei $0.00 ist der
+                Tag vollständig. „Nicht zugeordnet" ist etwas anderes: Umsatz, den das OF-Tool keinem
+                Chatter zuschreibt — normal, kein Erfassungsfehler.
               </span>
             </>
           )}
@@ -150,7 +171,7 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
             <tbody>
               {sichtbar.map(z => {
                 const vollstaendig = z.erwartet > 0 && z.erfasst === z.erwartet
-                const sauberTag = vollstaendig && z.abweichungen.length === 0 && z.verwaist.length === 0
+                const sauberTag = istSauber(z)
                 return (
                   <tr key={z.tag}>
                     <td style={{ ...ZELLE, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
@@ -170,19 +191,25 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
                       color: !z.hatEinzel ? 'var(--text-muted)' : sauberTag ? 'var(--green)' : 'var(--yellow)',
                     }}>
                       {!z.hatEinzel ? '—'
-                        : sauberTag ? '$0.00'
-                          : z.fehlenderUmsatz > TOL_EXAKT ? `−${formatMoney(z.fehlenderUmsatz)}`
-                            : `${z.abweichungSumme > 0 ? '+' : '−'}${formatMoney(Math.abs(z.abweichungSumme))}`}
+                        : z.fehlenderUmsatz > TOL_EXAKT ? `−${formatMoney(z.fehlenderUmsatz)}`
+                          : z.ueberdeckung.length > 0 ? `+${formatMoney(z.ueberdeckungSumme)}`
+                            : '$0.00'}
                     </td>
                     <td style={{ ...ZELLE, fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'normal', maxWidth: 320 }}>
                       {!z.model && z.chatter && <span style={{ color: 'var(--yellow)' }}>Model-CSV fehlt</span>}
                       {z.model && !z.chatter && <span style={{ color: 'var(--yellow)' }}>Chatter-CSV fehlt</span>}
                       {z.hatEinzel && z.offen.length > 0 && (
-                        <div>ohne Datei: {z.offen.map(r => r.creator).join(' · ')}</div>
+                        <div style={{ color: 'var(--yellow)' }}>ohne Datei: {z.offen.map(r => r.creator).join(' · ')}</div>
                       )}
-                      {z.abweichungen.length > 0 && (
+                      {z.unterdeckung.length > 0 && (
+                        <div>
+                          nicht zugeordnet ({formatMoney(Math.abs(z.nichtZugeordnet))}):{' '}
+                          {z.unterdeckung.map(a => `${a.creator} (${formatMoney(a.differenz)})`).join(' · ')}
+                        </div>
+                      )}
+                      {z.ueberdeckung.length > 0 && (
                         <div style={{ color: 'var(--red)' }}>
-                          ⚠ Summe passt nicht: {z.abweichungen.map(a => `${a.creator} (${formatMoney(a.differenz)})`).join(' · ')}
+                          ⚠ mehr erfasst als vorhanden: {z.ueberdeckung.map(a => `${a.creator} (+${formatMoney(a.differenz)})`).join(' · ')}
                         </div>
                       )}
                       {z.verwaist.length > 0 && (
@@ -218,12 +245,20 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
           </p>
           <p style={{ margin: '0 0 10px' }}>
             <strong style={{ color: 'var(--text-primary)' }}>Abgleich</strong> ist der Umsatz der Accounts
-            ohne Einzeldatei. Bei 0,00 $ ist der Tag vollständig.
+            ohne Einzeldatei. Bei $0.00 ist der Tag vollständig erfasst. Ein <strong>+Betrag</strong> ist
+            dagegen ein echter Fehler: da wurde mehr erfasst, als der Account überhaupt hatte — das kann
+            nur eine falsche Zuordnung sein.
+          </p>
+          <p style={{ margin: '0 0 10px' }}>
+            <strong style={{ color: 'var(--text-primary)' }}>Nicht zugeordnet</strong> ist etwas anderes und
+            <strong> kein Fehler</strong>: Message Revenue, den das OF-Tool keinem Chatter zuschreibt. Am
+            22.08.2026 waren das 43,75 $ bei Leoni und Julia. Die Summe der Chatter-Umsätze eines Models
+            kann deshalb kleiner sein als dessen Message Revenue.
           </p>
           <p style={{ margin: 0, color: 'var(--text-muted)' }}>
-            ⚠️ Verglichen wird gegen <strong>Message Revenue</strong>, nicht gegen den Gesamtumsatz. Das
-            Chatter-Leaderboard des OF-Tools enthält keine Subs und keine Tips — am 22.08.2026 waren das
-            3.833 von 4.714 $, also rund 81 % des Umsatzes. Alles andere ist Chattern nicht zurechenbar.
+            ⚠️ Verglichen wird gegen <strong>Message Revenue</strong> (bei manchen Accounts zzgl. Trinkgeld),
+            nicht gegen den Gesamtumsatz. Subs sind im Chatter-Leaderboard nie enthalten — am 22.08.2026
+            waren das rund 19 % des Umsatzes.
           </p>
         </div>
       </Card>

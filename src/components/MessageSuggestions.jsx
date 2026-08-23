@@ -5,6 +5,10 @@ import { Lightbulb, Copy, Check, ThumbsUp, ThumbsDown, Sparkles, Loader } from '
 // v3.81.0: KI-Nachrichten-Vorschläge (Chatter-Portal).
 // Chatter wählt aus SEINEN Schichten + Models + einem Anlass und bekommt auf
 // Knopfdruck Vorschläge (Edge Function generate-messages). Kein Freitext an die KI.
+//
+// v4.32.0: Die Function filtert jetzt Wiederholungen selbst heraus (Ähnlichkeits-
+// prüfung gegen die letzten 21 Tage). Kommen deshalb weniger Karten als sonst,
+// steht darunter warum — sonst wirkt es wie ein Fehler.
 
 function normShift(label = '') {
   const l = label.toLowerCase()
@@ -31,6 +35,7 @@ export default function MessageSuggestions({ displayName }) {
   const [allowed, setAllowed] = useState(null) // v3.83.0: nur freigeschaltete Chatter
   const [language, setLanguage] = useState('Deutsch') // v3.90.0: Zielsprache der Vorschläge
   const [usedList, setUsedList] = useState([]) // v3.92.0: zuletzt verwendete Nachrichten
+  const [verworfen, setVerworfen] = useState(0) // v4.32.0: als Wiederholung aussortiert
 
   useEffect(() => { if (displayName) loadContext() }, [displayName])
 
@@ -45,6 +50,7 @@ export default function MessageSuggestions({ displayName }) {
         .eq('chatter', displayName).eq('model_name', model).eq('occasion', occasion)
         .order('created_at', { ascending: false }).limit(20)
       if (cancelled) return
+      setVerworfen(0)
       if (data && data.length) {
         const latest = data[0].created_at // alle Zeilen eines Batches teilen denselben created_at
         setItems(data.filter(r => r.created_at === latest).map(r => ({ id: r.id, text: r.text, rating: r.rating, used: r.used })))
@@ -116,7 +122,7 @@ export default function MessageSuggestions({ displayName }) {
 
   const generate = async () => {
     if (!model || !occasion) return
-    setLoading(true); setError(''); setItems([])
+    setLoading(true); setError(''); setItems([]); setVerworfen(0)
     try {
       const { data, error } = await supabase.functions.invoke('generate-messages', {
         body: { model, occasion, shift: normShift(shift), chatter: displayName, language },
@@ -128,6 +134,7 @@ export default function MessageSuggestions({ displayName }) {
       }
       if (!data?.ok) { setError(data?.error || 'Keine Vorschläge erhalten'); return }
       setItems((data.suggestions || []).map(s => ({ ...s, rating: null })))
+      setVerworfen(Number(data.verworfen) || 0)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -263,6 +270,12 @@ export default function MessageSuggestions({ displayName }) {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {verworfen > 0 && items.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text-muted)' }}>
+              {verworfen === 1 ? '1 Vorschlag wurde' : `${verworfen} Vorschläge wurden`} aussortiert – zu nah an etwas, das für {model} schon draußen war.
             </div>
           )}
 
