@@ -76,6 +76,37 @@ const CELL_TONES = {
 const cellTone = (shift) => shift === EXTRA_SHIFT ? CELL_TONES.vorschicht : CELL_TONES.normal
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
+// ── v4.34.0: Zweiter Chatter in einer Zelle — jetzt DREI Modi ────────────────
+// 'anlernen' (Cyan)  — Trainee läuft mit, oft ohne eigenen Account.
+// 'co'       (Orange)— zwei Leute arbeiten dieselbe Schicht gemeinsam, komplett.
+// 'split'    (Pink)  — NEU: die Schicht wird geteilt, jeder übernimmt einen Abschnitt.
+//
+// Warum: geteilte Schichten kamen in der Praxis regelmäßig vor, wurden aber als
+// Co-Schicht eingetragen. Für die Lohn-Auswertung war danach nicht mehr erkennbar,
+// wer wie lange gearbeitet hat. Die vier Zeitfelder (split_a_von/bis, split_b_von/bis)
+// sind BEWUSST optional: wer sie nicht ausfüllt, hält wenigstens fest, DASS geteilt
+// wurde. Gespeichert wird alles im vorhandenen assignments-JSON — keine Migration.
+const MODE_META = {
+  anlernen: { icon: '🎓', label: 'Anlernen', color: '#06b6d4' },
+  co: { icon: '👥', label: 'Co-Schicht', color: '#f59e0b' },
+  split: { icon: '✂️', label: 'Geteilt', color: '#ec4899' },
+}
+const zellModus = (cell) => (MODE_META[cell?.trainee_mode] ? cell.trainee_mode : 'anlernen')
+// Zeitspanne einer Seite ('a' = Hauptchatter, 'b' = zweiter Chatter) als Text.
+// Leer, wenn nichts eingetragen ist — dann wird auch nichts angezeigt.
+function splitSpanne(cell, seite, standard = '') {
+  const von = cell?.[`split_${seite}_von`] || ''
+  const bis = cell?.[`split_${seite}_bis`] || ''
+  if (!von && !bis) return ''
+  if (von && bis) return `${von}–${bis}`
+  // Halb ausgefüllt: die fehlende Hälfte kommt aus der Schichtzeit, wenn die
+  // eine hergibt. Sonst lieber „ab 20:00" als ein „20:00–?", das nach kaputtem
+  // Datensatz aussieht und so auch im Telegram-Plan landen würde.
+  const teile = (standard || '').split('-').map(t => t.trim()).filter(Boolean)
+  if (teile.length >= 2) return `${von || teile[0]}–${bis || teile[1]}`
+  return von ? `ab ${von}` : `bis ${bis}`
+}
+
 function berlinDate(date) {
   const str = (date || new Date()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
   return new Date(str + 'T00:00:00')
@@ -718,6 +749,80 @@ export default function ScheduleTab({ session, userDisplayName }) {
     return schedule[getCellKey(modelId, dayIso, shift)] || { chatter: '', note: '' }
   }
 
+  // v4.34.0: Eine Plan-Zeile für den Telegram-Versand, aus Sicht EINER Person.
+  // Liefert null, wenn sie in dieser Zelle nicht eingeteilt ist.
+  //
+  // Neu: der zweite Chatter wird mitgeschickt, wenn er die Schicht wirklich
+  // arbeitet (Co oder Geteilt). Beim Anlernen bleibt es beim alten Verhalten —
+  // dort steht oft ein externer Name ohne Account und ohne Telegram.
+  // Bei einer geteilten Schicht sieht jede Seite IHREN Abschnitt statt der
+  // vollen Schichtzeit; ohne eingetragene Spanne fällt sie auf die Schichtzeit zurück.
+  const planZeile = (cell, model, shift, name, mitOverride = true) => {
+    if (!cell.chatter || cell.chatter === '__FREI__') return null
+    const istHaupt = cell.chatter === name
+    const istZweit = !istHaupt && cell.trainee === name
+    if (!istHaupt && !istZweit) return null
+    const modus = zellModus(cell)
+    if (istZweit && modus === 'anlernen') return null
+    const standard = ((mitOverride && cell.time_override) || shiftTimes[`${model.id}__${shift}`] || '')
+      .replace(' (DE)', '').replace('(DE)', '')
+    const spanne = modus === 'split' ? splitSpanne(cell, istHaupt ? 'a' : 'b', standard) : ''
+    const zeit = spanne || standard
+    const zeitText = zeit ? ` (${zeit} Uhr DE)` : ''
+    const partner = istHaupt ? cell.trainee : cell.chatter
+    const zusatz = modus === 'split' ? ` · geteilte Schicht${partner ? ` mit ${partner}` : ''}`
+      : modus === 'co' && cell.trainee ? ` · Co-Schicht${partner ? ` mit ${partner}` : ''}`
+      : ''
+    return `  ${shift}${zeitText}: ${model.name}${zusatz}${cell.note ? ` – ${cell.note}` : ''}`
+  }
+
+  // v4.34.0: Hauptchatter setzen. Wird die Zelle geleert oder auf Freischicht
+  // gestellt, müssen zweiter Chatter und Split-Zeiten mit raus.
+  // Sonst bliebe ein zweiter Name mit eigener Zeitspanne in einer Zelle stehen,
+  // deren Zweitchatter-Bedienung gar nicht mehr eingeblendet wird (die hängt an
+  // `cell.chatter`) — im Plan nicht mehr korrigierbar, im Portal aber weiterhin
+  // wirksam. Weil dabei Eingetragenes verloren geht, wird vorher gefragt.
+  const setChatter = (modelId, dayIso, shift, cell, name) => {
+    const leert = !name || name === '__FREI__'
+    if (leert && cell.trainee) {
+      const ok = window.confirm(
+        `In dieser Schicht steht „${cell.trainee}" als zweite Person.\n\n` +
+        'Wird der Hauptchatter entfernt, fällt der zweite Eintrag mit weg ' +
+        '(inklusive eingetragener Zeiten einer geteilten Schicht).\n\nTrotzdem entfernen?'
+      )
+      if (!ok) return
+    }
+    if (leert) {
+      const zelle = { ...cell, chatter: name, confirmed: true }
+      delete zelle.trainee; delete zelle.trainee_mode
+      delete zelle.split_a_von; delete zelle.split_a_bis
+      delete zelle.split_b_von; delete zelle.split_b_bis
+      setCell(modelId, dayIso, shift, zelle)
+      return
+    }
+    setCell(modelId, dayIso, shift, { ...cell, chatter: name, confirmed: true })
+  }
+
+  // v4.34.0: Modus des zweiten Chatters umschalten.
+  // Beim WECHSEL werden Name und Split-Zeiten geleert — sonst bliebe z.B. eine
+  // Teilzeit von gestern an einer Co-Schicht hängen und ginge in die Lohn-Auswertung
+  // ein. Ein Klick auf den bereits aktiven Modus lässt alles unangetastet.
+  const setModus = (modelId, dayIso, shift, cell, neuerModus) => {
+    if (zellModus(cell) === neuerModus) return
+    const hatSplitZeiten = ['split_a_von', 'split_a_bis', 'split_b_von', 'split_b_bis'].some(f => cell?.[f])
+    if (hatSplitZeiten && !window.confirm(
+      'Für diese Schicht sind Zeiten einer geteilten Schicht eingetragen.\n\n' +
+      'Beim Umschalten gehen sie verloren.\n\nTrotzdem umschalten?'
+    )) return
+    setCell(modelId, dayIso, shift, {
+      ...cell,
+      trainee_mode: neuerModus,
+      trainee: null,
+      split_a_von: null, split_a_bis: null,
+      split_b_von: null, split_b_bis: null,
+    })
+  }
+
   // v3.74.0: Vorschicht-Logik — pro Model/Woche zuschaltbar.
   // Ein Model zeigt die Vorschicht-Zeile, wenn sie aktiviert ist ODER bereits Daten
   // (Belegung oder Zeit) für die Vorschicht existieren — so gehen bestehende Einträge
@@ -848,9 +953,16 @@ export default function ScheduleTab({ session, userDisplayName }) {
       for (const model of models) {
         const cell = getCell(model.id, dayIso, shift)
         if (!cell.chatter || cell.chatter === '__FREI__') continue
-        const key = `${cell.chatter}__${dayIso}`
-        if (!chatterShiftsByDay[key]) chatterShiftsByDay[key] = new Set()
-        chatterShiftsByDay[key].add(shift)
+        // v4.34.0: Die zweite Person einer geteilten oder Co-Schicht zählt mit —
+        // sie arbeitet die Schicht ja. Ohne sie blieb eine Doppelbelegung
+        // (halbe Frühschicht plus volle Spätschicht) unbemerkt.
+        const namen = [cell.chatter]
+        if (cell.trainee && ['co', 'split'].includes(zellModus(cell))) namen.push(cell.trainee)
+        for (const name of namen) {
+          const key = `${name}__${dayIso}`
+          if (!chatterShiftsByDay[key]) chatterShiftsByDay[key] = new Set()
+          chatterShiftsByDay[key].add(shift)
+        }
       }
     }
   }
@@ -897,14 +1009,12 @@ export default function ScheduleTab({ session, userDisplayName }) {
         for (const shift of ALL_SHIFTS) {
           for (const model of models) {
             const cell = getCell(model.id, dayIso, shift)
-            if (cell.chatter === chatter.name) {
-              const berlinTime = (cell.time_override || shiftTimes[`${model.id}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
-              // v3.24.0: Zeit direkt in DE-Zeit anzeigen. KEIN convertTimeToLocal mehr —
-              // das rechnete auf die Browser-Zeitzone des Senders um (Zypern = +1),
-              // wodurch ALLE Chatter den Plan +1h verschoben bekamen.
-              const timeDisplay = berlinTime ? ` (${berlinTime} Uhr DE)` : ''
-              dayShifts.push(`  ${shift}${timeDisplay}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
-            }
+            // v3.24.0: Zeit direkt in DE-Zeit anzeigen. KEIN convertTimeToLocal mehr —
+            // das rechnete auf die Browser-Zeitzone des Senders um (Zypern = +1),
+            // wodurch ALLE Chatter den Plan +1h verschoben bekamen.
+            // v4.34.0: Zeilenbau steckt jetzt in planZeile() — auch für zweite Chatter.
+            const zeile = planZeile(cell, model, shift, chatter.name, true)
+            if (zeile) dayShifts.push(zeile)
           }
         }
         if (dayShifts.length > 0) {
@@ -961,14 +1071,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
         for (const shift of ALL_SHIFTS) {
           for (const model of models) {
             const cell = getCell(model.id, dayIso, shift)
-            if (cell.chatter === chatter.name) {
-              const berlinTime = (shiftTimes[`${model.id}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
-              // v3.24.0: Zeit direkt in DE-Zeit anzeigen. KEIN convertTimeToLocal mehr —
-              // das rechnete auf die Browser-Zeitzone des Senders um (Zypern = +1),
-              // wodurch ALLE Chatter den Plan +1h verschoben bekamen.
-              const timeDisplay = berlinTime ? ` (${berlinTime} Uhr DE)` : ''
-              dayShifts.push(`  ${shift}${timeDisplay}: ${model.name}${cell.note ? ` – ${cell.note}` : ''}`)
-            }
+            // v3.24.0: Zeit direkt in DE-Zeit anzeigen (siehe oben).
+            // v4.34.0: gemeinsame planZeile(), hier ohne time_override wie bisher.
+            const zeile = planZeile(cell, model, shift, chatter.name, false)
+            if (zeile) dayShifts.push(zeile)
           }
         }
         if (dayShifts.length > 0) {
@@ -1026,7 +1132,13 @@ export default function ScheduleTab({ session, userDisplayName }) {
       const dayIso = isoDate(day)
       for (const shift of ALL_SHIFTS) {
         for (const model of models) {
-          if (getCell(model.id, dayIso, shift).chatter === chatterName) n++
+          const cell = getCell(model.id, dayIso, shift)
+          if (cell.chatter === chatterName) { n++; continue }
+          // v4.34.0: Wer die Schicht als zweite Person wirklich arbeitet (Co oder
+          // Geteilt), zählt mit. Sonst galt er hier als „keine Schichten diese Woche":
+          // Häkchen gesperrt, „Alle" übersprang ihn — und ausgerechnet ihm wurde
+          // der Knopf „Ausblenden" (Karteileiche) angeboten.
+          if (cell.trainee === chatterName && ['co', 'split'].includes(zellModus(cell))) n++
         }
       }
     }
@@ -1249,6 +1361,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const isChatterAbsent = cell.chatter && !isFrei ? isAbsent(cell.chatter, dayIso, shift) : false
                   const isSearchMatch = cellMatchesSearch(cell)
                   const isTrainee = !!cell.trainee && !isFrei
+                  // v4.34.0: Rahmenfarbe folgt jetzt dem Modus (Anlernen cyan, Co orange,
+                  // Geteilt pink) — vorher war jede Zelle mit zweitem Chatter cyan und
+                  // eine Co-Schicht sah aus wie ein Anlernen.
+                  const zweitModus = zellModus(cell)
+                  const zweitFarbe = MODE_META[zweitModus].color
+                  // Standardzeit der Zelle — füllt bei halb eingetragener geteilter
+                  // Schicht die fehlende Hälfte, damit Raster und Telegram-Plan
+                  // dieselbe Spanne zeigen.
+                  const zweitStandard = (cell.time_override || shiftTimes[`${model.id}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
                   const timeStr = shiftTimes[`${model.id}__${shift}`]
                   const ShiftIcon = SHIFT_ICON[shift] || null
                   const shiftColor = SHIFT_COLORS[shift] || 'var(--text-muted)'
@@ -1257,11 +1378,11 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   const tone = cellTone(shift)
                   const bgBase = isChatterAbsent ? 'rgba(239,68,68,0.08)' : isFrei ? tone.freiBg : isPending ? tone.pendBg : cell.chatter ? tone.takenBg : 'var(--bg-card2)'
                   const borderBase = isChatterAbsent ? 'rgba(239,68,68,0.4)' : isFrei ? tone.freiBorder : isPending ? tone.pendBorder : cell.chatter ? tone.takenBorder : 'var(--border)'
-                  const bg = isTrainee ? 'rgba(6,182,212,0.10)' : bgBase
-                  const border = isTrainee ? '#06b6d4' : borderBase
+                  const bg = isTrainee ? `${zweitFarbe}1A` : bgBase
+                  const border = isTrainee ? zweitFarbe : borderBase
                   const borderWidth = isTrainee ? 2 : 1
                   const boxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
-                                    isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
+                                    isTrainee ? `0 0 8px ${zweitFarbe}59` : 'none'
 
                   // v3.28.1: ausgeschriebene Schicht dezent markieren (leichtes Lila, kein Leuchten)
                   const swapHere = openSwapMap[`${model.name}__${dayIso}__${shift}`]
@@ -1282,7 +1403,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         </div>
                       )}
                       {isTrainee && (
-                        <div style={{ position: 'absolute', top: -8, left: 10, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, background: '#06b6d4', color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>🎓 ANLERNEN</div>
+                        <div style={{ position: 'absolute', top: -8, left: 10, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, background: zweitFarbe, color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>
+                          {MODE_META[zweitModus].icon} {MODE_META[zweitModus].label.toUpperCase()}
+                        </div>
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 11, color: shiftColor, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>{ShiftIcon && <ShiftIcon size={12} strokeWidth={2.4} />}<span>{shift}{timeStr ? ` · ${timeStr}` : ''}</span></div>
@@ -1290,13 +1413,21 @@ export default function ScheduleTab({ session, userDisplayName }) {
                           <div style={{ fontSize: 14, fontWeight: 700, color: tone.freiText }}>✓ Freischicht</div>
                         ) : cell.chatter ? (
                           <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</div>
-                            {cell.trainee && (() => {
-                              const isCo = cell.trainee_mode === 'co'
-                              return (
-                                <div style={{ fontSize: 12, color: isCo ? '#f59e0b' : '#06b6d4', fontWeight: 600 }}>{isCo ? '👥' : '🎓'} mit {cell.trainee}</div>
-                              )
-                            })()}
+                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                              <span>{cell.chatter}</span>
+                              {/* v4.34.0: bei geteilter Schicht steht die eigene Spanne direkt am Namen */}
+                              {zweitModus === 'split' && splitSpanne(cell, 'a', zweitStandard) && (
+                                <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', color: zweitFarbe }}>{splitSpanne(cell, 'a', zweitStandard)}</span>
+                              )}
+                            </div>
+                            {cell.trainee && (
+                              <div style={{ fontSize: 12, color: zweitFarbe, fontWeight: 600, display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                                <span>{MODE_META[zweitModus].icon} {zweitModus === 'split' ? '' : 'mit '}{cell.trainee}</span>
+                                {zweitModus === 'split' && splitSpanne(cell, 'b', zweitStandard) && (
+                                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>{splitSpanne(cell, 'b', zweitStandard)}</span>
+                                )}
+                              </div>
+                            )}
                             {cell.time_override && (
                               <div style={{ fontSize: 10, color: '#f97316', marginTop: 2, fontFamily: 'monospace', fontWeight: 700 }}>⚠ {cell.time_override}</div>
                             )}
@@ -1487,10 +1618,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       // Search-Highlight: gelb glühend wenn cell matched
                       const isSearchMatch = cellMatchesSearch(cell)
                       const isTrainee = !!cell.trainee && !isFrei
-                      // Trainee-Style: cyan Background überlagert + cyan Border + cyan Glow
-                      // Search hat Vorrang (gelb), aber wenn beides → kombinieren wir mit Border-cyan + Schatten-gelb
-                      let finalBg = isTrainee ? 'rgba(6,182,212,0.10)' : cellBg
-                      let finalBorder = isTrainee ? '#06b6d4' : cellBorder
+                      // v4.34.0: Farbe nach Modus — Anlernen cyan, Co orange, Geteilt pink.
+                      const zweitModus = zellModus(cell)
+                      const zweitFarbe = MODE_META[zweitModus].color
+                      // Standardzeit der Zelle — siehe Kommentar im Mobil-Raster.
+                      const zweitStandard = (cell.time_override || shiftTimes[`${model.id}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+                      // Zweitchatter-Style: Farbe überlagert Background + Border + Glow
+                      // Search hat Vorrang (gelb), aber wenn beides → Border in Modusfarbe + Schatten gelb
+                      let finalBg = isTrainee ? `${zweitFarbe}1A` : cellBg
+                      let finalBorder = isTrainee ? zweitFarbe : cellBorder
                       let finalBorderWidth = isTrainee ? 2 : 1
                       // v4.6.0: unbestätigte Vorschicht = gestrichelter Rahmen (statt Orange)
                       let finalBorderStyle = (tone.pendDashed && isPending && !isChatterAbsent && !isTrainee) ? 'dashed' : 'solid'
@@ -1503,7 +1639,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                       }
                       const searchBoxShadow = isSearchMatch ? '0 0 0 2px #f59e0b, 0 0 12px rgba(245,158,11,0.6)' :
                                               showDoppelWarn ? '0 0 12px rgba(239,68,68,0.5)' :
-                                              isTrainee ? '0 0 8px rgba(6,182,212,0.35)' : 'none'
+                                              isTrainee ? `0 0 8px ${zweitFarbe}59` : 'none'
 
                       // v3.28.1: ausgeschriebene Schicht dezent markieren (leichtes Lila).
                       // Rote Warnungen (Abwesend/Doppel) und die Namens-Suche behalten Vorrang.
@@ -1538,12 +1674,14 @@ export default function ScheduleTab({ session, userDisplayName }) {
                             >⚠ DOPPEL · ✓ gesehen</button>
                           )}
                           {isTrainee && (
-                            <div style={{ position: 'absolute', top: -8, left: 6, fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#06b6d4', color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>🎓 ANLERNEN</div>
+                            <div style={{ position: 'absolute', top: -8, left: 6, fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: zweitFarbe, color: '#fff', letterSpacing: '0.04em', zIndex: 2 }}>
+                              {MODE_META[zweitModus].icon} {MODE_META[zweitModus].label.toUpperCase()}
+                            </div>
                           )}
                           {isEditing ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onClick={e => e.stopPropagation()}>
                               <select autoFocus value={cell.chatter || ''}
-                                onChange={e => setCell(model.id, dayIso, shift, { ...cell, chatter: e.target.value, confirmed: true })}
+                                onChange={e => setChatter(model.id, dayIso, shift, cell, e.target.value)}
                                 style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
                                 <option value="">— leer —</option>
                                 <option value="__FREI__">✓ Freischicht</option>
@@ -1553,18 +1691,17 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                 })}
                               </select>
                               {cell.chatter && !isFrei && (() => {
-                                const mode = cell.trainee_mode || 'anlernen'
+                                const mode = zellModus(cell)
+                                const farbe = MODE_META[mode].color
                                 return (
                                 <>
                                   <div style={{ display: 'flex', gap: 3 }}>
-                                    {[
-                                      { val: 'anlernen', icon: '🎓', color: '#06b6d4' },
-                                      { val: 'co', icon: '👥', color: '#f59e0b' },
-                                    ].map(opt => {
-                                      const active = mode === opt.val
+                                    {['anlernen', 'co', 'split'].map(val => {
+                                      const opt = MODE_META[val]
+                                      const active = mode === val
                                       return (
-                                        <button key={opt.val} type="button"
-                                          onClick={ev => { ev.stopPropagation(); setCell(model.id, dayIso, shift, { ...cell, trainee_mode: opt.val, trainee: null }) }}
+                                        <button key={val} type="button" title={opt.label}
+                                          onClick={ev => { ev.stopPropagation(); setModus(model.id, dayIso, shift, cell, val) }}
                                           style={{
                                             flex: 1, padding: '1px 3px', borderRadius: 3,
                                             background: active ? `${opt.color}22` : 'transparent',
@@ -1575,11 +1712,20 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                       )
                                     })}
                                   </div>
-                                  {mode === 'co' ? (
+                                  {mode === 'anlernen' ? (
+                                    <input value={cell.trainee || ''}
+                                      onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
+                                      placeholder="Name (auch externe)"
+                                      style={{
+                                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
+                                        padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
+                                      }}
+                                    />
+                                  ) : (
                                     <select value={cell.trainee || ''}
                                       onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
                                       style={{
-                                        background: 'var(--bg-input)', border: '1px solid #f59e0b', color: '#f59e0b',
+                                        background: 'var(--bg-input)', border: `1px solid ${farbe}`, color: farbe,
                                         padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
                                       }}>
                                       <option value="">— wählen —</option>
@@ -1591,16 +1737,22 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                         <option key={`a-${a}`} value={a}>{a} (Admin)</option>
                                       ))}
                                     </select>
-                                  ) : (
-                                    <input value={cell.trainee || ''}
-                                      onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
-                                      placeholder="Name (auch externe)"
-                                      style={{
-                                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
-                                        padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
-                                      }}
-                                    />
                                   )}
+                                  {/* v4.34.0: Zeitabschnitte der geteilten Schicht — beide optional */}
+                                  {mode === 'split' && [
+                                    { seite: 'a', name: cell.chatter },
+                                    { seite: 'b', name: cell.trainee || '2. Person' },
+                                  ].map(({ seite, name }) => (
+                                    <div key={seite} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                      <span title={name} style={{ fontSize: 8, color: MODE_META.split.color, width: 34, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                                      <input type="time" value={cell[`split_${seite}_von`] || ''}
+                                        onChange={e => setCell(model.id, dayIso, shift, { ...cell, [`split_${seite}_von`]: e.target.value || null })}
+                                        style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }} />
+                                      <input type="time" value={cell[`split_${seite}_bis`] || ''}
+                                        onChange={e => setCell(model.id, dayIso, shift, { ...cell, [`split_${seite}_bis`]: e.target.value || null })}
+                                        style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }} />
+                                    </div>
+                                  ))}
                                 </>
                                 )
                               })()}
@@ -1664,14 +1816,19 @@ export default function ScheduleTab({ session, userDisplayName }) {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
                                   <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{cell.chatter}</span>
-                                  {isTrainee && (() => {
-                                    const isCo = cell.trainee_mode === 'co'
-                                    return (
-                                      <span style={{ fontSize: 10, color: isCo ? '#f59e0b' : '#06b6d4', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                        <span style={{ fontSize: 9 }}>{isCo ? '👥' : '🎓'}</span>{cell.trainee}
-                                      </span>
-                                    )
-                                  })()}
+                                  {/* v4.34.0: bei geteilter Schicht die Spanne des Hauptchatters direkt darunter */}
+                                  {zweitModus === 'split' && splitSpanne(cell, 'a', zweitStandard) && (
+                                    <span style={{ fontSize: 9, fontFamily: 'monospace', fontWeight: 700, color: zweitFarbe }}>{splitSpanne(cell, 'a', zweitStandard)}</span>
+                                  )}
+                                  {isTrainee && (
+                                    <span style={{ fontSize: 10, color: zweitFarbe, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 3, minWidth: 0 }}>
+                                      <span style={{ fontSize: 9 }}>{MODE_META[zweitModus].icon}</span>
+                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cell.trainee}</span>
+                                    </span>
+                                  )}
+                                  {zweitModus === 'split' && splitSpanne(cell, 'b', zweitStandard) && (
+                                    <span style={{ fontSize: 9, fontFamily: 'monospace', fontWeight: 700, color: zweitFarbe }}>{splitSpanne(cell, 'b', zweitStandard)}</span>
+                                  )}
                                 </div>
                                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
                                   background: isPending ? tone.pendChipBg : tone.okChipBg,
@@ -1763,7 +1920,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter</label>
                 <select value={cell.chatter || ''}
-                  onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, chatter: e.target.value, confirmed: true })}
+                  onChange={e => setChatter(editSheet.modelId, editSheet.dayIso, editSheet.shift, cell, e.target.value)}
                   style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
                   <option value="">— leer —</option>
                   <option value="__FREI__">✓ Freischicht</option>
@@ -1774,37 +1931,45 @@ export default function ScheduleTab({ session, userDisplayName }) {
                 </select>
               </div>
 
-              {/* Trainee / Co-Schicht */}
+              {/* Trainee / Co-Schicht / v4.34.0: geteilte Schicht */}
               {cell.chatter && !isFrei && (() => {
-                const mode = cell.trainee_mode || 'anlernen'
+                const mode = zellModus(cell)
+                const farbe = MODE_META[mode].color
                 return (
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Zweiter Chatter (optional)</label>
                   {/* Modus-Toggle */}
                   <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                    {[
-                      { val: 'anlernen', icon: '🎓', label: 'Anlernen', color: '#06b6d4' },
-                      { val: 'co', icon: '👥', label: 'Co-Schicht', color: '#f59e0b' },
-                    ].map(opt => {
-                      const active = mode === opt.val
+                    {['anlernen', 'co', 'split'].map(val => {
+                      const opt = MODE_META[val]
+                      const active = mode === val
                       return (
-                        <button key={opt.val} type="button"
-                          onClick={() => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee_mode: opt.val, trainee: null })}
+                        <button key={val} type="button"
+                          onClick={() => setModus(editSheet.modelId, editSheet.dayIso, editSheet.shift, cell, val)}
                           style={{
-                            flex: 1, padding: '6px 8px', borderRadius: 6,
+                            flex: 1, padding: '6px 4px', borderRadius: 6,
                             background: active ? `${opt.color}22` : 'transparent',
                             border: `1px solid ${active ? opt.color : '#2e2e5a'}`,
                             color: active ? opt.color : 'var(--text-muted)',
-                            fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                            fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                           }}>{opt.icon} {opt.label}</button>
                       )
                     })}
                   </div>
-                  {mode === 'co' ? (
+                  {mode === 'anlernen' ? (
+                    <input value={cell.trainee || ''}
+                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
+                      placeholder="Name eintragen — auch externe ohne Account"
+                      style={{
+                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
+                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
+                      }}
+                    />
+                  ) : (
                     <select value={cell.trainee || ''}
                       onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
                       style={{
-                        background: 'var(--bg-input)', border: '1px solid #f59e0b', color: '#f59e0b',
+                        background: 'var(--bg-input)', border: `1px solid ${farbe}`, color: farbe,
                         padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
                       }}>
                       <option value="">— wählen —</option>
@@ -1816,15 +1981,31 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         <option key={`a-${a}`} value={a}>{a} (Admin)</option>
                       ))}
                     </select>
-                  ) : (
-                    <input value={cell.trainee || ''}
-                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
-                      placeholder="Name eintragen — auch externe ohne Account"
-                      style={{
-                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
-                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
-                      }}
-                    />
+                  )}
+                  {/* v4.34.0: Zeitabschnitte der geteilten Schicht.
+                      Beide Spannen sind freiwillig — wer nichts einträgt, hält nur fest,
+                      DASS geteilt wurde. Ausgefüllt sind sie die Grundlage für die Löhne. */}
+                  {mode === 'split' && (
+                    <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: `${farbe}12`, border: `1px solid ${farbe}44` }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8 }}>
+                        Zeiten sind optional — leer lassen heißt nur: die Schicht wurde geteilt.
+                      </div>
+                      {[
+                        { seite: 'a', name: cell.chatter },
+                        { seite: 'b', name: cell.trainee || '2. Person' },
+                      ].map(({ seite, name }) => (
+                        <div key={seite} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: seite === 'a' ? 6 : 0 }}>
+                          <span style={{ fontSize: 11, color: farbe, fontWeight: 600, width: 78, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                          <input type="time" value={cell[`split_${seite}_von`] || ''}
+                            onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, [`split_${seite}_von`]: e.target.value || null })}
+                            style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 6px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>–</span>
+                          <input type="time" value={cell[`split_${seite}_bis`] || ''}
+                            onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, [`split_${seite}_bis`]: e.target.value || null })}
+                            style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 6px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
                 )

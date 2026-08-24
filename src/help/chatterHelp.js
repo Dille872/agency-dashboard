@@ -71,10 +71,15 @@ export const HELP_TOPICS = [
     ],
     steps: [
       'Oben auf „Schicht starten" tippen. Hast du an dem Tag mehrere Schichten, wähl vorher im Auswahlfeld die richtige — sonst bleibt der Knopf grau.',
-      'Am Ende der Schicht auf „Schicht beenden" tippen.',
+      'Am Ende der Schicht auf „Schicht beenden" tippen. Es öffnet sich die Schichtübergabe.',
+      'Übergabe: Steht etwas an, das die nächste Schicht wissen muss — ein angefangenes Gespräch, ein offener Custom, eine Besonderheit bei einem Model — schreib es dort hinein und wähl „Übergeben & beenden". Wenn nichts ansteht, „Ohne Übergabe beenden".',
+      'Wer nach dir eincheckt, bekommt deine Übergabe angezeigt und muss sie mit „Gelesen & verstanden" bestätigen. Erst dann verschwindet sie.',
     ],
     watch: [
-      'Wenn du das Auschecken vergisst: 1 Minute nach Schichtende checkt das Portal dich automatisch aus. Verlass dich aber nicht darauf — bei einer manuell gestarteten Schicht passiert das nicht.',
+      'Die Übergabe ist freiwillig — aber sie ist die einzige Stelle, an der die nächste Schicht sicher mitbekommt, was gerade läuft. Der Chat geht dabei leicht unter.',
+      'Wartet eine Übergabe auf dich, siehst du sie direkt nach dem Einchecken. Klickst du das Fenster weg, kommst du über den pinken Hinweis „Übergabe der Vorschicht" wieder dran.',
+      'Was du übergibst, sehen auch Chris und Rey im Schicht-Log — inklusive der Angabe, wer sie gelesen hat.',
+      'Wenn du das Auschecken vergisst: 1 Minute nach Schichtende checkt das Portal dich automatisch aus. Dabei kannst du keine Übergabe mehr schreiben — dann lieber vorher Bescheid geben.',
       'Bist du 15 Minuten nach Schichtbeginn noch nicht eingecheckt, bekommen Chris und Rey automatisch eine Telegram-Nachricht. Das ist kein Vorwurf, sondern nur die Erinnerung — aber ärgerlich, wenn du eigentlich längst arbeitest.',
       'Hast du für den Tag eine Abwesenheit eingetragen, kommt diese Erinnerung nicht.',
       'Auschecken lässt sich nicht rückgängig machen. Checkst du erneut ein, entsteht ein zweiter Eintrag.',
@@ -102,7 +107,7 @@ export const HELP_TOPICS = [
     title: 'Die bunten Hinweise',
     short: 'Zeigen nur, wenn etwas offen ist — antippen springt direkt hin.',
     body: [
-      'Unter den Zahlen tauchen farbige Hinweise auf: offene Aufgaben (rot), fehlende Schichtnotiz (orange), offene Custom-Anfragen (cyan). Ein Tipp darauf bringt dich direkt an die richtige Stelle.',
+      'Unter den Zahlen tauchen farbige Hinweise auf: offene Aufgaben (rot), fehlende Schichtnotiz (orange), offene Custom-Anfragen (cyan), Übergabe der Vorschicht (pink). Ein Tipp darauf bringt dich direkt an die richtige Stelle.',
       'Ist nichts offen, siehst du dort auch nichts — das ist der Normalzustand, nicht ein Fehler.',
     ],
   },
@@ -114,10 +119,12 @@ export const HELP_TOPICS = [
     short: 'Dein Dienstplan mit lokalen Uhrzeiten und den Models je Schicht.',
     body: [
       'Hier stehen alle deine Einteilungen der nächsten 7 Tage. Die Uhrzeit wird in deiner lokalen Zeit angezeigt. Tipp auf eine Zeile, um zu sehen, mit welchen Models du in der Schicht arbeitest.',
-      'Markierungen: „⚠ abweichend" = für diesen Tag gilt eine andere Uhrzeit als sonst. „🎓 Anlernen" = du wirst eingelernt. „👥 Co" = du arbeitest zusammen mit dem genannten Hauptchatter. „🔔" = für die Schicht ist eine Erinnerung hinterlegt.',
+      'Markierungen: „⚠ abweichend" = für diesen Tag gilt eine andere Uhrzeit als sonst. „🎓 Anlernen" = du wirst eingelernt. „👥 Co" = du arbeitest die ganze Schicht zusammen mit der genannten Person. „✂️ Geteilt" = ihr teilt euch die Schicht, jeder übernimmt einen Abschnitt. „🔔" = für die Schicht ist eine Erinnerung hinterlegt.',
+      'Bei einer geteilten Schicht steht bei dir DEINE Zeit — nicht die volle Schichtzeit. Danach richtet sich auch, ab wann du einchecken kannst und wann das Portal dich automatisch auscheckt.',
     ],
     watch: [
       'Hier wird nur angezeigt, nicht eingecheckt — das läuft über die Leiste ganz oben.',
+      'Steht bei „✂️ Geteilt" keine eigene Uhrzeit, hat das Team die Abschnitte noch nicht eingetragen. Dann gilt die normale Schichtzeit — im Zweifel kurz nachfragen.',
       'Steht „Kein veröffentlichter Plan", ist der Dienstplan für die Woche noch nicht freigegeben. Er erscheint automatisch, sobald das Team ihn veröffentlicht.',
     ],
   },

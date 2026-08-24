@@ -50,6 +50,23 @@ export function assignmentsOhnePerson(assignments, personName) {
     geaendert++
     if (istChatter) zelle.chatter = ''
     if (istTrainee) { delete zelle.trainee; delete zelle.trainee_mode }
+    // v4.34.0: Eine geteilte Schicht wird ganz aufgelöst, sobald eine der beiden
+    // Personen geht. Nur ihre eigene Spanne zu löschen würde einen widersprüchlichen
+    // Rest hinterlassen — eine Zelle, die als „geteilt" markiert ist, aber nur noch
+    // eine Person hat, oder eine Zeitspanne ohne zugehörigen Namen. Beides ginge so
+    // in den Export und damit in die Lohn-Auswertung.
+    // Achtung: Geht der HAUPTchatter, bleibt die zweite Person als Eintrag stehen,
+    // aber ohne Modus — sie gilt danach wie ein Trainee. Sie sieht die Schicht
+    // weiterhin und kann einchecken, wird aber nicht mehr überwacht (kein
+    // Telegram-Plan, kein Nicht-eingecheckt-Alarm, kein Auto-Checkout). Das ist
+    // gewollt: Wer eine verwaiste Schicht übernimmt, ist eine Personalentscheidung
+    // und darf nicht still vom System getroffen werden — die Zelle muss im
+    // Dienstplan neu besetzt werden.
+    if (istChatter || istTrainee) {
+      delete zelle.split_a_von; delete zelle.split_a_bis
+      delete zelle.split_b_von; delete zelle.split_b_bis
+      if (zelle.trainee_mode === 'split') delete zelle.trainee_mode
+    }
     // Der Chatter muss hier ausdrücklich mitgeprüft werden. Sonst fliegt eine
     // Zelle raus, in der die Person nur Trainee war — die Schicht des
     // Hauptchatters wäre gelöscht, obwohl sie mit dem Offboarding nichts zu tun

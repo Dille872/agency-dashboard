@@ -89,6 +89,17 @@ function parseClock(raw: string | undefined | null): number | null {
   return h * 60 + min
 }
 
+// v4.34.0: Zeitabschnitt einer Seite einer geteilten Schicht ('a' = Hauptchatter,
+// 'b' = zweite Person). Gibt null zurück, wenn nichts eingetragen ist — dann greift
+// die normale Schichtzeit. Ist nur eine Hälfte gefüllt, reicht sie für den Alarm:
+// geprüft wird ohnehin nur der Beginn.
+function spanneAusSplit(val: any, seite: 'a' | 'b'): string | null {
+  const von = val?.[`split_${seite}_von`] || ''
+  const bis = val?.[`split_${seite}_bis`] || ''
+  if (!von) return null
+  return bis ? `${von}-${bis}` : String(von)
+}
+
 function parseSpanne(raw: unknown): { start: number; ende: number } | null {
   if (!raw) return null
   const s = String(raw).replace(/\s*\(DE\)/gi, '').trim()
@@ -209,13 +220,35 @@ serve(async (_req) => {
     const ohneZeit: string[] = []
     const modelUnsichtbar: string[] = []
 
+    // v4.34.0: Pro Zelle kann jetzt MEHR als eine Person überwacht werden.
+    // Bei einer geteilten Schicht (trainee_mode = 'split') arbeitet die zweite
+    // Person einen eigenen Abschnitt — fehlt sie, muss das genauso auffallen.
+    // Anlernen und Co-Schicht bleiben außen vor: beim Anlernen steht dort oft
+    // jemand ohne Account, und eine Co-Schicht hat keine eigene Zeit, gegen die
+    // sich prüfen ließe.
+    const zellenPersonen: { key: string; val: any; name: string; seite: 'a' | 'b' }[] = []
     for (const [key, val] of Object.entries(assignments) as [string, any][]) {
+      const haupt = val?.chatter
+      // Freischicht heißt: hier arbeitet niemand — auch kein zweiter Chatter.
+      if (haupt === '__FREI__') continue
+      if (haupt) zellenPersonen.push({ key, val, name: haupt, seite: 'a' })
+      // Der zweite Chatter wird auch dann geprüft, wenn das Hauptfeld leer ist.
+      // Das kommt vor: der Dienstplan kann den Hauptchatter entfernen und den
+      // zweiten stehen lassen, und beim Offboarding bleibt die Zelle so zurück.
+      // Er checkt in dem Fall trotzdem ein — dann muss auch auffallen, wenn nicht.
+      if (val?.trainee_mode === 'split' && val?.trainee) {
+        zellenPersonen.push({ key, val, name: val.trainee, seite: 'b' })
+      }
+    }
+
+    for (const eintrag of zellenPersonen) {
+      const { key, val, seite } = eintrag
       const parts = key.split('__')
       if (parts.length < 3) continue
       const [modelId, dayIso, shift] = parts
-      const chatter = val?.chatter
+      const chatter = eintrag.name
 
-      if (dayIso !== todayIso || !chatter || chatter === '__FREI__') continue
+      if (dayIso !== todayIso || !chatter) continue
 
       const alertKey = `${chatter}_${shift}`
       if (schonGemeldet.has(alertKey)) continue
@@ -229,7 +262,15 @@ serve(async (_req) => {
       // Zell-Override schlägt Standardzeit — wie im Portal und im Dienstplan.
       // Ohne diesen Vorrang wären Vorschichten unsichtbar (für sie gibt es gar
       // keine Standardzeit) und Nachtschichten würden zu früh gemeldet.
-      const spanne = parseSpanne(val?.time_override) ?? parseSpanne(shiftTimes[`${modelId}__${shift}`])
+      // v4.34.0: Bei geteilter Schicht zählt der EIGENE Abschnitt. Ohne ihn (die
+      // Zeiten sind optional) fällt es auf die Schichtzeit zurück — dann wird die
+      // zweite Person eben zum normalen Schichtbeginn erwartet.
+      const eigeneSpanne = val?.trainee_mode === 'split'
+        ? parseSpanne(spanneAusSplit(val, seite))
+        : null
+      const spanne = eigeneSpanne
+        ?? parseSpanne(val?.time_override)
+        ?? parseSpanne(shiftTimes[`${modelId}__${shift}`])
       if (!spanne) { ohneZeit.push(`${alertKey} (Model ${modelId})`); continue }
 
       const faelligAb = spanne.start + MELDUNG_AB_MIN
@@ -251,7 +292,10 @@ serve(async (_req) => {
 
       gemeldet.push(alertKey)
       const verspaetung = nowMins - spanne.start
-      const msg = `⚠️ <b>${chatter}</b> hat ${shiftLabel(shift)}, aber nicht eingecheckt.\n\n` +
+      // v4.34.0: Bei geteilter Schicht dazuschreiben, um welchen Abschnitt es geht —
+      // sonst wundert man sich über einen Alarm zu einer krummen Uhrzeit.
+      const geteiltHinweis = eigeneSpanne ? ' (geteilte Schicht, eigener Abschnitt)' : ''
+      const msg = `⚠️ <b>${chatter}</b> hat ${shiftLabel(shift)}${geteiltHinweis}, aber nicht eingecheckt.\n\n` +
         `Schichtbeginn: ${minsToClock(spanne.start)} Uhr (DE-Zeit) — seit ${verspaetung} Minuten überfällig.`
       await sendTelegram(CHRIS_TG, msg)
       await sendTelegram(REY_TG, msg)

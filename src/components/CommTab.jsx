@@ -4632,7 +4632,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <div style={{ overflowX: 'auto' }}>
               <table>
                 <thead>
-                  <tr>{['Chatter', 'Schicht', 'Eingecheckt', 'Ausgecheckt', 'Dauer'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
+                  <tr>{['Chatter', 'Schicht', 'Eingecheckt', 'Ausgecheckt', 'Dauer', 'Übergabe'].map(h => <th key={h} style={thS}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {shiftLogs.map(log => {
@@ -4657,6 +4657,21 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {outTime ? fmt(outTime) : <span style={{ color: '#10b981' }}>● Aktiv</span>}
                         </td>
                         <td style={{ ...tdS, fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>{dauer}</td>
+                        {/* v4.34.0: Schichtübergabe — Text plus wer sie gelesen hat.
+                            So ist im Nachhinein nachvollziehbar, ob eine Information
+                            wirklich angekommen ist oder im Leeren hing. */}
+                        <td style={{ ...tdS, maxWidth: 340 }}>
+                          {log.handover_text ? (
+                            <div>
+                              <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{log.handover_text}</div>
+                              <div style={{ fontSize: 10, marginTop: 3, color: (log.handover_ack || []).length > 0 ? '#10b981' : '#f59e0b' }}>
+                                {(log.handover_ack || []).length > 0
+                                  ? `✓ gelesen von ${(log.handover_ack || []).join(', ')}`
+                                  : '● noch nicht bestätigt'}
+                              </div>
+                            </div>
+                          ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                        </td>
                       </tr>
                     )
                   })}

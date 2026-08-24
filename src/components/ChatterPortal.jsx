@@ -118,6 +118,40 @@ const SHIFTS = ['Vorschicht', 'Früh', 'Spät', 'Nacht']
 const SHIFT_COLORS = { 'Vorschicht': '#3b82f6', 'Früh': '#10b981', 'Spät': '#f59e0b', 'Nacht': '#7c3aed' }
 const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
+// ── v4.34.0: geteilte Schicht ────────────────────────────────────────────────
+// Der Dienstplan kennt neben 'anlernen' und 'co' jetzt den Modus 'split': zwei
+// Leute teilen sich eine Schicht, jeder mit eigenem Abschnitt (split_a_* für den
+// Hauptchatter, split_b_* für den zweiten). Beide Spannen sind optional.
+const MODUS_META = {
+  anlernen: { icon: '🎓', label: 'Anlernen', color: '#06b6d4' },
+  co: { icon: '👥', label: 'Co', color: '#f59e0b' },
+  split: { icon: '✂️', label: 'Geteilt', color: '#ec4899' },
+}
+const zellModus = (val) => (MODUS_META[val?.trainee_mode] ? val.trainee_mode : 'anlernen')
+// Zeitspanne aus Sicht EINER Person. Bindestrich-Format, weil der Rest der Datei
+// (shiftWindowInstants, convertTimeToLocal) daran entlang parst.
+// Ohne eigene Spanne fällt es auf die normale Schichtzeit zurück.
+function meineSpanne(val, standardZeit, binIchZweit) {
+  if (zellModus(val) !== 'split') return standardZeit
+  const seite = binIchZweit ? 'b' : 'a'
+  const von = val?.[`split_${seite}_von`] || ''
+  const bis = val?.[`split_${seite}_bis`] || ''
+  // Gleiche Zeit für Beginn und Ende ist eine Fehleingabe — als Fenster wäre sie
+  // null Minuten lang und der Auto-Checkout griffe eine Minute nach Schichtbeginn.
+  if (von && bis && von === bis) return standardZeit
+  if (!von || !bis) {
+    // Nur eine Hälfte eingetragen: die andere kommt aus der normalen Schichtzeit.
+    // Taugt die nicht als Spanne (leer, kein Bindestrich, Freitext wie „20"),
+    // bleibt es bei der Schichtzeit. Sonst entstünde „12:00-12:00" — ein Fenster
+    // der Länge null, das den Auto-Checkout eine Minute nach Schichtbeginn
+    // auslösen würde.
+    const teile = (standardZeit || '').split('-').map(t => t.trim()).filter(Boolean)
+    if (teile.length < 2) return standardZeit
+    return `${von || teile[0]}-${bis || teile[1]}`
+  }
+  return `${von}-${bis}`
+}
+
 function berlinDate(date) {
   const str = (date || new Date()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
   return new Date(str + 'T00:00:00')
@@ -459,6 +493,22 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [currentLogId, setCurrentLogId] = useState(null)
   const [currentShift, setCurrentShift] = useState(null) // v3.77.1: Schicht, in die eingecheckt wurde — für zielgenauen Auto-Checkout
   const [checkInTime, setCheckInTime] = useState(null)
+  // ── v4.34.0: Schichtübergabe ───────────────────────────────────────────────
+  // Beim Auschecken kann ein Text an die nächste Schicht hinterlassen werden;
+  // wer danach eincheckt, sieht ihn und bestätigt ihn. Freiwillig, aber der
+  // Chip in der Kachelzeile erinnert daran.
+  const [uebergabeDialog, setUebergabeDialog] = useState(false)  // Auschecken-Fenster offen
+  const [uebergabeText, setUebergabeText] = useState('')
+  const [eingangUebergaben, setEingangUebergaben] = useState([]) // was auf mich wartet
+  const [uebergabeEingangOffen, setUebergabeEingangOffen] = useState(false)
+  const [uebergabeMoeglich, setUebergabeMoeglich] = useState(true) // false = SQL-Migration fehlt noch
+  const [uebergabeLaedt, setUebergabeLaedt] = useState(false)
+  // Welche Übergaben schon einmal angezeigt wurden — damit das Fenster nicht
+  // bei jedem Takt erneut aufspringt, nachdem es weggeklickt wurde.
+  const bekannteUebergabenRef = React.useRef(new Set())
+  // Für das 30-Sekunden-Intervall: das liest aus Refs, nicht aus State
+  // (Konvention im Repo — sonst hängt es auf dem Initialwert fest).
+  const ladeUebergabenRef = React.useRef(null)
   const [messages, setMessages] = useState([])
   const [models, setModels] = useState([])
   const [aliases, setAliases] = useState([]) // v3.36.0: Profile/Export-Namen je Model
@@ -968,6 +1018,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           setCurrentShift(existingLog.shift || null) // v3.77.1
           setIsOnline(true)
           await sendHeartbeat(true)
+          ladeUebergaben() // v4.34.0
           return
         }
         await supabase.from('shift_logs')
@@ -1006,7 +1057,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           const valTraineeLc = (val.trainee || '').trim().toLowerCase()
           if (valChatterLc === myNameLc || valTraineeLc === myNameLc) {
             // v2.9.7: Cell-Override hat Vorrang vor Standard-Zeit
-            const timeStr = (val.time_override || shiftTimes[`${parts[0]}__${parts[2]}`] || '').replace(/\s*\(DE\)/g, '')
+            const standard = (val.time_override || shiftTimes[`${parts[0]}__${parts[2]}`] || '').replace(/\s*\(DE\)/g, '')
+            // v4.34.0: bei geteilter Schicht zählt MEIN Abschnitt — sonst würde die
+            // Schichtwahl beim Check-in an der Startzeit der anderen Hälfte hängen.
+            const timeStr = meineSpanne(val, standard, valTraineeLc === myNameLc && valChatterLc !== myNameLc)
             const startTimeStr = timeStr.split('-')[0]?.trim() || ''
             const [sh, sm] = startTimeStr.split(':').map(Number)
             const startMins = isNaN(sh) ? null : sh * 60 + (sm || 0)
@@ -1050,6 +1104,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       setIsOnline(true)
       setSelectedShift('')
       await sendHeartbeat(true)
+      // v4.34.0: direkt nach dem Einchecken zeigen, was die Vorschicht hinterlassen hat
+      ladeUebergaben()
     } finally {
       checkInLockRef.current = false
       setIsCheckingIn(false)
@@ -1059,31 +1115,143 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [isCheckingOut, setIsCheckingOut] = useState(false) // v2.9.6: Doppelklick-Schutz
   const checkOutLockRef = React.useRef(false)
 
-  const checkOut = async () => {
+  // v4.34.0: `text` = Übergabe an die nächste Schicht. null/leer heißt: nichts zu übergeben.
+  // Der Text landet am eigenen Schicht-Log, nicht am Cleanup-Update weiter unten —
+  // sonst bekämen fremde Alt-Logs denselben Text angehängt.
+  const checkOut = async (text = null) => {
     if (checkOutLockRef.current) return
     checkOutLockRef.current = true
     setIsCheckingOut(true)
     try {
+      const jetzt = new Date().toISOString()
       if (currentLogId) {
-        await supabase.from('shift_logs').update({
-          checked_out_at: new Date().toISOString(),
-        }).eq('id', currentLogId)
+        const felder = { checked_out_at: jetzt }
+        // Bewusst ohne Prüfung auf `uebergabeMoeglich`: kippt das Flag zwischen
+        // Öffnen des Fensters und Absenden (das 30-Sekunden-Intervall kann das),
+        // wäre ein geschriebener Text sonst kommentarlos verschwunden. Schlägt der
+        // Schreibvorgang fehl, fängt das der Fehlerzweig unten ab.
+        if (text && text.trim()) {
+          felder.handover_text = text.trim()
+          felder.handover_at = jetzt
+        }
+        const { error } = await supabase.from('shift_logs').update(felder).eq('id', currentLogId)
+        // Fällt der Insert wegen fehlender Spalten durch (Migration noch nicht
+        // gelaufen), soll wenigstens das Auschecken klappen — sonst hinge jemand
+        // in einer Schicht fest, die er nicht beenden kann.
+        if (error && felder.handover_text) {
+          console.warn('Übergabe konnte nicht gespeichert werden:', error.message)
+          setUebergabeMoeglich(false)
+          await supabase.from('shift_logs').update({ checked_out_at: jetzt }).eq('id', currentLogId)
+          alert('⚠️ Die Schicht wurde beendet, aber die Übergabe konnte nicht gespeichert werden.\nBitte gib sie einem Admin durch.')
+        }
+      } else if (text && text.trim()) {
+        alert('⚠️ Zu dieser Schicht gibt es keinen Check-in-Eintrag — die Übergabe konnte nicht gespeichert werden.')
       }
       // v2.9.6: Cleanup — falls aus irgendeinem Grund noch andere offene Logs für diesen User existieren, alle schließen
       await supabase.from('shift_logs')
-        .update({ checked_out_at: new Date().toISOString() })
+        .update({ checked_out_at: jetzt })
         .eq('display_name', displayName)
         .is('checked_out_at', null)
       setIsOnline(false)
       setCurrentLogId(null)
       setCurrentShift(null) // v3.77.1
       setCheckInTime(null)
+      setUebergabeDialog(false)
+      setUebergabeText('')
       await sendHeartbeat(false)
     } finally {
       checkOutLockRef.current = false
       setIsCheckingOut(false)
     }
   }
+
+  // ── v4.34.0: offene Übergaben laden ────────────────────────────────────────
+  // Gesucht sind Übergaben von ANDEREN aus den letzten 16 Stunden, die ich noch
+  // nicht bestätigt habe. 16 Stunden, weil damit auch eine Nachtschicht die
+  // Übergabe an die Frühschicht sicher erreicht, aber nichts von vorgestern
+  // wieder aufpoppt.
+  // `autoOeffnen` steuert, ob das Fenster von selbst aufspringt. Nur direkt nach
+  // dem Einchecken und im laufenden Betrieb — beim bloßen Öffnen des Portals
+  // reicht der pinke Hinweis, sonst poppt es jeden an, der nur kurz reinschaut.
+  const ladeUebergaben = React.useCallback(async (autoOeffnen = true) => {
+    if (!displayName || !uebergabeMoeglich) return
+    const seit = new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString()
+    const { data, error } = await supabase
+      .from('shift_logs')
+      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack')
+      .not('handover_text', 'is', null)
+      .gte('checked_out_at', seit)
+      .order('checked_out_at', { ascending: false })
+      .limit(20)
+    if (error) {
+      // Fehlende Spalten = Migration noch nicht ausgeführt. Dann bleibt das
+      // ganze Übergabe-Feature still aus, statt bei jedem Laden zu meckern.
+      console.warn('Übergaben laden fehlgeschlagen:', error.message)
+      setUebergabeMoeglich(false)
+      return
+    }
+    const offen = (data || []).filter(l =>
+      l.display_name !== displayName && !(l.handover_ack || []).includes(displayName)
+    )
+    // Nur aufspringen, wenn wirklich etwas Neues dazugekommen ist — sonst ginge
+    // das Fenster alle 30 Sekunden wieder auf, nachdem man es zugeklickt hat.
+    // Die Merkliste wird NUR beim Aufspringen fortgeschrieben. Täte sie es auch
+    // beim stillen Laden (Mount), gälte eine Übergabe schon als gezeigt, bevor
+    // sie jemand gesehen hat — und beim Einchecken käme kein Fenster mehr.
+    setEingangUebergaben(offen)
+    if (!autoOeffnen) return
+    const neu = offen.some(l => !bekannteUebergabenRef.current.has(l.id))
+    bekannteUebergabenRef.current = new Set(offen.map(l => l.id))
+    if (neu) setUebergabeEingangOffen(true)
+  }, [displayName, uebergabeMoeglich])
+
+  // Lesebestätigung. Der Stand wird direkt vorher frisch geholt — das verkleinert
+  // das Fenster, in dem die Bestätigung eines Kollegen überschrieben wird, schließt
+  // es aber nicht (zwischen Lesen und Schreiben liegt ein Roundtrip). Wirklich
+  // atomar wäre nur ein `array_append` per RPC. Für ein Team dieser Größe, in dem
+  // zwei Leute dieselbe Übergabe kaum in derselben Sekunde abhaken, bewusst so
+  // gelassen — die Folge wäre lediglich ein zweites Aufpoppen, kein Datenverlust.
+  const bestaetigeUebergabe = async (log) => {
+    setUebergabeLaedt(true)
+    try {
+      const { data: frisch } = await supabase
+        .from('shift_logs').select('handover_ack').eq('id', log.id).maybeSingle()
+      const bisher = frisch?.handover_ack || log.handover_ack || []
+      if (bisher.includes(displayName)) {
+        setEingangUebergaben(prev => prev.filter(l => l.id !== log.id))
+        return
+      }
+      const { error } = await supabase.from('shift_logs')
+        .update({ handover_ack: [...bisher, displayName] })
+        .eq('id', log.id)
+      if (error) {
+        alert('⚠️ Bestätigung konnte nicht gespeichert werden. Bitte nochmal versuchen.')
+        return
+      }
+      // Updater-Form, nicht aus der Closure ableiten: zwischen Klick und hier
+      // liegen zwei Roundtrips, in denen das 30-Sekunden-Intervall eine weitere
+      // Übergabe nachgeladen haben kann. Aus der Closure gerechnet fiele die
+      // wieder aus der Liste. Das Schließen des Fensters erledigt der Effect unten.
+      setEingangUebergaben(prev => prev.filter(l => l.id !== log.id))
+    } finally {
+      setUebergabeLaedt(false)
+    }
+  }
+
+  // v4.34.0: Ist nichts mehr offen, schließt sich das Fenster von selbst.
+  // Als Effect und nicht im State-Updater — dort wäre es ein Seiteneffekt, den
+  // React unter StrictMode doppelt ausführt.
+  useEffect(() => {
+    if (eingangUebergaben.length === 0) setUebergabeEingangOffen(false)
+  }, [eingangUebergaben.length])
+
+  // v4.34.0: Beim Öffnen des Portals einmal nachsehen, ob eine Übergabe wartet —
+  // ohne Fenster, nur der Hinweis-Chip. Aufspringen soll es nach dem Einchecken.
+  useEffect(() => {
+    ladeUebergabenRef.current = ladeUebergaben
+    if (!isPreview && displayName) ladeUebergaben(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayName, isPreview, ladeUebergaben])
 
   useEffect(() => {
     if (isPreview) {
@@ -1166,6 +1334,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       loadMyTodos()
       sendHeartbeat(isOnlineRef.current)
 
+      // v4.34.0: Übergaben mitziehen, solange die Schicht läuft. Der Normalfall ist
+      // Überlappung — wer um 08:00 eincheckt, bekommt die Übergabe der Nachtschicht
+      // erst um 08:05. Ohne diesen Takt erschiene sie erst nach einem Neuladen der
+      // Seite, also meist gar nicht. Steht bewusst VOR den Auto-Checkout-Prüfungen:
+      // sonst bekäme niemand mit manuell gestarteter Schicht ('Manuell') je eine.
+      if (isOnlineRef.current && currentLogIdRef.current) ladeUebergabenRef.current?.()
+
       // Auto-checkout check
       if (!isOnlineRef.current || !currentLogIdRef.current) return
       // v3.77.1: Nur die Schicht prüfen, in die tatsächlich eingecheckt wurde. Ohne bekannte
@@ -1181,17 +1356,34 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       const nowM = nowMins % 100
       const nowTotal = nowH * 60 + nowM
 
+      // v4.34.0: Erst ALLE Zellen der eingecheckten Schicht ansehen und das
+      // SPÄTESTE Ende bestimmen — dann entscheiden.
+      // Vorher wurde ausgecheckt, sobald die erste passende Zelle abgelaufen war.
+      // Mit Zeiten pro Zelle (geteilte Schicht, time_override) ist das der Regelfall:
+      // wer bei Model A bis 12:00 und bei Model B bis 16:00 eingeteilt ist, flog
+      // um 12:01 raus, obwohl er noch vier Stunden Schicht hatte.
+      let spaetestesEnde = null
+      let nowAdjMax = nowTotal
       for (const sched of next7SchedulesRef.current) {
         const times = sched.shift_times || {}
         const assignments = sched.assignments || {}
         for (const [key, val] of Object.entries(assignments)) {
           const parts = key.split('__')
-          if (parts[1] !== todayIsoStr || val.chatter !== displayName) continue
+          if (parts[1] !== todayIsoStr) continue
+          // Auch die zweite Hälfte einer geteilten Schicht wird automatisch
+          // ausgecheckt — vorher lief deren Log bis zum nächsten manuellen Klick weiter.
+          // Namen normalisiert vergleichen, wie beim Check-in und in der 7-Tage-Liste.
+          const meLc = (displayName || '').trim().toLowerCase()
+          const binHaupt = (val.chatter || '').trim().toLowerCase() === meLc
+          const binZweit = !binHaupt && zellModus(val) === 'split'
+            && (val.trainee || '').trim().toLowerCase() === meLc
+          if (!binHaupt && !binZweit) continue
           const modelId = parts[0]
           const shift = parts[2]
           if (shift !== myShift) continue // v3.77.1: nur die eingecheckte Schicht kann auschecken
           // v2.9.7: Cell-Override hat Vorrang vor Standard-Zeit
-          const timeStr = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+          const standardZeit = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+          const timeStr = meineSpanne(val, standardZeit, binZweit)
           if (!timeStr) continue
           const endStr = timeStr.split('-')[1]?.trim()
           if (!endStr) continue
@@ -1202,17 +1394,20 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           let endTotal = endH * 60 + endM
           const nowAdj = (endH < startH && nowTotal < startH * 60) ? nowTotal + 1440 : nowTotal
           if (endH < startH) endTotal += 1440
-          if (nowAdj >= endTotal + 1) {
-            // Auto checkout
-            await supabase.from('shift_logs').update({ checked_out_at: new Date().toISOString() }).eq('id', currentLogIdRef.current)
-            setIsOnline(false)
-            setCurrentLogId(null)
-            setCurrentShift(null) // v3.77.1
-            setCheckInTime(null)
-            sendHeartbeat(false)
-            return
+          if (spaetestesEnde == null || endTotal > spaetestesEnde) {
+            spaetestesEnde = endTotal
+            nowAdjMax = nowAdj
           }
         }
+      }
+      if (spaetestesEnde != null && nowAdjMax >= spaetestesEnde + 1) {
+        await supabase.from('shift_logs').update({ checked_out_at: new Date().toISOString() }).eq('id', currentLogIdRef.current)
+        setIsOnline(false)
+        setCurrentLogId(null)
+        setCurrentShift(null) // v3.77.1
+        setCheckInTime(null)
+        sendHeartbeat(false)
+        return
       }
     }, 30000)
     return () => clearInterval(interval)
@@ -1557,14 +1752,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       const modelObj = models.find(m => String(m.id) === String(modelId))
       // v2.9.7: Cell-Override hat Vorrang
       const isOverridden = !!val.time_override
-      const timeStr = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
-      const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
+      const standardZeit = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
       const asTrainee = valTraineeLc === myNameLc && valChatterLc !== myNameLc
-      const traineeMode = val.trainee_mode || 'anlernen'
+      const traineeMode = zellModus(val)
+      // v4.34.0: Bei geteilter Schicht sieht jeder SEINEN Abschnitt — inklusive
+      // Check-in-Fenster und Ablauf der Schicht in der 7-Tage-Liste.
+      const timeStr = meineSpanne(val, standardZeit, asTrainee)
+      const localTime = timeStr ? convertTimeToLocal(timeStr) : ''
+      const partner = asTrainee ? val.chatter : val.trainee
       const gkey = `${berlinDate}__${shift}`
       const g = groups[gkey] || (groups[gkey] = { berlinDate, shift, timeStr, models: [] })
       if (!g.timeStr && timeStr) g.timeStr = timeStr
-      g.models.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter, isOverridden })
+      g.models.push({ modelId, modelName: modelObj?.name || modelId, timeStr, localTime, asTrainee, traineeMode, mainChatter: val.chatter, partner, isOverridden })
     }
     for (const g of Object.values(groups)) {
       const window = shiftWindowInstants(g.berlinDate, g.timeStr)
@@ -1877,7 +2076,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   </button>
                 </>
               ) : (
-                <button onClick={checkOut} disabled={isCheckingOut} style={{ background: isCheckingOut ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                /* v4.34.0: Auschecken geht jetzt über das Übergabe-Fenster.
+                   Ohne die Migration (uebergabeMoeglich === false) bleibt es beim
+                   direkten Auschecken wie bisher. */
+                <button onClick={() => { if (!uebergabeMoeglich) { checkOut(); return } setUebergabeText(''); setUebergabeDialog(true) }} disabled={isCheckingOut} style={{ background: isCheckingOut ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                   {isCheckingOut ? '⏳ ...' : '✕ Schicht beenden'}
                 </button>
               )}
@@ -1930,6 +2132,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           })
           if (isOnline && hasShiftNote) chips.push({
             key: 'note-ok', tone: '#10b981', icon: '✅', label: 'Schichtnotiz erledigt', onClick: null,
+          })
+          // v4.34.0: Übergabe der Vorschicht — bleibt stehen, bis sie bestätigt ist.
+          if (eingangUebergaben.length > 0) chips.push({
+            key: 'uebergabe', tone: '#ec4899', icon: '🤝',
+            count: eingangUebergaben.length > 1 ? eingangUebergaben.length : null,
+            label: eingangUebergaben.length > 1 ? 'Übergaben lesen' : 'Übergabe der Vorschicht',
+            onClick: () => setUebergabeEingangOffen(true),
           })
           if (openContent > 0) chips.push({
             key: 'content', tone: '#06b6d4', count: openContent, label: 'Custom offen',
@@ -2081,6 +2290,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     : s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
                   // v2.9.0: Bin ich Trainee/Co bei mind. einem Model in dieser Schicht?
                   const traineeEntry = s.models.find(m => m.asTrainee)
+                  // v4.34.0: geteilte Schicht auch aus Sicht des Hauptchatters erkennen
+                  const splitEntry = s.models.find(m => m.traineeMode === 'split' && m.partner)
                   // Standard: nur heute offen. Klick auf eine Zeile klappt sie auf/zu.
                   const isOpen = openShiftIdx === i || (openShiftIdx === null && today)
                   return (
@@ -2105,15 +2316,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {traineeEntry && (() => {
-                            const isCo = traineeEntry.traineeMode === 'co'
+                          {/* v4.34.0: Kennzeichnung jetzt auch für den HAUPTchatter einer
+                              geteilten Schicht — vorher sah nur die zweite Person, dass
+                              sie sich die Schicht teilt. */}
+                          {(traineeEntry || splitEntry) && (() => {
+                            const eintrag = traineeEntry || splitEntry
+                            const meta = MODUS_META[eintrag.traineeMode] || MODUS_META.anlernen
+                            const gegenueber = eintrag.partner || eintrag.mainChatter
                             return (
                               <span style={{
                                 fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 700,
-                                background: isCo ? 'rgba(245,158,11,0.15)' : 'rgba(6,182,212,0.15)',
-                                color: isCo ? '#f59e0b' : '#06b6d4',
-                                border: `1px solid ${isCo ? 'rgba(245,158,11,0.3)' : 'rgba(6,182,212,0.3)'}`,
-                              }}>{isCo ? '👥 Co' : '🎓 Anlernen'} · mit {traineeEntry.mainChatter}</span>
+                                background: `${meta.color}26`, color: meta.color,
+                                border: `1px solid ${meta.color}4D`,
+                              }}>{meta.icon} {meta.label}{gegenueber ? ` · mit ${gegenueber}` : ''}</span>
                             )
                           })()}
                           {s.reminder && (
@@ -2997,6 +3212,74 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )}
         </div>
       )}
+      {/* ── v4.34.0: Schichtübergabe — Fenster beim Auschecken ──────────────────
+          Freiwillig: „Ohne Übergabe beenden" steht gleichberechtigt daneben.
+          Ein Pflichtfeld würde nur dazu führen, dass „nix" eingetragen wird. */}
+      {uebergabeDialog && (
+        <div onClick={() => !isCheckingOut && setUebergabeDialog(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>🤝 Schichtübergabe</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
+              Gibt es etwas, das die nächste Schicht wissen muss? Besonderheiten bei einem Model,
+              ein angefangenes Gespräch, ein offener Custom. Wenn nichts ansteht, einfach ohne Übergabe beenden.
+            </div>
+            <textarea autoFocus value={uebergabeText} onChange={e => setUebergabeText(e.target.value)}
+              placeholder="z. B. Lisa: Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €."
+              rows={5}
+              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+              <button onClick={() => checkOut(uebergabeText)} disabled={isCheckingOut || !uebergabeText.trim()}
+                style={{ flex: '1 1 190px', background: uebergabeText.trim() ? '#ec4899' : 'var(--border)', color: uebergabeText.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: (isCheckingOut || !uebergabeText.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {isCheckingOut ? '⏳ ...' : '🤝 Übergeben & beenden'}
+              </button>
+              <button onClick={() => checkOut(null)} disabled={isCheckingOut}
+                style={{ flex: '1 1 160px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                Ohne Übergabe beenden
+              </button>
+            </div>
+            <button onClick={() => setUebergabeDialog(false)} disabled={isCheckingOut}
+              style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 6 }}>
+              Abbrechen — Schicht läuft weiter
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── v4.34.0: Übergaben der Vorschicht, beim Einchecken ───────────────── */}
+      {uebergabeEingangOffen && eingangUebergaben.length > 0 && (
+        <div onClick={() => setUebergabeEingangOffen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: '100%', maxWidth: 520, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
+              🤝 {eingangUebergaben.length === 1 ? 'Übergabe der Vorschicht' : `${eingangUebergaben.length} Übergaben`}
+            </div>
+            {eingangUebergaben.map(log => {
+              const wann = log.handover_at || log.checked_out_at
+              return (
+                <div key={log.id} style={{ background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.3)', borderRadius: 10, padding: 14, marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: '#ec4899', fontWeight: 700, marginBottom: 6 }}>
+                    {log.display_name}{log.shift ? ` · ${log.shift}` : ''}
+                    {wann ? ` · ${new Date(wann).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{log.handover_text}</div>
+                  <button onClick={() => bestaetigeUebergabe(log)} disabled={uebergabeLaedt}
+                    style={{ marginTop: 12, background: '#10b981', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: uebergabeLaedt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    ✓ Gelesen & verstanden
+                  </button>
+                </div>
+              )
+            })}
+            <button onClick={() => setUebergabeEingangOffen(false)}
+              style={{ width: '100%', marginTop: 4, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 9, borderRadius: 8 }}>
+              Später lesen
+            </button>
+          </div>
+        </div>
+      )}
+
       {!isPreview && displayName && <SurveyModal displayName={displayName} role="chatter" />}
       {/* Popup bleibt: es stupst bei neuen Angeboten an. Die Glocke daneben ist das
           Archiv — weggeklickte Angebote sind dort weiter erreichbar. */}

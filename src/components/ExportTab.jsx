@@ -226,6 +226,17 @@ export default function ExportTab() {
             trainee: val?.trainee || null,
             trainee_mode: val?.trainee_mode || null,
             zeit: val?.time_override || week.shift_times?.[`${parts[0]}__${parts[2]}`] || null,
+            // v4.34.0: Abschnitte einer geteilten Schicht (trainee_mode = 'split').
+            // Ohne diese Felder wäre aus dem Export nicht ablesbar, wer welchen Teil
+            // gearbeitet hat — genau das braucht die Lohn-Auswertung.
+            // Die Zeiten werden NUR ausgegeben, wenn die Zelle wirklich als geteilt
+            // markiert ist. Sonst könnten Reste einer aufgelösten Teilung als
+            // gearbeitete Zeit gelesen werden.
+            geteilt: val?.trainee_mode === 'split',
+            geteilt_chatter_von: val?.trainee_mode === 'split' ? (val?.split_a_von || null) : null,
+            geteilt_chatter_bis: val?.trainee_mode === 'split' ? (val?.split_a_bis || null) : null,
+            geteilt_zweiter_von: val?.trainee_mode === 'split' ? (val?.split_b_von || null) : null,
+            geteilt_zweiter_bis: val?.trainee_mode === 'split' ? (val?.split_b_bis || null) : null,
             note: val?.note || null,
             confirmed: val?.confirmed || false,
           })
