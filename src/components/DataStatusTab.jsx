@@ -28,6 +28,37 @@ function Haken({ da }) {
     : <span style={{ color: 'var(--red)', fontWeight: 700 }}>✗</span>
 }
 
+// v4.35.1 · Fehler behoben: Supabase liefert bei einer Abfrage ohne .range()
+// standardmaessig nur bis zu 1000 Zeilen zurueck — still, ohne Fehlermeldung.
+// Bei mehreren Chattern je Account und Tag ist model_chatter_daily am
+// 24.08.2026 ueber diese Grenze gewachsen (1090 Zeilen). Dadurch sah die
+// Datenstand-Seite fuer aeltere Tage (u. a. 11.08.2026) nur noch einen
+// Bruchteil der gespeicherten Zeilen — die Upload-Box selbst war nicht
+// betroffen, weil sie gezielt mit .eq('business_date', ...) auf einen
+// einzigen Tag filtert und darum nie an das Limit stiess.
+// Fix: die ganze Tabelle seitenweise laden, bis eine Seite kleiner als das
+// Limit zurueckkommt.
+const SEITENGROESSE = 1000
+
+async function ladeAlleZeilen() {
+  const alle = []
+  let von = 0
+  // Sicherheitsdeckel gegen eine Endlosschleife, falls Supabase je einen
+  // Fehler zurueckgibt, der still durchrutscht — 200 Seiten sind 200.000
+  // Zeilen, weit ueber dem, was diese Tabelle absehbar erreicht.
+  for (let seite = 0; seite < 200; seite++) {
+    const { data, error } = await supabase
+      .from('model_chatter_daily')
+      .select('business_date, creator, revenue')
+      .range(von, von + SEITENGROESSE - 1)
+    if (error) { console.error('Datenstand laden:', error); break }
+    alle.push(...(data || []))
+    if (!data || data.length < SEITENGROESSE) break
+    von += SEITENGROESSE
+  }
+  return alle
+}
+
 export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = [] }) {
   const [einzel, setEinzel] = useState([])
   const [laedt, setLaedt] = useState(true)
@@ -36,10 +67,8 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
   useEffect(() => {
     let abgebrochen = false
     ;(async () => {
-      const { data, error } = await supabase
-        .from('model_chatter_daily').select('business_date, creator, revenue')
-      if (error) console.error('Datenstand laden:', error)
-      if (!abgebrochen) { setEinzel(data || []); setLaedt(false) }
+      const alle = await ladeAlleZeilen()
+      if (!abgebrochen) { setEinzel(alle); setLaedt(false) }
     })()
     return () => { abgebrochen = true }
   }, [])
