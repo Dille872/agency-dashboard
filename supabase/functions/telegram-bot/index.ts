@@ -46,6 +46,80 @@ async function tg(chatId: string, text: string) {
 function money(v: number) { return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function norm(s: string) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
 
+// ── v4.35.0: Schichtübergabe im Bot ──────────────────────────────────────────
+// Ein Teil des Teams arbeitet ausschließlich über Telegram und öffnet das
+// Dashboard nie. Ohne diesen Abschnitt wäre die Übergabe für diese Leute
+// unsichtbar — sie würden weder gefragt noch informiert, und die Kette risse
+// genau dort, wo sie am nötigsten ist.
+
+const escHtml = (s: string) =>
+  String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// Wie lange nach dem Auschecken eine Antwort noch als Übergabe gilt.
+const UEBERGABE_FENSTER_MIN = 15
+// Wie weit zurück Übergaben anderer noch gezeigt werden — wie im Portal.
+const UEBERGABE_RUECKBLICK_H = 16
+
+// Ruft die Function auf, die ermittelt, wer übernimmt, und die Nachricht
+// verschickt. Schlägt sie fehl, ist nichts verloren: die Übergabe steht in der
+// Datenbank und im Dashboard — nur die Telegram-Zustellung fehlt.
+async function benachrichtigeUebergabe(logId: string | number) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/handover-notify`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ log_id: logId }),
+    })
+    if (!r.ok) console.error(`[uebergabe] Versand fehlgeschlagen: ${r.status} — ${await r.text().catch(() => '')}`)
+    return r.ok
+  } catch (e) {
+    console.error('[uebergabe] handover-notify nicht erreichbar:', e)
+    return false
+  }
+}
+
+// Das zuletzt beendete Log dieser Person, sofern es noch im Antwortfenster liegt
+// und noch keine Übergabe trägt. `handover_at` OHNE `handover_text` ist dabei der
+// Merker „der Bot hat gefragt und wartet auf die Antwort" — so braucht der Ablauf
+// keinen eigenen Zustand und übersteht auch einen Neustart der Function.
+async function wartendeUebergabe(name: string) {
+  const seit = new Date(Date.now() - UEBERGABE_FENSTER_MIN * 60000).toISOString()
+  const logs = await q('shift_logs',
+    `?display_name=eq.${encodeURIComponent(name)}` +
+    `&checked_out_at=gte.${seit}&handover_text=is.null&handover_at=not.is.null` +
+    `&order=checked_out_at.desc&limit=1`)
+  return Array.isArray(logs) ? logs[0] : null
+}
+
+// Offene Übergaben ANDERER, die diese Person noch nicht bestätigt hat.
+async function offeneUebergaben(name: string) {
+  const seit = new Date(Date.now() - UEBERGABE_RUECKBLICK_H * 3600000).toISOString()
+  // Zeitgrenze über `handover_at`, nicht über `checked_out_at`: eine per
+  // /uebergabe während der laufenden Schicht geschriebene Übergabe hat noch gar
+  // kein Check-out und wäre sonst unsichtbar — obwohl die Telegram-Nachricht
+  // schon draußen ist und zu /gelesen auffordert.
+  //
+  // Großzügiges Limit, weil erst danach in JS gefiltert wird (eigene Übergaben
+  // und bereits bestätigte fallen dort weg). Mit einem knappen Limit würden im
+  // Betrieb offene Übergaben still hinten herausfallen.
+  const logs = await q('shift_logs',
+    `?handover_text=not.is.null&handover_at=gte.${seit}` +
+    `&order=handover_at.desc&limit=100`)
+  if (!Array.isArray(logs)) return []
+  return logs.filter((l: any) =>
+    norm(l.display_name || '') !== norm(name) &&
+    !(l.handover_ack || []).some((a: string) => norm(a) === norm(name))
+  )
+}
+
+function uebergabeText(l: any) {
+  const wann = l.handover_at || l.checked_out_at
+  const zeit = wann
+    ? new Date(wann).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : ''
+  return `🤝 <b>${escHtml(l.display_name)}</b>${l.shift ? ` · ${escHtml(l.shift)}` : ''}${zeit ? ` · ${zeit}` : ''}\n${escHtml(l.handover_text)}`
+}
+
 // ── Welcome-Messages ──
 const WELCOME_MODEL = `👋 Hi und willkommen bei Thirteen 87 Collective!
 
@@ -98,6 +172,24 @@ Ich bin der Agency-Bot 🤖 — hier ist was ich für dich kann.
   <code>/off</code> → Wenn deine Schicht zu Ende ist. Sonst läufst
        du im System weiter als „online" und das
        verfälscht die Auswertungen.
+
+🤝 <b>SCHICHTÜBERGABE</b>
+
+Wenn etwas läuft, das die nächste Schicht wissen muss —
+ein angefangenes Gespräch, ein offener Custom, eine
+Besonderheit bei einem Model — gib es weiter:
+
+  <code>/off Kunde bei Lyra meldet sich heute Abend</code>
+       → beendet die Schicht UND übergibt in einem Rutsch
+
+  <code>/off</code> allein → ich frage nach, du antwortest
+       einfach mit deinem Text (oder <code>/nichts</code>)
+
+  <code>/uebergabe TEXT</code> → nachträglich, bis 12h danach
+  <code>/gelesen</code> → bestätigt, was für dich hinterlegt wurde
+
+Beim <code>/on</code> bekommst du automatisch, was die
+Vorschicht hinterlassen hat.
 
 📅 <b>DEIN PLAN</b>
 
@@ -568,9 +660,20 @@ serve(async (req) => {
     const chatterArr = await q('chatters_contact', `?telegram_id=eq.${fromId}&limit=1`)
     const chatterData = Array.isArray(chatterArr) ? chatterArr[0] : null
     if (chatterData) {
-      const todayIso = new Date().toISOString().slice(0, 10)
+      // v4.35.0: Berliner Datum statt UTC. Der Dienstplan ist auf Berliner Tage
+      // geschlüsselt — zwischen Mitternacht und 01:00 bzw. 02:00 Berlin stand hier
+      // der Vortag. Ein Check-in in diesem Fenster fand seine Zuweisung nicht,
+      // landete als 'Schicht' im Log und fiel damit aus der Zuordnung der
+      // Schichtübergabe heraus.
+      const todayIso = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 
       if (lower === '/on' || lower === '/an') {
+        // v4.35.0: Eine noch offene Übergabe-Rückfrage vom letzten /off verfällt
+        // hiermit. Sonst würde die erste Nachricht in der neuen Schicht als
+        // Übergabe zur alten verbucht.
+        const nochOffen = await wartendeUebergabe(chatterData.name)
+        if (nochOffen) await upd('shift_logs', `?id=eq.${nochOffen.id}`, { handover_at: null })
+
         const existing = await q('shift_logs', `?display_name=eq.${encodeURIComponent(chatterData.name)}&checked_out_at=is.null&limit=1`)
         if (Array.isArray(existing) && existing.length > 0) {
           await tg(fromId, '⚠ Du bist bereits eingecheckt.')
@@ -589,11 +692,138 @@ serve(async (req) => {
           await ups('online_status', { display_name: chatterData.name, last_seen: new Date().toISOString(), shift_online: true }, 'display_name')
           await tg(fromId, `✅ Schicht gestartet!\n${shiftName}${modelNames.length > 0 ? ` · ${modelNames.join(', ')}` : ''}\n\nSende /off wenn fertig.`)
           for (const adminId of ADMIN_IDS) await tg(adminId, `✅ <b>${chatterData.name}</b> hat Schicht gestartet`)
+
+          // v4.35.0: Was hat die Vorschicht hinterlassen? Kommt direkt hinter der
+          // Startbestätigung — das ist der Moment, in dem es gelesen wird.
+          const offen = await offeneUebergaben(chatterData.name)
+          if (offen.length > 0) {
+            const kopf = offen.length === 1
+              ? '📋 <b>Übergabe der Vorschicht:</b>'
+              : `📋 <b>${offen.length} Übergaben für dich:</b>`
+            await tg(fromId, `${kopf}\n\n${offen.map(uebergabeText).join('\n\n')}\n\n` +
+              'Bestätige mit /gelesen, wenn du es gesehen hast.')
+          }
         }
         return new Response('ok')
       }
 
-      if (lower === '/off' || lower === '/ab') {
+      // v4.35.0: Offene Übergaben bestätigen — das Gegenstück zu
+      // „Gelesen & verstanden" im Portal. Bestätigt alles, was gerade offen ist;
+      // einzeln abzuhaken wäre über Telegram mehr Aufwand als Nutzen.
+      if (lower === '/gelesen') {
+        const offen = await offeneUebergaben(chatterData.name)
+        if (offen.length === 0) {
+          await tg(fromId, '✅ Für dich ist gerade keine Übergabe offen.')
+        } else {
+          for (const l of offen) {
+            // Stand direkt vorher frisch holen — sonst überschreibt diese
+            // Bestätigung die eines Kollegen, der im selben Moment quittiert.
+            const frisch = await q('shift_logs', `?id=eq.${l.id}&select=handover_ack&limit=1`)
+            const ack = Array.isArray(frisch) && Array.isArray(frisch[0]?.handover_ack)
+              ? frisch[0].handover_ack
+              : (Array.isArray(l.handover_ack) ? l.handover_ack : [])
+            if (ack.some((a: string) => norm(a) === norm(chatterData.name))) continue
+            await upd('shift_logs', `?id=eq.${l.id}`, { handover_ack: [...ack, chatterData.name] })
+          }
+          await tg(fromId, `✅ ${offen.length === 1 ? 'Übergabe' : `${offen.length} Übergaben`} bestätigt. Danke!`)
+          const von = [...new Set(offen.map((l: any) => l.display_name))].join(', ')
+          for (const adminId of ADMIN_IDS) {
+            await tg(adminId, `✅ <b>${escHtml(chatterData.name)}</b> hat die Übergabe von ${escHtml(von)} gelesen`)
+          }
+        }
+        return new Response('ok')
+      }
+
+      // v4.35.0: Übergabe nachreichen — auch lange nach dem Auschecken.
+      // Wer beim /off nichts geschrieben hat und es zehn Minuten später doch weiß,
+      // soll nicht erst ins Dashboard müssen.
+      if (lower === '/uebergabe' || lower === '/übergabe'
+          || lower.startsWith('/uebergabe ') || lower.startsWith('/übergabe ')) {
+        const inhalt = text.replace(/^\/(uebergabe|übergabe)\s*/i, '').trim()
+        if (!inhalt) {
+          await tg(fromId, 'Schreib den Text direkt dahinter, z. B.:\n<code>/uebergabe Bei Lyra läuft ein Gespräch, Kunde meldet sich heute Abend</code>')
+          return new Response('ok')
+        }
+        // Läuft gerade eine Schicht, gehört die Übergabe an DIESE — sonst hinge
+        // sie an der vorherigen und würde deren Text nochmal mitverschicken.
+        // Sonst: das jüngste beendete Log der letzten 12 Stunden.
+        const laufend = await q('shift_logs',
+          `?display_name=eq.${encodeURIComponent(chatterData.name)}&checked_out_at=is.null&limit=1`)
+        let log = Array.isArray(laufend) ? laufend[0] : null
+        if (!log) {
+          const seit12 = new Date(Date.now() - 12 * 3600000).toISOString()
+          const letzte = await q('shift_logs',
+            `?display_name=eq.${encodeURIComponent(chatterData.name)}` +
+            `&checked_out_at=gte.${seit12}&order=checked_out_at.desc&limit=1`)
+          log = Array.isArray(letzte) ? letzte[0] : null
+        }
+        if (!log) {
+          await tg(fromId, '⚠ Ich finde keine Schicht der letzten 12 Stunden, an die ich das hängen könnte.\n\nSchick es einfach als normale Nachricht — dann geht es ans Team.')
+          return new Response('ok')
+        }
+        const bisher = log.handover_text ? `${log.handover_text}\n\n` : ''
+        await upd('shift_logs', `?id=eq.${log.id}`, {
+          handover_text: bisher + inhalt,
+          handover_at: new Date().toISOString(),
+        })
+        const raus = await benachrichtigeUebergabe(log.id)
+        await tg(fromId, raus
+          ? (log.handover_text ? '✅ An deine Übergabe angehängt und weitergeleitet.' : '✅ Übergabe gespeichert und weitergeleitet.')
+          : '✅ Übergabe gespeichert.\n\n⚠ Die Weiterleitung per Telegram hat nicht geklappt — sie steht aber im Dashboard und wird beim Einchecken angezeigt.')
+        return new Response('ok')
+      }
+
+      // v4.35.0: /nichts hat zwei Aufgaben.
+      //   a) die Rückfrage nach nacktem /off abwinken
+      //   b) eine gerade eben eingetragene Übergabe zurücknehmen
+      // (b) ist der Notausgang für den Fall, dass jemand nach dem /off etwas
+      // ganz anderes geschrieben hat und es als Übergabe verbucht wurde. Der Text
+      // geht dann als normale Nachricht ans Team — verloren ist er nie.
+      if (lower === '/nichts' || lower === '/keine') {
+        const wartend = await wartendeUebergabe(chatterData.name)
+        if (wartend) {
+          await upd('shift_logs', `?id=eq.${wartend.id}`, { handover_at: null })
+          await tg(fromId, '👍 Alles klar, keine Übergabe. Schönen Feierabend!')
+          return new Response('ok')
+        }
+        const seit = new Date(Date.now() - UEBERGABE_FENSTER_MIN * 60000).toISOString()
+        const frisch = await q('shift_logs',
+          `?display_name=eq.${encodeURIComponent(chatterData.name)}` +
+          `&handover_at=gte.${seit}&handover_text=not.is.null` +
+          `&order=handover_at.desc&limit=1`)
+        const log = Array.isArray(frisch) ? frisch[0] : null
+        // Nur zurücknehmen, solange sie noch NIEMAND gelesen hat. Ist sie
+        // bestätigt, wäre das Löschen doppelt falsch: die Telegram-Nachricht ist
+        // ohnehin draußen, und im Schicht-Log stünde danach ein „gelesen von …"
+        // ohne den Text, auf den es sich bezieht.
+        const schonGelesen = Array.isArray(log?.handover_ack) && log.handover_ack.length > 0
+        if (log && !schonGelesen) {
+          const zurueck = String(log.handover_text)
+          await upd('shift_logs', `?id=eq.${log.id}`, { handover_text: null, handover_at: null })
+          await ins('messages', {
+            model_name: chatterData.name, model_telegram_id: fromId,
+            direction: 'in', contact_type: 'chatter', text: zurueck,
+            status: 'received', read: false,
+          })
+          await forwardToAdmins(chatterData.name, 'chatter', zurueck, fromId)
+          await tg(fromId, '↩️ Zurückgenommen. Ich habe deinen Text stattdessen als normale Nachricht ans Team weitergeleitet.\n\n' +
+            '<i>Hinweis: Verschickte Telegram-Nachrichten lassen sich nicht zurückholen — wer sie schon bekommen hat, hat sie gesehen.</i>')
+        } else if (log && schonGelesen) {
+          await tg(fromId, `⚠ Die Übergabe wurde schon gelesen (${escHtml((log.handover_ack || []).join(', '))}) — ich lasse sie deshalb stehen.\n\n` +
+            'Wenn etwas daran falsch war, schreib es einfach als normale Nachricht, dann klärt das Team es.')
+        } else {
+          await tg(fromId, 'Da wartet gerade nichts auf eine Antwort.')
+        }
+        return new Response('ok')
+      }
+
+      // v4.35.0: /off nimmt jetzt eine Übergabe entgegen.
+      //   „/off Kunde XY meldet sich heute Abend"  → direkt gespeichert
+      //   „/off"                                    → der Bot fragt nach
+      // Ausschecken passiert in beiden Fällen sofort. Es darf nie daran hängen,
+      // ob jemand etwas zu übergeben hat — sonst bleibt eine Schicht offen stehen.
+      if (lower === '/off' || lower === '/ab' || lower.startsWith('/off ') || lower.startsWith('/ab ')) {
+        const mitgegeben = text.replace(/^\/(off|ab)\s*/i, '').trim()
         const existing = await q('shift_logs', `?display_name=eq.${encodeURIComponent(chatterData.name)}&checked_out_at=is.null&limit=1`)
         const log = Array.isArray(existing) ? existing[0] : null
         if (!log) {
@@ -601,10 +831,39 @@ serve(async (req) => {
         } else {
           const duration = Math.round((Date.now() - new Date(log.checked_in_at).getTime()) / 60000)
           const hours = Math.floor(duration / 60); const mins = duration % 60
-          await upd('shift_logs', `?id=eq.${log.id}`, { checked_out_at: new Date().toISOString() })
+          const jetzt = new Date().toISOString()
+          // Ein bereits per /uebergabe geschriebener Text darf hier NICHT
+          // verlorengehen. Früher stand hier `handover_text: mitgegeben || null` —
+          // ein nacktes /off hätte damit eine Viertelstunde vorher verschickte
+          // Übergabe wieder aus der Datenbank gelöscht.
+          const schonText = log.handover_text ? String(log.handover_text) : ''
+          const felder: Record<string, unknown> = { checked_out_at: jetzt }
+          if (mitgegeben) {
+            felder.handover_text = schonText ? `${schonText}\n\n${mitgegeben}` : mitgegeben
+            felder.handover_at = jetzt
+          } else if (!schonText) {
+            // `handover_at` ohne Text ist der Merker für die offene Rückfrage.
+            felder.handover_at = jetzt
+          }
+          await upd('shift_logs', `?id=eq.${log.id}`, felder)
           await ups('online_status', { display_name: chatterData.name, last_seen: new Date().toISOString(), shift_online: false }, 'display_name')
-          await tg(fromId, `👋 Schicht beendet!\nDauer: ${hours > 0 ? `${hours}h ` : ''}${mins}min\n\nGute Arbeit!`)
-          for (const adminId of ADMIN_IDS) await tg(adminId, `👋 <b>${chatterData.name}</b> Schicht beendet (${hours > 0 ? `${hours}h ` : ''}${mins}min)`)
+          const dauerText = `${hours > 0 ? `${hours}h ` : ''}${mins}min`
+          if (mitgegeben) {
+            const raus = await benachrichtigeUebergabe(log.id)
+            await tg(fromId, `👋 Schicht beendet!\nDauer: ${dauerText}\n\n` + (raus
+              ? '✅ Deine Übergabe ist raus. Gute Arbeit!'
+              : '✅ Übergabe gespeichert.\n⚠ Die Weiterleitung per Telegram hat nicht geklappt — sie steht aber im Dashboard und wird beim Einchecken angezeigt.'))
+          } else if (schonText) {
+            // Übergabe steht schon — dann nicht nochmal danach fragen.
+            await tg(fromId, `👋 Schicht beendet!\nDauer: ${dauerText}\n\n✅ Deine Übergabe ist bereits hinterlegt. Gute Arbeit!`)
+          } else {
+            await tg(fromId,
+              `👋 Schicht beendet!\nDauer: ${dauerText}\n\n` +
+              '🤝 <b>Gibt es etwas für die nächste Schicht?</b>\n' +
+              'Ein angefangenes Gespräch, ein offener Custom, eine Besonderheit bei einem Model.\n\n' +
+              'Antworte einfach mit deinem Text — oder schick <code>/nichts</code>, wenn alles glatt lief.')
+          }
+          for (const adminId of ADMIN_IDS) await tg(adminId, `👋 <b>${escHtml(chatterData.name)}</b> Schicht beendet (${dauerText})`)
         }
         return new Response('ok')
       }
@@ -655,6 +914,26 @@ serve(async (req) => {
           await tg(fromId, `👥 <b>Gerade parallel online:</b>\n\n${others.map(n => `● ${n}`).join('\n')}`)
         }
         return new Response('ok')
+      }
+
+      // v4.35.0: Antwort auf die Übergabe-Rückfrage nach /off.
+      // Greift nur, wenn der Bot wirklich gefragt hat (`handover_at` gesetzt,
+      // `handover_text` noch leer) und das innerhalb der letzten 15 Minuten war.
+      // Sonst würde eine ganz normale Nachricht ans Team als Übergabe verbucht.
+      if (!text.startsWith('/')) {
+        const wartend = await wartendeUebergabe(chatterData.name)
+        if (wartend) {
+          await upd('shift_logs', `?id=eq.${wartend.id}`, {
+            handover_text: text.trim(),
+            handover_at: new Date().toISOString(),
+          })
+          const raus = await benachrichtigeUebergabe(wartend.id)
+          await tg(fromId, (raus
+            ? '✅ Übergabe gespeichert und an die nächste Schicht weitergeleitet. Danke!'
+            : '✅ Übergabe gespeichert.\n\n⚠ Die Weiterleitung per Telegram hat nicht geklappt — sie steht aber im Dashboard.') +
+            '\n\nWar das gar keine Übergabe? Schick <code>/nichts</code>, dann nehme ich es zurück und leite deinen Text ans Team weiter.')
+          return new Response('ok')
+        }
       }
 
       // FREITEXT von Chatter: speichern + Forward

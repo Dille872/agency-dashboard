@@ -9,7 +9,7 @@ import ChatterBell from './ChatterBell'
 import ChatterChat from './ChatterChat'
 import MessageSuggestions from './MessageSuggestions'
 import { getTheme, setTheme } from '../theme'
-import { sendTelegramMessage, notifyAdmins } from '../telegram'
+import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
 import { APP_VERSION } from '../version'
 import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
@@ -1122,6 +1122,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     if (checkOutLockRef.current) return
     checkOutLockRef.current = true
     setIsCheckingOut(true)
+    // v4.35.0: Log-ID, deren Übergabe nach dem Ausloggen zugestellt wird.
+    let zustellenFuer = null
     try {
       const jetzt = new Date().toISOString()
       if (currentLogId) {
@@ -1143,6 +1145,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           setUebergabeMoeglich(false)
           await supabase.from('shift_logs').update({ checked_out_at: jetzt }).eq('id', currentLogId)
           alert('⚠️ Die Schicht wurde beendet, aber die Übergabe konnte nicht gespeichert werden.\nBitte gib sie einem Admin durch.')
+        } else if (felder.handover_text) {
+          // v4.35.0: Zustellung erst NACH dem Ausloggen — siehe unten.
+          zustellenFuer = currentLogId
         }
       } else if (text && text.trim()) {
         alert('⚠️ Zu dieser Schicht gibt es keinen Check-in-Eintrag — die Übergabe konnte nicht gespeichert werden.')
@@ -1159,6 +1164,28 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       setUebergabeDialog(false)
       setUebergabeText('')
       await sendHeartbeat(false)
+
+      // v4.35.0: Übergabe aktiv zustellen — an die Leute, die laut Dienstplan
+      // übernehmen, plus Chris und Rey. Ohne das erreicht sie niemanden, der nur
+      // über Telegram arbeitet und das Portal gar nicht öffnet.
+      //
+      // Bewusst ERST HIER, nach Cleanup und Heartbeat: der Aufruf kann in einen
+      // Hinweis münden, und ein offener Dialog auf einem weggelegten Handy darf
+      // nicht dazu führen, dass jemand im System weiter als „online" geführt wird.
+      //
+      // Das Ergebnis wird ausgewertet — eine Erfolgsmeldung, obwohl niemand
+      // erreicht wurde, wäre schlimmer als gar keine: dann verlässt sich jemand
+      // darauf, dass die nächste Schicht Bescheid weiß.
+      if (zustellenFuer) {
+        const zustellung = await sendeSchichtuebergabe(zustellenFuer)
+        if (!zustellung?.ok) {
+          alert('✅ Deine Übergabe ist gespeichert.\n\n⚠️ Die Weiterleitung per Telegram hat nicht geklappt. Sie steht im Dashboard und erscheint beim Einchecken — gib im Zweifel kurz selbst Bescheid.')
+        } else if (zustellung.gefunden === 0) {
+          alert('✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\nℹ️ Im Dienstplan steht für die nächsten Stunden niemand, der übernimmt — sie wurde deshalb an keinen Chatter verschickt.')
+        } else if (!zustellung.zugestellt) {
+          alert('✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\n⚠️ Die nächste Schicht konnte nicht per Telegram erreicht werden (fehlende Telegram-ID). Sie sieht die Übergabe beim Einchecken im Portal.')
+        }
+      }
     } finally {
       checkOutLockRef.current = false
       setIsCheckingOut(false)
@@ -1180,9 +1207,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .from('shift_logs')
       .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack')
       .not('handover_text', 'is', null)
-      .gte('checked_out_at', seit)
-      .order('checked_out_at', { ascending: false })
-      .limit(20)
+      // Zeitgrenze über `handover_at`, nicht über `checked_out_at`: eine per
+      // Telegram (/uebergabe) während der laufenden Schicht geschriebene Übergabe
+      // hat noch kein Check-out und wäre sonst unsichtbar.
+      .gte('handover_at', seit)
+      // Großzügiges Limit, weil erst danach in JS gefiltert wird (eigene und
+      // bereits bestätigte fallen dort weg) — mit einem knappen Limit würden
+      // offene Übergaben still hinten herausfallen.
+      .order('handover_at', { ascending: false })
+      .limit(100)
     if (error) {
       // Fehlende Spalten = Migration noch nicht ausgeführt. Dann bleibt das
       // ganze Übergabe-Feature still aus, statt bei jedem Laden zu meckern.
@@ -3224,6 +3257,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
               Gibt es etwas, das die nächste Schicht wissen muss? Besonderheiten bei einem Model,
               ein angefangenes Gespräch, ein offener Custom. Wenn nichts ansteht, einfach ohne Übergabe beenden.
+              <br />
+              <span style={{ opacity: 0.75 }}>
+                Geht automatisch per Telegram an die, die laut Dienstplan übernehmen — und an Chris und Rey.
+              </span>
             </div>
             <textarea autoFocus value={uebergabeText} onChange={e => setUebergabeText(e.target.value)}
               placeholder="z. B. Lisa: Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €."

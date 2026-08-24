@@ -50,4 +50,26 @@ export async function notifyAdmins(text) {
   await sendTelegramMessage(REY_TELEGRAM_ID, text)
 }
 
+// v4.35.0: Schichtübergabe verschicken.
+// Die Function ermittelt selbst, wer die Schicht übernimmt, und schickt die
+// Übergabe dorthin plus an Chris und Rey. Bewusst dieselbe Function, die auch
+// der Telegram-Bot ruft — die Frage „wer übernimmt?" darf es nur einmal geben.
+//
+// Der Aufrufer wertet das Ergebnis aus: `ok` (Aufruf geklappt), `gefunden`
+// (wie viele Nachfolger im Plan standen) und `zugestellt` (ob wenigstens einer
+// per Telegram erreicht wurde). Eine Erfolgsmeldung, obwohl niemand erreicht
+// wurde, wäre schlimmer als gar keine — dann verlässt sich jemand darauf, dass
+// die nächste Schicht Bescheid weiß.
+export async function sendeSchichtuebergabe(logId) {
+  if (!logId) return { ok: false, error: 'log_id fehlt' }
+  const { data, error } = await supabase.functions.invoke('handover-notify', {
+    body: { log_id: logId },
+  })
+  if (error) {
+    console.warn('handover-notify Fehler:', error)
+    return { ok: false, error: error.message || 'handover-notify fehlgeschlagen' }
+  }
+  return data
+}
+
 export { OWNER_ID }

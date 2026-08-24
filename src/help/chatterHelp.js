@@ -74,9 +74,11 @@ export const HELP_TOPICS = [
       'Am Ende der Schicht auf „Schicht beenden" tippen. Es öffnet sich die Schichtübergabe.',
       'Übergabe: Steht etwas an, das die nächste Schicht wissen muss — ein angefangenes Gespräch, ein offener Custom, eine Besonderheit bei einem Model — schreib es dort hinein und wähl „Übergeben & beenden". Wenn nichts ansteht, „Ohne Übergabe beenden".',
       'Wer nach dir eincheckt, bekommt deine Übergabe angezeigt und muss sie mit „Gelesen & verstanden" bestätigen. Erst dann verschwindet sie.',
+      'Zusätzlich geht sie sofort per Telegram raus: an die Leute, die laut Dienstplan die nächste Schicht übernehmen, und an Chris und Rey. Du musst also niemandem hinterherschreiben.',
     ],
     watch: [
       'Die Übergabe ist freiwillig — aber sie ist die einzige Stelle, an der die nächste Schicht sicher mitbekommt, was gerade läuft. Der Chat geht dabei leicht unter.',
+      'Auch ohne Dashboard möglich: Im Telegram-Bot beendest du mit „/off" und deinem Text in einer Zeile, oder mit „/off" allein — dann fragt der Bot nach. Nachreichen geht mit „/uebergabe TEXT", bestätigen mit „/gelesen".',
       'Wartet eine Übergabe auf dich, siehst du sie direkt nach dem Einchecken. Klickst du das Fenster weg, kommst du über den pinken Hinweis „Übergabe der Vorschicht" wieder dran.',
       'Was du übergibst, sehen auch Chris und Rey im Schicht-Log — inklusive der Angabe, wer sie gelesen hat.',
       'Wenn du das Auschecken vergisst: 1 Minute nach Schichtende checkt das Portal dich automatisch aus. Dabei kannst du keine Übergabe mehr schreiben — dann lieber vorher Bescheid geben.',
