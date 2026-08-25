@@ -66,6 +66,18 @@ async function q(table: string, params = '') {
   return r.json()
 }
 
+async function upd(table: string, params: string, data: object) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, {
+    method: 'PATCH',
+    headers: { ...H, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(data),
+  })
+  if (!r.ok) {
+    console.error(`[db] update auf ${table} fehlgeschlagen: ${r.status} — ${await r.text().catch(() => '')}`)
+  }
+  return r.ok
+}
+
 async function tg(chatId: string, text: string) {
   const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: 'POST',
@@ -310,6 +322,12 @@ serve(async (req) => {
         const ich = personen.find(p => norm(p.name) === absenderLc)
 
         for (const p of personen) {
+          // Vorsicht bei Namen: `handover_for` enthält die Schreibweise aus dem
+          // Dienstplan (also aus `chatters_contact`), verglichen wird sie im Portal
+          // gegen `user_roles.display_name`. Dass beide übereinstimmen, ist keine
+          // neue Annahme — das ganze Portal matcht seine Schichten so
+          // (`ChatterPortal.myShifts`). Gingen sie auseinander, sähe der Chatter
+          // schon seinen Dienstplan nicht, und das fällt sofort auf.
           if (norm(p.name) === absenderLc) continue
           const sp = spanneVon(val, p.seite, zeiten, modelId, sch)
           if (!sp) continue
@@ -359,6 +377,25 @@ serve(async (req) => {
       }
     }
 
+    // ── v4.36.0: Empfängerkreis festschreiben ───────────────────────────────
+    // VOR dem Telegram-Versand, nicht danach: Portal und Bot entscheiden anhand
+    // dieser Spalte, wem sie die Übergabe zeigen. Stünde sie noch auf NULL,
+    // während die Nachrichten rausgehen, könnte ein 30-Sekunden-Tick sie in
+    // diesem Moment noch jedem anzeigen.
+    //
+    // Ein LEERES Array ist eine Aussage („ermittelt, niemand gefunden") und
+    // ausdrücklich etwas anderes als NULL („nie ermittelt"). Nur bei NULL bleibt
+    // der Notnagel aktiv, der sie allen zeigt.
+    //
+    // Schlägt das Schreiben fehl (Migration noch nicht gelaufen, Schema-Cache
+    // kalt), bleibt die Spalte auf NULL — die Übergabe ist dann zu großzügig
+    // sichtbar statt gar nicht. Der richtige Ausfallmodus, aber der Aufrufer
+    // erfährt es über das Antwortfeld, statt dass es nur in den Logs steht.
+    const empfaengerGespeichert = await upd(
+      'shift_logs', `?id=eq.${encodeURIComponent(String(logId))}`,
+      { handover_for: empfaengerNamen },
+    )
+
     // ── Telegram-IDs holen ──────────────────────────────────────────────────
     const kontakte = await q('chatters_contact', '?select=name,telegram_id,active')
     const idVon = (name: string): string | null => {
@@ -405,6 +442,9 @@ serve(async (req) => {
       gefunden: empfaengerNamen.length,
       // Für den Aufrufer: konnte überhaupt jemand erreicht werden?
       zugestellt: zugestellt.length > 0,
+      // false = Empfängerkreis konnte nicht festgeschrieben werden; die Übergabe
+      // erscheint dann bei allen statt nur bei den Richtigen.
+      empfaenger_gespeichert: empfaengerGespeichert,
     })
   } catch (e) {
     console.error('handover-notify:', e)

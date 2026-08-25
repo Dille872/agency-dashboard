@@ -80,6 +80,7 @@ export const HELP_TOPICS = [
       'Die Übergabe ist freiwillig — aber sie ist die einzige Stelle, an der die nächste Schicht sicher mitbekommt, was gerade läuft. Der Chat geht dabei leicht unter.',
       'Auch ohne Dashboard möglich: Im Telegram-Bot beendest du mit „/off" und deinem Text in einer Zeile, oder mit „/off" allein — dann fragt der Bot nach. Nachreichen geht mit „/uebergabe TEXT", bestätigen mit „/gelesen".',
       'Wartet eine Übergabe auf dich, siehst du sie direkt nach dem Einchecken. Klickst du das Fenster weg, kommst du über den pinken Hinweis „Übergabe der Vorschicht" wieder dran.',
+      'Du bekommst nur die Übergaben zu sehen, die dich betreffen — also von der Schicht, die du übernimmst. Was andere sich untereinander weitergeben, taucht bei dir nicht auf.',
       'Was du übergibst, sehen auch Chris und Rey im Schicht-Log — inklusive der Angabe, wer sie gelesen hat.',
       'Wenn du das Auschecken vergisst: 1 Minute nach Schichtende checkt das Portal dich automatisch aus. Dabei kannst du keine Übergabe mehr schreiben — dann lieber vorher Bescheid geben.',
       'Bist du 15 Minuten nach Schichtbeginn noch nicht eingecheckt, bekommen Chris und Rey automatisch eine Telegram-Nachricht. Das ist kein Vorwurf, sondern nur die Erinnerung — aber ärgerlich, wenn du eigentlich längst arbeitest.',

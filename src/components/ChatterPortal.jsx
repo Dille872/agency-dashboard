@@ -128,6 +128,12 @@ const MODUS_META = {
   split: { icon: '✂️', label: 'Geteilt', color: '#ec4899' },
 }
 const zellModus = (val) => (MODUS_META[val?.trainee_mode] ? val.trainee_mode : 'anlernen')
+
+// v4.36.0: Namensvergleich wie im Telegram-Bot und in `handover-notify` — alles
+// außer Buchstaben und Ziffern raus. Daran hängt, wem eine Schichtübergabe
+// angezeigt wird; ein Bindestrich oder ein doppeltes Leerzeichen zwischen
+// Plan-Name und `display_name` darf darüber nicht entscheiden.
+const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 // Zeitspanne aus Sicht EINER Person. Bindestrich-Format, weil der Rest der Datei
 // (shiftWindowInstants, convertTimeToLocal) daran entlang parst.
 // Ohne eigene Spanne fällt es auf die normale Schichtzeit zurück.
@@ -1135,9 +1141,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         if (text && text.trim()) {
           felder.handover_text = text.trim()
           felder.handover_at = jetzt
+          // v4.36.0: `handover_for` wird hier bewusst NICHT vorbelegt und bleibt
+          // bis `handover-notify` es setzt auf null.
+          //
+          // Der Gedanke, es gleich auf [] zu setzen, war naheliegend — er hätte
+          // die eine Sekunde geschlossen, in der die Übergabe noch ungefiltert
+          // dasteht. Der Preis wäre aber zu hoch gewesen: Kommt die Function nicht
+          // durch (Netzfehler, Auth, kalter Start), bliebe [] stehen und die
+          // Übergabe wäre für IMMER für niemanden sichtbar. Mit null greift in
+          // genau diesem Fall der Notnagel und alle sehen sie.
+          // Eine Sekunde zu weit sichtbar ist besser als dauerhaft verloren.
         }
         const { error } = await supabase.from('shift_logs').update(felder).eq('id', currentLogId)
-        // Fällt der Insert wegen fehlender Spalten durch (Migration noch nicht
+        // Fällt das Update wegen fehlender Spalten durch (Migration noch nicht
         // gelaufen), soll wenigstens das Auschecken klappen — sonst hinge jemand
         // in einer Schicht fest, die er nicht beenden kann.
         if (error && felder.handover_text) {
@@ -1181,7 +1197,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         if (!zustellung?.ok) {
           alert('✅ Deine Übergabe ist gespeichert.\n\n⚠️ Die Weiterleitung per Telegram hat nicht geklappt. Sie steht im Dashboard und erscheint beim Einchecken — gib im Zweifel kurz selbst Bescheid.')
         } else if (zustellung.gefunden === 0) {
-          alert('✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\nℹ️ Im Dienstplan steht für die nächsten Stunden niemand, der übernimmt — sie wurde deshalb an keinen Chatter verschickt.')
+          // Nur wenn der Empfängerkreis auch wirklich festgeschrieben wurde, gilt
+          // „erscheint bei keinem Chatter". Sonst steht die Spalte auf null und
+          // der Notnagel zeigt sie allen — dann wäre die Aussage das Gegenteil.
+          alert(zustellung.empfaenger_gespeichert === false
+            ? '✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\nℹ️ Im Dienstplan steht für die nächsten Stunden niemand, der übernimmt.'
+            : '✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\nℹ️ Im Dienstplan steht für die nächsten Stunden niemand, der übernimmt. Sie erscheint deshalb bei keinem Chatter im Portal — Chris und Rey haben sie und geben sie weiter.')
         } else if (!zustellung.zugestellt) {
           alert('✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\n⚠️ Die nächste Schicht konnte nicht per Telegram erreicht werden (fehlende Telegram-ID). Sie sieht die Übergabe beim Einchecken im Portal.')
         }
@@ -1205,7 +1226,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const seit = new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString()
     const { data, error } = await supabase
       .from('shift_logs')
-      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack')
+      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for')
       .not('handover_text', 'is', null)
       // Zeitgrenze über `handover_at`, nicht über `checked_out_at`: eine per
       // Telegram (/uebergabe) während der laufenden Schicht geschriebene Übergabe
@@ -1223,8 +1244,28 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       setUebergabeMoeglich(false)
       return
     }
+    // v4.36.0: Eine Übergabe sieht nur noch, wen sie angeht.
+    //
+    // Vorher galt nur „nicht von mir" und „noch nicht bestätigt" — dadurch bekam
+    // sie jeder zu sehen, der binnen 16 Stunden ins Portal schaute, und konnte sie
+    // abhaken, ohne mit der Schicht etwas zu tun zu haben. Das „✓ gelesen von …"
+    // im Schicht-Log war damit wertlos.
+    //
+    // `handover_for` kommt aus `handover-notify` und enthält die, die laut
+    // Dienstplan übernehmen. Drei Zustände:
+    //   Namen     → nur diese Leute
+    //   leer      → im Plan steht niemand; Chris und Rey haben sie per Telegram
+    //   null      → nie ermittelt (Altbestand oder die Function war nicht
+    //               erreichbar). Notnagel: allen zeigen. Eine verlorene Übergabe
+    //               ist schlimmer als eine, die einer zu viel liest.
+    const gehtMichAn = (l) => {
+      if (l.handover_for == null) return true
+      return l.handover_for.some(n => norm(n) === norm(displayName))
+    }
     const offen = (data || []).filter(l =>
-      l.display_name !== displayName && !(l.handover_ack || []).includes(displayName)
+      norm(l.display_name) !== norm(displayName) &&
+      !(l.handover_ack || []).some(a => norm(a) === norm(displayName)) &&
+      gehtMichAn(l)
     )
     // Nur aufspringen, wenn wirklich etwas Neues dazugekommen ist — sonst ginge
     // das Fenster alle 30 Sekunden wieder auf, nachdem man es zugeklickt hat.

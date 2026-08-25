@@ -106,9 +106,21 @@ async function offeneUebergaben(name: string) {
     `?handover_text=not.is.null&handover_at=gte.${seit}` +
     `&order=handover_at.desc&limit=100`)
   if (!Array.isArray(logs)) return []
+  // v4.36.0: Eine Übergabe sieht nur noch, wen sie angeht.
+  //
+  // Vorher galt nur „nicht von mir" und „noch nicht bestätigt" — dadurch bekam
+  // sie jeder beim /on zu sehen und konnte sie abhaken, ohne mit der Schicht
+  // etwas zu tun zu haben. Das „✓ gelesen von …" im Schicht-Log war damit wertlos.
+  //
+  // `handover_for` kommt aus `handover-notify`: Namen → nur diese; leeres Array →
+  // im Plan steht niemand (Chris und Rey haben sie per Telegram); null → nie
+  // ermittelt (Altbestand oder Function nicht erreichbar), dann Notnagel für alle.
+  const gehtMichAn = (l: any) =>
+    l.handover_for == null || l.handover_for.some((n: string) => norm(n) === norm(name))
   return logs.filter((l: any) =>
     norm(l.display_name || '') !== norm(name) &&
-    !(l.handover_ack || []).some((a: string) => norm(a) === norm(name))
+    !(l.handover_ack || []).some((a: string) => norm(a) === norm(name)) &&
+    gehtMichAn(l)
   )
 }
 
@@ -762,10 +774,25 @@ serve(async (req) => {
           return new Response('ok')
         }
         const bisher = log.handover_text ? `${log.handover_text}\n\n` : ''
-        await upd('shift_logs', `?id=eq.${log.id}`, {
+        // v4.36.0: Rückgabewert prüfen. Scheitert der Schreibvorgang, ist der Text
+        // NICHT gespeichert — eine Erfolgsmeldung wäre dann das Schlimmste, was
+        // der Bot sagen kann.
+        const gespeichert = await upd('shift_logs', `?id=eq.${log.id}`, {
           handover_text: bisher + inhalt,
           handover_at: new Date().toISOString(),
         })
+        if (!gespeichert) {
+          // Der Text darf nicht einfach verschwinden — dann lieber als normale
+          // Nachricht ans Team, da liest ihn wenigstens jemand.
+          await ins('messages', {
+            model_name: chatterData.name, model_telegram_id: fromId,
+            direction: 'in', contact_type: 'chatter', text: inhalt,
+            status: 'received', read: false,
+          })
+          await forwardToAdmins(chatterData.name, 'chatter', inhalt, fromId)
+          await tg(fromId, '⚠ Deine Übergabe konnte nicht als Übergabe gespeichert werden.\n\nIch habe deinen Text stattdessen ans Team weitergeleitet — Chris und Rey haben ihn.')
+          return new Response('ok')
+        }
         const raus = await benachrichtigeUebergabe(log.id)
         await tg(fromId, raus
           ? (log.handover_text ? '✅ An deine Übergabe angehängt und weitergeleitet.' : '✅ Übergabe gespeichert und weitergeleitet.')
@@ -799,7 +826,15 @@ serve(async (req) => {
         const schonGelesen = Array.isArray(log?.handover_ack) && log.handover_ack.length > 0
         if (log && !schonGelesen) {
           const zurueck = String(log.handover_text)
-          await upd('shift_logs', `?id=eq.${log.id}`, { handover_text: null, handover_at: null })
+          // `handover_for` wird hier bewusst NICHT mitgeschrieben. Es stehen zu
+          // lassen ist folgenlos — jede Anzeige hängt an `handover_text`, und das
+          // ist gleich null. Läge die neue Spalte dagegen in diesem PATCH und wäre
+          // die Migration noch nicht gelaufen, lehnte PostgREST den ganzen Aufruf
+          // ab: die Übergabe bliebe stehen, würde zusätzlich als Team-Nachricht
+          // verteilt, und der Bot meldete trotzdem „zurückgenommen".
+          await upd('shift_logs', `?id=eq.${log.id}`, {
+            handover_text: null, handover_at: null,
+          })
           await ins('messages', {
             model_name: chatterData.name, model_telegram_id: fromId,
             direction: 'in', contact_type: 'chatter', text: zurueck,
@@ -841,6 +876,13 @@ serve(async (req) => {
           if (mitgegeben) {
             felder.handover_text = schonText ? `${schonText}\n\n${mitgegeben}` : mitgegeben
             felder.handover_at = jetzt
+            // v4.36.0: `handover_for` bleibt hier null — `handover-notify` setzt
+            // es. Siehe die ausführliche Begründung in ChatterPortal.checkOut:
+            // ein vorbelegtes [] würde eine fehlgeschlagene Zustellung in einen
+            // stillen Totalverlust verwandeln. Zweiter Grund hier: läge die Spalte
+            // in diesem PATCH und wäre die Migration noch nicht gelaufen, würde
+            // PostgREST den GANZEN Aufruf ablehnen — dann bliebe die Schicht offen
+            // stehen, obwohl der Bot „Schicht beendet" meldet.
           } else if (!schonText) {
             // `handover_at` ohne Text ist der Merker für die offene Rückfrage.
             felder.handover_at = jetzt
@@ -923,10 +965,30 @@ serve(async (req) => {
       if (!text.startsWith('/')) {
         const wartend = await wartendeUebergabe(chatterData.name)
         if (wartend) {
-          await upd('shift_logs', `?id=eq.${wartend.id}`, {
+          // v4.36.0: Rückgabewert prüfen — sonst quittiert der Bot eine Übergabe,
+          // die gar nicht gespeichert wurde. Zusätzlich schlimm auf DIESEM Pfad:
+          // `handover_at` bliebe gesetzt und `handover_text` leer, das Zeitfenster
+          // liefe weiter und die nächste normale Nachricht würde wieder als
+          // Übergabe verbucht — und wieder falsch quittiert.
+          const gespeichert = await upd('shift_logs', `?id=eq.${wartend.id}`, {
             handover_text: text.trim(),
             handover_at: new Date().toISOString(),
           })
+          if (!gespeichert) {
+            // Fenster schließen, damit die nächste normale Nachricht nicht erneut
+            // als Übergabe verbucht wird. Scheitert auch das, ist es nicht schlimm:
+            // der Text ist unten ohnehin ans Team gegangen, ein zweiter Versuch
+            // würde nur dasselbe nochmal weiterleiten.
+            await upd('shift_logs', `?id=eq.${wartend.id}`, { handover_at: null })
+            await ins('messages', {
+              model_name: chatterData.name, model_telegram_id: fromId,
+              direction: 'in', contact_type: 'chatter', text: text.trim(),
+              status: 'received', read: false,
+            })
+            await forwardToAdmins(chatterData.name, 'chatter', text.trim(), fromId)
+            await tg(fromId, '⚠ Deine Übergabe konnte nicht als Übergabe gespeichert werden.\n\nIch habe deinen Text stattdessen ans Team weitergeleitet — Chris und Rey haben ihn.')
+            return new Response('ok')
+          }
           const raus = await benachrichtigeUebergabe(wartend.id)
           await tg(fromId, (raus
             ? '✅ Übergabe gespeichert und an die nächste Schicht weitergeleitet. Danke!'

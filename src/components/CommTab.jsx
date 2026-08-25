@@ -4664,6 +4664,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {log.handover_text ? (
                             <div>
                               <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{log.handover_text}</div>
+                              {/* v4.36.0: An wen sie ging. `handover_for` kommt aus
+                                  handover-notify und ist zugleich der Filter, wer sie
+                                  im Portal sieht — leer heißt: niemand im Plan,
+                                  dann liegt sie nur bei Chris und Rey. */}
+                              {log.handover_for != null && (
+                                <div style={{ fontSize: 10, marginTop: 3, color: log.handover_for.length > 0 ? 'var(--text-muted)' : '#f59e0b' }}>
+                                  {log.handover_for.length > 0
+                                    ? `→ für ${log.handover_for.join(', ')}`
+                                    : '→ kein Nachfolger im Plan gefunden'}
+                                </div>
+                              )}
                               <div style={{ fontSize: 10, marginTop: 3, color: (log.handover_ack || []).length > 0 ? '#10b981' : '#f59e0b' }}>
                                 {(log.handover_ack || []).length > 0
                                   ? `✓ gelesen von ${(log.handover_ack || []).join(', ')}`
