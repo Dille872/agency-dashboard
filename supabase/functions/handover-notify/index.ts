@@ -36,6 +36,11 @@ const TZ = 'Europe/Berlin'
 // erreicht, den sie nichts mehr angeht.
 const HORIZONT_MIN = 14 * 60
 
+// Die echten Schichtnamen des Dienstplans. Alles andere in `shift_logs.shift`
+// (z. B. „Manuell" oder „Schicht") heißt: beim Einchecken wurde keine Zuweisung
+// gefunden — dann darf nicht danach gefiltert werden.
+const SCHICHT_NAMEN = ['Vorschicht', 'Früh', 'Spät', 'Nacht']
+
 const H = {
   'apikey': SUPABASE_KEY,
   'Authorization': `Bearer ${SUPABASE_KEY}`,
@@ -268,7 +273,12 @@ serve(async (req) => {
         if (off === undefined) continue
         // Ohne verwertbaren Check-in-Tag bleibt es beim Drei-Tage-Fenster.
         if (meinTag && tag !== meinTag) continue
-        if (schicht && sch !== schicht) continue
+        // Nach der Schicht nur filtern, wenn im Log ein ECHTER Schichtname steht.
+        // Findet der Bot beim Einchecken keine Zuweisung, trägt er das Wort
+        // „Schicht" ein — danach zu filtern würde jede Zelle verwerfen, `meineModels`
+        // bliebe leer, und weiter unten fiele damit auch der Model-Filter weg:
+        // die Übergabe ginge an irgendeine fremde Schicht.
+        if (schicht && SCHICHT_NAMEN.includes(schicht) && sch !== schicht) continue
         const ich = personenDerZelle(val).find(p => norm(p.name) === absenderLc)
         if (!ich) continue
         meineModels.add(modelId)
@@ -360,20 +370,38 @@ serve(async (req) => {
       }
     }
 
-    // Nur die früheste noch laufende oder anstehende Schicht bekommt sie — sonst
-    // ginge die Übergabe an den halben Dienstplan. Bei geteilten Schichten stehen
-    // beide Hälften mit derselben Startzeit drin und werden beide benachrichtigt.
+    // v4.37.0: Empfänger sind ALLE, die gerade arbeiten — nicht nur die früheste
+    // Schicht.
+    //
+    // Vorher gewann `min(start)`, und das ging schief, sobald mehr als eine
+    // Schicht gleichzeitig läuft. Beispiel: eine Vorschicht 04:00–08:00 und die
+    // Frühschicht 06:00–14:00. Checkt die Nacht um 06:05 aus, gewann die
+    // Vorschicht mit Start 04:00 — und ausgerechnet die Frühschicht, die die
+    // nächsten acht Stunden übernimmt, bekam nichts.
+    //
+    // Richtig ist die Frage „wer macht jetzt weiter?": alle Schichten, die in
+    // diesem Moment laufen. Läuft keine (Lücke im Plan), geht sie an die, die als
+    // nächste beginnt. Bei geteilten Schichten stehen beide Hälften drin und
+    // werden beide benachrichtigt.
     let empfaengerNamen: string[] = []
     let naechsteSchicht = ''
+    const schichtVon: Record<string, string> = {}
     if (kandidaten.length > 0) {
-      const frueheste = Math.min(...kandidaten.map(k => k.start))
-      const treffer = kandidaten.filter(k => k.start === frueheste)
+      const laufend = kandidaten.filter(k => k.start <= jetzt)
+      let treffer = laufend
+      if (treffer.length === 0) {
+        const frueheste = Math.min(...kandidaten.map(k => k.start))
+        treffer = kandidaten.filter(k => k.start === frueheste)
+      }
       naechsteSchicht = treffer[0]?.schicht || ''
       const gesehen = new Set<string>()
       for (const k of treffer) {
         if (gesehen.has(norm(k.name))) continue
         gesehen.add(norm(k.name))
         empfaengerNamen.push(k.name)
+        // Jede Person bekommt IHREN Schichtnamen genannt. Laufen mehrere
+        // Schichten parallel, wäre ein gemeinsamer Name für die Hälfte falsch.
+        schichtVon[norm(k.name)] = k.schicht
       }
     }
 
@@ -414,8 +442,9 @@ serve(async (req) => {
     for (const name of empfaengerNamen) {
       const id = idVon(name)
       if (!id) { ohneId.push(name); continue }
+      const meineSchicht = schichtVon[norm(name)] || naechsteSchicht
       const msg = `${kopf}\n\n${text}\n\n` +
-        `Das betrifft deine ${naechsteSchicht ? escapeHtml(naechsteSchicht) : 'nächste'}-Schicht. ` +
+        `Das betrifft deine ${meineSchicht ? escapeHtml(meineSchicht) : 'nächste'}-Schicht. ` +
         `Bestätige mit /gelesen, sobald du es gesehen hast — oder im Portal mit „Gelesen &amp; verstanden".`
       if (await tg(id, msg)) { zugestellt.push(name); schonBenachrichtigt.add(id) }
       else ohneId.push(`${name} (Versand fehlgeschlagen)`)
