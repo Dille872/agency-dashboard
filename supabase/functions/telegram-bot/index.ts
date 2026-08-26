@@ -67,7 +67,7 @@ const UEBERGABE_RUECKBLICK_H = 16
 // niemand, der übernimmt. v4.37.0: Das wird jetzt ausgewertet, statt nur „raus
 // oder nicht" zu kennen — sonst hört der Absender „ist raus", obwohl die Übergabe
 // bei keinem Chatter gelandet ist.
-type UebergabeErgebnis = { ok: boolean; gefunden: number; an: string[] }
+type UebergabeErgebnis = { ok: boolean; gefunden: number; an: string[]; ohneNachfolge: string[] }
 
 async function benachrichtigeUebergabe(logId: string | number): Promise<UebergabeErgebnis> {
   try {
@@ -78,13 +78,18 @@ async function benachrichtigeUebergabe(logId: string | number): Promise<Uebergab
     })
     if (!r.ok) {
       console.error(`[uebergabe] Versand fehlgeschlagen: ${r.status} — ${await r.text().catch(() => '')}`)
-      return { ok: false, gefunden: 0, an: [] }
+      return { ok: false, gefunden: 0, an: [], ohneNachfolge: [] }
     }
     const daten = await r.json().catch(() => null)
-    return { ok: true, gefunden: Number(daten?.gefunden ?? 0), an: Array.isArray(daten?.an) ? daten.an : [] }
+    return {
+      ok: true,
+      gefunden: Number(daten?.gefunden ?? 0),
+      an: Array.isArray(daten?.an) ? daten.an : [],
+      ohneNachfolge: Array.isArray(daten?.ohne_nachfolge) ? daten.ohne_nachfolge : [],
+    }
   } catch (e) {
     console.error('[uebergabe] handover-notify nicht erreichbar:', e)
-    return { ok: false, gefunden: 0, an: [] }
+    return { ok: false, gefunden: 0, an: [], ohneNachfolge: [] }
   }
 }
 
@@ -92,6 +97,11 @@ async function benachrichtigeUebergabe(logId: string | number): Promise<Uebergab
 // Vier Fälle, drei davon sind Einschränkungen — sie müssen benannt werden, sonst
 // verlässt sich jemand darauf, dass die nächste Schicht Bescheid weiß.
 function uebergabeQuittung(r: UebergabeErgebnis) {
+  // v4.38.0: Lücken pro Model werden angehängt — wer drei Models betreut und für
+  // zwei davon keinen Nachfolger hat, soll das nicht erst am nächsten Tag merken.
+  const luecke = r.ohneNachfolge.length > 0
+    ? `\n⚠ Für ${escHtml(r.ohneNachfolge.join(', '))} ist gerade niemand eingeteilt — Chris und Rey wissen Bescheid.`
+    : ''
   if (!r.ok) {
     return '✅ Übergabe gespeichert.\n⚠ Die Weiterleitung per Telegram hat nicht geklappt — sie steht aber im Dashboard und wird beim Einchecken angezeigt.'
   }
@@ -100,9 +110,9 @@ function uebergabeQuittung(r: UebergabeErgebnis) {
   }
   if (r.an.length === 0) {
     // Nachfolger gefunden, aber keiner hatte eine hinterlegte Telegram-ID.
-    return '✅ Übergabe gespeichert.\n⚠ Die nächste Schicht konnte ich per Telegram nicht erreichen — sie sieht die Übergabe erst beim Einchecken im Portal. Chris und Rey wissen Bescheid.'
+    return '✅ Übergabe gespeichert.\n⚠ Die nächste Schicht konnte ich per Telegram nicht erreichen — sie sieht die Übergabe erst beim Einchecken im Portal. Chris und Rey wissen Bescheid.' + luecke
   }
-  return `✅ Deine Übergabe ist raus an ${escHtml(r.an.join(', '))}.`
+  return `✅ Deine Übergabe ist raus an ${escHtml(r.an.join(', '))}.` + luecke
 }
 
 // Das zuletzt beendete Log dieser Person, sofern es noch im Antwortfenster liegt
@@ -142,8 +152,45 @@ async function offeneUebergaben(name: string) {
   // `handover_for` kommt aus `handover-notify`: Namen → nur diese; leeres Array →
   // im Plan steht niemand (Chris und Rey haben sie per Telegram); null → nie
   // ermittelt (Altbestand oder Function nicht erreichbar), dann Notnagel für alle.
-  const gehtMichAn = (l: any) =>
-    l.handover_for == null || l.handover_for.some((n: string) => norm(n) === norm(name))
+  //
+  // v4.38.0: Zweiter Weg für Nachzügler — wer erst Stunden nach dem Auschecken
+  // des Absenders anfängt, steht nicht in `handover_for` und hätte sie nie
+  // gesehen. Deshalb zusätzlich: betreue ich in meiner LAUFENDEN Schicht eines
+  // der Models, um die es ging, und wurde die Übergabe geschrieben, bevor ich
+  // eingecheckt habe? Die Model-IDs stehen in `shift_logs.model_names` meines
+  // eigenen Check-ins, die der Übergabe in `handover_models`.
+  const meinLog = await q('shift_logs',
+    `?display_name=eq.${encodeURIComponent(name)}&checked_out_at=is.null` +
+    `&order=checked_in_at.desc&limit=1`)
+  const meins = Array.isArray(meinLog) ? meinLog[0] : null
+  // `model_names` ist historisch uneinheitlich: der Bot schreibt ein Array hinein,
+  // die Spalte ist aber Text (ModelsView liest sie mit `.split(',')`). Beide Formen
+  // werden deshalb akzeptiert — sonst bliebe die Menge je nach Datenlage leer und
+  // der Nachzügler-Weg griffe still nie.
+  const rohModels: unknown = meins?.model_names
+  const meineModelIds = new Set<string>(
+    Array.isArray(rohModels)
+      ? rohModels.map((m) => String(m))
+      : typeof rohModels === 'string'
+        ? rohModels.replace(/^[[{"]+|[\]}"]+$/g, '').split(',').map(s => s.trim().replace(/^"|"$/g, '')).filter(Boolean)
+        : []
+  )
+  const seitWann = meins?.checked_in_at ? new Date(meins.checked_in_at).getTime() : null
+
+  const gehtMichAn = (l: any) => {
+    if (l.handover_for == null) return true
+    if (l.handover_for.some((n: string) => norm(n) === norm(name))) return true
+    // Erledigt ist erledigt — siehe die ausführliche Begründung in
+    // ChatterPortal.ladeUebergaben: sonst kaskadiert eine Übergabe über alle
+    // Folgeschichten desselben Models. „Alle", nicht „einer", damit bei mehreren
+    // betreuten Models niemand ausgesperrt wird, der erst später anfängt.
+    const ack: string[] = l.handover_ack || []
+    if (l.handover_for.length > 0
+      && l.handover_for.every((n: string) => ack.some(a => norm(a) === norm(n)))) return false
+    if (!seitWann || meineModelIds.size === 0 || !Array.isArray(l.handover_models)) return false
+    if (!l.handover_at || new Date(l.handover_at).getTime() >= seitWann) return false
+    return l.handover_models.some((m: unknown) => meineModelIds.has(String(m)))
+  }
   return logs.filter((l: any) =>
     norm(l.display_name || '') !== norm(name) &&
     !(l.handover_ack || []).some((a: string) => norm(a) === norm(name)) &&

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// handover-notify · v4.35.0
+// handover-notify · v4.38.0
 //
 // Verschickt eine Schichtübergabe per Telegram: an die Leute, die die Schicht
 // übernehmen, und an Chris und Rey.
@@ -263,6 +263,22 @@ serve(async (req) => {
     const meinTag = log.checked_in_at
       ? new Date(log.checked_in_at).toLocaleDateString('sv-SE', { timeZone: TZ })
       : ''
+    // v4.38.0: Bei einer Nachtschicht zählt auch der Vortag als eigener Tag.
+    // Die Zelle steht auf dem START-Tag — wer sich um 00:30 einbucht, hat als
+    // Check-in-Tag schon den Folgetag. Ohne diesen Zusatz fände die Function
+    // keine eigene Zelle: `meineModels` bliebe leer, der Model-Filter fiele weg
+    // und die Übergabe ginge an alle gerade laufenden Schichten. Ausgerechnet im
+    // Nacht-zu-Früh-Fall, für den das Ganze gebaut ist.
+    const eigeneTage = new Set<string>(meinTag ? [meinTag] : [])
+    if (meinTag && schicht === 'Nacht') {
+      // Vortag aus MEINEM Check-in-Tag ableiten, nicht aus der aktuellen Uhrzeit.
+      // Sonst käme bei einem Check-out noch vor Mitternacht die vorletzte Nacht
+      // als „eigener Tag" hinzu, `meineModels` würde zu groß und `meinStart`
+      // rutschte so weit zurück, dass der Nachfolger-Filter kaum noch greift.
+      const d = new Date(`${meinTag}T12:00:00Z`)
+      d.setUTCDate(d.getUTCDate() - 1)
+      eigeneTage.add(d.toISOString().slice(0, 10))
+    }
     const meineModels = new Set<string>()
     let meinStart: number | null = null
     for (const sched of planListe) {
@@ -272,7 +288,7 @@ serve(async (req) => {
         const off = offsetVonTag(tag)
         if (off === undefined) continue
         // Ohne verwertbaren Check-in-Tag bleibt es beim Drei-Tage-Fenster.
-        if (meinTag && tag !== meinTag) continue
+        if (eigeneTage.size > 0 && !eigeneTage.has(tag)) continue
         // Nach der Schicht nur filtern, wenn im Log ein ECHTER Schichtname steht.
         // Findet der Bot beim Einchecken keine Zuweisung, trägt er das Wort
         // „Schicht" ein — danach zu filtern würde jede Zelle verwerfen, `meineModels`
@@ -316,8 +332,13 @@ serve(async (req) => {
     // Kandidat ist jede Zelle, deren Schicht JETZT NOCH LÄUFT oder erst beginnt.
     // Die überlappende Schicht ist der Regelfall: wer um 08:00 angefangen hat,
     // während die Nacht um 08:05 auscheckt, ist genau der richtige Empfänger.
-    type Kandidat = { name: string; start: number; schicht: string }
+    // v4.38.0: `model` bleibt am Kandidaten hängen — daran hängt die Meldung,
+    // für welche Models gar niemand eingeteilt ist.
+    type Kandidat = { name: string; start: number; schicht: string; model: string }
     const kandidaten: Kandidat[] = []
+    // Models, um die sich in den nächsten Stunden überhaupt jemand kümmert —
+    // lockerer gefasst als `kandidaten`, siehe Kommentar in der Schleife.
+    const modelsMitBetreuung = new Set<string>()
 
     for (const sched of planListe) {
       const zeiten = sched?.shift_times || {}
@@ -332,6 +353,31 @@ serve(async (req) => {
         const ich = personen.find(p => norm(p.name) === absenderLc)
 
         for (const p of personen) {
+          // v4.38.0: Getrennt davon mitzählen, ob für dieses Model ÜBERHAUPT
+          // jemand dran ist — für die Meldung „ohne Nachfolge".
+          //
+          // Bewusst lockerer als die Empfängersuche unten: hier zählt auch, wer
+          // vor mir angefangen hat und noch weiterläuft (Co-Partner, überlappende
+          // Vorschicht), und ich selbst, wenn ich das Model in der nächsten
+          // Schicht weiterbetreue. Sonst käme ein Alarm für Models, um die sich
+          // sehr wohl jemand kümmert.
+          // Die eigene, gerade endende Zelle zählt nicht — ich gehe ja.
+          // Steht im Log kein echter Schichtname („Manuell", „Schicht"), lässt
+          // sich meine eigene Zelle nicht über die Schicht identifizieren — dann
+          // zählt jede meiner Zellen des Tages als „meine endende", damit keine
+          // falsche Entwarnung entsteht.
+          const istMeineEndendeZelle = norm(p.name) === absenderLc
+            && (eigeneTage.size === 0 || eigeneTage.has(tag))
+            && (!SCHICHT_NAMEN.includes(schicht) || sch === schicht)
+          const spAlle = istMeineEndendeZelle ? null : spanneVon(val, p.seite, zeiten, modelId, sch)
+          if (spAlle) {
+            const startAlle = spAlle.start + off
+            const endeAlle = spAlle.ende + off
+            if (endeAlle > jetzt && startAlle <= jetzt + HORIZONT_MIN) {
+              modelsMitBetreuung.add(modelId)
+            }
+          }
+
           // Vorsicht bei Namen: `handover_for` enthält die Schreibweise aus dem
           // Dienstplan (also aus `chatters_contact`), verglichen wird sie im Portal
           // gegen `user_roles.display_name`. Dass beide übereinstimmen, ist keine
@@ -354,7 +400,7 @@ serve(async (req) => {
           // bekäme nichts.
           if (ich && val?.trainee_mode === 'split') {
             if (ich.seite === 'a' && p.seite === 'b') {
-              kandidaten.push({ name: p.name, start, schicht: sch })
+              kandidaten.push({ name: p.name, start, schicht: sch, model: modelId })
             }
             continue
           }
@@ -365,7 +411,7 @@ serve(async (req) => {
           // Ohne diese Regel gewinnt „früheste Startzeit" genau die Falschen und
           // die tatsächlich übernehmende Schicht bekommt nichts.
           if (meinStart != null && start <= meinStart) continue
-          kandidaten.push({ name: p.name, start, schicht: sch })
+          kandidaten.push({ name: p.name, start, schicht: sch, model: modelId })
         }
       }
     }
@@ -419,10 +465,46 @@ serve(async (req) => {
     // kalt), bleibt die Spalte auf NULL — die Übergabe ist dann zu großzügig
     // sichtbar statt gar nicht. Der richtige Ausfallmodus, aber der Aufrufer
     // erfährt es über das Antwortfeld, statt dass es nur in den Logs steht.
+    //
+    // v4.38.0: Zusätzlich die betroffenen Models. Daran erkennen Portal und Bot
+    // beim Einchecken, dass eine Übergabe auch jemanden angeht, der beim
+    // Auschecken des Absenders noch gar nicht arbeitete — die Frühschicht für ein
+    // Model kann Stunden nach dem Ende der Nacht beginnen. `handover_for` wird
+    // dafür bewusst NICHT nachträglich erweitert: es hält fest, an wen tatsächlich
+    // etwas verschickt wurde, und das soll nachvollziehbar bleiben.
+    //
+    // ZWEI getrennte Aufrufe, bewusst. Lägen beide Spalten in einem PATCH und
+    // wäre `handover_models` noch nicht migriert, lehnte PostgREST den ganzen
+    // Aufruf ab — dann bliebe auch `handover_for` auf null, und der Notnagel
+    // zeigte die Übergabe wieder jedem. Eine fehlende neue Spalte darf die
+    // funktionierende alte nicht mitreißen.
     const empfaengerGespeichert = await upd(
       'shift_logs', `?id=eq.${encodeURIComponent(String(logId))}`,
       { handover_for: empfaengerNamen },
     )
+    // Best effort: schlägt das fehl, greift nur der Nachzügler-Weg nicht.
+    await upd(
+      'shift_logs', `?id=eq.${encodeURIComponent(String(logId))}`,
+      { handover_models: [...meineModels] },
+    )
+
+    // ── v4.38.0: Models ohne jeden Nachfolger ───────────────────────────────
+    // Ein Model, für das im Horizont überhaupt kein Kandidat auftaucht, ist
+    // unbesetzt. Das ist etwas anderes als „Nachfolger kommt später" — dort gibt
+    // es einen Kandidaten, er läuft nur noch nicht.
+    //
+    // Bisher fiel das durch: die Warnung hing am Gesamtergebnis. Wer drei Models
+    // betreute und für zwei davon niemanden hatte, bekam trotzdem ein
+    // „Übergabe ist raus an Noa" — die Lücke sah niemand.
+    const unbesetzteIds = [...meineModels].filter(m => !modelsMitBetreuung.has(m))
+    let unbesetzteNamen: string[] = []
+    if (unbesetzteIds.length > 0) {
+      const modelListe = await q('models_contact', '?select=id,name')
+      unbesetzteNamen = unbesetzteIds.map(id => {
+        const treffer = (Array.isArray(modelListe) ? modelListe : []).find((m: any) => String(m.id) === String(id))
+        return treffer?.name ? String(treffer.name) : `Model ${id}`
+      })
+    }
 
     // ── Telegram-IDs holen ──────────────────────────────────────────────────
     const kontakte = await q('chatters_contact', '?select=name,telegram_id,active')
@@ -458,6 +540,11 @@ serve(async (req) => {
     if (empfaengerNamen.length === 0) {
       zeilen.push('⚠️ <b>Niemand gefunden, der übernimmt</b> — im Dienstplan steht für die nächsten Stunden keine passende Schicht.')
     }
+    // v4.38.0: Lücken pro Model benennen. Bei mehreren betreuten Models sagt ein
+    // „ist raus an Noa" nichts darüber, ob für die anderen jemand da ist.
+    if (unbesetzteNamen.length > 0) {
+      zeilen.push(`⚠️ <b>Ohne Nachfolge:</b> ${unbesetzteNamen.map(escapeHtml).join(', ')} — für ${unbesetzteNamen.length === 1 ? 'dieses Model' : 'diese Models'} ist in den nächsten Stunden niemand eingeteilt.`)
+    }
     for (const adminId of ADMIN_IDS) {
       // Nicht doppelt: Chris oder Rey können selbst der Nachfolger sein.
       if (schonBenachrichtigt.has(adminId)) continue
@@ -474,6 +561,9 @@ serve(async (req) => {
       // false = Empfängerkreis konnte nicht festgeschrieben werden; die Übergabe
       // erscheint dann bei allen statt nur bei den Richtigen.
       empfaenger_gespeichert: empfaengerGespeichert,
+      // v4.38.0: Models, für die im Horizont überhaupt niemand eingeteilt ist.
+      // Der Absender soll das erfahren — sonst hält er die Übergabe für erledigt.
+      ohne_nachfolge: unbesetzteNamen,
     })
   } catch (e) {
     console.error('handover-notify:', e)

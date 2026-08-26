@@ -507,11 +507,26 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [uebergabeText, setUebergabeText] = useState('')
   const [eingangUebergaben, setEingangUebergaben] = useState([]) // was auf mich wartet
   const [uebergabeEingangOffen, setUebergabeEingangOffen] = useState(false)
-  const [uebergabeMoeglich, setUebergabeMoeglich] = useState(true) // false = SQL-Migration fehlt noch
+  // v4.39.0: Kein dauerhaftes Aus mehr, nur eine Pause nach einem Lesefehler.
+  // Das frühere `uebergabeMoeglich` war eine Einbahnstraße und hat — weil es
+  // ausschließlich vom LESEN gesetzt wurde — auch das Schreiben mitgesperrt.
+  const ladePauseBisRef = React.useRef(0)
+  // v4.39.0: Damit das 30-Sekunden-Intervall weiß, dass gerade jemand tippt,
+  // und damit eine Übergabe auch nach dem automatischen Auschecken noch ein Ziel
+  // hat. Beides Refs, weil das Intervall aus Refs liest, nicht aus State.
+  const uebergabeDialogOffenRef = React.useRef(false)
+  const letztesLogRef = React.useRef(null)
+  // Log-ID einer automatisch beendeten Schicht, zu der noch nachgereicht werden darf.
+  const [nachreichenLog, setNachreichenLog] = useState(null)
   const [uebergabeLaedt, setUebergabeLaedt] = useState(false)
   // Welche Übergaben schon einmal angezeigt wurden — damit das Fenster nicht
   // bei jedem Takt erneut aufspringt, nachdem es weggeklickt wurde.
   const bekannteUebergabenRef = React.useRef(new Set())
+  // v4.38.0: Meine heutigen Model-IDs und mein Check-in-Zeitpunkt. Beides liest
+  // `ladeUebergaben` aus Refs statt aus State — es läuft auch im 30-Sekunden-
+  // Intervall, und dort hinge ein State-Zugriff auf dem Initialwert fest.
+  const meineModelsRef = React.useRef(new Set())
+  const checkInTimeRef = React.useRef(null)
   // Für das 30-Sekunden-Intervall: das liest aus Refs, nicht aus State
   // (Konvention im Repo — sonst hängt es auf dem Initialwert fest).
   const ladeUebergabenRef = React.useRef(null)
@@ -1097,16 +1112,43 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         }
       }
 
-      const { data } = await supabase.from('shift_logs').insert({
+      // v4.38.0: Models der Schicht mitschreiben. Der Telegram-Bot tut das seit
+      // jeher, das Portal nicht — dadurch fand der Bot für Portal-Check-ins keine
+      // Models und konnte eine Übergabe, die erst später jemanden angeht, nicht
+      // zuordnen.
+      //
+      // Als komma-getrennter String, NICHT als Array: die Spalte ist Text, und
+      // `ModelsView` zerlegt sie mit `.split(',')`. Ein serialisiertes Array
+      // („["12","7"]") würde dort in Bruchstücke mit Klammern und Anführungszeichen
+      // zerfallen. So bleiben es saubere IDs — die ModelsView zwar nicht kennt
+      // (sie erwartet csv_names) und deshalb überspringt, aber wenigstens nichts
+      // Kaputtes in die Auswertung tragen.
+      const meineModelIdsHeute = [...new Set(
+        todayShifts
+          .filter(s => !shiftToLog || shiftToLog === 'Manuell' || s.shift === shiftToLog)
+          .flatMap(s => (s.models || []).map(m => m.modelId))
+          .filter(Boolean)
+          .map(String)
+      )]
+      const { data, error: einbuchFehler } = await supabase.from('shift_logs').insert({
         display_name: displayName,
         checked_in_at: new Date().toISOString(),
         shift: shiftToLog,
+        model_names: meineModelIdsHeute.join(','),
       }).select().single()
       if (data) {
         setCurrentLogId(data.id)
         setCheckInTime(new Date())
+      } else {
+        // v4.38.0: Ohne Log-Eintrag gibt es später nichts, woran eine Übergabe
+        // hängen könnte — und die Schicht taucht in keiner Auswertung auf. Das
+        // lief bisher still ins Leere.
+        console.error('Check-in konnte nicht gespeichert werden:', einbuchFehler)
+        alert('⚠️ Der Check-in konnte nicht gespeichert werden.\n\nBitte nochmal auf „Schicht starten" tippen. Klappt es weiterhin nicht, gib Chris oder Rey Bescheid.')
+        return
       }
       setCurrentShift(shiftToLog) // v3.77.1: eingecheckte Schicht merken
+      setNachreichenLog(null)     // v4.39.0: alter Nachreichen-Chip gilt nicht mehr
       setIsOnline(true)
       setSelectedShift('')
       await sendHeartbeat(true)
@@ -1134,10 +1176,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       const jetzt = new Date().toISOString()
       if (currentLogId) {
         const felder = { checked_out_at: jetzt }
-        // Bewusst ohne Prüfung auf `uebergabeMoeglich`: kippt das Flag zwischen
-        // Öffnen des Fensters und Absenden (das 30-Sekunden-Intervall kann das),
-        // wäre ein geschriebener Text sonst kommentarlos verschwunden. Schlägt der
-        // Schreibvorgang fehl, fängt das der Fehlerzweig unten ab.
+        // Der Text wird immer mitgeschrieben; schlägt es fehl, fängt das der
+        // Fehlerzweig unten ab. Eine vorgelagerte Prüfung „ist die Übergabe
+        // überhaupt möglich" gibt es bewusst nicht mehr (v4.39.0) — sie hing an
+        // einem Lesefehler und hat dabei das Schreiben mitgesperrt.
         if (text && text.trim()) {
           felder.handover_text = text.trim()
           felder.handover_at = jetzt
@@ -1158,7 +1200,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         // in einer Schicht fest, die er nicht beenden kann.
         if (error && felder.handover_text) {
           console.warn('Übergabe konnte nicht gespeichert werden:', error.message)
-          setUebergabeMoeglich(false)
           await supabase.from('shift_logs').update({ checked_out_at: jetzt }).eq('id', currentLogId)
           alert('⚠️ Die Schicht wurde beendet, aber die Übergabe konnte nicht gespeichert werden.\nBitte gib sie einem Admin durch.')
         } else if (felder.handover_text) {
@@ -1166,7 +1207,35 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           zustellenFuer = currentLogId
         }
       } else if (text && text.trim()) {
-        alert('⚠️ Zu dieser Schicht gibt es keinen Check-in-Eintrag — die Übergabe konnte nicht gespeichert werden.')
+        // v4.39.0: Kein laufendes Log mehr — typischerweise, weil der automatische
+        // Checkout dazwischenkam. Der Text darf trotzdem nicht verschwinden:
+        // erst am zuletzt beendeten Log der letzten Stunde versuchen, sonst am
+        // jüngsten überhaupt. Vorher wurde er hier kommentarlos weggeworfen.
+        let zielLog = null
+        if (letztesLogRef.current && Date.now() - letztesLogRef.current.beendet < 60 * 60 * 1000) {
+          zielLog = letztesLogRef.current.id
+        } else {
+          const seit = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+          const { data: letzte } = await supabase.from('shift_logs')
+            .select('id').eq('display_name', displayName)
+            .gte('checked_out_at', seit)
+            .order('checked_out_at', { ascending: false }).limit(1)
+          zielLog = letzte?.[0]?.id || null
+        }
+        if (zielLog) {
+          const { error: nachtragFehler } = await supabase.from('shift_logs')
+            .update({ handover_text: text.trim(), handover_at: jetzt })
+            .eq('id', zielLog)
+          if (nachtragFehler) {
+            // Chip stehen lassen — nur so ist ein zweiter Versuch möglich.
+            alert('⚠️ Die Übergabe konnte nicht gespeichert werden.\n\nBitte kopiere deinen Text und gib ihn Chris oder Rey durch:\n\n' + text.trim())
+          } else {
+            zustellenFuer = zielLog
+            setNachreichenLog(null) // erledigt, Chip verschwindet
+          }
+        } else {
+          alert('⚠️ Zu dieser Schicht gibt es keinen Eintrag mehr, an dem die Übergabe hängen könnte.\n\nBitte kopiere deinen Text und gib ihn Chris oder Rey durch:\n\n' + text.trim())
+        }
       }
       // v2.9.6: Cleanup — falls aus irgendeinem Grund noch andere offene Logs für diesen User existieren, alle schließen
       await supabase.from('shift_logs')
@@ -1203,8 +1272,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           alert(zustellung.empfaenger_gespeichert === false
             ? '✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\nℹ️ Im Dienstplan steht für die nächsten Stunden niemand, der übernimmt.'
             : '✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\nℹ️ Im Dienstplan steht für die nächsten Stunden niemand, der übernimmt. Sie erscheint deshalb bei keinem Chatter im Portal — Chris und Rey haben sie und geben sie weiter.')
-        } else if (!zustellung.zugestellt) {
-          alert('✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\n⚠️ Die nächste Schicht konnte nicht per Telegram erreicht werden (fehlende Telegram-ID). Sie sieht die Übergabe beim Einchecken im Portal.')
+        } else {
+          // v4.38.0: Lücken-Hinweis in BEIDEN Zweigen anhängen — er hing vorher
+          // nur am Erfolgsfall und fehlte ausgerechnet dort, wo ohnehin schon
+          // etwas nicht rundlief.
+          const luecke = zustellung.ohne_nachfolge?.length > 0
+            ? `\n\n⚠️ Für ${zustellung.ohne_nachfolge.join(', ')} ist gerade niemand eingeteilt — Chris und Rey wissen Bescheid.`
+            : ''
+          if (!zustellung.zugestellt) {
+            alert('✅ Deine Übergabe ist gespeichert und ging an Chris und Rey.\n\n⚠️ Die nächste Schicht konnte nicht per Telegram erreicht werden (fehlende Telegram-ID). Sie sieht die Übergabe beim Einchecken im Portal.' + luecke)
+          } else if (luecke) {
+            alert(`✅ Deine Übergabe ist raus an ${(zustellung.an || []).join(', ')}.${luecke}`)
+          }
         }
       }
     } finally {
@@ -1222,11 +1301,16 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // dem Einchecken und im laufenden Betrieb — beim bloßen Öffnen des Portals
   // reicht der pinke Hinweis, sonst poppt es jeden an, der nur kurz reinschaut.
   const ladeUebergaben = React.useCallback(async (autoOeffnen = true) => {
-    if (!displayName || !uebergabeMoeglich) return
+    if (!displayName) return
+    // v4.39.0: Nach einem Lesefehler wird nicht dauerhaft gesperrt, sondern nur
+    // fünf Minuten pausiert. Vorher blieb das Feature bis zum Neuladen der Seite
+    // aus — wer den Tab offen hatte, während eine Migration nachgezogen wurde,
+    // sah für den Rest des Tages keine Übergaben mehr.
+    if (Date.now() < ladePauseBisRef.current) return
     const seit = new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString()
     const { data, error } = await supabase
       .from('shift_logs')
-      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for')
+      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for, handover_models')
       .not('handover_text', 'is', null)
       // Zeitgrenze über `handover_at`, nicht über `checked_out_at`: eine per
       // Telegram (/uebergabe) während der laufenden Schicht geschriebene Übergabe
@@ -1238,12 +1322,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .order('handover_at', { ascending: false })
       .limit(100)
     if (error) {
-      // Fehlende Spalten = Migration noch nicht ausgeführt. Dann bleibt das
-      // ganze Übergabe-Feature still aus, statt bei jedem Laden zu meckern.
+      // Fehlende Spalten = Migration noch nicht ausgeführt. Fünf Minuten Ruhe,
+      // dann wird es erneut versucht — so kommt das Feature von selbst zurück,
+      // sobald die Migration durch ist, ohne dass jemand neu laden muss.
       console.warn('Übergaben laden fehlgeschlagen:', error.message)
-      setUebergabeMoeglich(false)
+      ladePauseBisRef.current = Date.now() + 5 * 60 * 1000
       return
     }
+    ladePauseBisRef.current = 0
     // v4.36.0: Eine Übergabe sieht nur noch, wen sie angeht.
     //
     // Vorher galt nur „nicht von mir" und „noch nicht bestätigt" — dadurch bekam
@@ -1258,9 +1344,37 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     //   null      → nie ermittelt (Altbestand oder die Function war nicht
     //               erreichbar). Notnagel: allen zeigen. Eine verlorene Übergabe
     //               ist schlimmer als eine, die einer zu viel liest.
+    //
+    // v4.38.0: Zweiter Weg für Nachzügler. `handover_for` hält fest, an wen beim
+    // Auschecken tatsächlich etwas verschickt wurde — wer erst Stunden später
+    // anfängt, steht dort nicht drin und hätte die Übergabe nie gesehen (die
+    // Frühschicht für ein Model kann lange nach dem Ende der Nacht beginnen).
+    //
+    // Deshalb zusätzlich: betreue ich heute eines der Models, um die es ging, und
+    // wurde die Übergabe geschrieben, BEVOR ich eingecheckt habe? Dann geht sie
+    // mich an. Die Zeitbedingung ist das Entscheidende — sie trennt „ich übernehme
+    // gerade" von „ich war vorher dran und habe sie selbst mitverursacht".
     const gehtMichAn = (l) => {
       if (l.handover_for == null) return true
-      return l.handover_for.some(n => norm(n) === norm(displayName))
+      if (l.handover_for.some(n => norm(n) === norm(displayName))) return true
+      // Erledigt ist erledigt: haben ALLE eigentlichen Empfänger sie bestätigt,
+      // taucht sie bei niemandem mehr nachträglich auf. Ohne diese Bremse würde
+      // eine Nacht-Übergabe über Früh, Spät und die nächste Nacht durchkaskadieren
+      // — jede Folgeschicht bekäme sie ein weiteres Mal, und die Leseliste füllte
+      // sich mit Leuten, die nie Empfänger waren.
+      //
+      // Bewusst „alle" und nicht „einer": bei mehreren betreuten Models gilt
+      // `handover_for` für die ganze Übergabe. Eine einzelne Bestätigung würde
+      // sonst jemanden aussperren, der für ein ganz anderes Model erst später
+      // anfängt und den Text nie gesehen hat.
+      const ack = l.handover_ack || []
+      if (l.handover_for.length > 0
+        && l.handover_for.every(n => ack.some(a => norm(a) === norm(n)))) return false
+      const meineIds = meineModelsRef.current
+      const seitWann = checkInTimeRef.current
+      if (!seitWann || meineIds.size === 0 || !Array.isArray(l.handover_models)) return false
+      if (!l.handover_at || new Date(l.handover_at).getTime() >= seitWann.getTime()) return false
+      return l.handover_models.some(m => meineIds.has(String(m)))
     }
     const offen = (data || []).filter(l =>
       norm(l.display_name) !== norm(displayName) &&
@@ -1277,7 +1391,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const neu = offen.some(l => !bekannteUebergabenRef.current.has(l.id))
     bekannteUebergabenRef.current = new Set(offen.map(l => l.id))
     if (neu) setUebergabeEingangOffen(true)
-  }, [displayName, uebergabeMoeglich])
+  }, [displayName])
 
   // Lesebestätigung. Der Stand wird direkt vorher frisch geholt — das verkleinert
   // das Fenster, in dem die Bestätigung eines Kollegen überschrieben wird, schließt
@@ -1343,6 +1457,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const currentShiftRef = React.useRef(currentShift) // v3.77.1
   const next7SchedulesRef = React.useRef(next7Schedules)
   useEffect(() => { isOnlineRef.current = isOnline }, [isOnline])
+  // v4.39.0: Damit das 30-Sekunden-Intervall erkennt, dass gerade jemand eine
+  // Übergabe tippt, und nicht mitten hinein automatisch auscheckt.
+  useEffect(() => { uebergabeDialogOffenRef.current = uebergabeDialog }, [uebergabeDialog])
   useEffect(() => { currentLogIdRef.current = currentLogId }, [currentLogId])
   useEffect(() => { currentShiftRef.current = currentShift }, [currentShift])
   useEffect(() => { next7SchedulesRef.current = next7Schedules }, [next7Schedules])
@@ -1475,7 +1592,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         }
       }
       if (spaetestesEnde != null && nowAdjMax >= spaetestesEnde + 1) {
+        // v4.39.0: Nicht auschecken, solange jemand gerade eine Übergabe tippt.
+        // Sonst zog der Automatismus mitten im Schreiben das Log weg, und beim
+        // Absenden hieß es „zu dieser Schicht gibt es keinen Check-in-Eintrag" —
+        // der Text war verloren. Genau in dieser Minute nach Schichtende sitzen
+        // die Leute an ihrer Übergabe.
+        if (uebergabeDialogOffenRef.current) return
         await supabase.from('shift_logs').update({ checked_out_at: new Date().toISOString() }).eq('id', currentLogIdRef.current)
+        // Merken, woran eine nachgereichte Übergabe hängen kann — und den Chip
+        // dafür einblenden. Ohne ihn wäre nach dem automatischen Auschecken gar
+        // kein Weg mehr da: der Knopf „Schicht beenden" verschwindet mit dem
+        // Online-Status, und damit auch das Übergabe-Fenster.
+        letztesLogRef.current = { id: currentLogIdRef.current, beendet: Date.now() }
+        setNachreichenLog(currentLogIdRef.current)
         setIsOnline(false)
         setCurrentLogId(null)
         setCurrentShift(null) // v3.77.1
@@ -1874,6 +2003,21 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     return false
   })
 
+  // v4.38.0: Model-IDs und Check-in-Zeit in die Refs spiegeln, aus denen
+  // `ladeUebergaben` entscheidet, ob eine Übergabe mich als Nachzügler angeht.
+  useEffect(() => {
+    const ids = new Set()
+    for (const s of todayShifts) {
+      // Nur die Schicht, in der ich gerade stecke. Über den ganzen Tag gerechnet
+      // sähe jemand, der um 08:00 die Früh für Model A startet, schon Übergaben
+      // zu Model B, das er erst ab 14:00 betreut.
+      if (currentShift && s.shift !== currentShift) continue
+      for (const m of (s.models || [])) if (m.modelId != null) ids.add(String(m.modelId))
+    }
+    meineModelsRef.current = ids
+    checkInTimeRef.current = checkInTime
+  }, [todayShifts, checkInTime, currentShift])
+
   // Monthly revenue
   const currentMonth = new Date().toISOString().slice(0, 7)
   const monthSnaps = chatterSnapshots.filter(s => s.businessDate.startsWith(currentMonth))
@@ -2150,10 +2294,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   </button>
                 </>
               ) : (
-                /* v4.34.0: Auschecken geht jetzt über das Übergabe-Fenster.
-                   Ohne die Migration (uebergabeMoeglich === false) bleibt es beim
-                   direkten Auschecken wie bisher. */
-                <button onClick={() => { if (!uebergabeMoeglich) { checkOut(); return } setUebergabeText(''); setUebergabeDialog(true) }} disabled={isCheckingOut} style={{ background: isCheckingOut ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                /* v4.34.0: Auschecken geht über das Übergabe-Fenster.
+                   v4.39.0: Das Fenster erscheint IMMER — früher hing es an
+                   `uebergabeMoeglich`, und das Flag wurde ausschließlich von einem
+                   LESE-Fehler gesetzt (`ladeUebergaben`). Ein Fehler beim Abholen
+                   fremder Übergaben schaltete damit das eigene SCHREIBEN ab, und
+                   zwar dauerhaft bis zum Neuladen der Seite. Genau das ist im
+                   Deploy-Fenster von v4.36.0 passiert: der Browser lud kurz die
+                   neue Abfrage gegen die noch fehlende Spalte, das Flag kippte —
+                   und danach bekam die Person beim Beenden nie wieder ein Fenster.
+                   Lesen und Schreiben sind zwei Dinge; ein Schreibfehler wird im
+                   Dialog selbst abgefangen. */
+                <button onClick={() => { setUebergabeText(''); setUebergabeDialog(true) }} disabled={isCheckingOut} style={{ background: isCheckingOut ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                   {isCheckingOut ? '⏳ ...' : '✕ Schicht beenden'}
                 </button>
               )}
@@ -2189,6 +2341,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {(() => {
           const openTodos = myTodos.filter(t => !t.completed).length
           const openContent = contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length
+          // v4.39.0: Das Nachreichen-Fenster deckt sich mit der Stunde, in der
+          // `checkOut` das beendete Log noch findet.
+          const nachreichenFrisch = !!letztesLogRef.current
+            && Date.now() - letztesLogRef.current.beendet < 60 * 60 * 1000
           const chips = []
           if (openTodos > 0) chips.push({
             key: 'todos', tone: '#ef4444', count: openTodos, label: openTodos === 1 ? 'Aufgabe offen' : 'Aufgaben offen',
@@ -2206,6 +2362,16 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           })
           if (isOnline && hasShiftNote) chips.push({
             key: 'note-ok', tone: '#10b981', icon: '✅', label: 'Schichtnotiz erledigt', onClick: null,
+          })
+          // v4.39.0: Nach dem automatischen Auschecken die Übergabe nachreichen.
+          // Der reguläre Weg über „Schicht beenden" ist dann nicht mehr da.
+          // Nur solange KEINE neue Schicht läuft — sonst würde ein Klick die
+          // laufende Schicht beenden statt etwas nachzureichen. Und nur innerhalb
+          // der Stunde, in der das Ziel-Log noch gefunden wird; danach verspräche
+          // der Chip etwas, das er nicht mehr einlösen kann.
+          if (nachreichenLog && !isOnline && nachreichenFrisch) chips.push({
+            key: 'nachreichen', tone: '#ec4899', icon: '🤝', label: 'Übergabe nachreichen',
+            onClick: () => { setUebergabeText(''); setUebergabeDialog(true) },
           })
           // v4.34.0: Übergabe der Vorschicht — bleibt stehen, bis sie bestätigt ist.
           if (eingangUebergaben.length > 0) chips.push({
@@ -3290,36 +3456,55 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           Freiwillig: „Ohne Übergabe beenden" steht gleichberechtigt daneben.
           Ein Pflichtfeld würde nur dazu führen, dass „nix" eingetragen wird. */}
       {uebergabeDialog && (
-        <div onClick={() => !isCheckingOut && setUebergabeDialog(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        // v4.39.0 · Handy-Korrekturen:
+        //   · Overlay scrollt (`overflowY`, `alignItems: flex-start`) und die Karte
+        //     hat `maxHeight` — vorher wurde der Dialog im Querformat oben UND
+        //     unten abgeschnitten, ohne jede Möglichkeit zu scrollen. „Abbrechen"
+        //     fiel als Erstes raus.
+        //   · `zIndex` über die anderen Modals (Umfrage und Tauschangebot liegen
+        //     bei 10000) — ausgerechnet das Fenster, das Datenverlust verhindert,
+        //     lag am tiefsten.
+        //   · Kein `autoFocus` mehr: auf dem Handy sprang sofort die Tastatur auf
+        //     und verdeckte genau die Knöpfe, die man braucht.
+        //   · Backdrop-Klick fragt nach, wenn schon Text dasteht.
+        <div onClick={() => {
+          if (isCheckingOut) return
+          if (uebergabeText.trim() && !window.confirm('Deinen Text verwerfen und das Fenster schließen?')) return
+          setUebergabeDialog(false)
+        }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10002, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: '100%', maxWidth: 480, margin: 'auto 0', maxHeight: '92dvh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>🤝 Schichtübergabe</div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
-              Gibt es etwas, das die nächste Schicht wissen muss? Besonderheiten bei einem Model,
-              ein angefangenes Gespräch, ein offener Custom. Wenn nichts ansteht, einfach ohne Übergabe beenden.
-              <br />
-              <span style={{ opacity: 0.75 }}>
-                Geht automatisch per Telegram an die, die laut Dienstplan übernehmen — und an Chris und Rey.
-              </span>
+              Gibt es etwas, das die nächste Schicht wissen muss? Ein angefangenes Gespräch,
+              ein offener Custom, eine Besonderheit bei einem Model.
+              <span style={{ opacity: 0.75 }}> Geht per Telegram an die, die laut Plan übernehmen, und an Chris und Rey.</span>
             </div>
-            <textarea autoFocus value={uebergabeText} onChange={e => setUebergabeText(e.target.value)}
+            <textarea value={uebergabeText} onChange={e => setUebergabeText(e.target.value)}
               placeholder="z. B. Lisa: Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €."
-              rows={5}
+              rows={4}
               style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
               <button onClick={() => checkOut(uebergabeText)} disabled={isCheckingOut || !uebergabeText.trim()}
                 style={{ flex: '1 1 190px', background: uebergabeText.trim() ? '#ec4899' : 'var(--border)', color: uebergabeText.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: (isCheckingOut || !uebergabeText.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                {isCheckingOut ? '⏳ ...' : '🤝 Übergeben & beenden'}
+                {isCheckingOut ? '⏳ ...' : (nachreichenLog && !isOnline ? '🤝 Übergabe abschicken' : '🤝 Übergeben & beenden')}
               </button>
-              <button onClick={() => checkOut(null)} disabled={isCheckingOut}
-                style={{ flex: '1 1 160px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                Ohne Übergabe beenden
-              </button>
+              {/* Nach dem automatischen Auschecken gibt es nichts mehr zu beenden —
+                  dann nur noch abschicken oder verwerfen. */}
+              {!(nachreichenLog && !isOnline) && (
+                <button onClick={() => checkOut(null)} disabled={isCheckingOut}
+                  style={{ flex: '1 1 160px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  Ohne Übergabe beenden
+                </button>
+              )}
             </div>
-            <button onClick={() => setUebergabeDialog(false)} disabled={isCheckingOut}
-              style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 6 }}>
-              Abbrechen — Schicht läuft weiter
+            {/* Abbrechen bleibt IMMER klickbar, auch während gespeichert wird.
+                Hängt der Request auf schlechtem Mobilfunk, wäre das Fenster sonst
+                nur durch Neuladen der Seite loszuwerden. */}
+            <button onClick={() => setUebergabeDialog(false)}
+              style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 10 }}>
+              {nachreichenLog && !isOnline ? 'Schließen' : 'Abbrechen — Schicht läuft weiter'}
             </button>
           </div>
         </div>
