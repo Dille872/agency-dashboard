@@ -39,6 +39,36 @@
 //   Außerdem: es werden count+3 Vorschläge angefordert, damit nach dem Filtern
 //   noch genug übrig bleibt. Verworfene werden gezählt und zurückgemeldet.
 //
+// v4.40.0 – DIE ANTI-WIEDERHOLUNG HAT DAS FALSCHE GELÖSCHT. Messung 29.08.2026
+//   (SQL: sql/analyse-massennachrichten.sql, Abfrage 9) über 10 Models:
+//     * Auf den Verbotslisten von motive() standen die SIGNATUR-Wörter der
+//       Models — zocken/setup (Elina), strand/sonne (Chiara), pole/nagel (Fari),
+//       werkstatt (Julia), tanzen (Leoni), trainieren (Lina) — und bei Ursi
+//       sogar ihre Dialekt-Marker isch/bisch/machsch.
+//     * Bei ALLEN zehn Models war das Tageszeit-Vokabular gesperrt: kaffee 10x,
+//       wach 7x, bett 4x, dazu morgen/morgens.
+//     Grund: 3 Treffer in bis zu 400 Zeilen (0,75 %) reichten für eine Sperre.
+//     Was ein Model ausmacht, wiederholt sich naturgemäß und flog zuerst raus.
+//     Übrig blieb bei allen 15 Models dieselbe farblose Schnittmenge — genau
+//     die Beschwerde der Chatter ("bei jedem Model dasselbe", "Früh/Spät/Nacht
+//     macht keinen Unterschied").
+//   Gegenmaßnahmen:
+//     1. SCHUTZLISTE. Steckbrief (Beschreibung, Tags, Extra, Beispiele, Dialekt)
+//        und ein festes Tageszeit-Vokabular werden NIE gesperrt. Schwelle jetzt
+//        relativ (Wort in ~20 % der Nachrichten), Zählfenster 7 statt 21 Tage.
+//        Die Duplikat-Sperre bleibt bei 21 Tagen — die war nie das Problem.
+//     2. SATZFORMELN HART BEGRENZT. Ganz oben auf jeder Liste standen keine
+//        Themen, sondern Bauteile: "lieber" (Elina 198x, Sandra 190x, Chiara
+//        142x), "wette", "traust", "sitz" — die immer gleichen drei Formeln aus
+//        dem Pflicht-Mix. "lieber" stand längst auf der Verbotsliste und kam
+//        trotzdem 198x: bei strukturellen Wörtern wirkt eine Prompt-Bitte NICHT.
+//        Deshalb derselbe Weg wie bei der Länge: Prüfung im Code + Nachforderung.
+//     3. SCHICHT VERANKERT. Eigene Anker-Pools je Schicht (jeder zweite Vorschlag
+//        bekommt einen), Tageszeit-Block direkt VOR die Längenregel gezogen
+//        (zuletzt Gelesenes wiegt schwerer), echte Berliner Uhrzeit statt nur
+//        Label, und "vorschicht" wird endlich erkannt statt als "unbestimmte
+//        Tageszeit" zu landen.
+//
 // Nötige Secrets: ANTHROPIC_API_KEY  (optional: ANTHROPIC_MODEL)
 // ⚠ ANTHROPIC_MODEL muss claude-haiku-4-5 bleiben. Test 2026-07-30: Sonnet lehnt
 //   die Persona-Aufgabe ab und liefert bei allen Anlässen leere Antworten.
@@ -65,7 +95,8 @@ const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: fal
 
 // --- Helfer: Schicht-Label + Berliner Zeitstempel (Wochentag + HH:MM) ---
 function shiftLabel(s: string | null | undefined): string {
-  return s === 'frueh' ? 'Frühschicht'
+  return s === 'vorschicht' ? 'Vorschicht'
+    : s === 'frueh' ? 'Frühschicht'
     : s === 'spaet' ? 'Spätschicht'
     : s === 'nacht' ? 'Nachtschicht' : '—'
 }
@@ -143,21 +174,71 @@ const STOPP = new Set([
   'viel', 'vielleicht', 'vom', 'von', 'war', 'was', 'wenn', 'wie', 'will', 'wir', 'wird', 'wirklich',
   'wieder', 'wo', 'zu', 'zum', 'zur',
 ])
-function motive(texte: string[], minTreffer = 3, max = 15): string[] {
+// v4.40.0 – SCHUTZLISTE 1: Tageszeit. Diese Wörter dürfen NIE gesperrt werden.
+// Sie sind der einzige Weg, wie sich Früh, Spät und Nacht sprachlich überhaupt
+// unterscheiden können. Vorher war "kaffee" bei allen zehn gemessenen Models
+// verboten — und die Chatter haben zu Recht gemeldet, dass die Schicht keinen
+// Unterschied macht.
+const TAGESZEIT_SCHUTZ = new Set([
+  'morgen', 'morgens', 'mittag', 'mittags', 'nachmittag', 'abend', 'abends', 'nacht', 'nachts',
+  'heute', 'heut', 'gestern', 'frueh', 'frueher', 'spaet', 'spaeter', 'uhrzeit',
+  'aufgewacht', 'aufgestanden', 'wach', 'muede', 'schlaf', 'schlafen', 'einschlafen',
+  'ausschlafen', 'bett', 'decke', 'kissen', 'kaffee', 'fruehstueck', 'duschen', 'dusche',
+  'feierabend', 'abendessen', 'mitternacht', 'sonne', 'sonnenaufgang', 'sonnenuntergang',
+  'dunkel', 'dunkelheit', 'hell', 'licht', 'wecker', 'nachtschicht',
+])
+
+// v4.40.0 – SCHUTZLISTE 2: alles, was DIESES Model ausmacht. Ein Model muss über
+// sein Thema reden dürfen — verboten ist die immer gleiche Szene, nicht das
+// Thema. Ohne diese Liste wurde Elina "zocken" verboten und Ursi ihr Dialekt.
+function schutzWoerter(persona: Record<string, unknown>): Set<string> {
+  const roh = [
+    String(persona.description || ''),
+    String(persona.extra || ''),
+    String(persona.dialekt || ''),
+    ...(Array.isArray(persona.persona_tags) ? persona.persona_tags as string[] : []),
+    ...(Array.isArray(persona.examples) ? persona.examples as string[] : []),
+  ].join(' ')
+  const out = new Set<string>(TAGESZEIT_SCHUTZ)
+  for (const w of normalisiere(roh).split(' ')) if (w.length >= 4) out.add(w)
+  return out
+}
+
+// v4.40.0: Schwelle RELATIV statt absolut. Vorher reichten 3 Treffer in bis zu
+// 400 Zeilen — 0,75 % — für eine dauerhafte Sperre. Jetzt muss ein Wort in
+// ungefähr jeder fünften Nachricht stehen, um als abgenutzt zu gelten.
+// Stellschraube: MOTIV_ANTEIL runter = mehr Verbote (Vorsicht, siehe Kopf).
+const MOTIV_ANTEIL = 0.2
+function motive(texte: string[], schutz: Set<string>, max = 12): string[] {
   const zaehler = new Map<string, number>()
   for (const t of texte) {
     // pro Nachricht jedes Wort nur einmal zählen
     for (const w of new Set(normalisiere(t).split(' '))) {
       if (w.length < 4 || STOPP.has(w) || /^\d+$/.test(w)) continue
+      if (schutz.has(w)) continue
       zaehler.set(w, (zaehler.get(w) || 0) + 1)
     }
   }
+  const minTreffer = Math.max(4, Math.ceil(texte.length * MOTIV_ANTEIL))
   return [...zaehler.entries()]
     .filter(([, n]) => n >= minTreffer)
     .sort((a, b) => b[1] - a[1])
     .slice(0, max)
     .map(([w]) => w)
 }
+
+// ---------------------------------------------------------------------------
+// v4.40.0 – SATZFORMELN. Siehe Kopf: das sind die Wörter, die bei JEDEM Model
+// ganz oben standen. Sie kommen nicht vom Model, sondern vom Pflicht-Mix.
+// Geprüft wird gegen den normalisierten Text (klein, ohne Umlaute/Satzzeichen).
+// Stellschraube: kommen zu wenige Karten an, max auf 2 setzen.
+// ---------------------------------------------------------------------------
+const FORMELN: { name: string; re: RegExp; max: number }[] = [
+  { name: 'lieber/eher-Konstruktion', re: /\b(lieber|eher)\b/, max: 1 },
+  { name: '"ich wette ..."', re: /\bwette[nst]?\b/, max: 1 },
+  { name: '"traust du dich ..."', re: /\btrau(st|e|en)?\b/, max: 1 },
+  { name: '"ich sitz(e) hier ..."', re: /\bsitz[et]?\b/, max: 1 },
+]
 
 function mische<T>(arr: T[]): T[] {
   const a = [...arr]
@@ -198,6 +279,68 @@ const STOFF_ANKER = [
   'etwas, das sie eigentlich tun müsste, aber aufschiebt',
   'ein Ort in ihrer Wohnung, an dem sie gerade ist',
 ]
+
+// v4.40.0 – SCHICHT-ANKER. Die 18 Anker oben sind tageszeit-blind; der Prompt
+// sagt aber ausdrücklich, der Anker bestimme, WORAN die Nachricht hängt. Damit
+// gewann der neutrale Anker jedes Mal gegen die eine Tageszeit-Zeile. Jeder
+// ZWEITE Vorschlag bekommt deshalb jetzt einen Anker aus DIESER Schicht.
+const ANKER_SCHICHT: Record<string, string[]> = {
+  vorschicht: [
+    'dass sie vor dem Wecker wach geworden ist',
+    'wie still es um diese Uhrzeit draußen noch ist',
+    'der erste Kaffee und das erste Licht des Tages',
+    'dass sie kaum geschlafen hat und trotzdem schon auf ist',
+    'wie warm es im Bett war, verglichen mit jetzt',
+    'was sie sich für heute vorgenommen hat, bevor der Tag losgeht',
+  ],
+  frueh: [
+    'wie ihr Morgen bis jetzt gelaufen ist',
+    'ob sie richtig wach ist oder noch nicht ganz',
+    'wie das Vormittagslicht in ihren Raum fällt',
+    'etwas, das sie heute Morgen schon hinter sich gebracht hat',
+    'worauf sie sich im Lauf des Tages freut',
+    'was sie zum Frühstück hatte oder eben nicht',
+  ],
+  spaet: [
+    'wie ihr Tag bis hierher war',
+    'dass der Tag kippt und der Abend anfängt',
+    'was sie heute Abend noch vorhat',
+    'wie sie gerade runterkommt nach dem Tag',
+    'was sie sich für den Abend angezogen oder gemacht hat',
+    'dass es draußen dunkel wird',
+  ],
+  nacht: [
+    'dass es längst zu spät ist und sie trotzdem wach ist',
+    'wie sie im Dunkeln liegt und nicht müde wird',
+    'was ihr nachts durch den Kopf geht und tagsüber nie',
+    'wie leise und anders alles um diese Uhrzeit ist',
+    'dass sie morgen früh raus muss und es ihr gerade egal ist',
+    'etwas, das sie tagsüber nie schreiben würde',
+  ],
+}
+
+// v4.40.0 – Tageszeit-Rahmen je Schicht. Die konkreten Schichtzeiten stehen im
+// Dienstplan pro Model und Woche; hier bewusst nur grobe Fenster ("ungefähr"),
+// damit nichts Falsches behauptet wird.
+const SCHICHT_INFO: Record<string, { label: string; von: number; bis: number; text: string }> = {
+  vorschicht: { label: 'Vorschicht', von: 4, bis: 8, text: 'früher Morgen, ungefähr 4 bis 8 Uhr. Die Welt ist noch nicht wach: dämmrig, still, der Tag hat noch nicht angefangen.' },
+  frueh: { label: 'Frühschicht', von: 8, bis: 14, text: 'Vormittag, ungefähr 8 bis 14 Uhr. Der Tag läuft gerade an: aufstehen, wach werden, die ersten Erledigungen, das meiste liegt noch vor ihr.' },
+  spaet: { label: 'Spätschicht', von: 14, bis: 22, text: 'Nachmittag und Abend, ungefähr 14 bis 22 Uhr. Der Tag ist gelaufen oder läuft aus: Feierabend, Essen, Runterkommen, draußen wird es dunkel.' },
+  nacht: { label: 'Nachtschicht', von: 22, bis: 6, text: 'tiefe Nacht, ungefähr 22 bis 6 Uhr. Alle anderen schlafen: dunkel, leise, wach obwohl man längst schlafen sollte, Gedanken die es tagsüber nicht gibt.' },
+}
+
+// Echte Berliner Uhrzeit. Wird nur dann in den Prompt geschrieben, wenn sie zur
+// gewählten Schicht passt — im Panel steht die Schicht aus dem Dienstplan, und
+// die muss nicht die gerade laufende sein.
+function berlinJetzt(): { stunde: number; wochentag: string; hhmm: string } {
+  const d = new Date()
+  const wochentag = d.toLocaleDateString('de-DE', { weekday: 'long', timeZone: 'Europe/Berlin' })
+  const hhmm = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })
+  // Stunde aus hhmm lesen. Intl.format() mit hour:'2-digit' liefert bei de-DE
+  // "06 Uhr" — Number() darauf ergibt NaN. Beim Testen aufgefallen.
+  const stunde = Number(hhmm.slice(0, 2))
+  return { stunde: Number.isFinite(stunde) ? stunde : -1, wochentag, hhmm }
+}
 
 // Sorten OHNE wörtliche Beispiele (v4.32.0). Je Sorte drei Formulierungen,
 // zufällig gezogen — auch das hält den Prompt in Bewegung.
@@ -293,9 +436,13 @@ serve(async (req) => {
     const gesehen = new Set<string>()
     const sperre: { fp: Fp; schwelle: number }[] = []
     const promptListe: string[] = []
-    const alleTexte: string[] = []
+    // v4.40.0: Die DUPLIKAT-Sperre bleibt bei 21 Tagen (die war nie das Problem),
+    // die MOTIV-Zählung schaut nur noch 7 Tage zurück. Sonst schleppt ein Model
+    // seine eigenen Themen drei Wochen lang als Verbot mit sich herum.
+    const grenze7 = Date.now() - 7 * 24 * 3600 * 1000
+    const texte7: string[] = []
     for (const r of recentRows || []) {
-      if (r.text) alleTexte.push(r.text)
+      if (r.text && new Date(r.created_at).getTime() >= grenze7) texte7.push(r.text)
       const fp = fingerprint(r.text || '')
       if (!fp.norm || gesehen.has(fp.norm)) continue
       gesehen.add(fp.norm)
@@ -324,26 +471,44 @@ serve(async (req) => {
       gesehen.add(fp.norm)
       sperre.push({ fp, schwelle: SCHWELLE_BIBLIOTHEK })
     }
-    const abgenutzt = motive(alleTexte)
+    const abgenutzt = motive(texte7, schutzWoerter(persona))
 
     // --- PFLICHT-MIX: Sorte, Wortspanne UND Stoff-Anker je Vorschlag ---
     // Der Versatz sorgt dafür, dass nicht immer dieselbe Sorte dieselbe Länge
     // bekommt (sonst wäre "Einzelfrage" für immer die kürzeste).
-    const ankerPool = mische(STOFF_ANKER)
+    // v4.40.0: "vorschicht" wird jetzt erkannt — vorher landete sie über den
+    // Standardzweig bei "unbestimmte Tageszeit", obwohl das Frontend den Wert
+    // sauber mitschickt.
+    const schichtKey = SCHICHT_INFO[shift] ? shift : ''
+    const ankerNeutral = mische(STOFF_ANKER)
+    const ankerSchicht = mische(ANKER_SCHICHT[schichtKey] || [])
     const slots = Array.from({ length: holen }, (_, i) => ({
       nr: i + 1,
       kat: SORTEN[i % SORTEN.length][Math.floor(Math.random() * SORTEN[i % SORTEN.length].length)],
       spanne: spannen[(i + Math.floor(i / SORTEN.length)) % spannen.length],
-      anker: ankerPool[i % ankerPool.length],
+      // Jeder zweite Slot bekommt einen Anker aus der Schicht. Ohne Schicht
+      // (unbekannter Wert) bleibt es beim neutralen Pool wie bisher.
+      anker: (i % 2 === 0 && ankerSchicht.length)
+        ? ankerSchicht[Math.floor(i / 2) % ankerSchicht.length]
+        : ankerNeutral[i % ankerNeutral.length],
     }))
     const mixLines = slots
       .map((sl) => `${sl.nr}. ${sl.spanne[0]}–${sl.spanne[1]} Wörter · ${sl.kat} · Anker: ${sl.anker}`)
       .join('\n')
 
     // --- Prompt bauen ---
-    const shiftText = shift === 'frueh' ? 'Frühschicht (Vormittag)'
-      : shift === 'spaet' ? 'Spätschicht (Nachmittag/Abend)'
-      : shift === 'nacht' ? 'Nachtschicht (spät nachts)' : 'unbestimmte Tageszeit'
+    const info = SCHICHT_INFO[schichtKey]
+    const jetzt = berlinJetzt()
+    // Uhrzeit nur nennen, wenn sie im Fenster der gewählten Schicht liegt —
+    // sonst behauptet der Prompt "es ist 14 Uhr" in einer Nachtschicht.
+    const uhrzeitPasst = info
+      ? (info.von < info.bis
+          ? (jetzt.stunde >= info.von && jetzt.stunde < info.bis)
+          : (jetzt.stunde >= info.von || jetzt.stunde < info.bis))
+      : false
+    const shiftText = info
+      ? `${info.label}: ${info.text}${uhrzeitPasst ? ` Es ist gerade ${jetzt.wochentag}, ${jetzt.hhmm} Uhr.` : ''}`
+      : 'unbestimmte Tageszeit'
 
     const system = [
       `Du bist NICHT ein Chatbot und schreibst NICHT wie einer. Du bist "${model}" – ein echter Mensch, der jemandem, den sie mag (ein zahlender Fan auf einer Creator-Plattform), spontan aufs Handy tippt.`,
@@ -362,6 +527,11 @@ serve(async (req) => {
       // v4.32.0 – zentral: der Anker ist der Hebel gegen "immer dieselbe Szene".
       `ZU DEN ANKERN: Der Anker sagt, WORAN die Nachricht hängt – nicht, worüber sie redet. Bau ihn konkret aus, mit einem Detail, das nur zu diesem Moment passt. Zwei Nachrichten dürfen NICHT dieselbe Szene oder dasselbe Bild benutzen. Die Sorten-Beschreibungen oben sind Formvorgaben, KEINE Textvorlagen – übernimm daraus keine Formulierung.`,
 
+      // v4.40.0: Damit das Modell die Chance hat, den Code-Filter gar nicht erst
+      // auszulösen. Der Filter bleibt trotzdem — die Bitte allein hat nachweislich
+      // nicht gewirkt (Elina: "lieber" 198x trotz Verbotsliste).
+      `ABGENUTZTE SATZFORMELN – jedes dieser Muster darf HÖCHSTENS EINMAL in der ganzen Liste vorkommen, egal welche Sorte: "lieber X oder eher Y", "ich wette, du …", "traust du dich …", "ich sitz(e) hier …". Ein Entweder-oder geht auch ohne "lieber" und ohne "eher". Die übrigen Nachrichten bauen anders.`,
+
       `Beschreibung von "${model}": ${persona.description || '—'}`,
       persona.persona_tags?.length ? `Charakter: ${persona.persona_tags.join(', ')}. Nutze diese Details als echten STOFF für konkrete Nachrichten (z.B. bei einer Gamerin eine konkrete Szene im Match), nicht nur als Etikett.` : '',
       `Anrede: ${persona.anrede === 'sie' ? 'Sie' : 'Du'}. Sprache/Dialekt: ${persona.dialekt}. Emoji-Menge: ${persona.emoji}. Direktheit: ${persona.direktheit}.`,
@@ -369,7 +539,6 @@ serve(async (req) => {
       persona.nogos?.length ? `Absolute No-Gos (niemals): ${persona.nogos.join('; ')}.` : '',
       persona.emojis?.length ? `Erlaubte Emojis – verwende AUSSCHLIESSLICH diese, KEINE anderen: ${persona.emojis.join(' ')}` : '',
       `Anlass: ${occLabel}. ${guardrail}`,
-      `Kontext: ${shiftText}. Passe die Nachricht an die Tageszeit an.`,
       `Schreibe die Nachrichten auf ${language}. Kein Klarname, keine echten Treffen, keine Links.`,
       language !== 'Deutsch' ? `Hinweis: Die Dialekt-Einstellung ist deutschspezifisch. In ${language} den Charakter und Ton des Models beibehalten, aber natürlich und muttersprachlich in ${language} schreiben (kein deutscher Dialekt).` : '',
       persona.extra ? `WICHTIGE Extra-Anweisungen (unbedingt befolgen): ${persona.extra}` : '',
@@ -381,6 +550,12 @@ serve(async (req) => {
       abgenutzt.length ? `ABGENUTZTE MOTIVE – diese Wörter und die Szenen dahinter kamen in den letzten Wochen zu oft vor. Vermeide sie in ALLEN Vorschlägen und such dir andere Bilder: ${abgenutzt.join(', ')}.` : '',
 
       `SELBSTCHECK vor der Ausgabe: Lies jede Nachricht und frag dich – "Würde ein echter Mensch das so tippen, oder klingt das nach Bot/Umfrage?" Und: "Steht so etwas oben schon in der Liste?" Wenn ja: neu schreiben, mit anderem Bild.`,
+
+      // v4.40.0: Die Tageszeit stand vorher als eine schwache Zeile in der Mitte,
+      // vor Selbstcheck und Längenregel — und ging dort unter. Jetzt steht sie
+      // direkt vor der Längenregel, nach derselben Logik: was zuletzt gelesen
+      // wird, wiegt schwerer.
+      `TAGESZEIT – gilt für JEDE Nachricht: ${shiftText} Die Vorschläge müssen erkennbar aus DIESER Tageszeit kommen: was sie jetzt gerade tut, wie wach oder müde sie ist, was eben vorbei ist und was noch kommt. Eine Nachricht, die man genauso gut um 4 Uhr morgens wie um 20 Uhr abends schicken könnte, ist falsch — schreib sie neu. Mindestens die Hälfte der Vorschläge muss einen klaren Bezug zu dieser Tageszeit haben.`,
 
       // Bewusst als LETZTE Regel vor der Ausgabe-Anweisung: Alles davor drängt zu
       // mehr Inhalt ("konkrete Mini-Szene"), und genau daran ist die Länge bisher
@@ -439,12 +614,28 @@ serve(async (req) => {
     // --- Prüfung: Länge UND Wiederholung in einem Durchgang ---
     // Ein Vorschlag fällt durch, wenn er zu lang ist, dem Verlauf zu ähnlich
     // sieht oder einem bereits akzeptierten Vorschlag derselben Runde gleicht.
+    // v4.40.0 – Zähler für die Satzformeln. Gezählt wird nur, was ANGENOMMEN
+    // wurde; ein abgelehnter Vorschlag verbraucht das Kontingent nicht.
+    const formelZaehler = new Map<string, number>()
+    const merkeFormeln = (text: string) => {
+      const norm = normalisiere(text)
+      for (const f of FORMELN) if (f.re.test(norm)) formelZaehler.set(f.name, (formelZaehler.get(f.name) || 0) + 1)
+    }
+
     const pruefe = (text: string, i: number, bisher: Fp[]): string | null => {
       const w = wortAnzahl(text)
       const sp = slots[i]?.spanne
       if (sp && w > sp[1] + 1) return `zu lang (${w} Wörter statt ${sp[0]}–${sp[1]})`
       const fp = fingerprint(text)
       if (!fp.norm) return 'leer'
+      // v4.40.0: Satzformeln. Bewusst VOR der Ähnlichkeitsprüfung — "lieber X
+      // oder eher Y" ist jedes Mal ein anderer Satz und fällt der Ähnlichkeit
+      // deshalb nie auf, ist für den Chatter aber genau die Wiederholung.
+      for (const f of FORMELN) {
+        if (f.re.test(fp.norm) && (formelZaehler.get(f.name) || 0) >= f.max) {
+          return `abgenutzte Satzformel (${f.name}) – steht in dieser Runde schon`
+        }
+      }
       for (const s of sperre) {
         if (aehnlichkeit(fp, s.fp) >= s.schwelle) return 'zu ähnlich zu einer Nachricht, die es schon gab'
       }
@@ -462,6 +653,7 @@ serve(async (req) => {
       if (grund) { problem.push({ i, text: t, grund }); return }
       behalten.set(i, t)
       okFps.push(fingerprint(t))
+      merkeFormeln(t)
     })
 
     // --- Eine Nachforderung für alles, was durchgefallen ist ---
@@ -474,7 +666,8 @@ serve(async (req) => {
       const nach = await frageKI(
         `Diese ${problem.length} Vorschläge wurden abgelehnt. Schreib GENAU ${problem.length} neue, ` +
         `in derselben Reihenfolge, jeder in seiner Wortspanne und mit seinem Anker — zähl die Wörter nach. ` +
-        `Bei "zu ähnlich": nimm ein komplett ANDERES Bild, nicht dieselbe Szene mit anderen Worten.\n\n${auftrag}\n\n` +
+        `Bei "zu ähnlich": nimm ein komplett ANDERES Bild, nicht dieselbe Szene mit anderen Worten. ` +
+        `Bei "abgenutzte Satzformel": bau den Satz komplett anders und verwende das genannte Muster NICHT.\n\n${auftrag}\n\n` +
         (stehen.length ? `Diese bleiben stehen, nicht wiederholen:\n- ${stehen.join('\n- ')}\n\n` : '') +
         `Antworte als JSON: {"messages":[...]} mit genau ${problem.length} Nachrichten.`,
       )
@@ -486,6 +679,7 @@ serve(async (req) => {
           if (grund) return              // zweiter Versuch daneben -> fällt raus
           behalten.set(p.i, neu)
           okFps.push(fingerprint(neu))
+          merkeFormeln(neu)
         })
       }
     }
