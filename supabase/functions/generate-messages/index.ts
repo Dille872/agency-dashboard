@@ -233,6 +233,21 @@ function motive(texte: string[], schutz: Set<string>, max = 12): string[] {
 // Geprüft wird gegen den normalisierten Text (klein, ohne Umlaute/Satzzeichen).
 // Stellschraube: kommen zu wenige Karten an, max auf 2 setzen.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// v4.42.0 – DENGLISCH. Gemeldet am 29.08.2026 nach dem Umbau auf zwei Stufen:
+// "meantime ich einfach auf dein ping warten", "weirdly nice", "totally out of
+// the blue", "ngl". Haiku mischt im Deutschen gern englische Brocken hinein.
+// Bewusst eine KURZE Liste klarer Fälle: Eingebürgertes (okay, sorry, cool,
+// nice, chill) bleibt erlaubt — sonst klingt eine 28-jährige Gamerin steif.
+// Geprüft wird gegen den normalisierten Text, Mehrwortwendungen gehen deshalb.
+// Wer erweitert: nur Wörter aufnehmen, die im Deutschen wirklich als Fremdkörper
+// wirken, nicht jedes englische Wort.
+const DENGLISCH = [
+  'meantime', 'ngl', 'weirdly', 'totally', 'literally', 'actually', 'basically',
+  'honestly', 'lowkey', 'highkey', 'kinda', 'sorta', 'tbh', 'imo', 'btw',
+  'out of the blue', 'anyways', 'whatever', 'somehow', 'like really',
+]
+
 const FORMELN: { name: string; re: RegExp; max: number }[] = [
   { name: 'lieber/eher-Konstruktion', re: /\b(lieber|eher)\b/, max: 1 },
   { name: '"ich wette ..."', re: /\bwette[nst]?\b/, max: 1 },
@@ -543,6 +558,12 @@ serve(async (req) => {
       persona.emojis?.length ? `Erlaubte Emojis – verwende AUSSCHLIESSLICH diese, KEINE anderen: ${persona.emojis.join(' ')}` : '',
       `Anlass: ${occLabel}. ${guardrail}`,
       `Schreibe die Nachrichten auf ${language}. Kein Klarname, keine echten Treffen, keine Links.`,
+
+      // v4.42.0 – beides gemeldet: englische Brocken mitten im deutschen Satz,
+      // und ein Grundton, der sich beschwert statt gute Laune zu machen.
+      language === 'Deutsch' ? `SAUBERES DEUTSCH: Schreib ganze, grammatisch richtige deutsche Sätze — achte besonders auf Fälle und Geschlecht ("nach irgendwas Falschem", "ein Nachbar"). Eingebürgerte Wörter wie okay, sorry, cool, nice sind in Ordnung. Englische Einschübe wie "ngl", "weirdly", "totally", "meantime", "out of the blue" sind VERBOTEN — wenn dir nur ein englisches Wort einfällt, formulier den Satz um.` : '',
+
+      `STIMMUNG: Die Nachricht soll dem Fan gute Laune machen und Lust auf eine Antwort. Kein Jammern, keine Beschwerde über den eigenen Tag, keine Entschuldigung ("sorry, hab vergessen…"), kein "lief nicht so". Auch eine ehrliche Kleinigkeit darf leicht und warm klingen, nicht genervt.`,
       language !== 'Deutsch' ? `Hinweis: Die Dialekt-Einstellung ist deutschspezifisch. In ${language} den Charakter und Ton des Models beibehalten, aber natürlich und muttersprachlich in ${language} schreiben (kein deutscher Dialekt).` : '',
       persona.extra ? `WICHTIGE Extra-Anweisungen (unbedingt befolgen): ${persona.extra}` : '',
 
@@ -645,6 +666,10 @@ serve(async (req) => {
       if (w > hartesMax) return `zu lang (${w} Wörter, erlaubt sind ${maxWorte})`
       const fp = fingerprint(text)
       if (!fp.norm) return 'leer'
+      // v4.42.0: englische Einschuebe. Vor allem anderen, weil so ein Satz auch
+      // dann nicht zu retten ist, wenn er sonst alles einhaelt.
+      const englisch = DENGLISCH.find((w) => new RegExp(`\\b${w}\\b`).test(fp.norm))
+      if (englisch) return `englischer Einschub ("${englisch}") – muss auf Deutsch`
       // Satzformeln bewusst VOR der Aehnlichkeitspruefung — "lieber X oder eher
       // Y" ist jedes Mal ein anderer Satz und faellt der Aehnlichkeit nie auf,
       // ist fuer den Chatter aber genau die Wiederholung.
@@ -686,25 +711,59 @@ serve(async (req) => {
         `b) Ergibt der Inhalt Sinn, und passt jedes Detail zu "${model}"? Was nicht zu dieser Person gehört, fällt durch.\n` +
         `c) Passt er zur Tageszeit? ${shiftText}\n` +
         `d) Würde ein Fan darauf antworten WOLLEN? Nichtssagendes fällt durch.\n` +
-        `e) Fragen enden mit einem Fragezeichen.\n\n` +
+        `e) Fragen enden mit einem Fragezeichen.\n` +
+        `f) Ist das grammatisch richtiges Deutsch? Korrigiere Fälle und Geschlecht. Englische Einschübe ("ngl", "weirdly", "totally", "meantime") raus und auf Deutsch umformulieren.\n` +
+        `g) Macht sie gute Laune? Jammern, Beschwerden über den eigenen Tag und Entschuldigungen fallen durch.\n\n` +
         `Was gut ist, lässt du WORTGLEICH stehen. Was durchfällt, schreibst du neu – dieselbe Idee, wenn sie taugt, ` +
         `sonst eine bessere. Höchstens ${maxWorte} Wörter pro Nachricht, Emojis zählen nicht mit.\n` +
         `Gib GENAU ${count} Nachrichten zurück: die besten, inhaltlich verschieden, keine zwei mit demselben Bild.\n` +
         `Antworte AUSSCHLIESSLICH als JSON: {"messages":["...","..."]}`,
       )
-      if (Array.isArray(lektorat)) {
-        for (const t of lektorat) {
-          if (final.length >= count) break
-          if (pruefe(t, fps2, zaehler2)) continue
-          final.push(t); fps2.push(fingerprint(t)); merkeIn(zaehler2, t)
+      // v4.42.0 – FRAGEZEICHEN-QUOTE. Die Vorgabe "mindestens die Haelfte sind
+      // Fragen" stand im Prompt und wurde ignoriert (eine von acht). Also wie
+      // bei den Satzformeln: im Code durchsetzen statt darum bitten.
+      // Reihenfolge: erst die Fragen sichern, dann auffuellen — sonst ist die
+      // Liste voll, bevor die Quote erreicht ist.
+      const minFragen = Math.ceil(count / 2)
+      const istFrage = (t: string) => t.includes('?')
+      const pool = [...(Array.isArray(lektorat) ? lektorat : []), ...durch]
+      const nimm = (t: string): boolean => {
+        if (final.length >= count) return false
+        if (pruefe(t, fps2, zaehler2)) return false
+        final.push(t); fps2.push(fingerprint(t)); merkeIn(zaehler2, t)
+        return true
+      }
+
+      let fragen = 0
+      for (const t of pool) {
+        if (fragen >= minFragen) break
+        if (istFrage(t) && nimm(t)) fragen++
+      }
+
+      // Reichen die Fragen nicht, wird EINMAL gezielt nachgefordert — bevor der
+      // Rest aufgefuellt wird, sonst waere kein Platz mehr frei.
+      if (fragen < minFragen) {
+        const fehlt = minFragen - fragen
+        const stehen = final.length ? `Diese stehen schon fest, nicht wiederholen:\n- ${final.join('\n- ')}\n\n` : ''
+        const nachFragen = await frageKI(
+          `Schreib GENAU ${fehlt} weitere Nachrichten für "${occLabel}" bei "${model}". ` +
+          `Jede davon MUSS eine echte, konkrete Frage sein und mit einem Fragezeichen enden — keine Aussagen. ` +
+          `Höchstens ${maxWorte} Wörter, sauberes Deutsch, keine englischen Einschübe, kein Jammern.\n\n${stehen}` +
+          `Antworte als JSON: {"messages":[...]}`,
+        )
+        if (Array.isArray(nachFragen)) {
+          for (const t of nachFragen) {
+            if (fragen >= minFragen) break
+            if (istFrage(t) && nimm(t)) fragen++
+          }
         }
       }
-      // Auffuellen, falls das Lektorat zu wenige zurueckgibt: die formal sauberen
-      // Kandidaten aus Stufe 1 sind immer noch besser als eine halbleere Liste.
-      for (const t of durch) {
+
+      // Auffuellen: die formal sauberen Kandidaten sind immer noch besser als
+      // eine halbleere Liste.
+      for (const t of pool) {
         if (final.length >= count) break
-        if (pruefe(t, fps2, zaehler2)) continue
-        final.push(t); fps2.push(fingerprint(t)); merkeIn(zaehler2, t)
+        nimm(t)
       }
     }
 
