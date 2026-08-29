@@ -249,13 +249,14 @@ function mische<T>(arr: T[]): T[] {
   return a
 }
 
-// Wortspannen je Stufe. Vier Stufen pro Set, damit sich bei 8 Vorschlägen
-// jede Spanne genau zweimal wiederholt.
-const LAENGEN: Record<string, [number, number][]> = {
-  kurz:   [[4, 6], [6, 8], [8, 10], [10, 12]],
-  mittel: [[6, 10], [10, 14], [14, 18], [18, 22]],
-  lang:   [[12, 18], [16, 22], [20, 26], [24, 30]],
-}
+// v4.41.0 – LÄNGE IST NUR NOCH EINE GRENZE, KEIN DIKTAT.
+// Bis v4.40 bekam jeder Vorschlag eine eigene Wortspanne zugeteilt (4–6, 6–8,
+// 8–10 …) und die Längenregel stand als "die wichtigste Regel, sie schlägt alle
+// anderen" am Ende des Prompts. Sie schlug dann auch die Grammatik: heraus kamen
+// Stummel wie "erst tee oder noch liegen" — formal korrekt, inhaltlich Unsinn.
+// Ein Entweder-oder passt nicht in vier Wörter. Jetzt gilt nur die Obergrenze;
+// kurz DARF sein, muss aber ein ganzer Satz bleiben.
+const MAXWORTE: Record<string, number> = { kurz: 12, mittel: 22, lang: 30 }
 
 // v4.32.0 – STOFF-WÜRFEL: woran die Nachricht hängen soll. Bewusst nur die ART
 // des Ankers, kein Thema und kein Beispielsatz — sonst wird genau der kopiert.
@@ -392,13 +393,13 @@ serve(async (req) => {
       return json({ ok: false, error: `Für ${model} ist noch kein Steckbrief eingerichtet.` }, 409)
     }
     const count = Math.min(Math.max(Number(body.count || persona.anzahl || 8), 1), 12)
-    // v4.32.0: bewusst mehr anfordern, als angezeigt wird — der Ähnlichkeits-
-    // Filter wirft welche raus, und niemand soll dann vor drei Karten sitzen.
-    const holen = Math.min(count + 3, 15)
+    // v4.41.0: Stufe 1 liefert deutlich mehr, als angezeigt wird — Stufe 2 wählt
+    // daraus die besten aus. Auswahl setzt Überangebot voraus.
+    const holen = Math.min(count + 6, 18)
     const stufe = persona.laenge === 'lang' ? 'lang' : persona.laenge === 'mittel' ? 'mittel' : 'kurz'
-    const spannen = LAENGEN[stufe]
+    const maxWorte = MAXWORTE[stufe]
     // Obergrenze mit kleiner Toleranz — ein Wort drüber ist kein Drama, drei schon.
-    const hartesMax = Math.max(...spannen.map((b) => b[1])) + 2
+    const hartesMax = maxWorte + 2
 
     // --- Anlass ---
     const { data: occ } = await db.from('message_occasions').select('*').eq('key', occasion).maybeSingle()
@@ -473,28 +474,28 @@ serve(async (req) => {
     }
     const abgenutzt = motive(texte7, schutzWoerter(persona))
 
-    // --- PFLICHT-MIX: Sorte, Wortspanne UND Stoff-Anker je Vorschlag ---
-    // Der Versatz sorgt dafür, dass nicht immer dieselbe Sorte dieselbe Länge
-    // bekommt (sonst wäre "Einzelfrage" für immer die kürzeste).
-    // v4.40.0: "vorschicht" wird jetzt erkannt — vorher landete sie über den
-    // Standardzweig bei "unbestimmte Tageszeit", obwohl das Frontend den Wert
-    // sauber mitschickt.
+    // --- v4.41.0: ZIELE FÜR DIE RUNDE statt Vorgaben pro Nummer ---
+    // Bis v4.40 bekam jede Nummer gleichzeitig Sorte, Wortspanne UND einen
+    // zugelosten Anker. Vier harte Vorgaben pro Zeile — das Modell hat dann ein
+    // Formular ausgefüllt statt eine Nachricht zu schreiben ("Anker: etwas das
+    // gerade läuft" + "Entweder-oder" + "4–6 Wörter" = "erst tee oder noch
+    // liegen"). Jetzt gelten die Ziele für die Runde als Ganzes, und die Anker
+    // sind ein Vorrat zum Bedienen, kein Pflichtprogramm.
+    // "vorschicht" wird seit v4.40.0 erkannt (vorher: "unbestimmte Tageszeit").
     const schichtKey = SCHICHT_INFO[shift] ? shift : ''
-    const ankerNeutral = mische(STOFF_ANKER)
-    const ankerSchicht = mische(ANKER_SCHICHT[schichtKey] || [])
-    const slots = Array.from({ length: holen }, (_, i) => ({
-      nr: i + 1,
-      kat: SORTEN[i % SORTEN.length][Math.floor(Math.random() * SORTEN[i % SORTEN.length].length)],
-      spanne: spannen[(i + Math.floor(i / SORTEN.length)) % spannen.length],
-      // Jeder zweite Slot bekommt einen Anker aus der Schicht. Ohne Schicht
-      // (unbekannter Wert) bleibt es beim neutralen Pool wie bisher.
-      anker: (i % 2 === 0 && ankerSchicht.length)
-        ? ankerSchicht[Math.floor(i / 2) % ankerSchicht.length]
-        : ankerNeutral[i % ankerNeutral.length],
-    }))
-    const mixLines = slots
-      .map((sl) => `${sl.nr}. ${sl.spanne[0]}–${sl.spanne[1]} Wörter · ${sl.kat} · Anker: ${sl.anker}`)
-      .join('\n')
+    const ankerVorrat = [
+      ...mische(ANKER_SCHICHT[schichtKey] || []).slice(0, 4),
+      ...mische(STOFF_ANKER).slice(0, 4),
+    ].join(' · ')
+    const sortenAuswahl = SORTEN.map((v) => v[Math.floor(Math.random() * v.length)])
+    const zielMix = [
+      `- Mindestens ${Math.max(3, Math.round(holen * 0.5))} sind echte Fragen und enden mit einem Fragezeichen.`,
+      `- Höchstens ${Math.max(1, Math.round(holen * 0.2))} sind Aussagen ohne Frage — ein geteilter Moment, der zum Antworten einlädt.`,
+      `- Höchstens EINE ist ein Entweder-oder, und dann mit zwei ausformulierten Möglichkeiten.`,
+      `- Mindestens zwei sind spielerisch oder neckisch.`,
+      `- Keine zwei benutzen dasselbe Bild oder dieselbe Szene.`,
+      `Welche Sorten gemeint sind, zur Orientierung: ${sortenAuswahl.join(' | ')}`,
+    ].join('\n')
 
     // --- Prompt bauen ---
     const info = SCHICHT_INFO[schichtKey]
@@ -522,10 +523,12 @@ serve(async (req) => {
 
       `GESPRÄCHSOPENER richtig gedacht: Ziel ist, dass der Fan ANTWORTEN WILL – durch echten INHALT, nicht durch eine mechanische Frage. Erzähl kurz etwas Konkretes und lass daraus natürlich Raum für eine Antwort.`,
 
-      `PFLICHT-LISTE der ${holen} Vorschläge – Nummer für Nummer, Reihenfolge, Wortzahl und Anker GENAU einhalten:\n${mixLines}`,
+      `AUFGABE: Schreib ${holen} verschiedene Nachrichten. Es sind Vorschläge für einen Chatter – er sucht sich einen aus und schickt ihn genau so an einen Fan. Jede Nachricht muss deshalb für sich allein funktionieren.`,
+
+      `ZIELE FÜR DIE ${holen} ZUSAMMEN (nicht pro Nummer abarbeiten):\n${zielMix}`,
 
       // v4.32.0 – zentral: der Anker ist der Hebel gegen "immer dieselbe Szene".
-      `ZU DEN ANKERN: Der Anker sagt, WORAN die Nachricht hängt – nicht, worüber sie redet. Bau ihn konkret aus, mit einem Detail, das nur zu diesem Moment passt. Zwei Nachrichten dürfen NICHT dieselbe Szene oder dasselbe Bild benutzen. Die Sorten-Beschreibungen oben sind Formvorgaben, KEINE Textvorlagen – übernimm daraus keine Formulierung.`,
+      `IDEEN-VORRAT (Auswahl, kein Pflichtprogramm): ${ankerVorrat}. Nimm daraus, was zu ${model} und zur Tageszeit wirklich passt, und lass den Rest liegen. Woran eine Nachricht hängt, ist wichtiger als worüber sie redet: ein konkretes Detail, das nur zu diesem Moment passt. Zwei Nachrichten dürfen NICHT dieselbe Szene benutzen. Die Sorten-Beschreibungen sind Formvorgaben, KEINE Textvorlagen.`,
 
       // v4.40.0: Damit das Modell die Chance hat, den Code-Filter gar nicht erst
       // auszulösen. Der Filter bleibt trotzdem — die Bitte allein hat nachweislich
@@ -560,9 +563,15 @@ serve(async (req) => {
       // Bewusst als LETZTE Regel vor der Ausgabe-Anweisung: Alles davor drängt zu
       // mehr Inhalt ("konkrete Mini-Szene"), und genau daran ist die Länge bisher
       // gescheitert. Zuletzt Gelesenes wiegt schwerer.
-      `LÄNGE – die wichtigste Regel, sie schlägt alle anderen: Zähle bei JEDER Nachricht die Wörter und halte die Spanne aus der Pflicht-Liste ein. Emojis zählen nicht mit. Lieber ein Wort zu wenig als eines zu viel. Passt eine Idee nicht in die Wortzahl, nimm eine kleinere Idee — kürze NICHT den Sinn weg.`,
+      `LÄNGE: Höchstens ${maxWorte} Wörter pro Nachricht, Emojis zählen nicht mit. Kurz ist gut – aber nur, solange es ein vollständiger Satz bleibt. Lieber ${maxWorte} Wörter und ein sauberer Satz als sechs Wörter Stichwort-Salat.`,
 
-      `Antworte AUSSCHLIESSLICH als JSON: {"messages":["...","..."]} mit genau ${holen} unterschiedlichen Nachrichten (in der Reihenfolge des Pflicht-Mix). Kein weiterer Text.`,
+      // v4.41.0: Das ist jetzt die letzte und stärkste Regel — vorher stand hier
+      // die Wortzahl, und genau die hat den Sinn aus den Nachrichten gedrückt.
+      `SINN GEHT VOR ALLEM ANDEREN: Jede Nachricht muss ein vollständiger, verständlicher Satz sein, den ein echter Mensch genau so tippen würde, und inhaltlich zu "${model}" passen – jedes Detail muss zu dieser Person gehören. Eine Zeile, die man zweimal lesen muss, oder bei der man rät, was gemeint ist, ist falsch: dann lieber einfach und klar. Prüfe jede Nachricht einzeln, bevor du sie ausgibst.`,
+
+      // v4.41.0: Die Anzahl steht bewusst NICHT mehr hier — Stufe 1 und Stufe 2
+      // teilen sich diesen System-Prompt und brauchen unterschiedlich viele.
+      `Antworte AUSSCHLIESSLICH als JSON: {"messages":["...","..."]} – wie viele Nachrichten, steht in der jeweiligen Aufgabe. Kein weiterer Text.`,
     ].filter(Boolean).join('\n')
 
     // --- Anthropic ---
@@ -599,40 +608,48 @@ serve(async (req) => {
       return out.filter((x) => typeof x === 'string' && x.trim().length > 0)
     }
 
-    // v4.32.0: Variations-Nummer im User-Turn. Zwei Klicks hintereinander sollen
+    // =========================================================================
+    // v4.41.0 – ZWEI STUFEN. Stufe 1 sammelt Ideen, Stufe 2 prueft sie auf SINN.
+    // Warum: Bis v4.40 prueften nur Code-Regeln — Laenge, Aehnlichkeit,
+    // Satzformeln. Alles Formalien. Ob eine Zeile ueberhaupt ein vollstaendiger
+    // Satz IST, ob sie inhaltlich aufgeht und ob sie zu DIESEM Model passt, hat
+    // niemand geprueft. Code kann das auch nicht. Ergebnis waren Stummel wie
+    // "erst tee oder noch liegen" — bei einer Gamerin, die laut Steckbrief
+    // Kaffee trinkt. Genau dafuer ist Stufe 2 da: dasselbe Modell, aber in der
+    // Rolle des Lektors, der fremde Entwuerfe hart durchsieht.
+    // Kosten: ein zusaetzlicher Haiku-Aufruf. Vorher gab es die Nachforderung,
+    // also im schlechten Fall ohnehin zwei.
+    // =========================================================================
+
+    // Variations-Nummer im User-Turn (v4.32.0): zwei Klicks hintereinander sollen
     // nicht denselben Text-Input haben — sonst liefert das Modell gern dasselbe.
     const variation = Math.floor(Math.random() * 100000)
     const ersteRunde = await frageKI(
-      `Gib mir ${holen} Vorschläge für "${occLabel}". Halte die Pflicht-Liste samt Wortzahlen und Ankern ein. ` +
+      `Gib mir ${holen} Vorschläge für "${occLabel}". ` +
       `Wiederhole nichts aus der Liste "ZULETZT GESCHICKT" – auch nicht sinngemäß. ` +
       `Variations-Nr. ${variation}: nimm bewusst andere Bilder und Szenen als naheliegend wären.`,
     )
     if (!Array.isArray(ersteRunde)) return json({ ok: false, error: ersteRunde.fehler }, 502)
-    const messages = ersteRunde.slice(0, holen)
-    if (messages.length === 0) return json({ ok: false, error: 'Keine Vorschläge erhalten' }, 502)
+    const kandidaten = ersteRunde.slice(0, holen)
+    if (kandidaten.length === 0) return json({ ok: false, error: 'Keine Vorschläge erhalten' }, 502)
 
-    // --- Prüfung: Länge UND Wiederholung in einem Durchgang ---
-    // Ein Vorschlag fällt durch, wenn er zu lang ist, dem Verlauf zu ähnlich
-    // sieht oder einem bereits akzeptierten Vorschlag derselben Runde gleicht.
-    // v4.40.0 – Zähler für die Satzformeln. Gezählt wird nur, was ANGENOMMEN
-    // wurde; ein abgelehnter Vorschlag verbraucht das Kontingent nicht.
-    const formelZaehler = new Map<string, number>()
-    const merkeFormeln = (text: string) => {
+    // --- Formale Pruefung im Code: Laenge, Wiederholung, Satzformeln ---
+    // Bewusst VOR Stufe 2: was formal durchfaellt, muss der Lektor gar nicht
+    // erst ansehen, und seine Liste bleibt kurz genug zum sorgfaeltigen Lesen.
+    const merkeIn = (zaehler: Map<string, number>, text: string) => {
       const norm = normalisiere(text)
-      for (const f of FORMELN) if (f.re.test(norm)) formelZaehler.set(f.name, (formelZaehler.get(f.name) || 0) + 1)
+      for (const f of FORMELN) if (f.re.test(norm)) zaehler.set(f.name, (zaehler.get(f.name) || 0) + 1)
     }
-
-    const pruefe = (text: string, i: number, bisher: Fp[]): string | null => {
+    const pruefe = (text: string, bisher: Fp[], zaehler: Map<string, number>): string | null => {
       const w = wortAnzahl(text)
-      const sp = slots[i]?.spanne
-      if (sp && w > sp[1] + 1) return `zu lang (${w} Wörter statt ${sp[0]}–${sp[1]})`
+      if (w > hartesMax) return `zu lang (${w} Wörter, erlaubt sind ${maxWorte})`
       const fp = fingerprint(text)
       if (!fp.norm) return 'leer'
-      // v4.40.0: Satzformeln. Bewusst VOR der Ähnlichkeitsprüfung — "lieber X
-      // oder eher Y" ist jedes Mal ein anderer Satz und fällt der Ähnlichkeit
-      // deshalb nie auf, ist für den Chatter aber genau die Wiederholung.
+      // Satzformeln bewusst VOR der Aehnlichkeitspruefung — "lieber X oder eher
+      // Y" ist jedes Mal ein anderer Satz und faellt der Aehnlichkeit nie auf,
+      // ist fuer den Chatter aber genau die Wiederholung.
       for (const f of FORMELN) {
-        if (f.re.test(fp.norm) && (formelZaehler.get(f.name) || 0) >= f.max) {
+        if (f.re.test(fp.norm) && (zaehler.get(f.name) || 0) >= f.max) {
           return `abgenutzte Satzformel (${f.name}) – steht in dieser Runde schon`
         }
       }
@@ -645,54 +662,58 @@ serve(async (req) => {
       return null
     }
 
-    const okFps: Fp[] = []
-    const behalten = new Map<number, string>()   // Slot-Index -> Text
-    const problem: { i: number; text: string; grund: string }[] = []
-    messages.forEach((t, i) => {
-      const grund = pruefe(t, i, okFps)
-      if (grund) { problem.push({ i, text: t, grund }); return }
-      behalten.set(i, t)
-      okFps.push(fingerprint(t))
-      merkeFormeln(t)
-    })
+    const fps1: Fp[] = []
+    const zaehler1 = new Map<string, number>()
+    const durch: string[] = []
+    const problem: { text: string; grund: string }[] = []
+    for (const t of kandidaten) {
+      const grund = pruefe(t, fps1, zaehler1)
+      if (grund) { problem.push({ text: t, grund }); continue }
+      durch.push(t); fps1.push(fingerprint(t)); merkeIn(zaehler1, t)
+    }
 
-    // --- Eine Nachforderung für alles, was durchgefallen ist ---
-    if (problem.length > 0 && behalten.size < count) {
-      const auftrag = problem.map((p) => {
-        const sl = slots[p.i]
-        return `${p.i + 1}. ${sl.spanne[0]}–${sl.spanne[1]} Wörter · ${sl.kat} · Anker: ${sl.anker}\n   Abgelehnt (${p.grund}): ${p.text}`
-      }).join('\n')
-      const stehen = [...behalten.values()]
-      const nach = await frageKI(
-        `Diese ${problem.length} Vorschläge wurden abgelehnt. Schreib GENAU ${problem.length} neue, ` +
-        `in derselben Reihenfolge, jeder in seiner Wortspanne und mit seinem Anker — zähl die Wörter nach. ` +
-        `Bei "zu ähnlich": nimm ein komplett ANDERES Bild, nicht dieselbe Szene mit anderen Worten. ` +
-        `Bei "abgenutzte Satzformel": bau den Satz komplett anders und verwende das genannte Muster NICHT.\n\n${auftrag}\n\n` +
-        (stehen.length ? `Diese bleiben stehen, nicht wiederholen:\n- ${stehen.join('\n- ')}\n\n` : '') +
-        `Antworte als JSON: {"messages":[...]} mit genau ${problem.length} Nachrichten.`,
+    // --- Stufe 2: das Lektorat. Hier entscheidet sich die Qualitaet. ---
+    let final: string[] = []
+    const fps2: Fp[] = []
+    const zaehler2 = new Map<string, number>()
+    if (durch.length > 0) {
+      const liste = durch.map((t, i) => `${i + 1}. ${t}`).join('\n')
+      const lektorat = await frageKI(
+        `Wechsel jetzt die Rolle: Du bist LEKTOR und prüfst fremde Entwürfe. Hier sind ${durch.length} Kandidaten ` +
+        `für den Anlass "${occLabel}" bei "${model}":\n\n${liste}\n\n` +
+        `Prüfe jeden einzeln und streng:\n` +
+        `a) Ist das ein vollständiger, verständlicher Satz? Stichwort-Fragmente ("erst tee oder noch liegen") fallen durch.\n` +
+        `b) Ergibt der Inhalt Sinn, und passt jedes Detail zu "${model}"? Was nicht zu dieser Person gehört, fällt durch.\n` +
+        `c) Passt er zur Tageszeit? ${shiftText}\n` +
+        `d) Würde ein Fan darauf antworten WOLLEN? Nichtssagendes fällt durch.\n` +
+        `e) Fragen enden mit einem Fragezeichen.\n\n` +
+        `Was gut ist, lässt du WORTGLEICH stehen. Was durchfällt, schreibst du neu – dieselbe Idee, wenn sie taugt, ` +
+        `sonst eine bessere. Höchstens ${maxWorte} Wörter pro Nachricht, Emojis zählen nicht mit.\n` +
+        `Gib GENAU ${count} Nachrichten zurück: die besten, inhaltlich verschieden, keine zwei mit demselben Bild.\n` +
+        `Antworte AUSSCHLIESSLICH als JSON: {"messages":["...","..."]}`,
       )
-      if (Array.isArray(nach)) {
-        problem.forEach((p, n) => {
-          const neu = nach[n]
-          if (!neu) return
-          const grund = pruefe(neu, p.i, okFps)
-          if (grund) return              // zweiter Versuch daneben -> fällt raus
-          behalten.set(p.i, neu)
-          okFps.push(fingerprint(neu))
-          merkeFormeln(neu)
-        })
+      if (Array.isArray(lektorat)) {
+        for (const t of lektorat) {
+          if (final.length >= count) break
+          if (pruefe(t, fps2, zaehler2)) continue
+          final.push(t); fps2.push(fingerprint(t)); merkeIn(zaehler2, t)
+        }
+      }
+      // Auffuellen, falls das Lektorat zu wenige zurueckgibt: die formal sauberen
+      // Kandidaten aus Stufe 1 sind immer noch besser als eine halbleere Liste.
+      for (const t of durch) {
+        if (final.length >= count) break
+        if (pruefe(t, fps2, zaehler2)) continue
+        final.push(t); fps2.push(fingerprint(t)); merkeIn(zaehler2, t)
       }
     }
 
-    // Reihenfolge des Pflicht-Mix wiederherstellen und auf count kürzen.
-    let final = [...behalten.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]).slice(0, count)
-
-    const verworfen = Math.max(0, Math.min(messages.length, count) - final.length)
+    const verworfen = Math.max(0, count - final.length)
     if (final.length === 0) {
       // Nie mit leeren Händen dastehen: dann doch die kürzesten drei durchlassen,
       // die wenigstens nicht wortgleich zueinander sind.
       const gesehenNot = new Set<string>()
-      final = [...messages]
+      final = [...kandidaten]
         .sort((a, b) => wortAnzahl(a) - wortAnzahl(b))
         .filter((t) => {
           const n = normalisiere(t)
@@ -701,7 +722,7 @@ serve(async (req) => {
         })
         .filter((t) => wortAnzahl(t) <= hartesMax)
         .slice(0, 3)
-      if (final.length === 0) final = messages.slice(0, 3)
+      if (final.length === 0) final = kandidaten.slice(0, 3)
       console.log(`generate-messages: Notfall-Fallback (${model} / ${occasion}) – alle Vorschläge durchgefallen`)
     }
     if (verworfen > 0) {
