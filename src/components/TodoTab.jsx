@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage } from '../telegram'
+import { useTodoMeldung } from '../todoMeldung'
+import MeldeHinweis from './MeldeHinweis'
 
 const PRIORITY_COLORS = { wichtig: '#ef4444', normal: '#f59e0b', niedrig: '#06b6d4' }
 const PRIORITY_LABELS = { wichtig: 'Wichtig', normal: 'Normal', niedrig: 'Niedrig' }
@@ -85,17 +87,15 @@ export default function TodoTab({ session, userDisplayName }) {
     setAssigneeTelegramMap(allMap)
   }
 
+  // v4.43.0: parallel statt nacheinander. Vorher wartete der Aufrufer bei vier
+  // Admins auf vier Requests hintereinander — das war der spürbare Teil der
+  // Verzögerung beim Abhaken.
   const notifyOtherAdmins = async (msg) => {
     const targets = Object.entries(adminTelegramMap)
       .filter(([name]) => name !== userDisplayName)
       .map(([, tgId]) => tgId)
-    for (const tgId of targets) {
-      try {
-        await sendTelegramMessage(tgId, msg)
-      } catch (err) {
-        console.error('Telegram-Fehler:', err)
-      }
-    }
+    const ergebnisse = await Promise.allSettled(targets.map(tgId => sendTelegramMessage(tgId, msg)))
+    for (const r of ergebnisse) if (r.status === 'rejected') console.error('Telegram-Fehler:', r.reason)
   }
 
   const addTodo = async () => {
@@ -125,17 +125,16 @@ export default function TodoTab({ session, userDisplayName }) {
     setSaving(false)
   }
 
-  const toggleTodo = async (todo) => {
-    const completed = !todo.completed
-    await supabase.from('todos').update({
-      completed,
-      completed_by: completed ? userDisplayName : null,
-      completed_at: completed ? new Date().toISOString() : null,
-    }).eq('id', todo.id)
-    if (completed) {
-      await notifyOtherAdmins(`✅ <b>${userDisplayName}</b> hat abgehakt:\n\n${todo.title}`)
-    }
-  }
+  // v4.43.0: Abhaken setzt den Haken sofort; die Telegram-Meldung wartet 20
+  // Sekunden und geht pro Aufgabe nur einmal raus. Regeln in src/todoMeldung.js.
+  const patchTodo = useCallback((id, patch) => {
+    setTodos(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)))
+  }, [])
+  const { abhaken: toggleTodo, nichtMelden, wartend } = useTodoMeldung({
+    displayName: userDisplayName,
+    patchLokal: patchTodo,
+    sende: (todo) => notifyOtherAdmins(`✅ <b>${userDisplayName}</b> hat abgehakt:\n\n${todo.title}`),
+  })
 
   const markTodoRead = async (todo) => {
     const readBy = Array.isArray(todo.read_by) ? todo.read_by : []
@@ -358,6 +357,8 @@ export default function TodoTab({ session, userDisplayName }) {
           {filter === 'offen' ? 'Keine offenen Aufgaben' : filter === 'erledigt' ? 'Noch nichts erledigt' : 'Keine Aufgaben'}
         </div>
       )}
+
+      <MeldeHinweis wartend={wartend} onNichtMelden={nichtMelden} />
     </div>
   )
 }

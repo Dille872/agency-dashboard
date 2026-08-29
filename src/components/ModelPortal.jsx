@@ -14,6 +14,8 @@ const TODO_PRIORITY = {
   niedrig: { label: 'Niedrig', color: '#06b6d4' },
 }
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
+import { useTodoMeldung } from '../todoMeldung'
+import MeldeHinweis from './MeldeHinweis'
 import { useFabPanels } from '../fabPanel'
 import Logo from './Logo'
 import { HelpProvider, HelpDot } from './Help'
@@ -287,18 +289,16 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     }
   }
 
-  const toggleMyTodo = async (todo) => {
-    const completed = !todo.completed
-    await supabase.from('todos').update({
-      completed,
-      completed_by: completed ? displayName : null,
-      completed_at: completed ? new Date().toISOString() : null,
-    }).eq('id', todo.id)
-    if (completed) {
-      try { await notifyAdmins(`✅ <b>${displayName}</b> hat erledigt:\n\n${todo.title}`) } catch (err) { console.error('Telegram-Fehler:', err) }
-    }
-    loadMyTodos()
+  // v4.43.0: Der Haken sitzt sofort, die Meldung ans Team wartet 20 Sekunden
+  // und geht pro Aufgabe nur einmal raus. Regeln in src/todoMeldung.js.
+  const patchMyTodo = (id, patch) => {
+    setMyTodos(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)))
   }
+  const { abhaken: toggleMyTodo, nichtMelden: todoNichtMelden, wartend: todoWartend } = useTodoMeldung({
+    displayName,
+    patchLokal: patchMyTodo,
+    sende: (todo) => notifyAdmins(`✅ <b>${displayName}</b> hat erledigt:\n\n${todo.title}`),
+  })
 
   const saveTodoNote = async (todo) => {
     const note = (todoNoteDrafts[todo.id] ?? '').trim()
@@ -1692,6 +1692,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       {tourOpen && !isPreview && (
         <HelpTour onGoTab={setActiveSection} onFinish={finishTour} />
       )}
+      <MeldeHinweis wartend={todoWartend} onNichtMelden={todoNichtMelden} />
     </div>
     </HelpProvider>
   )
