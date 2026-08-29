@@ -246,6 +246,9 @@ const DENGLISCH = [
   'meantime', 'ngl', 'weirdly', 'totally', 'literally', 'actually', 'basically',
   'honestly', 'lowkey', 'highkey', 'kinda', 'sorta', 'tbh', 'imo', 'btw',
   'out of the blue', 'anyways', 'whatever', 'somehow', 'like really',
+  // v4.42.1: "mein monitor strahlt mich an und ich strahle zurueck, wir vibes"
+  // — als Verb im Deutschen immer kaputt. Wer es zurueckhaben will: hier raus.
+  'vibes', 'vibe', 'viben',
 ]
 
 const FORMELN: { name: string; re: RegExp; max: number }[] = [
@@ -563,7 +566,7 @@ serve(async (req) => {
       // und ein Grundton, der sich beschwert statt gute Laune zu machen.
       language === 'Deutsch' ? `SAUBERES DEUTSCH: Schreib ganze, grammatisch richtige deutsche Sätze — achte besonders auf Fälle und Geschlecht ("nach irgendwas Falschem", "ein Nachbar"). Eingebürgerte Wörter wie okay, sorry, cool, nice sind in Ordnung. Englische Einschübe wie "ngl", "weirdly", "totally", "meantime", "out of the blue" sind VERBOTEN — wenn dir nur ein englisches Wort einfällt, formulier den Satz um.` : '',
 
-      `STIMMUNG: Die Nachricht soll dem Fan gute Laune machen und Lust auf eine Antwort. Kein Jammern, keine Beschwerde über den eigenen Tag, keine Entschuldigung ("sorry, hab vergessen…"), kein "lief nicht so". Auch eine ehrliche Kleinigkeit darf leicht und warm klingen, nicht genervt.`,
+      `STIMMUNG: Die Nachricht soll dem Fan gute Laune machen und Lust auf eine Antwort. Kein Jammern, keine Beschwerde über den eigenen Tag, keine Entschuldigung ("sorry, hab vergessen…"), kein "lief nicht so", nichts, was sie oder ihre Technik nervt ("mein monitor flackert und nervt mich"), kein müdes "wach geht anders". Auch eine ehrliche Kleinigkeit darf leicht und warm klingen, nicht genervt.`,
       language !== 'Deutsch' ? `Hinweis: Die Dialekt-Einstellung ist deutschspezifisch. In ${language} den Charakter und Ton des Models beibehalten, aber natürlich und muttersprachlich in ${language} schreiben (kein deutscher Dialekt).` : '',
       persona.extra ? `WICHTIGE Extra-Anweisungen (unbedingt befolgen): ${persona.extra}` : '',
 
@@ -711,7 +714,7 @@ serve(async (req) => {
         `b) Ergibt der Inhalt Sinn, und passt jedes Detail zu "${model}"? Was nicht zu dieser Person gehört, fällt durch.\n` +
         `c) Passt er zur Tageszeit? ${shiftText}\n` +
         `d) Würde ein Fan darauf antworten WOLLEN? Nichtssagendes fällt durch.\n` +
-        `e) Fragen enden mit einem Fragezeichen.\n` +
+        `e) Fragen enden mit einem Fragezeichen. Von den ${count} Nachrichten, die du zurückgibst, müssen MINDESTENS ${Math.ceil(count / 2)} echte Fragen sein — zähl sie nach, bevor du antwortest.\n` +
         `f) Ist das grammatisch richtiges Deutsch? Korrigiere Fälle und Geschlecht. Englische Einschübe ("ngl", "weirdly", "totally", "meantime") raus und auf Deutsch umformulieren.\n` +
         `g) Macht sie gute Laune? Jammern, Beschwerden über den eigenen Tag und Entschuldigungen fallen durch.\n\n` +
         `Was gut ist, lässt du WORTGLEICH stehen. Was durchfällt, schreibst du neu – dieselbe Idee, wenn sie taugt, ` +
