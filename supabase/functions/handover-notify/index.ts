@@ -323,6 +323,25 @@ serve(async (req) => {
       }
     }
 
+    // ── v4.45.0: Worum geht es in dieser Übergabe? ──────────────────────────
+    // `handover_about` nennt die Models, um die es geht. Ohne Angabe bleibt es
+    // beim alten Verhalten: die Übergabe gehört der ganzen Schicht.
+    //
+    // Die Schnittmenge mit `meineModels` ist die Regel — man kann nur zu Models
+    // übergeben, die man auch betreut hat. Bleibt die Schnittmenge leer, obwohl
+    // etwas angegeben wurde, gewinnt die Angabe: dann wurde die eigene Zelle
+    // nicht gefunden (manuell gestartete Schicht, abweichende Schreibweise),
+    // und die ausdrückliche Auswahl des Absenders ist die bessere Quelle als
+    // eine leere Menge, die den Model-Filter ganz abschalten würde.
+    const genannt = new Set<string>(
+      (Array.isArray(log.handover_about) ? log.handover_about : []).map((m: any) => String(m)).filter(Boolean)
+    )
+    let relevanteModels = meineModels
+    if (genannt.size > 0) {
+      const schnitt = [...genannt].filter(m => meineModels.has(m))
+      relevanteModels = new Set(schnitt.length > 0 ? schnitt : [...genannt])
+    }
+
     // Hinweis: `shift_logs.model_names` wird bewusst NICHT als Rückfall benutzt.
     // Die Spalte ist Text (der Bot legt dort Model-IDs ab, das Portal gar nichts) —
     // sie als Liste zu lesen ergäbe eine Menge einzelner Zeichen und würde
@@ -347,7 +366,9 @@ serve(async (req) => {
         const off = offsetVonTag(tag)
         if (off === undefined) continue
         // Ohne Model-Bezug (z.B. manuell eingecheckt) gilt jede Schicht als möglich.
-        if (meineModels.size > 0 && !meineModels.has(modelId)) continue
+        // v4.45.0: `relevanteModels` statt `meineModels` — bei einer Übergabe zu
+        // einem einzelnen Model fallen die Nachfolger der übrigen Models hier raus.
+        if (relevanteModels.size > 0 && !relevanteModels.has(modelId)) continue
 
         const personen = personenDerZelle(val)
         const ich = personen.find(p => norm(p.name) === absenderLc)
@@ -485,7 +506,11 @@ serve(async (req) => {
     // Best effort: schlägt das fehl, greift nur der Nachzügler-Weg nicht.
     await upd(
       'shift_logs', `?id=eq.${encodeURIComponent(String(logId))}`,
-      { handover_models: [...meineModels] },
+      // v4.45.0: bewusst `relevanteModels`. Portal und Bot zeigen eine Übergabe
+      // darüber auch jemandem, der später einsteigt — bei einer Übergabe zu
+      // Leonie soll das die Leonie-Schicht sein und nicht jeder, der irgendeines
+      // meiner Models übernimmt.
+      { handover_models: [...relevanteModels] },
     )
 
     // ── v4.38.0: Models ohne jeden Nachfolger ───────────────────────────────
@@ -496,14 +521,19 @@ serve(async (req) => {
     // Bisher fiel das durch: die Warnung hing am Gesamtergebnis. Wer drei Models
     // betreute und für zwei davon niemanden hatte, bekam trotzdem ein
     // „Übergabe ist raus an Noa" — die Lücke sah niemand.
-    const unbesetzteIds = [...meineModels].filter(m => !modelsMitBetreuung.has(m))
+    const unbesetzteIds = [...relevanteModels].filter(m => !modelsMitBetreuung.has(m))
+    // v4.45.0: Namen werden auch für die Betreff-Zeile gebraucht, deshalb wird
+    // die Liste geholt, sobald eines von beidem anfällt — statt zweimal.
     let unbesetzteNamen: string[] = []
-    if (unbesetzteIds.length > 0) {
+    let betreffNamen: string[] = []
+    if (unbesetzteIds.length > 0 || genannt.size > 0) {
       const modelListe = await q('models_contact', '?select=id,name')
-      unbesetzteNamen = unbesetzteIds.map(id => {
+      const nameVon = (id: string) => {
         const treffer = (Array.isArray(modelListe) ? modelListe : []).find((m: any) => String(m.id) === String(id))
         return treffer?.name ? String(treffer.name) : `Model ${id}`
-      })
+      }
+      unbesetzteNamen = unbesetzteIds.map(nameVon)
+      if (genannt.size > 0) betreffNamen = [...relevanteModels].map(nameVon)
     }
 
     // ── Telegram-IDs holen ──────────────────────────────────────────────────
@@ -516,7 +546,13 @@ serve(async (req) => {
     }
 
     // ── Versand ─────────────────────────────────────────────────────────────
-    const kopf = `🤝 <b>Schichtübergabe</b> von <b>${escapeHtml(absender)}</b>${schicht ? ` (${escapeHtml(schicht)})` : ''}`
+    // v4.45.0: Bei einer modellbezogenen Übergabe steht das Model im Kopf. Der
+    // Empfänger soll auf den ersten Blick sehen, worauf sich der Text bezieht —
+    // gerade weil er drei andere Models parallel betreut.
+    const betreff = betreffNamen.length > 0
+      ? `\n📌 Betrifft: <b>${betreffNamen.map(escapeHtml).join(', ')}</b>`
+      : ''
+    const kopf = `🤝 <b>Schichtübergabe</b> von <b>${escapeHtml(absender)}</b>${schicht ? ` (${escapeHtml(schicht)})` : ''}${betreff}`
 
     const zugestellt: string[] = []
     const ohneId: string[] = []
@@ -564,6 +600,8 @@ serve(async (req) => {
       // v4.38.0: Models, für die im Horizont überhaupt niemand eingeteilt ist.
       // Der Absender soll das erfahren — sonst hält er die Übergabe für erledigt.
       ohne_nachfolge: unbesetzteNamen,
+      // v4.45.0: Auf welche Models die Übergabe eingegrenzt wurde (leer = alle).
+      betrifft: betreffNamen,
     })
   } catch (e) {
     console.error('handover-notify:', e)

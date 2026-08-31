@@ -507,6 +507,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // Chip in der Kachelzeile erinnert daran.
   const [uebergabeDialog, setUebergabeDialog] = useState(false)  // Auschecken-Fenster offen
   const [uebergabeText, setUebergabeText] = useState('')
+  // v4.45.0: Model-IDs, um die es in der Übergabe geht. Leer = betrifft die ganze
+  // Schicht (Verhalten wie bisher). Wer nur zu einem Model etwas zu sagen hat,
+  // wählt es hier aus — dann bekommen auch nur dessen Nachfolger die Nachricht.
+  const [uebergabeModels, setUebergabeModels] = useState([])
   const [eingangUebergaben, setEingangUebergaben] = useState([]) // was auf mich wartet
   const [uebergabeEingangOffen, setUebergabeEingangOffen] = useState(false)
   // v4.39.0: Kein dauerhaftes Aus mehr, nur eine Pause nach einem Lesefehler.
@@ -1165,10 +1169,20 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [isCheckingOut, setIsCheckingOut] = useState(false) // v2.9.6: Doppelklick-Schutz
   const checkOutLockRef = React.useRef(false)
 
+  // v4.45.0: Model-Bezug nachtragen. Best effort — schlägt es fehl (Migration
+  // fehlt), bleibt die Spalte leer und die Übergabe geht wie früher an alle
+  // Nachfolger. Zu weit verteilt ist besser als gar nicht zugestellt.
+  const schreibeModelBezug = async (logId, ids) => {
+    if (!logId || !Array.isArray(ids) || ids.length === 0) return
+    const { error } = await supabase.from('shift_logs')
+      .update({ handover_about: ids.map(String) }).eq('id', logId)
+    if (error) console.warn('Model-Bezug der Übergabe nicht gespeichert:', error.message)
+  }
+
   // v4.34.0: `text` = Übergabe an die nächste Schicht. null/leer heißt: nichts zu übergeben.
   // Der Text landet am eigenen Schicht-Log, nicht am Cleanup-Update weiter unten —
   // sonst bekämen fremde Alt-Logs denselben Text angehängt.
-  const checkOut = async (text = null) => {
+  const checkOut = async (text = null, betrifftModels = null) => {
     if (checkOutLockRef.current) return
     checkOutLockRef.current = true
     setIsCheckingOut(true)
@@ -1205,6 +1219,16 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           await supabase.from('shift_logs').update({ checked_out_at: jetzt }).eq('id', currentLogId)
           alert('⚠️ Die Schicht wurde beendet, aber die Übergabe konnte nicht gespeichert werden.\nBitte gib sie einem Admin durch.')
         } else if (felder.handover_text) {
+          // v4.45.0: Model-Bezug in einem EIGENEN Aufruf, aus demselben Grund wie
+          // seinerzeit `handover_for`: läge die neue Spalte im selben PATCH und
+          // wäre die Migration noch nicht gelaufen, lehnte PostgREST den ganzen
+          // Aufruf ab (PGRST204) — dann bliebe auch `checked_out_at` ungesetzt
+          // und die Schicht liefe weiter. Eine fehlende neue Spalte darf das
+          // Auschecken nicht mitreißen.
+          //
+          // Muss VOR der Zustellung passieren: `handover-notify` liest die Spalte,
+          // um den Empfängerkreis einzugrenzen.
+          await schreibeModelBezug(currentLogId, betrifftModels)
           // v4.35.0: Zustellung erst NACH dem Ausloggen — siehe unten.
           zustellenFuer = currentLogId
         }
@@ -1232,6 +1256,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             // Chip stehen lassen — nur so ist ein zweiter Versuch möglich.
             alert('⚠️ Die Übergabe konnte nicht gespeichert werden.\n\nBitte kopiere deinen Text und gib ihn Chris oder Rey durch:\n\n' + text.trim())
           } else {
+            await schreibeModelBezug(zielLog, betrifftModels)
             zustellenFuer = zielLog
             setNachreichenLog(null) // erledigt, Chip verschwindet
           }
@@ -1312,7 +1337,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const seit = new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString()
     const { data, error } = await supabase
       .from('shift_logs')
-      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for, handover_models')
+      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for, handover_models, handover_about')
       .not('handover_text', 'is', null)
       // Zeitgrenze über `handover_at`, nicht über `checked_out_at`: eine per
       // Telegram (/uebergabe) während der laufenden Schicht geschriebene Übergabe
@@ -1461,7 +1486,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   useEffect(() => { isOnlineRef.current = isOnline }, [isOnline])
   // v4.39.0: Damit das 30-Sekunden-Intervall erkennt, dass gerade jemand eine
   // Übergabe tippt, und nicht mitten hinein automatisch auscheckt.
-  useEffect(() => { uebergabeDialogOffenRef.current = uebergabeDialog }, [uebergabeDialog])
+  useEffect(() => {
+    uebergabeDialogOffenRef.current = uebergabeDialog
+    // v4.45.0: Auswahl gehört zum einzelnen Fenster, nicht zur Sitzung. Ohne das
+    // Zurücksetzen stünde beim nächsten Auschecken noch das Model von vorgestern
+    // angehakt — und die Übergabe ginge an die falsche Handvoll Leute.
+    if (uebergabeDialog) setUebergabeModels([])
+  }, [uebergabeDialog])
   useEffect(() => { currentLogIdRef.current = currentLogId }, [currentLogId])
   useEffect(() => { currentShiftRef.current = currentShift }, [currentShift])
   useEffect(() => { next7SchedulesRef.current = next7Schedules }, [next7Schedules])
@@ -2082,6 +2113,23 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const laufendeSchicht = currentShift || selectedShift || (todayShifts.length === 1 ? todayShifts[0].shift : null)
   const laufenderEintrag = todayShifts.find(s => s.shift === laufendeSchicht)
   const laufendeModels = [...new Set((laufenderEintrag?.models || []).map(m => m.modelName || m))]
+  // v4.45.0: Models zur Auswahl im Übergabe-Fenster — mit ID, weil `handover_about`
+  // IDs speichert. Nach dem automatischen Auschecken gibt es keinen laufenden
+  // Eintrag mehr; dann alle Models des Tages, damit die Auswahl nicht leer ist.
+  const uebergabeModelWahl = (() => {
+    const roh = laufenderEintrag?.models?.length
+      ? laufenderEintrag.models
+      : todayShifts.flatMap(s => s.models || [])
+    const gesehen = new Set()
+    const raus = []
+    for (const m of roh) {
+      const id = m?.modelId == null ? null : String(m.modelId)
+      if (!id || gesehen.has(id)) continue
+      gesehen.add(id)
+      raus.push({ id, name: m.modelName || id })
+    }
+    return raus
+  })()
   const lokaleZeit = (d) => {
     try { return d.toLocaleTimeString('de-DE', { timeZone: LOCAL_TZ, hour: '2-digit', minute: '2-digit' }) }
     catch { return '' }
@@ -3480,12 +3528,42 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               ein offener Custom, eine Besonderheit bei einem Model.
               <span style={{ opacity: 0.75 }}> Geht per Telegram an die, die laut Plan übernehmen, und an Chris und Rey.</span>
             </div>
+            {/* v4.45.0: Worum geht es? Ohne Auswahl bleibt es bei „alle" — das ist
+                der häufige Fall und darf keinen Klick kosten. */}
+            {uebergabeModelWahl.length > 1 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, marginBottom: 5 }}>
+                  Betrifft {uebergabeModels.length === 0 ? '— alle deine Models' : uebergabeModels.length === 1 ? '1 Model' : `${uebergabeModels.length} Models`}
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {uebergabeModelWahl.map(m => {
+                    const an = uebergabeModels.includes(m.id)
+                    return (
+                      <button key={m.id} type="button"
+                        onClick={() => setUebergabeModels(prev => an ? prev.filter(x => x !== m.id) : [...prev, m.id])}
+                        style={{
+                          fontSize: 11, fontWeight: 600, padding: '5px 11px', borderRadius: 999,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          background: an ? 'rgba(236,72,153,0.18)' : 'transparent',
+                          border: `1px solid ${an ? '#ec4899' : 'var(--border-bright)'}`,
+                          color: an ? '#ec4899' : 'var(--text-secondary)',
+                        }}>{an ? '✓ ' : ''}{m.name}</button>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.45 }}>
+                  {uebergabeModels.length === 0
+                    ? 'Ohne Auswahl geht die Übergabe an alle, die eines deiner Models übernehmen.'
+                    : 'Nur wer diese Models übernimmt, bekommt die Nachricht. Chris und Rey immer.'}
+                </div>
+              </div>
+            )}
             <textarea value={uebergabeText} onChange={e => setUebergabeText(e.target.value)}
               placeholder="z. B. Lisa: Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €."
               rows={4}
               style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-              <button onClick={() => checkOut(uebergabeText)} disabled={isCheckingOut || !uebergabeText.trim()}
+              <button onClick={() => checkOut(uebergabeText, uebergabeModels)} disabled={isCheckingOut || !uebergabeText.trim()}
                 style={{ flex: '1 1 190px', background: uebergabeText.trim() ? '#ec4899' : 'var(--border)', color: uebergabeText.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: (isCheckingOut || !uebergabeText.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                 {isCheckingOut ? '⏳ ...' : (nachreichenLog && !isOnline ? '🤝 Übergabe abschicken' : '🤝 Übergeben & beenden')}
               </button>
@@ -3526,6 +3604,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     {log.display_name}{log.shift ? ` · ${log.shift}` : ''}
                     {wann ? ` · ${new Date(wann).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
                   </div>
+                  {/* v4.45.0: Worauf sich der Text bezieht. Wer parallel mehrere
+                      Models betreut, sieht sonst nicht, welches gemeint ist. */}
+                  {log.handover_about?.length > 0 && (
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 6 }}>
+                      📌 Betrifft: {log.handover_about
+                        .map(id => models.find(m => String(m.id) === String(id))?.name || `Model ${id}`)
+                        .join(', ')}
+                    </div>
+                  )}
                   <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{log.handover_text}</div>
                   <button onClick={() => bestaetigeUebergabe(log)} disabled={uebergabeLaedt}
                     style={{ marginTop: 12, background: '#10b981', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: uebergabeLaedt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>

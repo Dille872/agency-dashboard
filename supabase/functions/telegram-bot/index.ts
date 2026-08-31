@@ -67,7 +67,7 @@ const UEBERGABE_RUECKBLICK_H = 16
 // niemand, der übernimmt. v4.37.0: Das wird jetzt ausgewertet, statt nur „raus
 // oder nicht" zu kennen — sonst hört der Absender „ist raus", obwohl die Übergabe
 // bei keinem Chatter gelandet ist.
-type UebergabeErgebnis = { ok: boolean; gefunden: number; an: string[]; ohneNachfolge: string[] }
+type UebergabeErgebnis = { ok: boolean; gefunden: number; an: string[]; ohneNachfolge: string[]; betrifft: string[] }
 
 async function benachrichtigeUebergabe(logId: string | number): Promise<UebergabeErgebnis> {
   try {
@@ -78,7 +78,7 @@ async function benachrichtigeUebergabe(logId: string | number): Promise<Uebergab
     })
     if (!r.ok) {
       console.error(`[uebergabe] Versand fehlgeschlagen: ${r.status} — ${await r.text().catch(() => '')}`)
-      return { ok: false, gefunden: 0, an: [], ohneNachfolge: [] }
+      return { ok: false, gefunden: 0, an: [], ohneNachfolge: [], betrifft: [] }
     }
     const daten = await r.json().catch(() => null)
     return {
@@ -86,11 +86,85 @@ async function benachrichtigeUebergabe(logId: string | number): Promise<Uebergab
       gefunden: Number(daten?.gefunden ?? 0),
       an: Array.isArray(daten?.an) ? daten.an : [],
       ohneNachfolge: Array.isArray(daten?.ohne_nachfolge) ? daten.ohne_nachfolge : [],
+      betrifft: Array.isArray(daten?.betrifft) ? daten.betrifft : [],
     }
   } catch (e) {
     console.error('[uebergabe] handover-notify nicht erreichbar:', e)
-    return { ok: false, gefunden: 0, an: [], ohneNachfolge: [] }
+    return { ok: false, gefunden: 0, an: [], ohneNachfolge: [], betrifft: [] }
   }
+}
+
+// ── v4.45.0: Worum geht es in der Übergabe? ─────────────────────────────────
+//
+// Im Portal wählt man das Model per Chip. Im Chat tippt man es einfach vorne
+// hin — „Leoni user xym will noch was kaufen" oder „Lina und Chiara: bitte
+// nachfassen". Genau so schreiben die Leute, und genau dieser Fall war der
+// Auslöser: die Notiz zu EINEM Model ging an jeden Nachfolger, auch an den, der
+// zwei ganz andere Models übernimmt.
+//
+// Gelesen werden nur die ersten Wörter, und nur solange sie zu Models der
+// eigenen Schicht (oder zu Bindewörtern) passen. Beim ersten Wort, das keines
+// von beidem ist, bricht die Erkennung ab. „Leoni user xym …" ergibt damit
+// Leonie; „Kunde meldet sich später" ergibt nichts und bleibt beim alten
+// Verhalten — die Übergabe gehört dann der ganzen Schicht.
+//
+// Der Text wird NICHT gekürzt. Ein Trenner am Anfang verschwindet, der Name
+// bleibt stehen: er ist Teil des Satzes und liest sich mit.
+// Nach `norm()` bleiben nur Buchstaben und Ziffern übrig — Satzzeichen werden zu
+// Leerstring und unten ohnehin übersprungen. Hier stehen deshalb nur echte Wörter.
+const BINDEWORT = new Set(['und', 'sowie', 'plus', 'auch'])
+
+function modelWortTrifft(wort: string, name: string): boolean {
+  const w = norm(wort.replace(/[.,;:!?]+$/g, ''))
+  const nm = norm(name)
+  if (!w || !nm) return false
+  if (w === nm) return true
+  // Tippfehler und Kurzformen: „Leoni" für „Leonie", „Chiar" für „Chiara".
+  // Erst ab vier Zeichen, sonst träfe „Li" die halbe Modelliste.
+  const kurz = Math.min(w.length, nm.length)
+  return kurz >= 4 && (nm.startsWith(w) || w.startsWith(nm))
+}
+
+async function modelBezugAusText(log: any, text: string): Promise<{ ids: string[]; namen: string[] }> {
+  const leer = { ids: [] as string[], namen: [] as string[] }
+  if (!text) return leer
+  // Model-IDs meiner Schicht. `model_names` ist historisch uneinheitlich —
+  // Array oder Komma-String, in beiden Fällen IDs.
+  const roh: unknown = log?.model_names
+  const meineIds = (Array.isArray(roh) ? roh : String(roh || '').split(','))
+    .map(x => String(x).trim()).filter(Boolean)
+  if (meineIds.length < 2) return leer   // bei einem Model gibt es nichts einzugrenzen
+  const liste = await q('models_contact', '?select=id,name')
+  const meine = (Array.isArray(liste) ? liste : [])
+    .filter((m: any) => meineIds.includes(String(m.id)))
+    .map((m: any) => ({ id: String(m.id), name: String(m.name || '') }))
+  if (meine.length < 2) return leer
+
+  const woerter = text.trim().split(/\s+/).slice(0, 6)
+  const ids: string[] = []
+  const namen: string[] = []
+  for (const wort of woerter) {
+    const nackt = wort.replace(/[.,;:!?]+$/g, '')
+    const rein = norm(nackt)
+    if (!rein) continue                     // reines Satzzeichen („&", „+", „,")
+    if (BINDEWORT.has(rein)) continue
+    const treffer = meine.filter(m => modelWortTrifft(nackt, m.name))
+    // Mehrdeutig („Li" trifft Lina und Lisa) — dann lieber nichts eingrenzen.
+    if (treffer.length !== 1) break
+    if (!ids.includes(treffer[0].id)) { ids.push(treffer[0].id); namen.push(treffer[0].name) }
+    // Nach einem Doppelpunkt ist die Aufzählung zu Ende.
+    if (/[:\-–]$/.test(wort)) break
+  }
+  return ids.length > 0 ? { ids, namen } : leer
+}
+
+// Schreibt den Bezug in einem EIGENEN Aufruf. Nie im selben PATCH wie
+// `checked_out_at`: fehlte die Spalte, lehnte PostgREST den ganzen Aufruf ab und
+// die Schicht bliebe offen stehen, während der Bot „Schicht beendet" meldet.
+async function merkeModelBezug(logId: string | number, ids: string[]) {
+  if (!ids || ids.length === 0) return
+  const ok = await upd('shift_logs', `?id=eq.${logId}`, { handover_about: ids })
+  if (!ok) console.error('[uebergabe] Model-Bezug nicht gespeichert — Übergabe geht an alle Nachfolger')
 }
 
 // Einheitlicher Antworttext nach einer verschickten Übergabe.
@@ -102,6 +176,11 @@ function uebergabeQuittung(r: UebergabeErgebnis) {
   const luecke = r.ohneNachfolge.length > 0
     ? `\n⚠ Für ${escHtml(r.ohneNachfolge.join(', '))} ist gerade niemand eingeteilt — Chris und Rey wissen Bescheid.`
     : ''
+  // v4.45.0: Was der Bot aus dem Text herausgelesen hat, muss er auch sagen —
+  // sonst merkt niemand, dass die Übergabe nur an einen Teil der Leute ging.
+  const bezug = r.betrifft.length > 0
+    ? `\n📌 Verbucht als Übergabe zu <b>${escHtml(r.betrifft.join(', '))}</b> — nur wer ${r.betrifft.length === 1 ? 'dieses Model' : 'diese Models'} übernimmt, bekommt sie.`
+    : ''
   if (!r.ok) {
     return '✅ Übergabe gespeichert.\n⚠ Die Weiterleitung per Telegram hat nicht geklappt — sie steht aber im Dashboard und wird beim Einchecken angezeigt.'
   }
@@ -112,7 +191,7 @@ function uebergabeQuittung(r: UebergabeErgebnis) {
     // Nachfolger gefunden, aber keiner hatte eine hinterlegte Telegram-ID.
     return '✅ Übergabe gespeichert.\n⚠ Die nächste Schicht konnte ich per Telegram nicht erreichen — sie sieht die Übergabe erst beim Einchecken im Portal. Chris und Rey wissen Bescheid.' + luecke
   }
-  return `✅ Deine Übergabe ist raus an ${escHtml(r.an.join(', '))}.` + luecke
+  return `✅ Deine Übergabe ist raus an ${escHtml(r.an.join(', '))}.` + bezug + luecke
 }
 
 // Das zuletzt beendete Log dieser Person, sofern es noch im Antwortfenster liegt
@@ -901,6 +980,13 @@ serve(async (req) => {
           await tg(fromId, '⚠ Deine Übergabe konnte nicht als Übergabe gespeichert werden.\n\nIch habe deinen Text stattdessen ans Team weitergeleitet — Chris und Rey haben ihn.')
           return new Response('ok')
         }
+        // v4.45.0: Nur bei einer NEUEN Übergabe den Bezug setzen. Hängt der Text
+        // an einer bestehenden, wäre es falsch, den Empfängerkreis nachträglich
+        // auf ein einzelnes Model zu verengen — der erste Teil galt weiter.
+        if (!log.handover_text) {
+          const bezugNachtrag = await modelBezugAusText(log, inhalt)
+          await merkeModelBezug(log.id, bezugNachtrag.ids)
+        }
         const raus = await benachrichtigeUebergabe(log.id)
         await tg(fromId, (log.handover_text && raus.ok ? '➕ An deine bestehende Übergabe angehängt.\n' : '') + uebergabeQuittung(raus))
         return new Response('ok')
@@ -1031,6 +1117,10 @@ serve(async (req) => {
           await ups('online_status', { display_name: chatterData.name, last_seen: new Date().toISOString(), shift_online: false }, 'display_name')
           const dauerText = `${hours > 0 ? `${hours}h ` : ''}${mins}min`
           if (mitgegeben) {
+            // v4.45.0: erst den Bezug festhalten, dann zustellen — die Function
+            // liest `handover_about`, um den Empfängerkreis einzugrenzen.
+            const bezug = await modelBezugAusText(log, mitgegeben)
+            await merkeModelBezug(log.id, bezug.ids)
             const raus = await benachrichtigeUebergabe(log.id)
             await tg(fromId, `👋 Schicht beendet!\nDauer: ${dauerText}\n\n${uebergabeQuittung(raus)}`)
           } else if (schonText) {
@@ -1127,6 +1217,8 @@ serve(async (req) => {
             await tg(fromId, '⚠ Deine Übergabe konnte nicht als Übergabe gespeichert werden.\n\nIch habe deinen Text stattdessen ans Team weitergeleitet — Chris und Rey haben ihn.')
             return new Response('ok')
           }
+          const bezugAntwort = await modelBezugAusText(wartend, text.trim())
+          await merkeModelBezug(wartend.id, bezugAntwort.ids)
           const raus = await benachrichtigeUebergabe(wartend.id)
           await tg(fromId, uebergabeQuittung(raus) +
             '\n\nWar das gar keine Übergabe? Schick <code>/nichts</code>, dann nehme ich es zurück und leite deinen Text ans Team weiter.')
