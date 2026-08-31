@@ -270,11 +270,13 @@ async function offeneUebergaben(name: string) {
     if (!l.handover_at || new Date(l.handover_at).getTime() >= seitWann) return false
     return l.handover_models.some((m: unknown) => meineModelIds.has(String(m)))
   }
+  // v4.46.0: Die Model-IDs der eigenen Schicht hängen am Ergebnis — `uebergabeText`
+  // zeigt damit nur den Abschnitt, der einen selbst angeht.
   return logs.filter((l: any) =>
     norm(l.display_name || '') !== norm(name) &&
     !(l.handover_ack || []).some((a: string) => norm(a) === norm(name)) &&
     gehtMichAn(l)
-  )
+  ).map((l: any) => ({ ...l, _meineModelIds: [...meineModelIds] }))
 }
 
 function uebergabeText(l: any) {
@@ -282,7 +284,24 @@ function uebergabeText(l: any) {
   const zeit = wann
     ? new Date(wann).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
     : ''
-  return `🤝 <b>${escHtml(l.display_name)}</b>${l.shift ? ` · ${escHtml(l.shift)}` : ''}${zeit ? ` · ${zeit}` : ''}\n${escHtml(l.handover_text)}`
+  return `🤝 <b>${escHtml(l.display_name)}</b>${l.shift ? ` · ${escHtml(l.shift)}` : ''}${zeit ? ` · ${zeit}` : ''}\n${meinAbschnitt(l)}`
+}
+
+// v4.46.0: Welcher Teil einer Übergabe geht MICH an? `handover_parts` füllt
+// `handover-notify` beim Zustellen. Fehlt sie — Migration nicht gelaufen, Function
+// nicht durchgekommen, oder der Text war gar nicht nach Models gegliedert —,
+// bleibt es beim vollen Wortlaut. Lieber zu viel lesen als den entscheidenden
+// Satz verpassen.
+function meinAbschnitt(l: any): string {
+  const teile = l?.handover_parts?.teile
+  const voll = escHtml(String(l?.handover_text || ''))
+  if (!teile || Object.keys(teile).length === 0) return voll
+  const vorspann = l.handover_parts.vorspann ? escHtml(String(l.handover_parts.vorspann)) : ''
+  const meine = Array.isArray(l._meineModelIds) ? l._meineModelIds.map(String) : []
+  const treffer = Object.keys(teile).filter(id => meine.includes(String(id)))
+  if (treffer.length === 0) return vorspann || voll
+  const bloecke = treffer.map(id => escHtml(String(teile[id])))
+  return [vorspann, ...bloecke].filter(Boolean).join('\n\n')
 }
 
 // ── Welcome-Messages ──
@@ -345,6 +364,12 @@ ein angefangenes Gespräch, ein offener Custom, eine
 Besonderheit bei einem Model — gib es weiter:
 
   <code>/off Kunde bei Lyra meldet sich heute Abend</code>
+
+Betreust du mehrere Models, schreib pro Model eine Zeile — dann bekommt jede
+Folgeschicht nur ihren Teil:
+
+  <code>/off Leonie: Kunde xym will morgen kaufen
+Lina: nichts Besonderes</code>
        → beendet die Schicht UND übergibt in einem Rutsch
 
   <code>/off</code> allein → ich frage nach, du antwortest

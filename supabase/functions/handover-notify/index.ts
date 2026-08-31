@@ -99,6 +99,69 @@ async function tg(chatId: string, text: string) {
 // doppeltes Leerzeichen zwischen Plan-Name und `display_name` darf das nicht
 // aushebeln.
 const norm = (s: unknown) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+// ── v4.46.0: Den Text in Abschnitte pro Model zerlegen ──────────────────────
+//
+// Geschrieben wird zeilenweise, so wie man es ohnehin tippt:
+//
+//     Leonie: Kunde xym will morgen nochmal kaufen
+//     Lina: nichts Besonderes, war ruhig
+//
+// Eine Zeile beginnt einen neuen Abschnitt, wenn vor dem Doppelpunkt EIN Model
+// der eigenen Schicht steht (mehrere gehen auch: „Leonie und Lina: …"). Alles
+// davor ist Vorspann und geht an alle. Folgezeilen ohne eigenen Kopf gehören zum
+// laufenden Abschnitt.
+//
+// Wichtig: Nicht jede Zeile mit Doppelpunkt ist ein Kopf. „Preis: 120" bleibt
+// Text, weil „Preis" kein Model ist. Diese Prüfung ist der ganze Trick — ohne sie
+// würde die Zerlegung ständig mitten im Satz zuschlagen.
+function modelTrifft(wort: string, name: string): boolean {
+  const w = norm(wort.replace(/[.,;:!?]+$/g, ''))
+  const nm = norm(name)
+  if (!w || !nm) return false
+  if (w === nm) return true
+  const kurz = Math.min(w.length, nm.length)
+  return kurz >= 4 && (nm.startsWith(w) || w.startsWith(nm))
+}
+
+type ModelRef = { id: string; name: string }
+
+// „Leonie" → [13] · „Leonie und Lina" → [13,44] · „Preis" → []
+// Alle Teile müssen treffen. Trifft einer nicht, ist es kein Kopf, sondern Text.
+function kopfZuIds(kopf: string, meine: ModelRef[]): string[] {
+  const stuecke = kopf.split(/\s*(?:\+|&|,|\bund\b)\s*/i).map(x => x.trim()).filter(Boolean)
+  if (stuecke.length === 0 || stuecke.length > 4) return []
+  const ids: string[] = []
+  for (const st of stuecke) {
+    if (st.split(/\s+/).length > 2) return []      // „Kunde meldet sich" ist kein Modelname
+    const treffer = meine.filter(m => modelTrifft(st, m.name))
+    if (treffer.length !== 1) return []            // nichts oder mehrdeutig → kein Kopf
+    if (!ids.includes(treffer[0].id)) ids.push(treffer[0].id)
+  }
+  return ids
+}
+
+function zerlegeUebergabe(text: string, meine: ModelRef[]) {
+  const vorspann: string[] = []
+  const teile = new Map<string, string[]>()
+  if (meine.length < 2) return { vorspann: '', teile }   // ein Model: nichts zu verteilen
+  let aktuell: string[] = []
+  for (const zeile of String(text || '').split(/\r?\n/)) {
+    const m = zeile.match(/^\s*([^:]{1,60}):\s*(.*)$/)
+    const ids = m ? kopfZuIds(m[1], meine) : []
+    if (ids.length > 0) {
+      aktuell = ids
+      for (const id of ids) if (!teile.has(id)) teile.set(id, [])
+      const rest = (m?.[2] || '').trim()
+      if (rest) for (const id of ids) teile.get(id)!.push(rest)
+    } else if (aktuell.length > 0) {
+      if (zeile.trim()) for (const id of aktuell) teile.get(id)!.push(zeile.trim())
+    } else if (zeile.trim()) {
+      vorspann.push(zeile.trim())
+    }
+  }
+  return { vorspann: vorspann.join('\n'), teile }
+}
 const escapeHtml = (s: unknown) =>
   String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -453,6 +516,7 @@ serve(async (req) => {
     let empfaengerNamen: string[] = []
     let naechsteSchicht = ''
     const schichtVon: Record<string, string> = {}
+    const modelsJeEmpfaenger = new Map<string, Set<string>>()
     if (kandidaten.length > 0) {
       const laufend = kandidaten.filter(k => k.start <= jetzt)
       let treffer = laufend
@@ -463,6 +527,11 @@ serve(async (req) => {
       naechsteSchicht = treffer[0]?.schicht || ''
       const gesehen = new Set<string>()
       for (const k of treffer) {
+        // v4.46.0: Welche Models übernimmt diese Person? Vorher fiel das beim
+        // Entdoppeln unter den Tisch — für „jeder bekommt nur seinen Abschnitt"
+        // ist es aber genau die Information, auf die es ankommt.
+        if (!modelsJeEmpfaenger.has(norm(k.name))) modelsJeEmpfaenger.set(norm(k.name), new Set())
+        modelsJeEmpfaenger.get(norm(k.name))!.add(k.model)
         if (gesehen.has(norm(k.name))) continue
         gesehen.add(norm(k.name))
         empfaengerNamen.push(k.name)
@@ -470,6 +539,46 @@ serve(async (req) => {
         // Schichten parallel, wäre ein gemeinsamer Name für die Hälfte falsch.
         schichtVon[norm(k.name)] = k.schicht
       }
+    }
+
+    // ── v4.46.0: Text in Abschnitte zerlegen ────────────────────────────────
+    // Muss VOR dem Festschreiben von `handover_for` passieren: wer zu keinem der
+    // genannten Models etwas bekommt, ist kein Empfänger — und darf dann auch
+    // nicht in der Liste stehen, an die „tatsächlich verschickt wurde".
+    const modelListe = (relevanteModels.size > 0 || genannt.size > 0)
+      ? await q('models_contact', '?select=id,name')
+      : []
+    const modelArr: any[] = Array.isArray(modelListe) ? modelListe : []
+    const nameVonId = (id: string) => {
+      const t = modelArr.find((m: any) => String(m.id) === String(id))
+      return t?.name ? String(t.name) : `Model ${id}`
+    }
+    const meineRefs: ModelRef[] = [...relevanteModels].map(id => ({ id, name: nameVonId(id) }))
+    const { vorspann, teile } = zerlegeUebergabe(String(log.handover_text || ''), meineRefs)
+
+    // Was bekommt diese Person zu lesen? `null` heißt: für sie ist nichts dabei.
+    const textFuer = (name: string): string | null => {
+      if (teile.size === 0) return text                    // keine Abschnitte → alles wie bisher
+      const meine = [...(modelsJeEmpfaenger.get(norm(name)) || [])].filter(id => teile.has(id))
+      const bloecke = meine.map(id =>
+        `<b>${escapeHtml(nameVonId(id))}:</b> ${escapeHtml((teile.get(id) || []).join('\n'))}`)
+      const kopfText = vorspann ? escapeHtml(vorspann) : ''
+      if (bloecke.length === 0) return kopfText || null    // nur Vorspann, oder gar nichts
+      return [kopfText, ...bloecke].filter(Boolean).join('\n\n')
+    }
+
+    // Empfänger ohne eigenen Anteil fallen raus. Genau dafür war die ganze
+    // Übung: Wer in der Nacht nur Lina hat, bekommt die Leonie-Notiz nicht mehr.
+    if (teile.size > 0) {
+      empfaengerNamen = empfaengerNamen.filter(nm => textFuer(nm) !== null)
+    }
+
+    // Best effort — ohne die Spalte bleibt es beim vollen Text im Portal.
+    if (teile.size > 0) {
+      const alsObjekt: Record<string, string> = {}
+      for (const [id, zeilen] of teile) alsObjekt[id] = zeilen.join('\n')
+      await upd('shift_logs', `?id=eq.${encodeURIComponent(String(logId))}`,
+        { handover_parts: { vorspann, teile: alsObjekt } })
     }
 
     // ── v4.36.0: Empfängerkreis festschreiben ───────────────────────────────
@@ -524,17 +633,11 @@ serve(async (req) => {
     const unbesetzteIds = [...relevanteModels].filter(m => !modelsMitBetreuung.has(m))
     // v4.45.0: Namen werden auch für die Betreff-Zeile gebraucht, deshalb wird
     // die Liste geholt, sobald eines von beidem anfällt — statt zweimal.
-    let unbesetzteNamen: string[] = []
-    let betreffNamen: string[] = []
-    if (unbesetzteIds.length > 0 || genannt.size > 0) {
-      const modelListe = await q('models_contact', '?select=id,name')
-      const nameVon = (id: string) => {
-        const treffer = (Array.isArray(modelListe) ? modelListe : []).find((m: any) => String(m.id) === String(id))
-        return treffer?.name ? String(treffer.name) : `Model ${id}`
-      }
-      unbesetzteNamen = unbesetzteIds.map(nameVon)
-      if (genannt.size > 0) betreffNamen = [...relevanteModels].map(nameVon)
-    }
+    // v4.46.0: `modelListe` ist oben schon geladen — die Namen kommen von dort.
+    const unbesetzteNamen: string[] = unbesetzteIds.map(nameVonId)
+    const betreffNamen: string[] = genannt.size > 0 || teile.size > 0
+      ? [...(teile.size > 0 ? teile.keys() : relevanteModels)].map(nameVonId)
+      : []
 
     // ── Telegram-IDs holen ──────────────────────────────────────────────────
     const kontakte = await q('chatters_contact', '?select=name,telegram_id,active')
@@ -561,7 +664,10 @@ serve(async (req) => {
       const id = idVon(name)
       if (!id) { ohneId.push(name); continue }
       const meineSchicht = schichtVon[norm(name)] || naechsteSchicht
-      const msg = `${kopf}\n\n${text}\n\n` +
+      // v4.46.0: nur der eigene Abschnitt (fällt auf den vollen Text zurück,
+      // wenn der Text gar nicht nach Models gegliedert war).
+      const meinText = textFuer(name) || text
+      const msg = `${kopf}\n\n${meinText}\n\n` +
         `Das betrifft deine ${meineSchicht ? escapeHtml(meineSchicht) : 'nächste'}-Schicht. ` +
         `Bestätige mit /gelesen, sobald du es gesehen hast — oder im Portal mit „Gelesen &amp; verstanden".`
       if (await tg(id, msg)) { zugestellt.push(name); schonBenachrichtigt.add(id) }

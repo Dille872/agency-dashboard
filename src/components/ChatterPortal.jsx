@@ -1169,6 +1169,24 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [isCheckingOut, setIsCheckingOut] = useState(false) // v2.9.6: Doppelklick-Schutz
   const checkOutLockRef = React.useRef(false)
 
+  // v4.46.0: Aus einer Übergabe den Teil herausziehen, der mich betrifft.
+  // `handover_parts` schreibt `handover-notify` beim Zustellen: { vorspann, teile }.
+  // Fehlt sie (Migration nicht gelaufen, Function nicht durchgekommen, Text war
+  // gar nicht nach Models gegliedert), bleibt es beim vollen Wortlaut — lieber
+  // zu viel lesen als den entscheidenden Satz nicht zu sehen.
+  const meinUebergabeTeil = (log) => {
+    const teile = log?.handover_parts?.teile
+    if (!teile || Object.keys(teile).length === 0) return log?.handover_text || ''
+    const vorspann = log.handover_parts.vorspann || ''
+    const meine = Object.keys(teile).filter(id => meineModelsRef.current.has(String(id)))
+    if (meine.length === 0) return vorspann || log.handover_text || ''
+    const bloecke = meine.map(id => {
+      const name = models.find(m => String(m.id) === String(id))?.name || `Model ${id}`
+      return `${name}: ${teile[id]}`
+    })
+    return [vorspann, ...bloecke].filter(Boolean).join('\n\n')
+  }
+
   // v4.45.0: Model-Bezug nachtragen. Best effort — schlägt es fehl (Migration
   // fehlt), bleibt die Spalte leer und die Übergabe geht wie früher an alle
   // Nachfolger. Zu weit verteilt ist besser als gar nicht zugestellt.
@@ -1337,7 +1355,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const seit = new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString()
     const { data, error } = await supabase
       .from('shift_logs')
-      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for, handover_models, handover_about')
+      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for, handover_models, handover_about, handover_parts')
       .not('handover_text', 'is', null)
       // Zeitgrenze über `handover_at`, nicht über `checked_out_at`: eine per
       // Telegram (/uebergabe) während der laufenden Schicht geschriebene Übergabe
@@ -3555,12 +3573,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   {uebergabeModels.length === 0
                     ? 'Ohne Auswahl geht die Übergabe an alle, die eines deiner Models übernehmen.'
                     : 'Nur wer diese Models übernimmt, bekommt die Nachricht. Chris und Rey immer.'}
+                  {' '}Schreib pro Model eine Zeile mit Name und Doppelpunkt — dann bekommt jeder nur seinen Teil.
                 </div>
               </div>
             )}
             <textarea value={uebergabeText} onChange={e => setUebergabeText(e.target.value)}
-              placeholder="z. B. Lisa: Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €."
-              rows={4}
+              placeholder={uebergabeModelWahl.length > 1
+                ? `${uebergabeModelWahl[0].name}: Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €.\n${uebergabeModelWahl[1].name}: nichts Besonderes.`
+                : 'z. B. Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €.'}
+              rows={uebergabeModelWahl.length > 1 ? 5 : 4}
               style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
               <button onClick={() => checkOut(uebergabeText, uebergabeModels)} disabled={isCheckingOut || !uebergabeText.trim()}
@@ -3613,7 +3634,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                         .join(', ')}
                     </div>
                   )}
-                  <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{log.handover_text}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{meinUebergabeTeil(log)}</div>
                   <button onClick={() => bestaetigeUebergabe(log)} disabled={uebergabeLaedt}
                     style={{ marginTop: 12, background: '#10b981', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: uebergabeLaedt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                     ✓ Gelesen & verstanden
