@@ -3599,6 +3599,16 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                             {req.customer_id && <span style={{ fontFamily: 'monospace' }}>Kunde: <CopyId value={req.customer_id} /></span>}
                             <span>Chatter: <span style={{ color: 'var(--text-secondary)' }}>{req.chatter_name}</span></span>
+                            {/* v4.44.0: Anhang auch im eingeklappten Zustand sichtbar. Vorher lagen
+                                die Bilder ausschließlich im aufgeklappten Teil — wer die Karte nicht
+                                öffnete, erfuhr nie, dass überhaupt etwas mitgeschickt wurde. */}
+                            {req.image_urls?.length > 0 && (
+                              <span onClick={e => { e.stopPropagation(); setLightboxImage(req.image_urls[0]) }}
+                                title={`${req.image_urls.length} ${req.image_urls.length === 1 ? 'Anhang' : 'Anhänge'} — klicken zum Vergrößern`}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 7px', borderRadius: 4, background: 'rgba(6,182,212,0.15)', color: '#06b6d4', fontWeight: 700, cursor: 'zoom-in' }}>
+                                📎 {req.image_urls.length}
+                              </span>
+                            )}
                           </div>
                           {/* einzeilige Briefing-Vorschau */}
                           {/* v3.54.0: 2-zeilige Vorschau mit Umbruch (vorher 1 abgeschnittene Zeile) */}
@@ -3729,12 +3739,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     )}
 
                     {req.image_urls?.length > 0 && (
-                      <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
-                        {req.image_urls.map((url, i) => (
-                          <a key={i} href={url} target="_blank" rel="noreferrer">
-                            <img src={url} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
-                          </a>
-                        ))}
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, marginBottom: 5 }}>
+                          📎 {req.image_urls.length} {req.image_urls.length === 1 ? 'Anhang' : 'Anhänge'} vom Chatter
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {req.image_urls.map((url, i) => (
+                            // v4.44.0: Lightbox statt neuem Tab — dieselbe wie bei Chat-Anhängen.
+                            <img key={i} src={url} alt="" onClick={e => { e.stopPropagation(); setLightboxImage(url) }}
+                              style={{ width: 76, height: 76, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-bright)', cursor: 'zoom-in' }} />
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -4197,7 +4212,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             <table>
               <thead>
                 <tr>
-                  {['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Wunsch', 'Dringlichkeit', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}
+                  {['Datum', 'Chatter', 'Model', 'Typ', 'Kunde', 'Wunsch', '📎', 'Dringlichkeit', 'Preis', 'Anzahlung', 'Rest'].map(h => <th key={h} style={thS}>{h}</th>)}
                   {isAdminUser && <th style={thS}></th>}
                 </tr>
               </thead>
@@ -4220,6 +4235,21 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <td style={tdS}>{req.content_type ? contentTypeLabel(req.content_type) : '—'}</td>
                         <td style={{ ...tdS, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{req.customer_id || '—'}</td>
                         <td style={{ ...tdS, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.request_text}>{req.request_text || '—'}</td>
+                        {/* v4.44.0: Anhänge im Verlauf. Vorher endete jede Spur davon,
+                            sobald eine Anfrage auf „erledigt" ging. */}
+                        <td style={{ ...tdS, whiteSpace: 'nowrap' }}>
+                          {req.image_urls?.length > 0 ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              {req.image_urls.slice(0, 3).map((url, i) => (
+                                <img key={i} src={url} alt="" onClick={() => setLightboxImage(url)}
+                                  style={{ width: 26, height: 26, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border-bright)', cursor: 'zoom-in' }} />
+                              ))}
+                              {req.image_urls.length > 3 && (
+                                <span style={{ fontSize: 10, color: '#06b6d4', fontWeight: 700 }}>+{req.image_urls.length - 3}</span>
+                              )}
+                            </span>
+                          ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                        </td>
                         <td style={{ ...tdS, color: deadlineColor, fontWeight: 600, whiteSpace: 'nowrap' }}>{deadlineLabel}</td>
                         <td style={{ ...tdS, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{req.price ? `$${req.price}` : '—'}</td>
                         <td style={{ ...tdS, color: req.deposit_paid ? '#10b981' : '#f59e0b', fontFamily: 'monospace' }}>{req.deposit ? `$${req.deposit}${req.deposit_paid ? ' ✓' : ' ⏳'}` : '—'}</td>
@@ -4236,7 +4266,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       </tr>
                       {editedInfo && (
                         <tr onMouseEnter={() => setHoverHistRow(req.id)} onMouseLeave={() => setHoverHistRow(null)} style={{ background: rowBg }}>
-                          <td colSpan={isAdminUser ? 11 : 10} style={{ padding: '0 10px 6px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-muted)', fontSize: 9, fontStyle: 'italic' }}>
+                          <td colSpan={isAdminUser ? 12 : 11} style={{ padding: '0 10px 6px', borderBottom: '1px solid #1e1e3a', color: 'var(--text-muted)', fontSize: 9, fontStyle: 'italic' }}>
                             ↳ {editedInfo}
                           </td>
                         </tr>
