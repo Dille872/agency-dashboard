@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Sunrise, Sunset, Moon, Clock } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
@@ -149,6 +149,52 @@ function getKW(date) {
   return Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
 }
 
+// v4.50.0: Dreiwege-Abgleich beim Speichern.
+// Vorher schrieb jeder Speichervorgang die KOMPLETTE Woche aus dem Browser
+// zurück. Was inzwischen woanders geändert wurde (Tausch aus der Kommunikation,
+// Offboarding, zweiter Admin), wurde dabei überschrieben.
+// Jetzt: nur was ICH seit dem Laden geändert habe, wird auf den aktuellen
+// Server-Stand gelegt. Fremde Änderungen bleiben erhalten und werden übernommen.
+const PLAN_FELDER = ['assignments', 'day_notes', 'shift_times', 'extra_shifts']
+// Reihenfolge-unabhängig vergleichen: Postgres (jsonb) sortiert Schlüssel um.
+// Mit JSON.stringify allein sähe jede gespeicherte Zelle danach „fremd geändert"
+// aus und der Auto-Save liefe in einer Endlosschleife.
+const stabil = (v) => {
+  if (Array.isArray(v)) return '[' + v.map(stabil).join(',') + ']'
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + stabil(v[k])).join(',') + '}'
+  }
+  return JSON.stringify(v ?? null)
+}
+const gleich = (a, b) => stabil(a) === stabil(b)
+const leererPlan = () => ({ assignments: {}, day_notes: {}, shift_times: {}, extra_shifts: {} })
+const planAus = (row) => {
+  const p = leererPlan()
+  if (!row) return p
+  for (const f of PLAN_FELDER) p[f] = row[f] || {}
+  return p
+}
+function mischeFeld(basis = {}, lokal = {}, server = {}) {
+  const out = {}
+  let lokalGeaendert = false, fremdGeaendert = false, konflikte = 0
+  const keys = new Set([...Object.keys(basis), ...Object.keys(lokal), ...Object.keys(server)])
+  for (const k of keys) {
+    const b = basis[k], l = lokal[k], sv = server[k]
+    let ergebnis
+    if (gleich(l, b)) {
+      ergebnis = sv                      // von mir unverändert → Server-Stand
+      if (!gleich(sv, b)) fremdGeaendert = true
+    } else {
+      ergebnis = l                       // von mir geändert → meine Änderung
+      lokalGeaendert = true
+      if (!gleich(sv, b) && !gleich(sv, l)) konflikte++
+      if (!gleich(sv, b)) fremdGeaendert = true
+    }
+    if (ergebnis !== undefined) out[k] = ergebnis
+  }
+  return { out, lokalGeaendert, fremdGeaendert, konflikte }
+}
+
 export default function ScheduleTab({ session, userDisplayName }) {
   const [weekStart, setWeekStart] = useState(() => {
     // Restore last viewed week from sessionStorage
@@ -170,6 +216,14 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const [shiftTimes, setShiftTimes] = useState({})
   // v3.74.0: pro Woche aktivierte Vorschicht-Zeilen — { [modelId]: true }
   const [extraShifts, setExtraShifts] = useState({})
+  // v4.50.0: Speicher-Absicherung (siehe mischeFeld oben)
+  const geladeneWocheRef = useRef(null)   // Woche, zu der der State gerade gehört (null = lädt noch)
+  const basisRef = useRef(null)           // { plan, neu } — Server-Stand beim letzten Laden/Speichern; neu = Woche existiert noch nicht
+  const wocheRef = useRef(null)           // aktuell angezeigte Woche
+  const planRef = useRef(leererPlan())    // aktueller State, für Speichern aus alten Closures
+  const speicherKetteRef = useRef(Promise.resolve())
+  const recurringRef = useRef(null)
+  const [speicherFehler, setSpeicherFehler] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
   const [editingNote, setEditingNote] = useState(null)
   const [editingShiftTime, setEditingShiftTime] = useState(null)
@@ -268,6 +322,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const weekDays = getWeekDays(weekStart)
   const weekKey = isoDate(weekStart)
   const kw = getKW(weekStart)
+  wocheRef.current = weekKey
+  planRef.current = { assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts }
 
   // v3.44.2: mobileDay an die angezeigte Woche koppeln. Ohne das zeigt das Handy nach einem
   // Wochenwechsel weiter einen Tag aus der alten Woche -> alle Zellen leer, obwohl verplant.
@@ -346,7 +402,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
     // newAbsenceShifts = Schichten, an denen die Person WEG ist.
     // Gespeichert wird die Verfügbarkeit = alle Schichten außer den abwesenden.
     const avail = newAbsenceShifts.length ? ALL_SHIFTS.filter(s => !newAbsenceShifts.includes(s)) : null
-    await supabase.from('absences').insert({
+    if (newAbsenceTo < newAbsenceFrom) { alert('Das Bis-Datum liegt vor dem Von-Datum.'); return }
+    const { error } = await supabase.from('absences').insert({
       chatter_name: newAbsenceName,
       date_from: newAbsenceFrom,
       date_to: newAbsenceTo,
@@ -355,12 +412,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
       source: 'admin',
       seen_by_admin: true,
     })
+    // v4.50.0: Fehler melden, Formular stehen lassen
+    if (error) { alert('⚠ Abwesenheit NICHT gespeichert: ' + error.message); return }
     setNewAbsenceName(''); setNewAbsenceFrom(''); setNewAbsenceTo(''); setNewAbsenceReason(''); setNewAbsenceShifts([])
     loadAbsences()
   }
 
   const deleteAbsence = async (id) => {
-    await supabase.from('absences').delete().eq('id', id)
+    const { error } = await supabase.from('absences').delete().eq('id', id)
+    if (error) alert('⚠ Abwesenheit NICHT gelöscht: ' + error.message)
     loadAbsences()
   }
 
@@ -521,7 +581,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
     const { data } = await supabase.from('recurring_shifts').select('*')
     const map = {}
     for (const r of data || []) map[r.shift_key] = { chatter: r.chatter, note: r.note }
+    recurringRef.current = map
     setRecurring(map)
+    return map
   }
 
   // v3.28.0: offene Schicht-Angebote/-Anfragen laden (für Dienstplan-Markierung)
@@ -534,7 +596,27 @@ export default function ScheduleTab({ session, userDisplayName }) {
   }
 
   const loadSchedule = async () => {
-    const { data } = await supabase.from('schedule').select('*').eq('week_start', weekKey)
+    // v4.50.0: Antwort gehört zu genau dieser Woche. Blättert man weiter, bevor
+    // sie ankommt, wird sie verworfen — vorher landeten die Zellen der alten
+    // Woche im State und der Auto-Save schrieb sie in die neue.
+    const wk = weekKey
+    // Ungespeicherte Änderungen der bisher offenen Woche noch in DIESE Woche
+    // schreiben (Auto-Save wartet 2 s — wer schneller blättert, verlor sie sonst).
+    const alteWoche = geladeneWocheRef.current
+    if (alteWoche && alteWoche !== wk && basisRef.current) {
+      const ziel = { wk: alteWoche, lokal: planRef.current, basis: basisRef.current }
+      const lauf = speicherKetteRef.current.then(() => speichereJetzt({ protokollieren: false, ziel }))
+      speicherKetteRef.current = lauf.catch(() => {})
+    }
+    geladeneWocheRef.current = null      // bis zum Ende des Ladens nicht speichern
+    const { data, error } = await supabase.from('schedule').select('*').eq('week_start', wk).order('id')
+    if (wocheRef.current !== wk) return
+    if (error) {
+      console.error('Dienstplan laden fehlgeschlagen:', error)
+      setSpeicherFehler('Dienstplan konnte nicht geladen werden — bitte neu laden. Änderungen werden erst danach gespeichert.')
+      return
+    }
+    if (data && data.length > 1) console.warn(`schedule: ${data.length} Zeilen für ${wk} — es wird die erste verwendet`)
     if (data && data.length > 0) {
       const row = data[0]
       const rawTimes = row.shift_times || {}
@@ -542,6 +624,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
       for (const [k, v] of Object.entries(rawTimes)) {
         cleanTimes[k] = String(v).replace(' (DE)', '').replace('(DE)', '')
       }
+      basisRef.current = { plan: planAus(row), neu: false }
+      geladeneWocheRef.current = wk
       setSchedule(row.assignments || {})
       setDayNotes(row.day_notes || {})
       setShiftTimes(cleanTimes)
@@ -550,38 +634,45 @@ export default function ScheduleTab({ session, userDisplayName }) {
       setHasSavedData(true)
     } else {
       // Auto-fill from recurring shifts
+      // v4.50.0: auf die wiederkehrenden Schichten warten — beim ersten Öffnen
+      // war `recurring` sonst noch leer und die Woche blieb unvorbelegt.
+      const rec = recurringRef.current || await loadRecurring()
+      if (wocheRef.current !== wk) return
       const autoSchedule = {}
-      for (const day of weekDays) {
+      for (const day of getWeekDays(new Date(wk + 'T00:00:00'))) {
         const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1 // 0=Mo..6=So
-        for (const [key, val] of Object.entries(recurring)) {
+        for (const [key, val] of Object.entries(rec || {})) {
           const parts = key.split('__')
           if (parseInt(parts[1]) === dayOfWeek) {
             autoSchedule[`${parts[0]}__${isoDate(day)}__${parts[2]}`] = { ...val, isRecurring: true }
           }
         }
       }
-      setSchedule(autoSchedule)
-      setDayNotes({})
-      setExtraShifts({}) // v3.74.0: neue Woche startet ohne Vorschicht
 
       // Load shift times from most recent previous week
       const { data: prevWeeks } = await supabase
         .from('schedule')
         .select('shift_times, week_start')
-        .lt('week_start', weekKey)
+        .lt('week_start', wk)
         .order('week_start', { ascending: false })
         .limit(1)
+      if (wocheRef.current !== wk) return
+      const cleanTimes = {}
       if (prevWeeks && prevWeeks.length > 0 && prevWeeks[0].shift_times) {
-        const prevTimes = prevWeeks[0].shift_times
-        const cleanTimes = {}
-        for (const [k, v] of Object.entries(prevTimes)) {
+        for (const [k, v] of Object.entries(prevWeeks[0].shift_times)) {
           // Key format: modelId__shift → keep as is since times are per model+shift not per day
           cleanTimes[k] = String(v).replace(' (DE)', '').replace('(DE)', '')
         }
-        setShiftTimes(cleanTimes)
-      } else {
-        setShiftTimes({})
       }
+      // Es gibt noch keine Zeile: Basis = Vorbelegung, damit nur echte
+      // Eingaben als „von mir geändert" zählen.
+      basisRef.current = { plan: { assignments: autoSchedule, day_notes: {}, shift_times: cleanTimes, extra_shifts: {} }, neu: true }
+      geladeneWocheRef.current = wk
+      setSchedule(autoSchedule)
+      setDayNotes({})
+      setExtraShifts({}) // v3.74.0: neue Woche startet ohne Vorschicht
+      setShiftTimes(cleanTimes)
+      setScheduleStatus('draft')
       setHasSavedData(false)
     }
   }
@@ -594,37 +685,157 @@ export default function ScheduleTab({ session, userDisplayName }) {
   // die States, das löst den Auto-Save aus.
   // Jetzt protokollieren nur noch die beiden echten Knopfdrücke — Speichern und
   // Veröffentlichen. Der Auto-Save speichert weiter, aber still.
-  const saveSchedule = async ({ protokollieren = true } = {}) => {
+  // v4.50.0: Speichern läuft in einer Kette — nie zwei gleichzeitig.
+  const saveSchedule = ({ protokollieren = true } = {}) => {
+    const lauf = speicherKetteRef.current.then(() => speichereJetzt({ protokollieren }))
+    speicherKetteRef.current = lauf.catch(() => {})
+    return lauf
+  }
+
+  // ziel (optional): { wk, lokal, basis } — Nachspeichern einer Woche, die
+  // gerade nicht mehr angezeigt wird (beim Wochenwechsel).
+  const speichereJetzt = async ({ protokollieren, status, ziel } = {}, versuch = 0) => {
+    const wk = ziel ? ziel.wk : geladeneWocheRef.current
+    // State gehört (noch) nicht zur angezeigten Woche → nichts schreiben
+    if (!wk || (!ziel && wk !== wocheRef.current)) return false
+    const basisObj = ziel ? ziel.basis : basisRef.current
+    if (!basisObj) return false
     setSaving(true)
-    const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', weekKey).single()
-    if (existing) {
-      await supabase.from('schedule').update({ assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts }).eq('week_start', weekKey)
-    } else {
-      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts, status: 'draft' })
-    }
-    setHasSavedData(true)
-    setSaving(false)
-    // v3.97.0: protokollieren — schedule.assignments wird beim Speichern
-    // überschrieben, ohne Protokoll wäre der Bearbeiter nicht rekonstruierbar.
-    if (protokollieren) {
-      logActivity('schedule.edit', { entity: `KW ${getKW(weekStart)}`, detail: `Woche ab ${weekKey}` })
+    try {
+      const lokal = ziel ? ziel.lokal : planRef.current
+      const basis = basisObj.plan
+      const { data: rows, error: ladeFehler } = await supabase.from('schedule').select('*').eq('week_start', wk).order('id')
+      if (ladeFehler) throw ladeFehler
+      const serverRow = rows && rows.length ? rows[0] : null
+      // Existiert die Woche (noch) nicht, gilt die Vorbelegung als Server-Stand
+      const server = serverRow ? planAus(serverRow) : basis
+
+      const gemischt = {}
+      let lokalGeaendert = false, fremdGeaendert = false, konflikte = 0
+      for (const f of PLAN_FELDER) {
+        const r = mischeFeld(basis[f], lokal[f], server[f])
+        gemischt[f] = r.out
+        lokalGeaendert ||= r.lokalGeaendert
+        fremdGeaendert ||= r.fremdGeaendert
+        konflikte += r.konflikte
+      }
+      const statusAenderung = status && status !== (serverRow?.status || 'draft')
+
+      // Neue Woche wird beim Ansehen angelegt (wie bisher) — beim Nachspeichern nur mit echten Änderungen
+      if (lokalGeaendert || statusAenderung || (!serverRow && !ziel)) {
+        const payload = { ...gemischt }
+        if (status) payload.status = status
+        const { error } = serverRow
+          ? await supabase.from('schedule').update(payload).eq('id', serverRow.id)
+          : await supabase.from('schedule').insert({ week_start: wk, status: status || 'draft', ...payload })
+        if (error) {
+          // Jemand hat die Woche gerade parallel angelegt → einmal neu abgleichen
+          if (error.code === '23505' && versuch === 0) return speichereJetzt({ protokollieren, status, ziel }, 1)
+          throw error
+        }
+        if (!serverRow && !ziel) setHasSavedData(true)
+      }
+
+      // Nur anfassen, wenn diese Woche noch die offene ist
+      const nochOffen = !ziel && geladeneWocheRef.current === wk && wocheRef.current === wk
+      if (!nochOffen) {
+        setSpeicherFehler(null)
+        return true
+      }
+      basisRef.current = { plan: gemischt, neu: false }
+      if (status) setScheduleStatus(status)
+      else if (serverRow?.status) setScheduleStatus(serverRow.status)
+      // Fremde Änderungen sichtbar machen (nur wenn noch dieselbe Woche offen ist)
+      const stateWeicht = PLAN_FELDER.some(f => !gleich(gemischt[f], lokal[f]))
+      if (fremdGeaendert && stateWeicht) {
+        // Was ich WÄHREND des Speicherns noch getippt habe, obendrauf behalten
+        const jetzt = planRef.current
+        const neu = {}
+        for (const f of PLAN_FELDER) neu[f] = mischeFeld(lokal[f], jetzt[f], gemischt[f]).out
+        setSchedule(neu.assignments)
+        setDayNotes(neu.day_notes)
+        setShiftTimes(neu.shift_times)
+        setExtraShifts(neu.extra_shifts)
+      }
+      if (konflikte > 0) {
+        console.warn(`Dienstplan ${wk}: ${konflikte} Zelle(n) gleichzeitig woanders geändert — deine Änderung gilt.`)
+      }
+      setSpeicherFehler(null)
+      // v3.97.0: protokollieren — ohne Protokoll wäre der Bearbeiter nicht rekonstruierbar.
+      if (protokollieren && lokalGeaendert) {
+        logActivity('schedule.edit', { entity: `KW ${getKW(new Date(wk + 'T00:00:00'))}`, detail: `Woche ab ${wk}` })
+      }
+      return true
+    } catch (e) {
+      console.error('Dienstplan speichern fehlgeschlagen:', e)
+      setSpeicherFehler(`Dienstplan NICHT gespeichert: ${e?.message || e}. Seite nicht schließen — es wird bei der nächsten Änderung erneut versucht.`)
+      return false
+    } finally {
+      setSaving(false)
     }
   }
 
   const togglePublish = async () => {
     setPublishing(true)
     const newStatus = scheduleStatus === 'live' ? 'draft' : 'live'
-    const { data: existing } = await supabase.from('schedule').select('id').eq('week_start', weekKey).single()
-    if (existing) {
-      await supabase.from('schedule').update({ status: newStatus, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts }).eq('week_start', weekKey)
-    } else {
-      await supabase.from('schedule').insert({ week_start: weekKey, assignments: schedule, day_notes: dayNotes, shift_times: shiftTimes, extra_shifts: extraShifts, status: newStatus })
-    }
-    setScheduleStatus(newStatus)
-    setHasSavedData(true)
+    // v4.50.0: über denselben Abgleich wie das Speichern — vorher schrieb auch
+    // Veröffentlichen die komplette Woche aus dem Browser zurück.
+    const lauf = speicherKetteRef.current.then(() => speichereJetzt({ protokollieren: false, status: newStatus }))
+    speicherKetteRef.current = lauf.catch(() => {})
+    const ok = await lauf
     setPublishing(false)
+    if (!ok) { alert('⚠ Status wurde NICHT geändert — Speichern fehlgeschlagen.'); return }
     logActivity(newStatus === 'live' ? 'schedule.publish' : 'schedule.unpublish',
       { entity: `KW ${getKW(weekStart)}`, detail: `Woche ab ${weekKey}` })
+  }
+
+  // v4.50.0: „Als Vorlage für nächste Woche" — überschreibt eine schon
+  // geplante Woche nicht mehr. Ist dort schon etwas eingetragen, werden nur
+  // LEERE Zellen ergänzt; Bestehendes, Notizen, Vorschichten und Status bleiben.
+  const alsVorlageUebertragen = async (aufKlaerung) => {
+    const next = new Date(weekStart); next.setDate(next.getDate() + 7)
+    const nextKey = isoDate(next)
+    const nextKw = getKW(next)
+    const newA = {}
+    for (const [key, val] of Object.entries(schedule)) {
+      const parts = key.split('__')
+      const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
+      const newKey = `${parts[0]}__${isoDate(d)}__${parts[2]}`
+      // Freischichten unverändert lassen — die brauchen keine Klärung
+      newA[newKey] = (aufKlaerung && val && val.chatter && val.chatter !== '__FREI__') ? { ...val, confirmed: false } : val
+    }
+    const { data: rows, error: ladeFehler } = await supabase.from('schedule').select('*').eq('week_start', nextKey).order('id')
+    if (ladeFehler) { alert('⚠ KW ' + nextKw + ' konnte nicht geladen werden: ' + ladeFehler.message); return }
+    const ex = rows && rows.length ? rows[0] : null
+    const belegt = ex ? Object.values(ex.assignments || {}).filter(v => v && (v.chatter || v.note)).length : 0
+
+    let assignments, shift_times, ergaenzt = 0
+    if (ex && belegt > 0) {
+      const ok = window.confirm(
+        `KW ${nextKw} ist schon geplant: ${belegt} belegte Schicht(en)${ex.status === 'live' ? ', Status LIVE' : ''}.\n\n` +
+        `OK = nur LEERE Schichten aus der Vorlage ergänzen. Alles Bestehende bleibt unverändert.\n` +
+        `Abbrechen = nichts tun.`)
+      if (!ok) return
+      assignments = { ...(ex.assignments || {}) }
+      for (const [k, v] of Object.entries(newA)) {
+        const alt = assignments[k]
+        if (!alt || (!alt.chatter && !alt.note)) { assignments[k] = v; ergaenzt++ }
+      }
+      shift_times = { ...shiftTimes, ...(ex.shift_times || {}) } // bestehende Zeiten haben Vorrang
+    } else {
+      if (!window.confirm(`Plan auf KW ${nextKw} übertragen${aufKlaerung ? ' und alle Schichten auf "Klärung nötig" setzen' : ''}?`)) return
+      assignments = newA
+      shift_times = ex ? { ...shiftTimes, ...(ex.shift_times || {}) } : shiftTimes
+      ergaenzt = Object.keys(newA).length
+    }
+    const { error } = ex
+      ? await supabase.from('schedule').update({ assignments, shift_times }).eq('id', ex.id)
+      : await supabase.from('schedule').insert({ week_start: nextKey, assignments, shift_times, status: 'draft' })
+    if (error) { alert('⚠ Vorlage NICHT übertragen: ' + error.message); return }
+    setWeekStart(next)
+    alert(ex && belegt > 0
+      ? `✓ ${ergaenzt} leere Schicht(en) in KW ${nextKw} ergänzt — Bestehendes unverändert.`
+      : `✓ Plan auf KW ${nextKw} übertragen${aufKlaerung ? ' — alle Schichten auf "Klärung nötig"' : ''}!`)
   }
 
   const [autoPlanning, setAutoPlanning] = useState(false)
@@ -1250,6 +1461,14 @@ export default function ScheduleTab({ session, userDisplayName }) {
           </button>
         </div>
       </div>
+
+      {/* v4.50.0: Speicherfehler sichtbar — vorher still verschluckt */}
+      {speicherFehler && (
+        <div role="alert" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.45)', color: '#ef4444', borderRadius: 8, padding: '10px 12px', fontSize: 12, fontWeight: 600, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <span>⚠ {speicherFehler}</span>
+          <button onClick={() => saveSchedule()} style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid rgba(239,68,68,0.45)', color: '#ef4444', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Erneut speichern</button>
+        </div>
+      )}
 
       {/* Chatter-Suche */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2359,50 +2578,11 @@ export default function ScheduleTab({ session, userDisplayName }) {
           <span style={{ color: 'var(--text-muted)' }}>· Klick auf Zelle zum Bearbeiten</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={async () => {
-            if (!window.confirm(`Plan auf KW ${kw + 1} übertragen?`)) return
-            const next = new Date(weekStart); next.setDate(next.getDate() + 7)
-            const nextKey = isoDate(next)
-            const newA = {}
-            for (const [key, val] of Object.entries(schedule)) {
-              const parts = key.split('__')
-              const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
-              newA[`${parts[0]}__${isoDate(d)}__${parts[2]}`] = val
-            }
-            const { data: ex } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
-            if (ex) await supabase.from('schedule').update({ assignments: newA, shift_times: shiftTimes }).eq('week_start', nextKey)
-            else await supabase.from('schedule').insert({ week_start: nextKey, assignments: newA, shift_times: shiftTimes })
-            setWeekStart(next)
-            alert(`✓ Plan auf KW ${kw + 1} übertragen!`)
-          }} style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => alsVorlageUebertragen(false)} style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             ↻ Als Vorlage für nächste Woche
           </button>
           {/* v3.16.0: Vorlage übertragen + alle Schichten auf "Klärung nötig" setzen */}
-          <button onClick={async () => {
-            if (!window.confirm(`Plan auf KW ${kw + 1} übertragen und alle Schichten auf "Klärung nötig" setzen?`)) return
-            const next = new Date(weekStart); next.setDate(next.getDate() + 7)
-            const nextKey = isoDate(next)
-            const newA = {}
-            for (const [key, val] of Object.entries(schedule)) {
-              const parts = key.split('__')
-              const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
-              const newKey = `${parts[0]}__${isoDate(d)}__${parts[2]}`
-              // Freischichten unverändert lassen — die brauchen keine Klärung
-              if (val && val.chatter === '__FREI__') {
-                newA[newKey] = val
-              } else if (val && val.chatter) {
-                // Besetzte Schicht: gleiche Zuweisung, aber confirmed: false
-                newA[newKey] = { ...val, confirmed: false }
-              } else {
-                newA[newKey] = val
-              }
-            }
-            const { data: ex } = await supabase.from('schedule').select('id').eq('week_start', nextKey).single()
-            if (ex) await supabase.from('schedule').update({ assignments: newA, shift_times: shiftTimes }).eq('week_start', nextKey)
-            else await supabase.from('schedule').insert({ week_start: nextKey, assignments: newA, shift_times: shiftTimes })
-            setWeekStart(next)
-            alert(`✓ Plan auf KW ${kw + 1} übertragen — alle Schichten auf "Klärung nötig"!`)
-          }} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => alsVorlageUebertragen(true)} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
             ↻ Vorlage + alles auf Klärung
           </button>
         </div>
