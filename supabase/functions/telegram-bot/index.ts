@@ -418,7 +418,8 @@ const ADMIN_HELP = `ℹ️ <b>Admin Befehle:</b>
 // ── Helper: Forward an Admins ──
 async function forwardToAdmins(senderName: string, senderType: string, text: string, fromId: string) {
   const tag = senderType === 'model' ? '📨 Model' : senderType === 'chatter' ? '📨 Chatter' : '📨 Unbekannt'
-  const msg = `${tag}: <b>${senderName}</b>\n\n<i>${text}</i>\n\n<a href="tg://user?id=${fromId}">→ Direkt antworten</a>`
+  // v4.48.0: escapen — ein „<3“ im Text ließ Telegram die Weiterleitung sonst mit 400 ablehnen
+  const msg = `${tag}: <b>${escHtml(String(senderName || ''))}</b>\n\n<i>${escHtml(String(text || ''))}</i>\n\n<a href="tg://user?id=${encodeURIComponent(String(fromId))}">→ Direkt antworten</a>`
   for (const adminId of ADMIN_IDS) await tg(adminId, msg)
 }
 

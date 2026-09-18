@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import TelegramFehlerHinweis from './components/TelegramFehlerHinweis.jsx'
 import './index.css'
 
 // v4.14.0: Der Inkognito-Schalter hing hier global und lag damit auch über
@@ -9,5 +10,7 @@ import './index.css'
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
+    {/* v4.48.0: global, damit auch Chatter/Models Telegram-Fehler sehen */}
+    <TelegramFehlerHinweis />
   </React.StrictMode>,
 )

@@ -3,7 +3,7 @@ import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Li
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { parseSystemMessage, systemMessagePreview } from '../systemMessage'
-import { sendTelegramMessage, sendTelegramMediaGroup } from '../telegram'
+import { sendTelegramMessage, sendTelegramMediaGroup, zugestellt } from '../telegram'
 import Card from './Card'
 import OnlineStatus from './OnlineStatus'
 import { SocialLinksEditor } from './SocialLinks'
@@ -506,22 +506,28 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     // Telegram an Model
     const { data: modelData } = await supabase.from('models_contact').select('telegram_id').eq('name', idea.model_name).maybeSingle()
     if (modelData?.telegram_id) {
-      try {
-        await sendTelegramMessage(modelData.telegram_id, tgMsg)
-      } catch (err) {
-        alert('Telegram-Fehler: ' + err.message)
+      // v4.48.0: callTelegram wirft nicht — Ergebnis selbst prüfen.
+      const r = await sendTelegramMessage(modelData.telegram_id, tgMsg)
+      if (!zugestellt(r)) {
+        alert('⚠ Idee NICHT angekommen: ' + (r?.description || 'Telegram-Fehler'))
         return
       }
     }
-    // Auch in messages-Tabelle speichern
-    await supabase.from('messages').insert({
+    // Auch in messages-Tabelle speichern.
+    // v4.48.0: Spalte heißt message_type — `type` gibt es nicht, der Insert ist
+    // bisher still gescheitert und die Idee fehlte im Chatverlauf.
+    const { error: msgErr } = await supabase.from('messages').insert({
       model_name: idea.model_name,
+      model_telegram_id: modelData?.telegram_id || null,
       contact_type: 'model',
       direction: 'out',
+      message_type: 'content_idea',
       text: text,
+      status: 'sent',
+      read: true,
       sent_by: displayName,
-      type: 'content_idea',
     })
+    if (msgErr) console.error('Content-Idee nicht im Chatverlauf gespeichert:', msgErr)
     // Status updaten
     await supabase.from('content_ideas').update({
       sent_to_model_at: new Date().toISOString(),
@@ -654,12 +660,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (!selectedModel || !modelMsgText.trim() || !selectedModel.telegram_id) return
     setSendingModel(true)
     try {
-      await sendTelegramMessage(selectedModel.telegram_id, modelMsgText)
+      const r = await sendTelegramMessage(selectedModel.telegram_id, modelMsgText)
       await supabase.from('messages').insert({
         model_name: selectedModel.name, model_telegram_id: selectedModel.telegram_id,
         direction: 'out', contact_type: 'model', message_type: modelMsgType,
-        text: modelMsgText, status: 'sent', sent_by: userName,
+        text: modelMsgText, status: zugestellt(r) ? 'sent' : 'failed', sent_by: userName,
       })
+      if (!zugestellt(r)) alert(`⚠ Nachricht an ${selectedModel.name} NICHT angekommen: ${r?.description || 'Telegram-Fehler'}`)
       await supabase.from('models_contact').update({ last_contacted: new Date().toISOString() }).eq('id', selectedModel.id)
       setModelMsgText(''); setSelectedModel(null)
       loadMessages(); loadModels()
@@ -684,28 +691,33 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
 
     let sent = 0, failed = 0
+    const failedNames = []
     for (const chatter of targets) {
       if (!chatter.telegram_id) continue
       const personalText = chatterMsgText.replace('{name}', chatter.name) + calLink
       try {
-        await sendTelegramMessage(chatter.telegram_id, personalText)
+        const r = await sendTelegramMessage(chatter.telegram_id, personalText)
+        const ok = zugestellt(r)
         await supabase.from('messages').insert({
           model_name: chatter.name, model_telegram_id: chatter.telegram_id,
           direction: 'out', contact_type: 'chatter', message_type: chatterMsgType,
-          text: personalText, status: 'sent', sent_by: userName,
+          text: personalText, status: ok ? 'sent' : 'failed', sent_by: userName,
         })
+        if (!ok) { failed++; failedNames.push(chatter.name); continue }
         await supabase.from('chatters_contact').update({ last_contacted: new Date().toISOString() }).eq('id', chatter.id)
         sent++
       } catch (err) {
         console.error('Chatter-Nachricht fehlgeschlagen:', chatter.name, err)
-        failed++
+        failed++; failedNames.push(chatter.name)
       }
     }
     setChatterMsgText(''); setSelectedChatters(new Set())
     setZoomDate(''); setZoomTime('')
     loadMessages(); loadChatters()
     setSendingChatter(false)
-    alert(`✓ Nachricht an ${sent} Chatter gesendet${failed ? ` (${failed} fehlgeschlagen)` : ''}`)
+    alert(failed
+      ? `⚠ Nachricht an ${sent} Chatter gesendet — ${failed} NICHT angekommen: ${failedNames.join(', ')}`
+      : `✓ Nachricht an ${sent} Chatter gesendet`)
   }
 
   // v3.10.0: Massennachricht aus dem Chat-Tab
@@ -733,11 +745,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
 
     let sent = 0
+    const failedNames = []
     for (const recipient of targets) {
       if (!recipient.telegram_id) continue
       const personalText = broadcastText.replace('{name}', recipient.name) + calLink
       try {
-        await sendTelegramMessage(recipient.telegram_id, personalText)
+        const r = await sendTelegramMessage(recipient.telegram_id, personalText)
+        const ok = zugestellt(r)
         await supabase.from('messages').insert({
           model_name: recipient.name,
           model_telegram_id: recipient.telegram_id,
@@ -745,16 +759,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           contact_type: broadcastRecipientType,
           message_type: broadcastMsgType,
           text: personalText,
-          status: 'sent',
+          status: ok ? 'sent' : 'failed',
           sent_by: userName,
           is_broadcast: true,
         })
+        if (!ok) { failedNames.push(recipient.name); continue }
         // last_contacted aktualisieren
         const tableName = broadcastRecipientType === 'chatter' ? 'chatters_contact' : 'models_contact'
         await supabase.from(tableName).update({ last_contacted: new Date().toISOString() }).eq('id', recipient.id)
         sent++
       } catch (e) {
         console.error('Broadcast send failed for', recipient.name, e)
+        failedNames.push(recipient.name)
       }
     }
     // Reset
@@ -769,7 +785,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (broadcastRecipientType === 'chatter') loadChatters()
     else loadModels()
     setBroadcastSending(false)
-    alert(`✓ Massennachricht an ${sent} ${broadcastRecipientType === 'chatter' ? 'Chatter' : 'Models'} gesendet`)
+    const gruppe = broadcastRecipientType === 'chatter' ? 'Chatter' : 'Models'
+    alert(failedNames.length
+      ? `⚠ Massennachricht an ${sent} ${gruppe} gesendet — ${failedNames.length} NICHT angekommen: ${failedNames.join(', ')}`
+      : `✓ Massennachricht an ${sent} ${gruppe} gesendet`)
   }
 
   const addModel = async (name, tgId) => {
@@ -850,7 +869,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (!replyText.trim() || !msg.model_telegram_id) return
     setSendingReply(true)
     try {
-      await sendTelegramMessage(msg.model_telegram_id, replyText.trim())
+      const r = await sendTelegramMessage(msg.model_telegram_id, replyText.trim())
+      if (!zugestellt(r)) throw new Error(r?.description || 'Telegram-Fehler')
       await supabase.from('messages').insert({
         model_name: msg.model_name,
         model_telegram_id: msg.model_telegram_id,
@@ -1044,7 +1064,19 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     return urls
   }
 
+  // v4.48.0: synchrone Sperre gegen doppeltes Senden (zweimal schnell Enter).
+  // Der State allein reicht nicht — er wird erst nach dem ersten await gesetzt.
+  const chatSendLockRef = useRef(false)
   const sendChatThreadMessage = async (contactType) => {
+    if (chatSendLockRef.current) return
+    chatSendLockRef.current = true
+    try {
+      await sendChatThreadMessageIntern(contactType)
+    } finally {
+      chatSendLockRef.current = false
+    }
+  }
+  const sendChatThreadMessageIntern = async (contactType) => {
     const text = chatInputText.trim()
     const hasImages = chatAttachments.length > 0
     if (!activeThreadName || (!text && !hasImages) || chatSendingTo) return
@@ -1666,7 +1698,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       } else {
         return
       }
-      await sendTelegramMessage(chatterData.telegram_id, body)
+      const r = await sendTelegramMessage(chatterData.telegram_id, body)
       // v3.45.0: Status-Update auch im Chat-Verlauf des Chatters sichtbar machen
       await supabase.from('messages').insert({
         model_name: req.chatter_name,
@@ -1675,7 +1707,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         contact_type: 'chatter',
         message_type: 'status',
         text: body.replace(/<\/?b>/g, ''),
-        status: 'sent',
+        status: zugestellt(r) ? 'sent' : 'failed',
         read: true,
         sent_by: userName,
       })
@@ -1684,8 +1716,22 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
   }
 
+  // v4.48.0: Doppelklick-Sperre — die Buttons bleiben mehrere Sekunden aktiv,
+  // bis alle Telegram-Nachrichten raus sind. Ohne Sperre bekam das Model die
+  // Anfrage doppelt.
+  const requestBusyRef = useRef(new Set())
   const updateRequestStatus = async (id, status, notify = true) => {
+    if (requestBusyRef.current.has(id)) return
+    requestBusyRef.current.add(id)
+    try {
+      await updateRequestStatusIntern(id, status, notify)
+    } finally {
+      requestBusyRef.current.delete(id)
+    }
+  }
+  const updateRequestStatusIntern = async (id, status, notify) => {
     const req = contentRequests.find(r => r.id === id)
+    const nichtZugestellt = []
     await supabase.from('content_requests').update({ status }).eq('id', id)
     // v3.97.0: content_requests hält keinen Status-Bearbeiter fest — ohne Protokoll
     // wäre nicht nachvollziehbar, wer einen Custom bestätigt oder abgelehnt hat.
@@ -1730,7 +1776,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const outfitLine = req.outfit ? `\n👗 Outfit: ${req.outfit}` : ''
         const specialLine = req.special_notes ? `\n⭐ Besonderheiten: ${req.special_notes}` : ''
         const msg = `<b>${headerIcon} Neue ${typeLbl ? typeLbl + '-' : 'Content-'}Anfrage für dich</b>\n\n${text}${profileLine}${customerLine}${typeLbl ? '\n🎬 Typ: ' + typeLbl : ''}${req.duration ? `\n⏱ ${durWord}: ` + req.duration : ''}${outfitLine}${specialLine}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nMagst du das übernehmen? Antworte einfach hier — das Team bekommt deine Rückmeldung.\n\n– Thirteen 87`
-        await sendTelegramMessage(modelData.telegram_id, msg)
+        const r = await sendTelegramMessage(modelData.telegram_id, msg)
+        if (!zugestellt(r)) nichtZugestellt.push(`${req.model_name}: ${r?.description || 'Telegram-Fehler'}`)
         // v3.46.0: Referenz-Bilder der Anfrage mitsenden (falls vorhanden)
         if (req.image_urls?.length > 0) {
           await sendTelegramMediaGroup(modelData.telegram_id, req.image_urls)
@@ -1744,7 +1791,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           message_type: 'content_request',
           text: `${headerIcon} ${typeLbl ? typeLbl + '-' : 'Content-'}Anfrage: ${text}`,
           image_urls: req.image_urls?.length > 0 ? req.image_urls : null,
-          status: 'sent',
+          status: zugestellt(r) ? 'sent' : 'failed',
           read: true,
           sent_by: userName,
         })
@@ -1780,7 +1827,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         const outfitLine = req.outfit ? `\n👗 Outfit: ${req.outfit}` : ''
         const specialLine = req.special_notes ? `\n⭐ Besonderheiten: ${req.special_notes}` : ''
         const msg = `<b>${headerIcon} ${headerTitle}</b>\n\n${text}${profileLine}${customerLine}${typeLbl ? '\n🎬 Typ: ' + typeLbl : ''}${req.duration ? `\n⏱ ${durWord}: ` + req.duration : ''}${outfitLine}${specialLine}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\n– Thirteen 87`
-        await sendTelegramMessage(modelData.telegram_id, msg)
+        const r = await sendTelegramMessage(modelData.telegram_id, msg)
+        if (!zugestellt(r)) nichtZugestellt.push(`${req.model_name}: ${r?.description || 'Telegram-Fehler'}`)
         // v3.45.0: Auftrag auch im Chat-Verlauf der Model sichtbar machen
         await supabase.from('messages').insert({
           model_name: req.model_name,
@@ -1790,7 +1838,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           message_type: 'content_request',
           text: `${headerIcon} ${headerTitle}: ${text}`,
           image_urls: req.image_urls?.length > 0 ? req.image_urls : null,
-          status: 'sent',
+          status: zugestellt(r) ? 'sent' : 'failed',
           read: true,
           sent_by: userName,
         })
@@ -1798,6 +1846,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
 
     loadContentRequests()
+    if (nichtZugestellt.length) alert(`⚠ Status ist gespeichert, aber die Telegram-Nachricht ist NICHT angekommen:\n\n${nichtZugestellt.join('\n')}`)
   }
 
   // v3.56.0: Reminder ans Model — erinnert manuell an einen noch offenen Custom.
@@ -1829,7 +1878,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     const specialLine = req.special_notes ? `\n⭐ Besonderheiten: ${req.special_notes}` : ''
     const msg = `<b>🔔 Reminder: Custom noch offen</b>\n\nKleine Erinnerung an diesen Custom 🙏\n\n${text}${profileLine}${customerLine}${typeLbl ? '\n🎬 Typ: ' + typeLbl : ''}${req.duration ? `\n⏱ ${durWord}: ` + req.duration : ''}${outfitLine}${specialLine}${payLine}${deadlineText ? '\n📅 Bis: ' + deadlineText : ''}\n\nSag kurz Bescheid, wann du dazu kommst. Danke dir! 💜\n\n– Thirteen 87`
     try {
-      await sendTelegramMessage(modelData.telegram_id, msg)
+      const r = await sendTelegramMessage(modelData.telegram_id, msg)
+      if (!zugestellt(r)) throw new Error(r?.description || 'nicht zugestellt')
       if (req.image_urls?.length > 0) { try { await sendTelegramMediaGroup(modelData.telegram_id, req.image_urls) } catch {} }
       await supabase.from('messages').insert({
         model_name: req.model_name,
@@ -1856,6 +1906,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   // v3.45.0: Label für Ticket-/System-Nachrichten, die jetzt mit im Chat-Verlauf stehen
   const ticketLabel = (t) => ({
     content_request: '📥 Content-Anfrage',
+    content_idea: '💡 Content-Idee',
     availability: '🟢 Verfügbarkeit',
     announcement: '📣 Ankündigung',
     zoom: '📅 Zoom Call',

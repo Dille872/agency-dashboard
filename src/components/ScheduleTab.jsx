@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Sunrise, Sunset, Moon, Clock } from 'lucide-react'
 import { supabase } from '../supabase'
-import { sendTelegramMessage } from '../telegram'
+import { sendTelegramMessage, zugestellt } from '../telegram'
 import BlockOfferModal from './BlockOfferModal'
 import { logActivity } from '../activity'
 import { ladeInaktiveNamen, ohneInaktive } from '../people'
@@ -998,6 +998,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     let sent = 0
     let skipped = 0
     const sentToNames = []     // v3.15.0
+    const nichtAngekommen = [] // v4.48.0
     let sampleMessage = ''     // v3.15.0
     for (const chatter of chatters) {
       if (!selectedIds.has(chatter.id)) continue
@@ -1025,7 +1026,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
       }
       if (lines.length > 1) {
         const msgText = lines.join('\n')
-        await sendTelegramMessage(chatter.telegram_id, msgText)
+        const r = await sendTelegramMessage(chatter.telegram_id, msgText)
+        // v4.48.0: nur zählen, was wirklich angekommen ist
+        if (!zugestellt(r)) { nichtAngekommen.push(chatter.name); continue }
         sent++
         sentToNames.push(chatter.name)
         if (!sampleMessage) sampleMessage = msgText
@@ -1053,7 +1056,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setSending(false)
     setSendModalOpen(false)
     setSendSelection(new Set())
-    alert(`✓ Dienstplan an ${sent} ${sent === 1 ? 'Chatter' : 'Chatter'} versendet${skipped > 0 ? ` (${skipped} ohne Telegram-ID übersprungen)` : ''}!`)
+    alert(`${nichtAngekommen.length ? '⚠' : '✓'} Dienstplan an ${sent} Chatter versendet${skipped > 0 ? ` (${skipped} ohne Telegram-ID übersprungen)` : ''}${nichtAngekommen.length ? `\n\nNICHT angekommen bei: ${nichtAngekommen.join(', ')}` : ''}`)
   }
 
   const sendPlanToAll = async () => {
@@ -1061,6 +1064,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     let sent = 0
     let skipped = 0
     const sentToNames = []     // v3.15.0
+    const nichtAngekommen = [] // v4.48.0
     let sampleMessage = ''     // v3.15.0
     for (const chatter of chatters) {
       if (!chatter.telegram_id) { skipped++; continue }
@@ -1085,7 +1089,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
       }
       if (lines.length > 1) {
         const msgText = lines.join('\n')
-        await sendTelegramMessage(chatter.telegram_id, msgText)
+        const r = await sendTelegramMessage(chatter.telegram_id, msgText)
+        // v4.48.0: nur zählen, was wirklich angekommen ist
+        if (!zugestellt(r)) { nichtAngekommen.push(chatter.name); continue }
         sent++
         sentToNames.push(chatter.name)
         if (!sampleMessage) sampleMessage = msgText
@@ -1109,7 +1115,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
       }
     }
     setSending(false)
-    alert('✓ Dienstplan versendet!')
+    alert(nichtAngekommen.length
+      ? `⚠ Dienstplan an ${sent} Chatter versendet.\n\nNICHT angekommen bei: ${nichtAngekommen.join(', ')}`
+      : '✓ Dienstplan versendet!')
   }
 
   const prevWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d) }
