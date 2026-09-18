@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 
 function money(v) {
@@ -7,6 +7,51 @@ function money(v) {
 
 function norm(s) {
   return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+// v4.49.0: Zeilengetriebene Zuordnung — jede CSV-Zeile geht an höchstens EINEN
+// Empfänger. Vorher wurde je Person mit includes() in beide Richtungen gesucht:
+// „Max" bekam den Umsatz von „Maximilian" dazu, „Lena" den von „Helena", und
+// zwei Accounts, die sich nur im Emoji unterscheiden („Chiara Sophie 💓/🍒"),
+// wurden nach norm() gleich. Siehe claude/model-portal-doppelzaehlung.md.
+//
+// Reihenfolge je Zeile:
+//   1. exakter Alias (csv_name, nur getrimmt)
+//   2. normalisierter Alias — nur wenn er genau EINER Person gehört
+//   3. Personenname selbst (normalisiert) — nur wenn eindeutig
+// Alles andere landet sichtbar unter „Nicht zugeordnet" statt still bei
+// irgendwem oder nirgends.
+function baueZuordnung(personen, aliasListe, aliasFeld) {
+  const exakt = new Map()      // csv_name (trim) -> person
+  const normMap = new Map()    // norm(csv_name) -> Set(person)
+  const add = (m, k, v) => { if (!k) return; if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v) }
+  for (const a of aliasListe) {
+    const csv = String(a.csv_name || '').trim()
+    const person = a[aliasFeld]
+    if (!csv || !person) continue
+    exakt.set(csv, person)
+    add(normMap, norm(csv), person)
+  }
+  const nameMap = new Map()    // norm(personenname) -> Set(person)
+  for (const p of personen) add(nameMap, norm(p), p)
+
+  return (rohName) => {
+    const roh = String(rohName || '').trim()
+    if (!roh) return { person: null, grund: 'leer' }
+    if (exakt.has(roh)) return { person: exakt.get(roh) }
+    const n = norm(roh)
+    const perAlias = normMap.get(n)
+    if (perAlias) {
+      if (perAlias.size === 1) return { person: [...perAlias][0] }
+      return { person: null, grund: 'mehrdeutig: ' + [...perAlias].join(' / ') }
+    }
+    const perName = nameMap.get(n)
+    if (perName) {
+      if (perName.size === 1) return { person: [...perName][0] }
+      return { person: null, grund: 'mehrdeutig: ' + [...perName].join(' / ') }
+    }
+    return { person: null, grund: 'kein Alias' }
+  }
 }
 
 function CheckBox({ checked, onChange, label }) {
@@ -84,50 +129,67 @@ export default function BillingTab() {
     setSaving(true)
     const ex = getSetting(editing.name, editing.type)
     const payload = { person_name: editing.name, person_type: editing.type, ...editVals, updated_at: new Date().toISOString() }
-    if (ex) {
-      await supabase.from('billing_settings').update(payload).eq('id', ex.id)
-    } else {
-      await supabase.from('billing_settings').insert(payload)
+    const { error } = ex
+      ? await supabase.from('billing_settings').update(payload).eq('id', ex.id)
+      : await supabase.from('billing_settings').insert(payload)
+    if (error) {
+      // v4.49.0: vorher wurde der Fehler verschluckt und das Formular geschlossen
+      alert('⚠ Prozente NICHT gespeichert: ' + error.message)
+      setSaving(false)
+      return
     }
     setEditing(null)
     await load()
     setSaving(false)
   }
 
-  const modelRev = (modelName) => {
-    const csvNames = aliases.filter(a => norm(a.model_name) === norm(modelName)).map(a => a.csv_name)
-    if (csvNames.length === 0) csvNames.push(modelName)
-    let subs = 0, chat = 0, tips = 0, total = 0
+  // v4.49.0: einmal pro Monat alle Zeilen verteilen, statt je Person zu suchen.
+  const modelAuswertung = useMemo(() => {
+    const finde = baueZuordnung(models.map(m => m.name), aliases, 'model_name')
+    const proPerson = {}
+    const offen = {}
     for (const snap of snaps) {
       for (const row of snap.rows || []) {
-        const cn = row.creator || row.name || ''
-        if (csvNames.some(c => norm(c) === norm(cn) || norm(cn).includes(norm(c)) || norm(c).includes(norm(cn)))) {
-          subs += (row.newSubsRevenue || 0) + (row.recurringSubsRevenue || 0)
-          chat += row.messageRevenue || 0
-          tips += row.tipsRevenue || 0
-          total += row.revenue || 0
+        const roh = row.creator || row.name || ''
+        const werte = {
+          subs: (row.newSubsRevenue || 0) + (row.recurringSubsRevenue || 0),
+          chat: row.messageRevenue || 0,
+          tips: row.tipsRevenue || 0,
+          total: row.revenue || 0,
         }
+        const { person, grund } = finde(roh)
+        const ziel = person
+          ? (proPerson[person] ||= { subs: 0, chat: 0, tips: 0, total: 0 })
+          : (offen[String(roh).trim() || '(leer)'] ||= { subs: 0, chat: 0, tips: 0, total: 0, grund })
+        for (const k of ['subs', 'chat', 'tips', 'total']) ziel[k] += werte[k]
       }
     }
-    return { subs, chat, tips, total }
-  }
+    return { proPerson, offen }
+  }, [models, aliases, snaps])
 
-  const chatterRev = (chatterName) => {
-    // Get CSV names from chatter_aliases if available
-    const csvNames = chatterAliases.filter(a => norm(a.chatter_name) === norm(chatterName)).map(a => a.csv_name)
-    if (csvNames.length === 0) csvNames.push(chatterName)
-    let chat = 0, total = 0
+  const chatterAuswertung = useMemo(() => {
+    const finde = baueZuordnung(chatters.map(c => c.name), chatterAliases, 'chatter_name')
+    const proPerson = {}
+    const offen = {}
     for (const snap of chatSnaps) {
       for (const row of snap.rows || []) {
-        const cn = row.name || row.chatter || ''
-        if (csvNames.some(c => norm(c) === norm(cn) || norm(cn).includes(norm(c)) || norm(c).includes(norm(cn)))) {
-          chat += row.revenue || 0
-          total += row.revenue || 0
-        }
+        const roh = row.name || row.chatter || ''
+        // Summen-/Aggregatzeilen (Name enthält '*') nicht verteilen — wie in PerformanceTab
+        if (String(roh).includes('*')) continue
+        const rev = row.revenue || 0
+        const { person, grund } = finde(roh)
+        const ziel = person
+          ? (proPerson[person] ||= { chat: 0, total: 0 })
+          : (offen[String(roh).trim() || '(leer)'] ||= { chat: 0, total: 0, grund })
+        ziel.chat += rev
+        ziel.total += rev
       }
     }
-    return { chat, total }
-  }
+    return { proPerson, offen }
+  }, [chatters, chatterAliases, chatSnaps])
+
+  const modelRev = (modelName) => modelAuswertung.proPerson[modelName] || { subs: 0, chat: 0, tips: 0, total: 0 }
+  const chatterRev = (chatterName) => chatterAuswertung.proPerson[chatterName] || { chat: 0, total: 0 }
 
   const monthLabel = new Date(month + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
   const months = []
@@ -160,6 +222,33 @@ export default function BillingTab() {
           ))}
         </select>
       </div>
+
+      {(() => {
+        // v4.49.0: Umsatz, der niemandem eindeutig gehört, sichtbar machen
+        const offen = section === 'models' ? modelAuswertung.offen : chatterAuswertung.offen
+        const liste = Object.entries(offen).filter(([, v]) => Math.abs(v.total) > 0.004).sort((a, b) => b[1].total - a[1].total)
+        if (!liste.length) return null
+        const summe = liste.reduce((t, [, v]) => t + v.total, 0)
+        return (
+          <div style={{ ...card, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.06)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
+              ⚠ Nicht zugeordnet: {money(summe)}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+              Diese CSV-Namen gehören keiner {section === 'models' ? 'Model' : 'Chatter'}-Abrechnung eindeutig und sind oben NICHT enthalten.
+              In den Einstellungen einen Alias anlegen, dann zählen sie automatisch mit.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {liste.map(([name, v]) => (
+                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12 }}>
+                  <span style={{ color: 'var(--text-primary)' }}>{name} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· {v.grund}</span></span>
+                  <span style={{ fontFamily: 'monospace', color: '#f59e0b' }}>{money(v.total)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {section === 'models' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
