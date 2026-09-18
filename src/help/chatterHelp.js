@@ -271,20 +271,20 @@ export const HELP_TOPICS = [
     id: 'absence',
     icon: '🌴',
     tab: 'orga',
-    title: 'Ich bin nicht verfügbar am',
+    title: 'Ich bin nicht verfügbar',
     short: 'Abwesenheiten eintragen — je früher, desto besser.',
     body: [
       'Hier meldest du, wann du nicht kannst. Du kannst einen ganzen Tag sperren oder nur einzelne Schichten.',
       'Richtwerte für den Vorlauf: 4+ Tage am Stück etwa 2 Wochen vorher, 3 Tage etwa 10 Tage vorher, 1–2 Tage etwa eine Woche vorher. Bei Krankheit natürlich sofort.',
     ],
     steps: [
-      'Datum wählen.',
+      'Von-Datum wählen. Bei mehreren Tagen am Stück zusätzlich das Bis-Datum setzen — leer lassen heißt: nur dieser eine Tag.',
       'Grund eintragen (optional, hilft aber bei der Planung).',
       'Unter „Weg an:" entweder „Ganzer Tag" lassen oder die einzelnen Schichten antippen, an denen du weg bist.',
       '„+ Eintragen".',
     ],
     watch: [
-      'Pro Eintrag ein Tag. Für eine Woche Urlaub also sieben Einträge — oder kurz beim Team melden.',
+      'Ein Eintrag kann einen ganzen Zeitraum abdecken (Von–Bis). Die gewählten Schichten unter „Weg an:" gelten dann für jeden Tag im Zeitraum.',
       'Das ✕ löscht einen Eintrag sofort und ohne Rückfrage.',
       'Ein Eintrag hier unterdrückt die automatische Erinnerung ans Team, wenn du an dem Tag nicht eincheckst.',
       'Die Vorlauf-Zeiten sind eine Bitte, keine technische Sperre — kurzfristig eintragen geht, macht aber Arbeit bei der Planung.',

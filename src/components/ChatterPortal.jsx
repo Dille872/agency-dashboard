@@ -553,6 +553,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [myReminders, setMyReminders] = useState([])
   const [myAbsences, setMyAbsences] = useState([])
   const [newAbsenceDate, setNewAbsenceDate] = useState('')
+  const [newAbsenceDateTo, setNewAbsenceDateTo] = useState('') // v4.47.0: optionales Bis-Datum, leer = nur ein Tag
   const [newAbsenceReason, setNewAbsenceReason] = useState('')
   const [newAbsenceShifts, setNewAbsenceShifts] = useState([]) // v3.29.0: leer = ganzer Tag, sonst nur diese Schichten verfügbar
   const [next7Schedules, setNext7Schedules] = useState([])
@@ -1853,6 +1854,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   const addAbsence = async () => {
     if (!newAbsenceDate) return
+    // v4.47.0: Zeitraum. Bis leer = eintägig.
+    const dateTo = newAbsenceDateTo || newAbsenceDate
+    if (dateTo < newAbsenceDate) { alert('Das Bis-Datum liegt vor dem Von-Datum.'); return }
     setAbsentLoading(true)
     // newAbsenceShifts = Schichten, an denen man WEG ist.
     // Gespeichert wird die Verfügbarkeit = alle Schichten außer den abwesenden.
@@ -1860,12 +1864,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     await supabase.from('absences').insert({
       chatter_name: displayName,
       date_from: newAbsenceDate,
-      date_to: newAbsenceDate,
+      date_to: dateTo,
       reason: newAbsenceReason || 'Nicht verfügbar',
       available_shifts: (avail && avail.length) ? avail : null,
       source: 'chatter',
     })
     setNewAbsenceDate('')
+    setNewAbsenceDateTo('')
     setNewAbsenceReason('')
     setNewAbsenceShifts([])
     await loadMyAbsences()
@@ -2670,7 +2675,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* v3.98.0: Abwesenheit aus dem Schichten-Panel herausgelöst und in den
             Organisation-Tab verschoben — das Schichten-Panel war zu voll. */}
-        <Collapsible helpId="absence" hidden={tab !== 'orga'} isCollapsed={collapsed.absence} onToggle={() => toggleCollapse('absence')} icon="🌴" title="Ich bin nicht verfügbar am" badge={myAbsences.length || null} badgeColor="#ef4444">
+        <Collapsible helpId="absence" hidden={tab !== 'orga'} isCollapsed={collapsed.absence} onToggle={() => toggleCollapse('absence')} icon="🌴" title="Ich bin nicht verfügbar" badge={myAbsences.length || null} badgeColor="#ef4444">
           <div>
               {/* v3.49.0: Info-Hinweis zur Vorlauf-Orientierung (nur Erklärtext, keine Sperre) */}
               <div style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.22)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
@@ -2686,8 +2691,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <div style={{ marginTop: 7 }}>Krank geworden? Kein Stress – das geht natürlich auch kurzfristig, trag es dann einfach direkt hier ein.</div>
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                <input type="date" value={newAbsenceDate} onChange={e => setNewAbsenceDate(e.target.value)}
-                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1 }} />
+                {/* v4.47.0: Von–Bis statt nur ein Tag */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 260 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Von</span>
+                  <input type="date" value={newAbsenceDate}
+                    onChange={e => { const v = e.target.value; setNewAbsenceDate(v); if (newAbsenceDateTo && v && newAbsenceDateTo < v) setNewAbsenceDateTo(v) }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1 }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Bis</span>
+                  <input type="date" value={newAbsenceDateTo} min={newAbsenceDate || undefined}
+                    onChange={e => setNewAbsenceDateTo(e.target.value)}
+                    title="Leer lassen, wenn es nur ein Tag ist"
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: newAbsenceDateTo ? 'var(--text-primary)' : 'var(--text-muted)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1 }} />
+                </div>
                 <input value={newAbsenceReason} onChange={e => setNewAbsenceReason(e.target.value)}
                   placeholder="Grund (optional)"
                   style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', flex: 1 }} />
@@ -2719,7 +2734,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {myAbsences.map(a => (
                     <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
-                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {a.reason}{(a.available_shifts && a.available_shifts.length) ? ` · ${SHIFTS.filter(s => !a.available_shifts.includes(s)).join('/')} weg` : ''}</span>
+                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}{(a.date_to && a.date_to !== a.date_from) ? ' – ' + new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''} · {a.reason}{(a.available_shifts && a.available_shifts.length) ? ` · ${SHIFTS.filter(s => !a.available_shifts.includes(s)).join('/')} weg` : ''}</span>
                       <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                     </div>
                   ))}
