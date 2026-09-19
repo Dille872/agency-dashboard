@@ -1,11 +1,12 @@
 // v4.60.0: Team-Kalender im Chatter-Portal — „Mein Kalender".
+// v4.65.0: „Erledigt" meldet sich bei Chris/Rey; Folgeaufgabe/Serie gekennzeichnet.
 // Zeigt die nächsten 7 Tage: Einträge für das ganze Team und die, in denen
 // ich namentlich stehe (die Datenbank liefert nichts anderes aus).
 // Alles in der Zeit MEINES Browsers, deutsche Zeit auf Tippen.
 import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { BERLIN, meineZone, datumInZone, zeitIn, ortAus, utcLabel } from '../zeit'
-import { artInfo } from './CalendarTab'
+import { artInfo, erledigtMelden, wdhLabel } from './CalendarTab'
 
 const restText = (ms) => {
   if (ms <= 0) return 'jetzt fällig'
@@ -42,8 +43,9 @@ export default function MeinKalender({ displayName, isPreview }) {
 
   const erledigt = async (e, wert) => {
     if (isPreview) { alert('In der Vorschau wird nichts im Namen des Chatters abgehakt.'); return }
-    const { error } = await supabase.rpc('kalender_erledigt', { p_id: e.id, p_erledigt: wert })
+    const { data, error } = await supabase.rpc('kalender_erledigt', { p_id: e.id, p_erledigt: wert })
     if (error) { alert('⚠ Nicht gespeichert: ' + error.message); return }
+    if (wert) erledigtMelden(e, data, displayName)
     laden()
   }
 
@@ -80,7 +82,8 @@ export default function MeinKalender({ displayName, isPreview }) {
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: binFertig ? 'line-through' : 'none' }}>{e.titel}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.label}{e.ende ? ` · bis ${zeitIn(e.ende, zone)}` : ''}{e.erstellt_von ? ` · von ${e.erstellt_von}` : ''}</div>
+                  {e.folge_titel && <div style={{ fontSize: 11, color: '#c4b5fd' }}>↳ Folgeaufgabe zu „{e.folge_titel}"</div>}
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.serie_id ? `🔁 ${wdhLabel(e.wiederholung)} · ` : ''}{a.label}{e.ende ? ` · bis ${zeitIn(e.ende, zone)}` : ''}{e.erstellt_von ? ` · von ${e.erstellt_von}` : ''}</div>
                   {e.notiz && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3, whiteSpace: 'pre-wrap' }}>{e.notiz}</div>}
                   {e.art === 'aufgabe' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>

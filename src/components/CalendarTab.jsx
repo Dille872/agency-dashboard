@@ -3,6 +3,9 @@
 // v4.60.0 Stufe 1 · v4.61.0 Telegram/Erinnerungen · v4.62.0 Team-Schichten
 // v4.64.0: Stundenraster wie im Entwurf (Seitenleiste links, Raster Mitte,
 //          Details rechts), Folgeaufgaben an Events/Terminen, Mobil = Tagesansicht.
+// v4.65.0: Wiederholungen (Serie = einzelne Zeilen mit serie_id, damit
+//          Erinnerung und „erledigt" pro Termin funktionieren), Erledigt-Meldung
+//          ans Team, Abhaken direkt im Admin-Kalender.
 //
 // Zeit wie im Dienstplan: EINGABE in deutscher Zeit, gespeichert als fester
 // Zeitpunkt, ANZEIGE in der eigenen Zeit (Geräte-Uhr bzw. bestätigte Zone)
@@ -37,6 +40,12 @@ const FOLGE_OFFSETS = [
   { min: 0, label: 'direkt' }, { min: 15, label: '+15 Min' }, { min: 30, label: '+30 Min' },
   { min: 60, label: '+1 Std' }, { min: 120, label: '+2 Std' },
 ]
+export const WIEDERHOLUNGEN = [
+  { key: '', label: 'nicht wiederholen' }, { key: 'taeglich', label: 'täglich' }, { key: 'woechentlich', label: 'wöchentlich' },
+  { key: 'zweiwoechentlich', label: 'alle 2 Wochen' }, { key: 'monatlich', label: 'monatlich' },
+]
+export const wdhLabel = (k) => WIEDERHOLUNGEN.find(w => w.key === k)?.label || 'Serie'
+const MAX_SERIE = 60
 const MODUS = { anlernen: 'Anlernen', co: 'Co-Schicht', split: 'geteilt' }
 const TAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 const STUNDE_PX = 44
@@ -48,8 +57,46 @@ const wochentag = (tag) => (new Date(tag + 'T12:00:00Z').getUTCDay() + 6) % 7 //
 const montagVon = (tag) => plusTage(tag, -wochentag(tag))
 const kurzTag = (tag) => new Date(tag + 'T12:00:00Z').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
 const normName = (s) => String(s || '').trim().toLowerCase()
+const tageZwischen = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5)
 
-const leer = () => ({ id: null, titel: '', art: 'aufgabe', tag: datumInZone(new Date(), BERLIN).tag, von: '', bis: '', notiz: '', fuer: [], fuer_alle: false, erinnern_min: null, telegram: true, folgen: [], folgenAlt: [] })
+// Kalendertage einer Serie (deutsche Kalendertage, inkl. Start, bis einschließlich)
+export function serienTage(start, regel, bis) {
+  if (!regel || !bis) return [start]
+  const out = []
+  const [y, m, d] = start.split('-').map(Number)
+  for (let i = 0; out.length < MAX_SERIE && i < 400; i++) {
+    let t
+    if (regel === 'monatlich') {
+      const dt = new Date(Date.UTC(y, m - 1 + i, d, 12))
+      t = dt.toISOString().slice(0, 10)
+      if (t > bis) break
+      if (dt.getUTCDate() !== d) continue // z. B. 31. im Februar → Monat auslassen
+    } else {
+      t = plusTage(start, i * (regel === 'taeglich' ? 1 : regel === 'woechentlich' ? 7 : 14))
+      if (t > bis) break
+    }
+    out.push(t)
+  }
+  return out
+}
+
+// v4.65.0: Rückmeldung „erledigt" an Chris und Rey (nicht an sich selbst)
+export async function erledigtMelden(e, erledigtVon, wer) {
+  const liste = erledigtVon || []
+  let stand = ''
+  if (!e.fuer_alle && (e.fuer || []).length > 1) {
+    const offen = e.fuer.filter(n => !liste.some(x => normName(x) === normName(n)))
+    stand = offen.length ? `\n\nNoch offen: ${offen.join(', ')}` : '\n\nDamit sind alle fertig ✓'
+  }
+  const bezug = e.folge_titel ? `\n↳ Folgeaufgabe zu: ${e.folge_titel}` : ''
+  const text = `✅ <b>${wer || 'Jemand'}</b> hat erledigt (Kalender):\n\n${e.titel}${bezug}${stand}`
+  for (const [name, id] of Object.entries(ADMIN_TG)) {
+    if (name === normName(wer)) continue
+    try { await sendTelegramMessage(id, text) } catch (err) { console.error('Telegram:', err) }
+  }
+}
+
+const leer = () => ({ id: null, titel: '', art: 'aufgabe', tag: datumInZone(new Date(), BERLIN).tag, von: '', bis: '', notiz: '', fuer: [], fuer_alle: false, erinnern_min: null, telegram: true, folgen: [], folgenAlt: [], wiederholung: '', wdhBis: '', serie_id: null, umfang: 'diesen', folge_von: null, altBeginn: null })
 const neueFolge = (fuer = []) => ({ tmp: Math.random().toString(36).slice(2), titel: '', bezug: 'ende', offset: 0, fuer: [...fuer] })
 
 // Beginn einer Folgeaufgabe aus Event-Zeiten
@@ -264,7 +311,7 @@ export default function CalendarTab({ userDisplayName }) {
   const oeffneBearbeiten = (e) => {
     const b = datumInZone(e.beginn, BERLIN)
     const folgenAlt = eintraege.filter(x => x.folge_von === e.id)
-    setForm({ id: e.id, titel: e.titel, art: e.art, tag: b.tag, von: b.zeit, bis: e.ende ? zeitIn(e.ende, BERLIN) : '', notiz: e.notiz || '', fuer: e.fuer || [], fuer_alle: !!e.fuer_alle, erinnern_min: e.erinnern_min ?? null, telegram: false, folgen: [], folgenAlt })
+    setForm({ id: e.id, titel: e.titel, art: e.art, tag: b.tag, von: b.zeit, bis: e.ende ? zeitIn(e.ende, BERLIN) : '', notiz: e.notiz || '', fuer: e.fuer || [], fuer_alle: !!e.fuer_alle, erinnern_min: e.erinnern_min ?? null, telegram: false, folgen: [], folgenAlt, wiederholung: e.wiederholung || '', wdhBis: '', serie_id: e.serie_id || null, umfang: 'diesen', folge_von: e.folge_von || null, altBeginn: e.beginn })
     setAuswahl(null)
   }
   const formBeginn = form && form.tag && form.von ? wandzeitZuDatum(form.tag, form.von, BERLIN) : null
@@ -294,7 +341,7 @@ export default function CalendarTab({ userDisplayName }) {
       const b = new Date(e.beginn)
       const wann = `${b.toLocaleDateString('de-DE', { timeZone: zone, weekday: 'long', day: '2-digit', month: '2-digit' })}, ${zeitIn(b, zone)} Uhr`
       const zusatz = zone === BERLIN ? ' (deutsche Zeit)' : ` (deine Zeit · DE ${zeitIn(b, BERLIN)})`
-      const bezug = e.folge_titel ? `\nFolgeaufgabe zu: ${e.folge_titel}` : ''
+      const bezug = (e.folge_titel ? `\nFolgeaufgabe zu: ${e.folge_titel}` : '') + (e.serie_hinweis ? `\n🔁 ${e.serie_hinweis}` : '')
       const text = `🗓 <b>${geaendert ? 'Geändert im Kalender' : 'Neu im Kalender'}</b>${userDisplayName ? ` · von ${userDisplayName}` : ''}\n\n` +
         `<b>${e.titel}</b>\n${a.label} · ${wann}${zusatz}${bezug}${e.notiz ? `\n\n${e.notiz}` : ''}\n\n– Thirteen 87`
       const res = await sendTelegramMessage(id, text)
@@ -303,56 +350,134 @@ export default function CalendarTab({ userDisplayName }) {
     return { ok, fehlt, fehler }
   }
 
+  // Beginn/Ende eines Termins an einem deutschen Kalendertag mit den Formular-Uhrzeiten
+  const zeitenAm = (tag) => {
+    const b = wandzeitZuDatum(tag, form.von, BERLIN)
+    let e = form.bis ? wandzeitZuDatum(tag, form.bis, BERLIN) : null
+    if (e && e <= b) e = new Date(e.getTime() + 24 * 3600 * 1000)
+    return { beginn: b, ende: e }
+  }
+  const neueSerie = !!(form && form.wiederholung && !form.serie_id && !form.folge_von)
+  const serienVorschau = neueSerie && form.wdhBis && form.tag ? serienTage(form.tag, form.wiederholung, form.wdhBis) : null
+
   const speichern = async () => {
     if (!form.titel.trim()) { alert('Titel fehlt.'); return }
     if (!form.tag || !form.von) { alert('Datum und Uhrzeit (deutsche Zeit) fehlen.'); return }
     if (!form.fuer_alle && form.fuer.length === 0) { alert('Für wen ist der Eintrag? Personen wählen oder „Ganzes Team".'); return }
     const folgenNeu = form.folgen.filter(f => f.titel.trim())
     if (folgenNeu.some(f => f.fuer.length === 0)) { alert('Jede Folgeaufgabe braucht mindestens eine Person.'); return }
+    if (neueSerie && (!form.wdhBis || form.wdhBis <= form.tag)) { alert('Bis wann soll wiederholt werden? Bitte ein Datum nach dem ersten Termin wählen.'); return }
+    const tageListe = neueSerie ? serienTage(form.tag, form.wiederholung, form.wdhBis) : [form.tag]
+    if (tageListe.length >= MAX_SERIE && !confirm(`Es werden höchstens ${MAX_SERIE} Termine angelegt (bis ${kurzTag(tageListe[tageListe.length - 1])}). Weiter?`)) return
+
     const beginn = formBeginn, ende = formEnde
-    const zeile = {
-      titel: form.titel.trim(), art: form.art, beginn: beginn.toISOString(), ende: ende ? ende.toISOString() : null,
+    const basis = {
+      titel: form.titel.trim(), art: form.art,
       notiz: form.notiz.trim() || null, fuer: form.fuer_alle ? [] : form.fuer, fuer_alle: form.fuer_alle,
       erinnern_min: form.erinnern_min ?? null, geaendert_am: new Date().toISOString(),
     }
-    if (form.id) {
-      const alt = eintraege.find(x => x.id === form.id)
-      if (!alt || new Date(alt.beginn).getTime() !== beginn.getTime() || (alt.erinnern_min ?? null) !== (form.erinnern_min ?? null)) zeile.erinnerung_gesendet = false
-    }
-    setSpeichert(true)
-    const res = form.id
-      ? await supabase.from('team_kalender').update(zeile).eq('id', form.id).select().single()
-      : await supabase.from('team_kalender').insert({ ...zeile, erstellt_von: userDisplayName || null }).select().single()
-    if (res.error) { setSpeichert(false); alert('⚠ Nicht gespeichert: ' + res.error.message); return }
-    const eventId = res.data.id
+    const serieId = tageListe.length > 1 ? crypto.randomUUID() : null
+    const serieFelder = serieId ? { serie_id: serieId, wiederholung: form.wiederholung } : {}
+    const zeile = (tag) => { const z = zeitenAm(tag); return { ...basis, beginn: z.beginn.toISOString(), ende: z.ende ? z.ende.toISOString() : null } }
     const meldungen = []
+    const abbruch = (msg) => { setSpeichert(false); alert('⚠ Nicht gespeichert: ' + msg) }
+    setSpeichert(true)
 
-    // Bestehende Folgeaufgaben mitziehen, wenn sich die Event-Zeit geändert hat
-    for (const f of form.folgenAlt || []) {
-      if (f.folge_offset_min == null) continue
-      const neu = folgeBeginn(beginn, ende, f.folge_bezug, f.folge_offset_min)
-      if (new Date(f.beginn).getTime() === neu.getTime()) continue
-      const { error } = await supabase.from('team_kalender').update({ beginn: neu.toISOString(), erinnerung_gesendet: false, geaendert_am: new Date().toISOString() }).eq('id', f.id)
-      if (error) meldungen.push(`Folgeaufgabe „${f.titel}" nicht verschoben: ${error.message}`)
-    }
-    // Neue Folgeaufgaben anlegen
-    const angelegt = []
-    for (const f of folgenNeu) {
-      const fz = {
-        titel: f.titel.trim(), art: 'aufgabe', beginn: folgeBeginn(beginn, ende, f.bezug, f.offset).toISOString(), ende: null,
-        notiz: null, fuer: f.fuer, fuer_alle: false, erinnern_min: form.erinnern_min != null ? Math.min(form.erinnern_min, 60) : null,
-        folge_von: eventId, folge_bezug: f.bezug, folge_offset_min: f.offset, erstellt_von: userDisplayName || null,
+    // 1) Termine anlegen / ändern → ziele = die gespeicherten Zeilen (mit id)
+    let ziele = []
+    let neuDazu = [] // beim Umwandeln eines bestehenden Eintrags in eine Serie
+    if (!form.id) {
+      const rows = tageListe.map(t => ({ ...zeile(t), ...serieFelder, erstellt_von: userDisplayName || null }))
+      const { data, error } = await supabase.from('team_kalender').insert(rows).select()
+      if (error) return abbruch(error.message)
+      ziele = data || []
+    } else if (form.serie_id && form.umfang === 'folgende') {
+      const { data: reihe, error } = await supabase.from('team_kalender').select('*')
+        .eq('serie_id', form.serie_id).gte('beginn', form.altBeginn).order('beginn')
+      if (error) return abbruch(error.message)
+      const delta = tageZwischen(datumInZone(form.altBeginn, BERLIN).tag, form.tag)
+      for (const r of reihe || []) {
+        const z = zeile(plusTage(datumInZone(r.beginn, BERLIN).tag, delta))
+        if (new Date(r.beginn).getTime() !== new Date(z.beginn).getTime() || (r.erinnern_min ?? null) !== (form.erinnern_min ?? null)) z.erinnerung_gesendet = false
+        const { data, error: e2 } = await supabase.from('team_kalender').update(z).eq('id', r.id).select().single()
+        if (e2) { meldungen.push(`${kurzTag(datumInZone(r.beginn, BERLIN).tag)} nicht geändert: ${e2.message}`); continue }
+        ziele.push(data)
       }
-      const { data, error } = await supabase.from('team_kalender').insert(fz).select().single()
-      if (error) { meldungen.push(`Folgeaufgabe „${fz.titel}" NICHT angelegt: ${error.message}`); continue }
-      angelegt.push({ ...data, folge_titel: zeile.titel })
+      if (!ziele.length) return abbruch(meldungen.join('\n') || 'Keine Termine der Serie gefunden.')
+    } else {
+      const alt = eintraege.find(x => x.id === form.id)
+      const z = { ...zeile(form.tag), ...serieFelder }
+      if (!alt || new Date(alt.beginn).getTime() !== beginn.getTime() || (alt.erinnern_min ?? null) !== (form.erinnern_min ?? null)) z.erinnerung_gesendet = false
+      const { data, error } = await supabase.from('team_kalender').update(z).eq('id', form.id).select().single()
+      if (error) return abbruch(error.message)
+      ziele = [data]
+      if (tageListe.length > 1) {
+        const rows = tageListe.slice(1).map(t => ({ ...zeile(t), ...serieFelder, erstellt_von: userDisplayName || null }))
+        const { data: d2, error: e2 } = await supabase.from('team_kalender').insert(rows).select()
+        if (e2) meldungen.push(`Weitere Termine der Serie NICHT angelegt: ${e2.message}`)
+        else { neuDazu = d2 || []; ziele.push(...neuDazu) }
+      }
     }
-    logActivity(form.id ? 'kalender.edit' : 'kalender.neu', { entity: zeile.titel, detail: `${form.tag} ${form.von} (DE)${angelegt.length ? ` · ${angelegt.length} Folgeaufgabe(n)` : ''}` })
+    ziele.sort((a, b) => new Date(a.beginn) - new Date(b.beginn))
+    const zeitVon = (z) => [new Date(z.beginn), z.ende ? new Date(z.ende) : null]
 
+    // 2) Bestehende Folgeaufgaben mitziehen (Zeit + Titel des Events)
+    let folgenBestand = []
+    if (form.id) {
+      const bestehende = ziele.filter(z => !neuDazu.includes(z)).map(z => z.id)
+      const { data } = await supabase.from('team_kalender').select('*').in('folge_von', bestehende)
+      folgenBestand = data || []
+      const perId = Object.fromEntries(ziele.map(z => [z.id, z]))
+      for (const f of folgenBestand) {
+        const p = perId[f.folge_von]; if (!p) continue
+        const upd = {}
+        if (f.folge_offset_min != null) {
+          const neu = folgeBeginn(...zeitVon(p), f.folge_bezug, f.folge_offset_min)
+          if (new Date(f.beginn).getTime() !== neu.getTime()) { upd.beginn = neu.toISOString(); upd.erinnerung_gesendet = false }
+        }
+        if (f.folge_titel !== p.titel) upd.folge_titel = p.titel
+        if (!Object.keys(upd).length) continue
+        const { error } = await supabase.from('team_kalender').update({ ...upd, geaendert_am: new Date().toISOString() }).eq('id', f.id)
+        if (error) meldungen.push(`Folgeaufgabe „${f.titel}" nicht angepasst: ${error.message}`)
+      }
+    }
+
+    // 3) Neue Folgeaufgaben für jeden Termin (bei Serie: für jeden Termin der Serie).
+    //    Beim Umwandeln in eine Serie bekommen die neuen Termine auch die schon
+    //    vorhandenen Folgeaufgaben des ersten Termins.
+    const defs = folgenNeu.map(f => ({ titel: f.titel.trim(), bezug: f.bezug, offset: f.offset, fuer: f.fuer, ziele }))
+    if (neuDazu.length) {
+      for (const f of folgenBestand.filter(x => x.folge_von === form.id && x.folge_offset_min != null)) {
+        defs.push({ titel: f.titel, bezug: f.folge_bezug, offset: f.folge_offset_min, fuer: f.fuer || [], ziele: neuDazu })
+      }
+    }
+    const folgeRows = []
+    for (const d of defs) for (const z of d.ziele) {
+      folgeRows.push({
+        titel: d.titel, art: 'aufgabe', beginn: folgeBeginn(...zeitVon(z), d.bezug, d.offset).toISOString(), ende: null,
+        notiz: null, fuer: d.fuer, fuer_alle: false, erinnern_min: form.erinnern_min != null ? Math.min(form.erinnern_min, 60) : null,
+        folge_von: z.id, folge_bezug: d.bezug, folge_offset_min: d.offset, folge_titel: z.titel, erstellt_von: userDisplayName || null,
+      })
+    }
+    let angelegt = []
+    if (folgeRows.length) {
+      const { data, error } = await supabase.from('team_kalender').insert(folgeRows).select()
+      if (error) meldungen.push(`Folgeaufgaben NICHT angelegt: ${error.message}`)
+      else angelegt = data || []
+    }
+    const erster = ziele[0]
+    logActivity(form.id ? 'kalender.edit' : 'kalender.neu', { entity: basis.titel, detail: `${form.tag} ${form.von} (DE)${ziele.length > 1 ? ` · ${ziele.length} Termine` : ''}${angelegt.length ? ` · ${angelegt.length} Folgeaufgabe(n)` : ''}` })
+
+    // 4) Telegram: eine Nachricht pro Person — für den ersten Termin, mit Serien-Hinweis
     if (form.telegram) {
+      const letzter = ziele[ziele.length - 1]
+      const hinweis = ziele.length > 1
+        ? (form.id && !neuDazu.length ? `gilt für diesen und ${ziele.length - 1} weitere Termine` : `${wdhLabel(form.wiederholung)} bis ${kurzTag(datumInZone(letzter.beginn, BERLIN).tag)} (${ziele.length} Termine)`)
+        : ''
       const gesamt = { ok: [], fehlt: [], fehler: [] }
-      for (const e of [{ ...zeile, beginn }, ...angelegt]) {
-        const r = await benachrichtigen(e, !!form.id && e.titel === zeile.titel)
+      const liste = [{ ...erster, serie_hinweis: hinweis, _geaendert: !!form.id }, ...angelegt.filter(f => f.folge_von === erster.id).map(f => ({ ...f, serie_hinweis: hinweis }))]
+      for (const e of liste) {
+        const r = await benachrichtigen(e, !!e._geaendert)
         gesamt.ok.push(...r.ok); gesamt.fehlt.push(...r.fehlt); gesamt.fehler.push(...r.fehler)
       }
       const u = (a) => [...new Set(a)]
@@ -362,19 +487,39 @@ export default function CalendarTab({ userDisplayName }) {
     setSpeichert(false)
     if (meldungen.length) alert('Gespeichert.\n\n' + meldungen.join('\n'))
     setForm(null)
-    const tag = datumInZone(beginn, anzeigeZone).tag
+    const tag = datumInZone(erster.beginn, anzeigeZone).tag
     setWoche(montagVon(tag)); setMobilTag(tag)
     laden()
   }
 
-  const loeschen = async (e) => {
-    const folgen = eintraege.filter(x => x.folge_von === e.id)
-    if (!confirm(folgen.length ? `„${e.titel}" und ${folgen.length} Folgeaufgabe(n) löschen?` : `„${e.titel}" löschen?`)) return
-    const ids = [e.id, ...folgen.map(f => f.id)]
-    const { error } = await supabase.from('team_kalender').delete().in('id', ids)
+  // umfang: 'diesen' | 'folgende' (nur bei Serien)
+  const loeschen = async (e, umfang = 'diesen') => {
+    let haupt = [e]
+    if (umfang === 'folgende' && e.serie_id) {
+      const { data, error } = await supabase.from('team_kalender').select('id, titel, beginn').eq('serie_id', e.serie_id).gte('beginn', e.beginn)
+      if (error) { alert('⚠ ' + error.message); return }
+      haupt = data || []
+    }
+    const ids = haupt.map(x => x.id)
+    const { data: folgen } = await supabase.from('team_kalender').select('id').in('folge_von', ids)
+    const nF = (folgen || []).length
+    const frage = umfang === 'folgende'
+      ? `„${e.titel}": diesen und alle folgenden Termine löschen?\n\n${haupt.length} Termin(e)${nF ? ` + ${nF} Folgeaufgabe(n)` : ''}`
+      : nF ? `„${e.titel}" und ${nF} Folgeaufgabe(n) löschen?` : `„${e.titel}" löschen?`
+    if (!confirm(frage)) return
+    const { error } = await supabase.from('team_kalender').delete().in('id', [...ids, ...(folgen || []).map(f => f.id)])
     if (error) { alert('⚠ Nicht gelöscht: ' + error.message); return }
-    logActivity('kalender.loeschen', { entity: e.titel, detail: folgen.length ? `+ ${folgen.length} Folgeaufgabe(n)` : '' })
+    logActivity('kalender.loeschen', { entity: e.titel, detail: [haupt.length > 1 ? `${haupt.length} Termine` : '', nF ? `+ ${nF} Folgeaufgabe(n)` : ''].filter(Boolean).join(' ') })
     setAuswahl(null); laden()
+  }
+
+  // v4.65.0: Aufgaben, in denen ich stehe, direkt hier abhaken
+  const abhaken = async (e, wert) => {
+    const { data, error } = await supabase.rpc('kalender_erledigt', { p_id: e.id, p_erledigt: wert })
+    if (error) { alert('⚠ Nicht gespeichert: ' + error.message); return }
+    if (wert) erledigtMelden(e, data, userDisplayName)
+    setAuswahl({ typ: 'eintrag', daten: { ...e, erledigt_von: data || [] } })
+    laden()
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -415,6 +560,9 @@ export default function CalendarTab({ userDisplayName }) {
     const a = artInfo(e.art)
     const folgen = eintraege.filter(x => x.folge_von === e.id)
     const hauptEvent = e.folge_von ? eintraege.find(x => x.id === e.folge_von) : null
+    const ichN = normName(userDisplayName)
+    const abhakbar = e.art === 'aufgabe' && !!ichN && (e.fuer_alle || (e.fuer || []).some(n => normName(n) === ichN))
+    const ichFertig = (e.erledigt_von || []).some(n => normName(n) === ichN)
     return (
       <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -422,7 +570,12 @@ export default function CalendarTab({ userDisplayName }) {
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>angelegt von {e.erstellt_von || '—'}</span>
         </div>
         <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.25 }}>{e.titel}</div>
-        {hauptEvent && <button onClick={() => setAuswahl({ typ: 'eintrag', daten: hauptEvent })} style={{ ...btn(false), alignSelf: 'flex-start', fontSize: 11 }}>↩ Folgeaufgabe zu „{hauptEvent.titel}"</button>}
+        {hauptEvent ? <button onClick={() => setAuswahl({ typ: 'eintrag', daten: hauptEvent })} style={{ ...btn(false), alignSelf: 'flex-start', fontSize: 11 }}>↩ Folgeaufgabe zu „{hauptEvent.titel}"</button>
+          : e.folge_titel ? <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>↳ Folgeaufgabe zu „{e.folge_titel}"</div> : null}
+        {e.serie_id && <div style={{ fontSize: 12, color: '#c4b5fd' }}>🔁 Wiederholt sich {wdhLabel(e.wiederholung)}</div>}
+        {abhakbar && (
+          <button onClick={() => abhaken(e, !ichFertig)} style={{ ...btn(false), alignSelf: 'flex-start', background: ichFertig ? 'transparent' : 'rgba(16,185,129,0.15)', color: ichFertig ? 'var(--text-muted)' : '#10b981', borderColor: ichFertig ? 'var(--border)' : 'rgba(16,185,129,0.4)' }}>{ichFertig ? '↺ doch nicht erledigt' : '✓ Ich hab\'s erledigt'}</button>
+        )}
         {e.notiz && <div style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.notiz}</div>}
         <div>
           <div style={kopfLabel}>Beginn in jeder Zeitzone</div>
@@ -457,8 +610,9 @@ export default function CalendarTab({ userDisplayName }) {
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
           <button onClick={() => oeffneBearbeiten(e)} style={{ ...btn(false), flex: 1 }}>Bearbeiten</button>
-          <button onClick={() => loeschen(e)} style={{ ...btn(false), color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' }}>Löschen</button>
+          <button onClick={() => loeschen(e)} style={{ ...btn(false), color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' }}>{e.serie_id ? 'Nur diesen löschen' : 'Löschen'}</button>
         </div>
+        {e.serie_id && <button onClick={() => loeschen(e, 'folgende')} style={{ ...btn(false), color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' }}>Diesen + alle folgenden löschen</button>}
       </>
     )
   })())
@@ -531,7 +685,7 @@ export default function CalendarTab({ userDisplayName }) {
                       ) : (
                         <>
                           <div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.25, color: 'var(--text-primary)', whiteSpace: hoehe < 30 ? 'nowrap' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {e.folge_von ? '↳ ' : ''}{e.titel}
+                            {e.folge_von ? '↳ ' : ''}{e.serie_id ? '🔁 ' : ''}{e.titel}
                           </div>
                           {hoehe > 30 && <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>{zeitIn(e.beginn, anzeigeZone)}{e.ende ? '–' + zeitIn(e.ende, anzeigeZone) : ''} · {e.fuer_alle ? 'Team' : (e.fuer || []).join(', ')}{(e.erledigt_von || []).length ? ` · ✓${e.erledigt_von.length}` : ''}</div>}
                         </>
@@ -666,6 +820,31 @@ export default function CalendarTab({ userDisplayName }) {
                 <label><span style={lbl}>von</span><input type="time" value={form.von} onChange={e => setForm({ ...form, von: e.target.value })} style={inp} /></label>
                 <label><span style={lbl}>bis (optional)</span><input type="time" value={form.bis} onChange={e => setForm({ ...form, bis: e.target.value })} style={inp} /></label>
               </div>
+              {/* v4.65.0: Wiederholung */}
+              {form.serie_id ? (
+                <div style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 9, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: '#ddd6fe' }}>🔁 Teil einer Serie ({wdhLabel(form.wiederholung)}). Änderung gilt für:</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={() => setForm({ ...form, umfang: 'diesen' })} style={btn(form.umfang === 'diesen')}>nur diesen Termin</button>
+                    <button type="button" onClick={() => setForm({ ...form, umfang: 'folgende' })} style={btn(form.umfang === 'folgende')}>diesen + alle folgenden</button>
+                  </div>
+                  {form.umfang === 'folgende' && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Titel, Uhrzeit, Personen, Notiz und Erinnerung werden übernommen. Verschiebst du das Datum, rücken alle folgenden um genauso viele Tage.</div>}
+                </div>
+              ) : !form.folge_von && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
+                  <label><span style={lbl}>Wiederholen</span>
+                    <select value={form.wiederholung} onChange={e => setForm({ ...form, wiederholung: e.target.value, wdhBis: form.wdhBis || (form.tag ? plusTage(form.tag, 56) : '') })} style={inp}>
+                      {WIEDERHOLUNGEN.map(w => <option key={w.key} value={w.key}>{w.label}</option>)}
+                    </select>
+                  </label>
+                  {form.wiederholung && <label><span style={lbl}>bis einschließlich</span><input type="date" min={form.tag} value={form.wdhBis} onChange={e => setForm({ ...form, wdhBis: e.target.value })} style={inp} /></label>}
+                  {serienVorschau && (
+                    <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--text-secondary)' }}>
+                      → {serienVorschau.length} Termine{serienVorschau.length >= MAX_SERIE ? ' (Maximum)' : ''}: {serienVorschau.slice(0, 4).map(kurzTag).join(', ')}{serienVorschau.length > 4 ? ` … ${kurzTag(serienVorschau[serienVorschau.length - 1])}` : ''}{form.id ? ' — dieser Eintrag wird der erste' : ''}
+                    </div>
+                  )}
+                </div>
+              )}
               <div><span style={lbl}>Für wen</span>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-primary)', marginBottom: 6 }}>
                   <input type="checkbox" checked={form.fuer_alle} onChange={e => setForm({ ...form, fuer_alle: e.target.checked })} style={{ accentColor: '#7c3aed' }} /> Ganzes Team (alle Chatter + Team)
@@ -704,6 +883,9 @@ export default function CalendarTab({ userDisplayName }) {
                   )}
                   {form.folgen.length === 0 && (form.folgenAlt || []).length === 0 && (
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>z. B. „Massennachricht an Chiara-Fans" direkt nach Stream-Ende — für dich, Rey oder die betreuenden Chatter. Verschiebst du das Event, wandert die Aufgabe mit.</div>
+                  )}
+                  {form.folgen.length > 0 && (serienVorschau?.length > 1 || (form.serie_id && form.umfang === 'folgende')) && (
+                    <div style={{ fontSize: 11, color: '#c4b5fd' }}>🔁 Neue Folgeaufgaben werden bei jedem Termin der Serie angelegt.</div>
                   )}
                   {form.folgen.map((f, i) => {
                     const setF = (patch) => setForm({ ...form, folgen: form.folgen.map((x, j) => j === i ? { ...x, ...patch } : x) })

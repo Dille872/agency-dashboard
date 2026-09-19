@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useFabOpen } from '../fabPanel'
 import { heuteBerlin } from '../utils' // v4.57.0
 import { meineZone, zeitIn } from '../zeit' // v4.61.0
+import { wdhLabel } from './CalendarTab' // v4.65.0
 
 /**
  * ChatterBell v3.96.0 — Benachrichtigungs-Glocke für das Chatter-Portal.
@@ -172,10 +173,18 @@ export default function ChatterBell({
     const seit = new Date(Date.now() - 14 * 86400000).toISOString()
     const { data, error } = await supabase.from('team_kalender').select('*')
       .gte('erstellt_am', seit).gte('beginn', new Date(Date.now() - 12 * 3600000).toISOString())
-      .order('erstellt_am', { ascending: false }).limit(30)
+      .order('erstellt_am', { ascending: false }).limit(150)
     if (error) { setKalender([]); return }
     const ich = normName(displayName)
-    setKalender((data || []).filter(e => e.fuer_alle || (e.fuer || []).some(n => normName(n) === ich)))
+    // v4.65.0: eine Serie = EIN Hinweis (erster kommender Termin + Anzahl)
+    const serien = {}, liste = []
+    for (const e of (data || []).filter(e => e.fuer_alle || (e.fuer || []).some(n => normName(n) === ich))) {
+      if (!e.serie_id) { liste.push(e); continue }
+      const g = serien[e.serie_id]
+      if (!g) { serien[e.serie_id] = { ...e, serie_anzahl: 1 }; liste.push(serien[e.serie_id]) }
+      else { g.serie_anzahl++; if (new Date(e.beginn) < new Date(g.beginn)) g.beginn = e.beginn }
+    }
+    setKalender(liste.slice(0, 30))
   }, [displayName])
 
   useEffect(() => {
@@ -305,7 +314,7 @@ export default function ChatterBell({
       id: `kal-${e.id}`, kind: 'kalender', ts: e.erstellt_am,
       icon: '🗓', tone: '#8b5cf6',
       title: `Neu im Kalender${e.erstellt_von ? ` von ${e.erstellt_von}` : ''}`,
-      body: `${e.titel}\n${tag}, ${zeitIn(beginn, meineZone())} Uhr (deine Zeit)`,
+      body: `${e.titel}\n${tag}, ${zeitIn(beginn, meineZone())} Uhr (deine Zeit)${e.serie_anzahl > 1 ? `\n🔁 ${wdhLabel(e.wiederholung)} · ${e.serie_anzahl} Termine` : ''}${e.folge_titel ? `\n↳ zu „${e.folge_titel}"` : ''}`,
       action: { label: 'Im Kalender ansehen', tone: '#7c3aed', run: () => { onNavigate?.('heute', 'kalender'); setOpen(false) } },
     })
   }
