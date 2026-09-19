@@ -2659,7 +2659,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* v4.60.0: Team-Kalender — Einträge für mich/das Team, in meiner Zeit */}
-        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.kalender} onToggle={() => toggleCollapse('kalender')} icon="🗓" title="Mein Kalender – nächste 7 Tage">
+        <Collapsible helpId="kalender" hidden={tab !== 'heute'} isCollapsed={collapsed.kalender} onToggle={() => toggleCollapse('kalender')} icon="🗓" title="Mein Kalender – nächste 7 Tage">
           <MeinKalender displayName={displayName} isPreview={isPreview} />
         </Collapsible>
 

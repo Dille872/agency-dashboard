@@ -46,7 +46,7 @@ export const HELP_TOPICS = [
     title: 'Die fünf Reiter',
     short: 'Heute · Models · Content · Organisation · Mehr — so ist alles sortiert.',
     body: [
-      '📅 Heute — deine Schicht: Aufgaben, Dienstplan der nächsten 7 Tage, Schichtnotiz.',
+      '📅 Heute — deine Schicht: Aufgaben, Mein Kalender, Dienstplan der nächsten 7 Tage, Schichtnotiz.',
       '🎬 Models — womit du arbeitest: Nachrichten-Vorschläge und die Steckbriefe deiner Models.',
       '📥 Content — Produktion: Custom-Anfragen stellen, Kunden-Historie, Content-Ideen.',
       '🗂️ Organisation — Planung: Abwesenheiten eintragen, Schicht zum Tausch anbieten.',
@@ -129,6 +129,50 @@ export const HELP_TOPICS = [
       'Hier wird nur angezeigt, nicht eingecheckt — das läuft über die Leiste ganz oben.',
       'Steht bei „✂️ Geteilt" keine eigene Uhrzeit, hat das Team die Abschnitte noch nicht eingetragen. Dann gilt die normale Schichtzeit — im Zweifel kurz nachfragen.',
       'Steht „Kein veröffentlichter Plan", ist der Dienstplan für die Woche noch nicht freigegeben. Er erscheint automatisch, sobald das Team ihn veröffentlicht.',
+    ],
+  },
+  // v4.67.1: Team-Kalender im Portal
+  {
+    id: 'kalender',
+    icon: '🗓',
+    tab: 'heute',
+    title: 'Mein Kalender – nächste 7 Tage',
+    short: 'Aufgaben, Events und Termine für dich – in deiner eigenen Uhrzeit.',
+    body: [
+      'Hier stehen alle Einträge aus dem Team-Kalender, die für dich gedacht sind: Aufgaben (z. B. eine Massennachricht nach einem Stream), Events der Models, Team-Termine und Erinnerungen. Du siehst nur, was für dich oder für das ganze Team eingetragen ist.',
+      'Alle Uhrzeiten stehen in DEINER Zeit. Tipp auf eine Uhrzeit, dann siehst du zusätzlich die deutsche Zeit.',
+      'Markierungen: „↳ Folgeaufgabe zu …" = gehört zu einem Event (z. B. direkt nach Stream-Ende). „🔁" = wiederholt sich regelmäßig. Bei Aufgaben läuft ein Countdown bis zur Fälligkeit.',
+      'Neue Einträge kommen zusätzlich per Telegram und stehen in der Glocke unter „Neu im Kalender". Ist eine Erinnerung eingestellt, kommt sie kurz vorher per Telegram.',
+    ],
+    steps: [
+      'Aufgabe erledigt? → „✓ Erledigt" antippen. Chris und Rey bekommen sofort Bescheid. Versehentlich getippt? „↺ doch nicht".',
+      'Klappt etwas nicht oder wird es später? → 💬 antippen (bei Events/Terminen „💬 Rückmeldung"), kurz schreiben, „An Chris & Rey senden". Deine Rückmeldung steht danach unter dem Eintrag.',
+      'Optional: „📲 Im Handy-Kalender" → „Abo einrichten". iPhone: „In Apple Kalender abonnieren" → „Abonnieren". Android: „Link kopieren" und am Computer auf calendar.google.com unter „Weitere Kalender → + → Per URL" einfügen. Danach stehen deine Aufgaben und Schichten auch im Kalender deines Handys.',
+    ],
+    watch: [
+      'Aufgaben bitte immer abhaken: Ist eine Aufgabe 2 Stunden nach Fälligkeit noch offen, kommt eine Erinnerung per Telegram — nach 12 Stunden bekommen Chris und Rey eine Meldung.',
+      'Deine Rückmeldungen sehen nur Chris, Rey und du — die anderen Chatter nicht.',
+      'Der Handy-Kalender ist nur zum Lesen und aktualisiert mit Verzögerung (iPhone meist unter 1 Std., Google bis zu 1 Tag). Abhaken geht nur hier im Portal. Den Link nicht weitergeben — wer ihn hat, sieht deine Einträge. „Neuen Link erzeugen" macht den alten sofort ungültig.',
+      'Die Uhrzeiten stimmen nur, wenn deine Zeitzone stimmt — siehe „Deine Zeitzone".',
+    ],
+  },
+  {
+    id: 'zeitzone',
+    icon: '🕒',
+    tab: null,
+    title: 'Deine Zeitzone',
+    short: 'Einmal bestätigen – danach stimmen alle Uhrzeiten für dich.',
+    body: [
+      'Das Portal rechnet Kalender, Glocke und Telegram-Erinnerungen in deine Uhrzeit um. Die Zeitzone kommt aus der Uhr deines Geräts — nicht aus dem Internet. Ein VPN ändert daran also nichts.',
+    ],
+    steps: [
+      'Beim ersten Öffnen steht oben „Deine Zeitzone: … — stimmt das?". Passt es: „Ja, stimmt" tippen.',
+      'Passt es nicht: „Andere wählen" und die richtige Zone aussuchen.',
+      'Bist du verreist und dein Handy zeigt eine andere Zone an, fragt das Portal nach: umstellen, behalten oder andere wählen.',
+    ],
+    watch: [
+      'Solange du nichts bestätigt hast, bekommst du Telegram-Uhrzeiten in deutscher Zeit.',
+      'Oben steht danach klein „Zeitzone: … ändern" — darüber kannst du sie jederzeit wechseln.',
     ],
   },
   {
@@ -336,7 +380,7 @@ export const HELP_TOPICS = [
     title: 'Die Glocke',
     short: 'Schichtangebote, Erinnerungen, neuer Dienstplan, Aufgaben, Ankündigungen.',
     body: [
-      'Die Glocke unten rechts sammelt alles, was du wissen musst: offene Schichtangebote, „deine Schicht startet in X Minuten" (mit Knopf zum direkten Einchecken), neu veröffentlichte Dienstpläne, neue Aufgaben und neue Ankündigungen.',
+      'Die Glocke unten rechts sammelt alles, was du wissen musst: offene Schichtangebote, „deine Schicht startet in X Minuten" (mit Knopf zum direkten Einchecken), neu veröffentlichte Dienstpläne, neue Aufgaben, neue Einträge in deinem Kalender („Neu im Kalender") und neue Ankündigungen.',
       'Mit den Filtern oben kannst du auf Schichten, Aufgaben oder Team einschränken.',
     ],
     watch: [
@@ -426,6 +470,8 @@ export const TOUR_IDS = [
   'cockpit',
   'tabs',
   'shifts',
+  'kalender',
+  'zeitzone',
   'messages',
   'models',
   'content',

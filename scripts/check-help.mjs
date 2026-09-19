@@ -12,7 +12,7 @@ const PORTALE = [
     portal: 'src/components/ChatterPortal.jsx',
     help: 'src/help/chatterHelp.js',
     collapsible: true,
-    ankerlos: ['ueberblick', 'angebote', 'bell', 'chat', 'pinnwand'],
+    ankerlos: ['ueberblick', 'angebote', 'bell', 'chat', 'pinnwand', 'zeitzone'], // zeitzone: Hinweis sitzt in ZeitzonenHinweis.jsx
   },
   {
     name: 'Model-Portal',
