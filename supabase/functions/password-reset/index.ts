@@ -22,6 +22,10 @@ const ADMIN_CHAT_IDS = ['1538601588', '528328429']
 
 const MIN_PASSWORT = 10
 const FRIST_MINUTEN = 60
+// v4.54.0: Nach so vielen falschen Codes ist die Freigabe verbrannt. Vorher war
+// ein 6-stelliger Code 60 Minuten lang unbegrenzt durchprobierbar.
+// Braucht die Spalte password_resets.fehlversuche (sql/password-reset-fehlversuche.sql).
+const MAX_FEHLVERSUCHE = 5
 const STAFF_ROLLEN = ['admin', 'manager']
 
 const CORS = {
@@ -125,10 +129,27 @@ serve(async (req) => {
       }
 
       const offenResp = await rest(
-        `password_resets?email=eq.${encodeURIComponent(email)}&status=neq.verbraucht&select=id,status&limit=1`,
+        `password_resets?email=eq.${encodeURIComponent(email)}&status=neq.verbraucht&select=id,status,expires_at`,
       )
-      const offen = await offenResp.json()
-      if (Array.isArray(offen) && offen.length > 0) return json(antwort)
+      const offenAlle = await offenResp.json()
+      // v4.54.0: Eine abgelaufene Freigabe blockierte bisher jede neue Anfrage
+      // still (Antwort „ok", aber keine Zeile, kein Telegram). Jetzt wird sie
+      // erledigt, und die neue Anfrage läuft normal durch.
+      const jetztMs = Date.now()
+      const offen = []
+      for (const z of Array.isArray(offenAlle) ? offenAlle : []) {
+        const abgelaufen = z.status === 'freigegeben' && z.expires_at && new Date(z.expires_at).getTime() < jetztMs
+        if (abgelaufen) {
+          await rest(`password_resets?id=eq.${z.id}`, {
+            method: 'PATCH',
+            headers: { 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ status: 'verbraucht', code: null }),
+          })
+        } else {
+          offen.push(z)
+        }
+      }
+      if (offen.length > 0) return json(antwort)
 
       const user = await findeUser(email)
       // Kein Konto? Dann legen wir auch keine Zeile an — sonst stünden im
@@ -228,10 +249,53 @@ serve(async (req) => {
         return json({ error: 'Für diese Adresse ist gerade nichts freigegeben. Stell zuerst eine Anfrage — oder frag beim Team nach.' }, 403)
       }
       if (zeile.expires_at && new Date(zeile.expires_at) < new Date()) {
+        // v4.54.0: gleich erledigen, damit eine neue Anfrage möglich ist
+        await rest(`password_resets?id=eq.${zeile.id}`, {
+          method: 'PATCH',
+          headers: { 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ status: 'verbraucht', code: null }),
+        })
         return json({ error: 'Der Code ist abgelaufen. Stell bitte eine neue Anfrage.' }, 403)
       }
       if (String(zeile.code) !== code) {
-        return json({ error: 'Der Code stimmt nicht.' }, 403)
+        // v4.54.0: Fehlversuch zählen — atomar über den alten Zählerstand im
+        // Filter. Parallele Versuche mit demselben Stand treffen dann 0 Zeilen
+        // und werden abgewiesen, statt am Zähler vorbeizulaufen.
+        const bisher = Number(zeile.fehlversuche || 0)
+        const neu = bisher + 1
+        const gesperrt = neu >= MAX_FEHLVERSUCHE
+        const zResp = await rest(
+          `password_resets?id=eq.${zeile.id}&status=eq.freigegeben&fehlversuche=eq.${bisher}`,
+          {
+            method: 'PATCH',
+            headers: { 'Prefer': 'return=representation' },
+            body: JSON.stringify(gesperrt
+              ? { fehlversuche: neu, status: 'verbraucht', code: null }
+              : { fehlversuche: neu }),
+          },
+        )
+        const getroffen = zResp.ok ? await zResp.json().catch(() => []) : []
+        if (!zResp.ok || !Array.isArray(getroffen) || getroffen.length === 0) {
+          // Zähler nicht schreibbar (Spalte fehlt?) oder paralleler Versuch —
+          // im Zweifel sperren statt weiter raten lassen.
+          if (!zResp.ok) {
+            console.error('fehlversuche nicht schreibbar:', await zResp.text().catch(() => ''))
+            await rest(`password_resets?id=eq.${zeile.id}`, {
+              method: 'PATCH',
+              headers: { 'Prefer': 'return=minimal' },
+              body: JSON.stringify({ status: 'verbraucht', code: null }),
+            })
+          }
+          return json({ error: 'Der Code stimmt nicht. Die Freigabe ist gesperrt — bitte stell eine neue Anfrage.' }, 429)
+        }
+        if (gesperrt) {
+          for (const id of ADMIN_CHAT_IDS) {
+            await telegram(id, `⚠️ Passwort-Reset für <b>${String(zeile.display_name || email).replace(/[<>&]/g, '')}</b> nach ${MAX_FEHLVERSUCHE} falschen Codes gesperrt.\n\nWar das die Person selbst, braucht sie eine neue Freigabe. Wenn nicht: jemand hat es versucht.`)
+          }
+          return json({ error: `Der Code war ${MAX_FEHLVERSUCHE}× falsch. Die Freigabe ist gesperrt — bitte stell eine neue Anfrage.` }, 429)
+        }
+        const rest_ = MAX_FEHLVERSUCHE - neu
+        return json({ error: `Der Code stimmt nicht. Noch ${rest_} Versuch${rest_ === 1 ? '' : 'e'}.` }, 403)
       }
 
       const upd = await auth(`admin/users/${zeile.user_id}`, {

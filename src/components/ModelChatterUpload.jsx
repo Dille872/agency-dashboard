@@ -115,16 +115,31 @@ export default function ModelChatterUpload({ businessDate, modelRows, session, o
         }
       }
 
-      // Erst die betroffenen Accounts dieses Tages leeren, dann neu schreiben.
-      // Ein erneuter Upload korrigiert damit sauber, auch wenn diesmal weniger
-      // Chatter in der Datei stehen als beim letzten Mal.
-      const { error: delErr } = await supabase
-        .from('model_chatter_daily').delete()
-        .eq('business_date', businessDate).in('creator', creators)
-      if (delErr) throw delErr
+      // v4.54.0: Erst schreiben, dann aufräumen.
+      // Vorher: erst alle Zeilen der Accounts löschen, dann einfügen. Scheiterte
+      // das Einfügen (Netz, RLS, doppelter Chatter in der Datei), waren die
+      // bisherigen Tageszahlen weg und nichts Neues drin.
+      // Jetzt: Upsert auf (business_date, creator, chatter_name) — schlägt er
+      // fehl, bleibt der alte Stand vollständig erhalten. Erst danach werden die
+      // Chatter entfernt, die in der neuen Datei nicht mehr vorkommen.
+      const { error: upErr } = await supabase.from('model_chatter_daily')
+        .upsert(zeilen, { onConflict: 'business_date,creator,chatter_name' })
+      if (upErr) throw upErr
 
-      const { error: insErr } = await supabase.from('model_chatter_daily').insert(zeilen)
-      if (insErr) throw insErr
+      const { data: bestand, error: lesErr } = await supabase
+        .from('model_chatter_daily').select('id, creator, chatter_name')
+        .eq('business_date', businessDate).in('creator', creators)
+      if (lesErr) throw lesErr
+      const neuSchluessel = new Set(zeilen.map(z => `${z.creator}\u0000${z.chatter_name}`))
+      const veraltet = (bestand || [])
+        .filter(b => !neuSchluessel.has(`${b.creator}\u0000${b.chatter_name}`))
+        .map(b => b.id)
+      if (veraltet.length) {
+        const { error: delErr } = await supabase.from('model_chatter_daily').delete().in('id', veraltet)
+        // Neue Zahlen sind drin — übrig gebliebene Alt-Zeilen sind ärgerlich,
+        // aber kein Datenverlust. Melden statt abbrechen.
+        if (delErr) console.warn('model_chatter_daily: veraltete Zeilen nicht entfernt:', delErr)
+      }
 
       setOffen(false)
       setErgebnis([])
