@@ -6,7 +6,7 @@ import SuggestionsAdmin from './components/SuggestionsAdmin'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight, DollarSign, Database,
+  Eye, ArrowLeftRight, DollarSign, Database, UserRound,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import ModelsView from './components/ModelsView'
@@ -710,16 +710,6 @@ export default function App() {
             <Eye size={13} />
             <span className="hide-mobile">Chatter</span>
           </button>
-          {isManager && (
-            <button onClick={() => setViewMode('mein-chatter')} title="Dein eigenes Chatter-Portal (Schichten, Check-in, Vorschläge)" style={{
-              fontSize: 12, padding: '6px 10px', borderRadius: 6,
-              background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
-              color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>
-              👤 <span className="hide-mobile">Mein Portal</span>
-            </button>
-          )}
           <button onClick={() => setViewMode('model')} title="Model-Ansicht" style={{
             fontSize: 12, padding: '6px 10px', borderRadius: 6,
             background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
@@ -729,6 +719,18 @@ export default function App() {
             <Eye size={13} />
             <span className="hide-mobile">Model</span>
           </button>
+          {/* v4.52.1: rechts neben Chatter/Model, Icon statt Emoji */}
+          {isManager && (
+            <button onClick={() => setViewMode('mein-chatter')} title="Dein eigenes Chatter-Portal (Schichten, Check-in, Vorschläge)" style={{
+              fontSize: 12, padding: '6px 10px', borderRadius: 6,
+              background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
+              color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              <UserRound size={13} />
+              <span className="hide-mobile">Mein Portal</span>
+            </button>
+          )}
           <button onClick={handleLogout} title="Abmelden" style={{
             fontSize: 12, padding: '5px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',

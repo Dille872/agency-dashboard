@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BookOpen, Library } from 'lucide-react'
+import { BookOpen, Library, Eye, UserRound } from 'lucide-react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialTab from './SocialTab'
@@ -2242,14 +2242,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           {/* v4.52.0: Admins wechseln zwischen Vorschau und eigenem Portal */}
           {isPreview && onSwitchToOwn && (
             <button onClick={onSwitchToOwn} title="Dein eigenes Chatter-Portal — deine Schichten, dein Check-in, deine Vorschläge"
-              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              👤 Mein Portal
+              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <UserRound size={12} /> Mein Portal
             </button>
           )}
           {!isPreview && onSwitchToPreview && (
             <button onClick={onSwitchToPreview} title="Einem Chatter über die Schulter schauen"
-              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.35)', color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              👁 Chatter ansehen
+              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.35)', color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Eye size={12} /> Chatter ansehen
             </button>
           )}
           {isSocialMedia && (
@@ -2273,7 +2273,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {/* v4.52.0: klar machen, wessen Portal das gerade ist */}
         {isPreview && displayName && (
           <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', color: '#06b6d4', fontSize: 12, fontWeight: 600 }}>
-            👁 Vorschau: Du siehst das Portal von <b>{displayName}</b>. {displayName} wird dadurch nicht als online gemeldet und nichts gilt als gelesen. Was du bewusst änderst (Board, Abwesenheit …), wird gespeichert.
+            Vorschau: Du siehst das Portal von <b>{displayName}</b>. {displayName} wird dadurch nicht als online gemeldet und nichts gilt als gelesen. Was du bewusst änderst (Board, Abwesenheit …), wird gespeichert.
           </div>
         )}
         {showSocialPortal ? (
