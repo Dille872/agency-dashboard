@@ -6,9 +6,10 @@ import SuggestionsAdmin from './components/SuggestionsAdmin'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight, DollarSign, Database, UserRound,
+  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
+import CalendarTab from './components/CalendarTab' // v4.60.0
 import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
 import BriefingView from './components/BriefingView'
@@ -506,8 +507,8 @@ export default function App() {
   const canAccess = (tab) => {
     if (userRole === 'admin') return true
     if (userRole === 'manager') return !['settings', 'billing'].includes(tab)
-    if (userRole === 'dienstplan') return ['schedule', 'chatters-comm'].includes(tab)
-    if (userRole === 'creator_manager') return ['models-comm'].includes(tab)
+    if (userRole === 'dienstplan') return ['schedule', 'chatters-comm', 'kalender'].includes(tab)
+    if (userRole === 'creator_manager') return ['models-comm', 'kalender'].includes(tab)
     if (isSocialMedia) return ['social'].includes(tab)
     return false
   }
@@ -609,6 +610,7 @@ export default function App() {
                 { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: unreadChat },
                 { divider: true },
                 { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
+                { key: 'kalender', label: 'Kalender', Icon: CalendarDays },
                 { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
               ]
               const TABS_MORE = [
@@ -804,6 +806,7 @@ export default function App() {
               { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: unreadChat },
               { key: 'performance', label: 'Performance', Icon: TrendingUp },
               { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
+              { key: 'kalender', label: 'Kalender', Icon: CalendarDays },
               { key: 'social', label: 'Social', Icon: Globe },
               { key: 'billing', label: 'Billing', Icon: DollarSign },
               { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
@@ -908,6 +911,8 @@ export default function App() {
           <ChattersView selectedDate={businessDate} chatterSnapshots={chatterSnapshots} onDateChange={setBusinessDate} />
         ) : activeTab === 'briefing' ? (
           <BriefingView modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
+        ) : activeTab === 'kalender' ? (
+          <CalendarTab userDisplayName={userDisplayName} />
         ) : activeTab === 'notes' ? (
           <NotesTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'nachrichten' ? (

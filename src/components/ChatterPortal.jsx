@@ -8,6 +8,7 @@ import SwapModal from './SwapModal'
 import ChatterBell from './ChatterBell'
 import ChatterChat from './ChatterChat'
 import MessageSuggestions from './MessageSuggestions'
+import MeinKalender from './MeinKalender' // v4.60.0
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
 import { useTodoMeldung } from '../todoMeldung'
@@ -2648,6 +2649,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               })}
             </div>
           )}
+        </Collapsible>
+
+        {/* v4.60.0: Team-Kalender — Einträge für mich/das Team, in meiner Zeit */}
+        <Collapsible hidden={tab !== 'heute'} isCollapsed={collapsed.kalender} onToggle={() => toggleCollapse('kalender')} icon="🗓" title="Mein Kalender – nächste 7 Tage">
+          <MeinKalender displayName={displayName} isPreview={isPreview} />
         </Collapsible>
 
         <Collapsible helpId="shifts" hidden={tab !== 'heute'} isCollapsed={collapsed.shifts} onToggle={() => toggleCollapse('shifts')} icon="📅" title="Meine Schichten – nächste 7 Tage" badge={todayShifts.length > 0 ? 'Heute' : myNext7Shifts.length} badgeColor="#06b6d4">
