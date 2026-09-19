@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { supabase } from '../supabase'
+import { heuteBerlin } from '../utils' // v4.57.0
 
 /**
  * BlockOfferModal v3.27.0
@@ -16,7 +17,7 @@ import { supabase } from '../supabase'
  *   onDone:  () => void
  */
 export default function BlockOfferModal({ preset, models = [], shifts = [], onClose, onDone }) {
-  const [dayIso, setDayIso] = useState(preset?.dayIso || new Date().toISOString().slice(0, 10))
+  const [dayIso, setDayIso] = useState(preset?.dayIso || heuteBerlin())
   const [shift, setShift] = useState(preset?.shift || shifts[0] || '')
   const [selectedIds, setSelectedIds] = useState(() => {
     const s = new Set()

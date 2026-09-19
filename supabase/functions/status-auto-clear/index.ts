@@ -39,7 +39,9 @@ serve(async () => {
     const cleared: string[] = []
     for (const m of expired) {
       // Auto auf available setzen
-      await fetch(`${SUPABASE_URL}/rest/v1/models_contact?id=eq.${m.id}`, {
+      // v4.57.0: Ergebnis prüfen. Scheiterte das PATCH, blieb das Model abgelaufen
+      // und JEDER Cron-Lauf schrieb eine neue Inbox-Zeile + Telegram an die Admins.
+      const patch = await fetch(`${SUPABASE_URL}/rest/v1/models_contact?id=eq.${m.id}`, {
         method: 'PATCH',
         headers: { ...H, 'Prefer': 'return=minimal' },
         body: JSON.stringify({
@@ -49,6 +51,10 @@ serve(async () => {
           availability: 'available',
         }),
       })
+      if (!patch.ok) {
+        console.error('status-auto-clear: PATCH fehlgeschlagen für', m.name, patch.status, await patch.text().catch(() => ''))
+        continue
+      }
 
       // Eintrag in messages für Dashboard-Inbox
       await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
@@ -71,7 +77,7 @@ serve(async () => {
     // Optional: Admin-Notify wenn was gecleared wurde
     if (cleared.length > 0) {
       for (const adminId of ADMIN_IDS) {
-        await tg(adminId, `🔄 Auto-Clear: ${cleared.length} Model${cleared.length > 1 ? 's' : ''} zurück auf "Verfügbar"\n\n${cleared.map(n => `● ${n}`).join('\n')}`)
+        await tg(adminId, `🔄 Auto-Clear: ${cleared.length} Model${cleared.length > 1 ? 's' : ''} zurück auf "Verfügbar"\n\n${cleared.map(n => `● ${String(n).replace(/[<>&]/g, '')}`).join('\n')}`)
       }
     }
 

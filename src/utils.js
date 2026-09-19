@@ -99,14 +99,27 @@ export function formatShortDate(dateStr) {
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
 }
 
-export function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+// v4.57.0: Berliner Kalendertag. toISOString() liefert UTC — zwischen 00:00 und
+// 02:00 Berlin war „heute" damit noch der Vortag (Zahlungsdatum im Vormonat,
+// Überfällig-Markierung zu spät, Monatswechsel verschoben).
+export function heuteBerlin() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 }
 
+export function todayISO() {
+  return heuteBerlin()
+}
+
+// v4.57.0: ISO-Kalenderwoche (Montag–Sonntag), wie im Dienstplan. Vorher
+// begann die Woche am Sonntag: So 13.09.2026 war „KW 38" statt 37.
+// Rückgabe „JJJJ-WW" wäre eindeutiger, bleibt aber bewusst eine Zahl, damit
+// alle Aufrufer unverändert funktionieren — Jahresgrenzen fängt ModelsView ab.
 export function getWeekNumber(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00')
-  const onejan = new Date(d.getFullYear(), 0, 1)
-  return Math.ceil(((d - onejan) / 86400000 + onejan.getDay() + 1) / 7)
+  const d = new Date(dateStr + 'T12:00:00Z')
+  const tag = (d.getUTCDay() + 6) % 7 // Mo=0
+  d.setUTCDate(d.getUTCDate() - tag + 3) // Donnerstag derselben Woche
+  const ersterDo = new Date(Date.UTC(d.getUTCFullYear(), 0, 4))
+  return 1 + Math.round(((d - ersterDo) / 86400000 - 3 + ((ersterDo.getUTCDay() + 6) % 7)) / 7)
 }
 
 export function getMonthStr(dateStr) {

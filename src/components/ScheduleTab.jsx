@@ -2418,7 +2418,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
         <div onClick={() => setShowAbsences(!showAbsences)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', cursor: 'pointer', background: 'var(--bg-card2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>🚫 Abwesenheiten</span>
-            {absences.filter(a => a.date_to >= new Date().toISOString().slice(0,10)).length > 0 && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>{absences.filter(a => a.date_to >= new Date().toISOString().slice(0,10)).length}</span>}
+            {absences.filter(a => a.date_to >= todayBerlin()).length > 0 && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>{absences.filter(a => a.date_to >= todayBerlin()).length}</span>}
           </div>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{showAbsences ? '▲' : '▼'}</span>
         </div>
@@ -2480,7 +2480,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {(() => {
-                  const today = new Date().toISOString().slice(0, 10)
+                  const today = todayBerlin()
                   const active = absences.filter(a => a.date_to >= today)
                   const expired = absences.filter(a => a.date_to < today)
                   const visible = showExpiredAbsences ? absences : active

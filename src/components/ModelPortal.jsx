@@ -22,6 +22,7 @@ import { HelpProvider, HelpDot } from './Help'
 import HelpTour from './HelpTour'
 import HelpFab from './HelpFab'
 import { HELP_TOPICS as MODEL_HELP, TOUR_IDS as MODEL_TOUR } from '../help/modelHelp'
+import { heuteBerlin } from '../utils' // v4.57.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -691,7 +692,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   // Vorher filterte openRequests auf 'neu'/'angefragt' → immer leer, Badge/Banner erschienen nie.
   // ANNAHME: „offen" = bestätigte, noch nicht erledigte Aufträge. Falls anders gewünscht, hier anpassen.
   const openRequests = contentRequests.filter(r => r.status === 'bestaetigt')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = heuteBerlin()
   const upcomingCal = calItems.filter(c => c.due_date >= today).slice(0, 5)
 
   const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
@@ -998,7 +999,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       if (!day) return <div key={'e'+i} />
                       const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0')
                       const subs = subsMap[dateStr] || 0
-                      const isToday2 = dateStr === new Date().toISOString().slice(0,10)
+                      const isToday2 = dateStr === heuteBerlin()
                       return (
                         <div key={day} style={{ borderRadius: 5, padding: '4px 2px', textAlign: 'center', background: getColor(subs), border: isToday2 ? '1px solid #f59e0b' : '1px solid transparent' }}>
                           <div style={{ fontSize: 8, color: subs > 0 ? '#000' : 'var(--text-muted)', fontWeight: subs > 0 ? 700 : 400, opacity: subs > 0 ? 0.6 : 0.4 }}>{day}</div>
@@ -1205,7 +1206,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               )}
               {customContent.map(cc => {
                 const isExpanded = expandedContent === cc.id
-                const isOverdue = cc.due_date && !cc.completed && cc.due_date < new Date().toISOString().slice(0, 10)
+                const isOverdue = cc.due_date && !cc.completed && cc.due_date < heuteBerlin()
                 const borderColor = cc.completed ? '#10b981' : isOverdue ? '#ef4444' : '#f59e0b'
                 const bgColor = cc.completed ? 'rgba(16,185,129,0.03)' : isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)'
                 return (
@@ -1284,13 +1285,13 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                         </div>
                       </div>
                     ) : (
-                      <div style={{ ...itemS, opacity: cat.key === 'reise' && item.date_to && item.date_to < new Date().toISOString().slice(0,10) ? 0.55 : 1 }}>
+                      <div style={{ ...itemS, opacity: cat.key === 'reise' && item.date_to && item.date_to < heuteBerlin() ? 0.55 : 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{item.title}</div>
                               {cat.key === 'reise' && (item.date_from || item.date_to) && (() => {
-                                const today = new Date().toISOString().slice(0,10)
+                                const today = heuteBerlin()
                                 const expired = item.date_to && item.date_to < today
                                 const from = item.date_from ? new Date(item.date_from + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
                                 const to = item.date_to ? new Date(item.date_to + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
@@ -1495,7 +1496,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             const nothingPaid = req.price > 0 && totalPaid === 0
             const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
             const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
-            const todayStr = new Date().toISOString().slice(0, 10)
+            const todayStr = heuteBerlin()
             const overdue = !req.remainder_paid && req.remainder_due_at && new Date(req.remainder_due_at) < new Date(todayStr)
             const daysOverdue = overdue ? Math.floor((new Date(todayStr) - new Date(req.remainder_due_at)) / (86400 * 1000)) : 0
             return (

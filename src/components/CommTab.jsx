@@ -8,6 +8,7 @@ import Card from './Card'
 import OnlineStatus from './OnlineStatus'
 import { SocialLinksEditor } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
+import { heuteBerlin } from '../utils' // v4.57.0
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 
@@ -1232,7 +1233,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [newAbsences, setNewAbsences] = useState([])
   const [showOldSwaps, setShowOldSwaps] = useState(false) // v3.30.1: alte/erledigte Tausch-Einträge ausblenden
   const loadNewAbsences = async () => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = heuteBerlin()
     const { data } = await supabase.from('absences')
       .select('*')
       .eq('source', 'chatter')
@@ -1613,7 +1614,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [showDatePicker, setShowDatePicker] = useState(null) // { reqId, type: 'deposit'|'remainder'|'due' }
   const [pickerDate, setPickerDate] = useState('')
 
-  const todayIso = () => new Date().toISOString().slice(0, 10)
+  const todayIso = () => heuteBerlin()
 
   const markPaymentPaid = async (req, type, dateStr) => {
     const date = dateStr || new Date().toISOString()
@@ -4958,7 +4959,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {(() => {
-                const today = new Date().toISOString().slice(0, 10)
+                const today = heuteBerlin()
                 const allEntries = groupSwaps(swaps)
                 const isOld = (e) => e.rep.status !== 'offen' && e.rep.shift_date < today
                 const oldCount = allEntries.filter(isOld).length
@@ -5254,7 +5255,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     Custom Content · {(modelCustomContent[selectedBoardModel] || []).filter(c => !c.completed).length} offen
                   </div>
                   {(modelCustomContent[selectedBoardModel] || []).map(cc => {
-                    const isOverdue = cc.due_date && !cc.completed && cc.due_date < new Date().toISOString().slice(0, 10)
+                    const isOverdue = cc.due_date && !cc.completed && cc.due_date < heuteBerlin()
                     const color = cc.completed ? '#10b981' : isOverdue ? '#ef4444' : '#f59e0b'
                     return (
                       <div key={cc.id} style={{ padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: `1px solid ${color}33`, marginBottom: 6, opacity: cc.completed ? 0.6 : 1 }}>

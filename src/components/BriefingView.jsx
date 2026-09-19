@@ -472,7 +472,7 @@ export default function BriefingView({ modelSnapshots, chatterSnapshots }) {
 
   // Today reference
   const today = new Date()
-  const todayIso = today.toISOString().slice(0, 10)
+  const todayIso = today.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }) // v4.57.0: Berlin statt UTC
 
   // ── WEEKLY BRIEFINGS (letzte 8 Wochen) ─────────────────────────
   const weeklyBriefings = []

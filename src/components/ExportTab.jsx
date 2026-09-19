@@ -39,15 +39,18 @@ export default function ExportTab() {
   )
 
   const getDateRange = () => {
+    // v4.57.0: Berliner Kalendertage statt UTC (am Monatsersten zwischen 0 und
+    // 2 Uhr war „Dieser Monat" sonst leer, weil to < from).
+    const berlin = (d) => d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
     const now = new Date()
-    const to = now.toISOString().slice(0, 10)
+    const to = berlin(now)
     if (period === 'all') return { from: '2020-01-01', to } // weit genug zurück
     if (period === 'custom') return { from: dateFrom, to: dateTo || to }
     if (period === 'month') {
-      const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      const from = `${to.slice(0, 7)}-01`
       return { from, to }
     }
-    const from = new Date(now - parseInt(period) * 86400000).toISOString().slice(0, 10)
+    const from = berlin(new Date(now - parseInt(period) * 86400000))
     return { from, to }
   }
 
@@ -83,8 +86,16 @@ export default function ExportTab() {
     setLoading(true)
 
     const { from, to } = getDateRange()
-    const fromTs = from + 'T00:00:00'
-    const toTs = to + 'T23:59:59'
+    // v4.57.0: Tagesgrenzen in BERLINER Zeit als echte Zeitpunkte. Ohne Offset
+    // las Postgres sie als UTC: Check-ins zwischen 0 und 2 Uhr am ersten Tag
+    // fehlten, die ersten 2 Stunden nach dem letzten Tag waren dabei.
+    const berlinMitternacht = (tag) => {
+      const mittag = new Date(`${tag}T12:00:00Z`)
+      const off = parseInt(mittag.toLocaleString('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hour12: false })) - 12
+      return new Date(Date.UTC(+tag.slice(0, 4), +tag.slice(5, 7) - 1, +tag.slice(8, 10), -off, 0))
+    }
+    const fromTs = berlinMitternacht(from).toISOString()
+    const toTs = new Date(berlinMitternacht(to).getTime() + 24 * 3600 * 1000 - 1000).toISOString()
 
     const result = {
       _readme: {
@@ -206,8 +217,11 @@ export default function ExportTab() {
     // === DIENSTPLAN (Schedule) ===
     if (include.schedule) {
       const sched = await safeQuery('schedule', () =>
+        // v4.57.0: auch die Woche mitnehmen, in der `from` liegt (Start bis zu
+        // 6 Tage davor) — sonst fehlte bei „Dieser Monat" die erste Woche.
         supabase.from('schedule').select('week_start, status, assignments, shift_times, day_notes')
-          .gte('week_start', from).lte('week_start', to)
+          .gte('week_start', new Date(new Date(from + 'T12:00:00Z').getTime() - 6 * 86400000).toISOString().slice(0, 10))
+          .lte('week_start', to)
           .order('week_start')
       )
       // assignments aufbereiten: jeden Eintrag flach machen für ChatGPT-Verständnis
@@ -216,6 +230,8 @@ export default function ExportTab() {
         for (const [key, val] of Object.entries(week.assignments || {})) {
           const parts = key.split('__')
           if (parts.length < 3) continue
+          // v4.57.0: nur Tage im gewählten Zeitraum (die Randwochen ragen hinaus)
+          if (parts[1] < from || parts[1] > to) continue
           flat.push({
             week_start: week.week_start,
             status: week.status,

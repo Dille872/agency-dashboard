@@ -2119,7 +2119,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }, [todayShifts, checkInTime, currentShift])
 
   // Monthly revenue
-  const currentMonth = new Date().toISOString().slice(0, 7)
+  const currentMonth = todayBerlin().slice(0, 7)
   const monthSnaps = chatterSnapshots.filter(s => s.businessDate.startsWith(currentMonth))
   const monthRevenue = monthSnaps.reduce((sum, snap) => {
     const row = snap.rows?.find(r => r.name?.toLowerCase() === (chatterCsvName || displayName)?.toLowerCase())
@@ -2942,7 +2942,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       Custom Content · {(assignedCustomContent[selectedModelInfo] || []).length}
                     </div>
                     {(assignedCustomContent[selectedModelInfo] || []).map(cc => {
-                      const isOverdue = cc.due_date && cc.due_date < new Date().toISOString().slice(0, 10)
+                      const isOverdue = cc.due_date && cc.due_date < todayBerlin()
                       const color = isOverdue ? '#ef4444' : '#f59e0b'
                       return (
                         <div key={cc.id} style={{ padding: '6px 8px', background: isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)', borderRadius: 6, border: `1px solid ${color}33`, marginBottom: 5 }}>

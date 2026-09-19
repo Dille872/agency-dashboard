@@ -712,6 +712,15 @@ export default function SettingsTab() {
           )
         }
       }
+      // 6) v4.57.0: Login-Konto passend sperren/entsperren (Function account-sperre).
+      //    Der Status oben sperrt die Daten; der Ban verhindert zusätzlich Anmeldung
+      //    und Token-Erneuerung. Scheitert er (Function noch nicht deployt), bleibt
+      //    der Status trotzdem gesetzt — nur ein Hinweis.
+      const loginErgebnis = await loginSperre(newStatus === 'active' ? 'entsperren' : 'sperren', user.user_id)
+      if (!loginErgebnis.ok) {
+        alert(`Hinweis: Status ist gespeichert, aber das Login-Konto konnte nicht ${newStatus === 'active' ? 'entsperrt' : 'gesperrt'} werden (${loginErgebnis.error}).` +
+          (newStatus === 'active' ? '\n\nFalls sich die Person nicht anmelden kann, bitte melden.' : '\n\nDie Daten sind trotzdem gesperrt.'))
+      }
     } catch (e) {
       alert('Fehler beim Status-Update: ' + (e.message || e))
       setStatusBusy(false)
@@ -722,6 +731,32 @@ export default function SettingsTab() {
     setStatusNote('')
     logActivity('user.status', { entity: name, detail: newStatus === 'active' ? 'wieder aktiviert' : `stillgelegt${note ? ': ' + note : ''}` })
     loadUsers(); loadModels(); loadChatters(); loadPlanCheck()
+  }
+
+  // v4.57.0: Function account-sperre aufrufen
+  const loginSperre = async (action, userId) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch(`${FUNCTIONS_URL}/account-sperre`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify(userId ? { action, user_id: userId } : { action }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      return data?.ok ? data : { ok: false, error: data?.error || `HTTP ${resp.status}`, ...data }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  }
+  const [sperrAbgleich, setSperrAbgleich] = useState(null) // v4.57.0
+  const loginSperrenAbgleichen = async () => {
+    if (!confirm('Alle stillgelegten und offboardeten Accounts auch beim Login sperren?\n\nAktive Accounts werden nicht angefasst.')) return
+    setSperrAbgleich('läuft …')
+    const r = await loginSperre('abgleich')
+    setSperrAbgleich(r.ok
+      ? `✓ ${r.gesperrt?.length || 0} Login(s) gesperrt`
+      : `⚠ ${r.error || 'Fehler'}${r.fehler?.length ? ' · ' + r.fehler.join('; ') : ''}`)
+    if (r.ok) logActivity('user.status', { entity: 'Login-Sperren', detail: `${r.gesperrt?.length || 0} abgeglichen` })
   }
 
   const reactivateUser = async (user) => {
@@ -1142,6 +1177,22 @@ export default function SettingsTab() {
       {/* TEAM */}
       {activeSection === 'team' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
+
+          {/* v4.57.0: Login-Sperren für stillgelegte/offboardete Accounts */}
+          <div style={cardS}>
+            <div style={labelS}>Login-Sperre</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 10 }}>
+              Beim Stilllegen/Offboarden wird das Login-Konto jetzt automatisch mitgesperrt, beim Reaktivieren wieder freigegeben.
+              Für Accounts, die schon vorher gesperrt waren, einmal abgleichen.
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={loginSperrenAbgleichen} disabled={sperrAbgleich === 'läuft …'}
+                style={{ padding: '7px 14px', borderRadius: 7, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Login-Sperren abgleichen
+              </button>
+              {sperrAbgleich && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{sperrAbgleich}</span>}
+            </div>
+          </div>
 
           {/* Rollen-Übersicht */}
           <div style={cardS}>

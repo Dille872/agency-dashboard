@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Bell, ChevronDown } from 'lucide-react'
 import { supabase } from '../supabase'
 import { useFabOpen } from '../fabPanel'
+import { heuteBerlin } from '../utils' // v4.57.0
 
 /**
  * ChatterBell v3.96.0 — Benachrichtigungs-Glocke für das Chatter-Portal.
@@ -110,7 +111,7 @@ export default function ChatterBell({
   // ── Schichtangebote laden (gleiche Filterlogik wie SwapModal) ──
   const loadOffers = useCallback(async () => {
     if (!displayName) return
-    const today = new Date().toISOString().slice(0, 10)
+    const today = heuteBerlin()
     const { data: swaps } = await supabase
       .from('shift_swaps').select('*')
       .eq('status', 'offen').gte('shift_date', today)

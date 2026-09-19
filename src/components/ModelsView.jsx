@@ -440,7 +440,10 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
   // ── Quick Summary ─────────────────────────────────────────────────────────
   const kwNum = selectedDate ? getWeekNumber(selectedDate) : '-'
   const monthStr = selectedDate ? getMonthStr(selectedDate) : '-'
-  const kwSnaps = modelSnapshots.filter(s => getWeekNumber(s.businessDate) === kwNum && s.businessDate.slice(0, 4) === selectedDate?.slice(0, 4))
+  // v4.57.0: gleiche ISO-KW UND höchstens 6 Tage Abstand — statt gleiches
+  // Kalenderjahr (schnitt Wochen über den Jahreswechsel ab)
+  const naheKw = (a, b) => Math.abs(new Date(a + 'T12:00:00Z') - new Date(b + 'T12:00:00Z')) < 7 * 86400000
+  const kwSnaps = selectedDate ? modelSnapshots.filter(s => getWeekNumber(s.businessDate) === kwNum && naheKw(s.businessDate, selectedDate)) : []
   const monthSnaps = modelSnapshots.filter(s => getMonthStr(s.businessDate) === monthStr)
   const kwRevenue = kwSnaps.reduce((s, snap) => s + snap.rows.reduce((ss, r) => ss + r.revenue, 0), 0)
   const monthRevenue = monthSnaps.reduce((s, snap) => s + snap.rows.reduce((ss, r) => ss + r.revenue, 0), 0)

@@ -55,6 +55,28 @@ function norm(s: string) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
 const escHtml = (s: string) =>
   String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+// v4.57.0: Berliner Kalendertag (YYYY-MM-DD). Die Function läuft in UTC —
+// toISOString() lieferte zwischen 00:00 und 02:00 Berlin noch den Vortag.
+const berlinHeute = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+
+// v4.57.0: „bis 16 Uhr" als echter Zeitpunkt in Berliner Zeit. Vorher setHours()
+// in UTC → 16:00Z = 18:00 Berlin. Liegt die Uhrzeit heute schon hinter uns
+// („bis 1 Uhr" um 23:30), ist der nächste Tag gemeint.
+function berlinUhrzeit(h: number, min: number): string {
+  const tag = berlinHeute()
+  const mittag = new Date(`${tag}T12:00:00Z`)
+  const offset = parseInt(mittag.toLocaleString('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hour12: false })) - 12
+  let d = new Date(Date.UTC(+tag.slice(0, 4), +tag.slice(5, 7) - 1, +tag.slice(8, 10), h - offset, min))
+  if (d.getTime() <= Date.now()) d = new Date(d.getTime() + 24 * 3600 * 1000)
+  return d.toISOString()
+}
+
+// v4.57.0: den Live-Plan der LAUFENDEN Woche laden. Vorher „neueste Live-Woche"
+// (order=week_start.desc&limit=1) — war die nächste Woche schon live geschaltet,
+// fand der Bot heute nichts (/on ohne Models, /heute leer, „schichten heute" leer).
+const ladeLaufendenPlan = () =>
+  q('schedule', `?status=eq.live&week_start=lte.${berlinHeute()}&order=week_start.desc&limit=1`)
+
 // Wie lange nach dem Auschecken eine Antwort noch als Übergabe gilt.
 const UEBERGABE_FENSTER_MIN = 15
 // Wie weit zurück Übergaben anderer noch gezeigt werden — wie im Portal.
@@ -498,7 +520,7 @@ async function resolveSender(fromId: string, m: any): Promise<{ type: 'model' | 
 
 // ── Helper: Schichten heute für Chatter ──
 async function getChatterShiftsToday(chatterName: string, todayIso: string) {
-  const scheds = await q('schedule', '?status=eq.live&order=week_start.desc&limit=1')
+  const scheds = await ladeLaufendenPlan()
   const sched = Array.isArray(scheds) ? scheds[0] : null
   if (!sched?.assignments) return []
   const result: Array<{ shift: string; model: string; time: string }> = []
@@ -516,7 +538,7 @@ async function getChatterShiftsToday(chatterName: string, todayIso: string) {
 
 // ── Helper: ganze Woche für Chatter ──
 async function getChatterShiftsWeek(chatterName: string) {
-  const scheds = await q('schedule', '?status=eq.live&order=week_start.desc&limit=1')
+  const scheds = await ladeLaufendenPlan()
   const sched = Array.isArray(scheds) ? scheds[0] : null
   if (!sched?.assignments) return []
   const result: Array<{ date: string; shift: string; model: string; time: string }> = []
@@ -663,7 +685,7 @@ serve(async (req) => {
     // ── ADMIN ──
     if (ADMIN_IDS.includes(fromId)) {
       const now = new Date()
-      const todayIso = now.toISOString().slice(0, 10)
+      const todayIso = berlinHeute() // v4.57.0: Berlin statt UTC
       const cutoff = new Date(Date.now() - 120000)
 
       if (lower.includes('wer online') || lower.includes('wer ist da') || lower === 'online') {
@@ -678,7 +700,7 @@ serve(async (req) => {
           let m = '📊 <b>Gerade online:</b>\n\n'
           for (const s of onlineNow) {
             const log = (Array.isArray(activeLogs) ? activeLogs : []).find((l: any) => l.display_name === s.display_name)
-            const since = log ? ` · seit ${new Date(log.checked_in_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''
+            const since = log ? ` · seit ${new Date(log.checked_in_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })}` : ''
             m += `● ${s.display_name}${since}\n`
           }
           await tg(fromId, m)
@@ -687,7 +709,7 @@ serve(async (req) => {
       }
 
       if (lower.includes('schichten') || lower.includes('plan heute')) {
-        const scheds = await q('schedule', '?status=eq.live&order=week_start.desc&limit=1')
+        const scheds = await ladeLaufendenPlan()
         const sched = Array.isArray(scheds) ? scheds[0] : null
         if (!sched?.assignments) { await tg(fromId, '📅 Kein aktiver Dienstplan.'); return new Response('ok') }
         const entries: string[] = []
@@ -703,7 +725,7 @@ serve(async (req) => {
 
       if (lower.startsWith('umsatz')) {
         const modelQuery = text.slice(6).trim()
-        const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+        const monthStart = `${todayIso.slice(0, 7)}-01` // v4.57.0: Berliner Monat
         const snaps = await q('model_snapshots', `?select=business_date,rows&business_date=gte.${monthStart}&order=business_date`)
         const snapArr = Array.isArray(snaps) ? snaps : []
 
@@ -751,8 +773,8 @@ serve(async (req) => {
         for (const model of (Array.isArray(models) ? models : [])) {
           const s = model.status || 'unknown'
           const emoji = s === 'available' ? '🟢' : s === 'pause' ? '🟡' : s === 'unavailable' ? '🔴' : '⚪'
-          const until = model.status_until ? ` bis ${new Date(model.status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''
-          const seen = model.last_seen ? ` · ${new Date(model.last_seen).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''
+          const until = model.status_until ? ` bis ${new Date(model.status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })}` : ''
+          const seen = model.last_seen ? ` · ${new Date(model.last_seen).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })}` : ''
           m += `${emoji} ${model.name}${until}${seen}\n`
         }
         await tg(fromId, m)
@@ -802,17 +824,16 @@ serve(async (req) => {
       const untilMatch = lower.match(/bis\s+(\d{1,2})(?::(\d{2}))?\s*(uhr)?/)
       const getUntil = () => {
         if (!untilMatch) return null
-        const d = new Date(); d.setHours(parseInt(untilMatch[1]), parseInt(untilMatch[2] || '0'), 0, 0)
-        return d.toISOString()
+        return berlinUhrzeit(parseInt(untilMatch[1]), parseInt(untilMatch[2] || '0'))
       }
       if (lower.includes('nicht verfügbar') || lower.includes('busy') || lower.includes('nicht da') || lower.includes('beschäftigt')) {
         const until = getUntil()
         update = { status: 'unavailable', status_until: until, status_note: text, availability: 'unavailable' }
-        confirmMsg = `✓ Status: <b>Nicht verfügbar</b>${until ? ` bis ${new Date(until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : ''}`
+        confirmMsg = `✓ Status: <b>Nicht verfügbar</b>${until ? ` bis ${new Date(until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })} Uhr` : ''}`
       } else if (lower.includes('pause')) {
         const until = getUntil() || new Date(Date.now() + 3600000).toISOString()
         update = { status: 'pause', status_until: until, status_note: text, availability: 'unavailable' }
-        confirmMsg = `✓ Status: <b>Pause</b> bis ${new Date(until as string).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
+        confirmMsg = `✓ Status: <b>Pause</b> bis ${new Date(until as string).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })} Uhr`
       } else if (lower.includes('verfügbar') || lower.includes('bin da') || lower.includes('zurück') || lower.includes('back')) {
         update = { status: 'available', status_until: null, status_note: null, availability: 'available' }
         confirmMsg = `✓ Status: <b>Verfügbar</b> ✓`
@@ -822,7 +843,7 @@ serve(async (req) => {
         // Status-Update auch in messages speichern für Dashboard-Inbox
         const statusLabel = (update as any).status as string
         const statusUntilStr = (update as any).status_until
-          ? ` bis ${new Date((update as any).status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`
+          ? ` bis ${new Date((update as any).status_until).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })}`
           : ''
         await ins('messages', {
           model_name: modelData.name,
@@ -874,7 +895,7 @@ serve(async (req) => {
         if (Array.isArray(existing) && existing.length > 0) {
           await tg(fromId, '⚠ Du bist bereits eingecheckt.')
         } else {
-          const scheds = await q('schedule', '?status=eq.live&order=week_start.desc&limit=1')
+          const scheds = await ladeLaufendenPlan()
           const sched = Array.isArray(scheds) ? scheds[0] : null
           let shiftName = 'Schicht'; const modelNames: string[] = []
           // v4.37.0: Neben heute auch GESTERN, aber nur für Nachtschichten.

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Bell, ChevronDown } from 'lucide-react'
 import { supabase } from '../supabase'
 import { useFabOpen } from '../fabPanel'
+import { heuteBerlin } from '../utils' // v4.57.0
 
 /**
  * ModelBell v3.99.0 — Benachrichtigungs-Glocke für das Model-Portal.
@@ -81,7 +82,7 @@ export default function ModelBell({ displayName, onNavigate , isOpen, onToggle }
     if (!displayName) return
     const since = new Date(); since.setDate(since.getDate() - 14)
     const sinceIso = since.toISOString()
-    const todayIso = new Date().toISOString().slice(0, 10)
+    const todayIso = heuteBerlin()
     const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
 
     const [reqRes, ccRes, todoRes, calRes, boardRes] = await Promise.allSettled([

@@ -49,9 +49,13 @@ async function ladeAlleZeilen() {
   for (let seite = 0; seite < 200; seite++) {
     const { data, error } = await supabase
       .from('model_chatter_daily')
-      .select('business_date, creator, revenue')
+      .select('id, business_date, creator, revenue')
+      // v4.57.0: feste Reihenfolge — ohne ORDER BY garantiert Postgres keine
+      // stabile Seitenaufteilung, Zeilen konnten doppelt kommen oder fehlen.
+      .order('id')
       .range(von, von + SEITENGROESSE - 1)
-    if (error) { console.error('Datenstand laden:', error); break }
+    // v4.57.0: kein stilles Teilergebnis — lieber sichtbar scheitern
+    if (error) { console.error('Datenstand laden:', error); throw error }
     alle.push(...(data || []))
     if (!data || data.length < SEITENGROESSE) break
     von += SEITENGROESSE
@@ -62,13 +66,18 @@ async function ladeAlleZeilen() {
 export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = [] }) {
   const [einzel, setEinzel] = useState([])
   const [laedt, setLaedt] = useState(true)
+  const [ladeFehler, setLadeFehler] = useState(null) // v4.57.0
   const [alleTage, setAlleTage] = useState(false)
 
   useEffect(() => {
     let abgebrochen = false
     ;(async () => {
-      const alle = await ladeAlleZeilen()
-      if (!abgebrochen) { setEinzel(alle); setLaedt(false) }
+      try {
+        const alle = await ladeAlleZeilen()
+        if (!abgebrochen) { setEinzel(alle); setLaedt(false) }
+      } catch (e) {
+        if (!abgebrochen) { setLadeFehler(e?.message || String(e)); setLaedt(false) }
+      }
     })()
     return () => { abgebrochen = true }
   }, [])
@@ -157,6 +166,11 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
     z.erwartet > 0 && z.erfasst === z.erwartet && z.ueberdeckung.length === 0 && z.verwaist.length === 0
   const sauber = letzte7.filter(istSauber).length
 
+  if (ladeFehler) return (
+    <div style={{ padding: 16, color: '#ef4444', fontSize: 13 }}>
+      ⚠ Einzeldateien konnten nicht vollständig geladen werden ({ladeFehler}). Die Übersicht wird nicht angezeigt, damit keine unvollständigen Zahlen als Abgleich erscheinen. Bitte neu laden.
+    </div>
+  )
   if (laedt) return (
     <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '60px 0', fontSize: 14 }}>
       Datenstand wird geladen…

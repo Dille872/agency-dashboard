@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { heuteBerlin } from '../utils' // v4.57.0
 
 /**
  * SwapModal v3.33.0 — offene Schichten / Angebote für Chatter.
@@ -45,7 +46,7 @@ export default function SwapModal({ displayName }) {
 
   const load = async () => {
     setLoading(true)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = heuteBerlin()
     const { data: swaps } = await supabase
       .from('shift_swaps')
       .select('*')

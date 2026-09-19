@@ -455,10 +455,14 @@ export default function PerformanceTab({ modelSnapshots = [], chatterSnapshots =
 
   const periodA = periodMode === 'week'
     ? { key: selectedWeekA, label: isoWeekLabel(selectedWeekA), daysCount: periodDayCount.week[selectedWeekA]?.size || 7 }
-    : { key: selectedMonthA, label: monthLabel(selectedMonthA), daysCount: elapsedDaysInMonth(selectedMonthA || monthKey(new Date())) }
+    // v4.57.0: wie im Wochenmodus durch die Tage MIT Daten teilen — am 2. eines Monats
+    // gab es einen Datentag, geteilt wurde aber durch 2 (Tagesumsatz ~50 % zu niedrig).
+    : { key: selectedMonthA, label: monthLabel(selectedMonthA), daysCount: periodDayCount.month?.[selectedMonthA]?.size || elapsedDaysInMonth(selectedMonthA || monthKey(new Date())) }
   const periodB = periodMode === 'week'
     ? { key: selectedWeekB, label: isoWeekLabel(selectedWeekB), daysCount: periodDayCount.week[selectedWeekB]?.size || 7 }
-    : { key: selectedMonthB, label: monthLabel(selectedMonthB), daysCount: elapsedDaysInMonth(selectedMonthB || monthKey(new Date())) }
+    // v4.57.0: wie im Wochenmodus durch die Tage MIT Daten teilen — am 2. eines Monats
+    // gab es einen Datentag, geteilt wurde aber durch 2 (Tagesumsatz ~50 % zu niedrig).
+    : { key: selectedMonthB, label: monthLabel(selectedMonthB), daysCount: periodDayCount.month?.[selectedMonthB]?.size || elapsedDaysInMonth(selectedMonthB || monthKey(new Date())) }
 
   // Chatter Entities (flat, nur Sternchen-Filter)
   const chatterEntities = useMemo(() => {
