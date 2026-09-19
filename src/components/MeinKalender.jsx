@@ -1,5 +1,6 @@
 // v4.60.0: Team-Kalender im Chatter-Portal — „Mein Kalender".
 // v4.65.0: „Erledigt" meldet sich bei Chris/Rey; Folgeaufgabe/Serie gekennzeichnet.
+// v4.67.0: „Im Handy-Kalender" (Abo, KalenderAbo.jsx) oben in der Liste.
 // v4.66.0: Rückmeldung schreiben (landet in kalender_rueckmeldungen + Telegram an
 //          Chris/Rey). Jeder sieht nur SEINE Rückmeldungen (RLS).
 // Zeigt die nächsten 7 Tage: Einträge für das ganze Team und die, in denen
@@ -9,6 +10,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { BERLIN, meineZone, datumInZone, zeitIn, ortAus, utcLabel } from '../zeit'
 import { artInfo, erledigtMelden, wdhLabel, rueckmeldungMelden } from './CalendarTab'
+import KalenderAbo from './KalenderAbo'
 
 const restText = (ms) => {
   if (ms <= 0) return 'jetzt fällig'
@@ -77,7 +79,12 @@ export default function MeinKalender({ displayName, isPreview }) {
   }
 
   if (!eintraege.length) {
-    return <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 2px' }}>Keine Einträge in den nächsten 7 Tagen.</div>
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 2px' }}>Keine Einträge in den nächsten 7 Tagen.</div>
+        <KalenderAbo isPreview={isPreview} />
+      </div>
+    )
   }
 
   // nach Tag (in meiner Zone) gruppieren
@@ -92,7 +99,10 @@ export default function MeinKalender({ displayName, isPreview }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Alle Zeiten in deiner Zeit ({ortAus(zone)}, {utcLabel(zone)}).</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', paddingTop: 8 }}>Alle Zeiten in deiner Zeit ({ortAus(zone)}, {utcLabel(zone)}).</div>
+        <KalenderAbo isPreview={isPreview} />
+      </div>
       {gruppen.map(g => (
         <div key={g.tag} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>{g.label}</div>

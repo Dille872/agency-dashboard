@@ -6,6 +6,8 @@
 // v4.65.0: Wiederholungen (Serie = einzelne Zeilen mit serie_id, damit
 //          Erinnerung und „erledigt" pro Termin funktionieren), Erledigt-Meldung
 //          ans Team, Abhaken direkt im Admin-Kalender.
+// v4.67.0: Ansichten Woche / Monat / Liste mit Suche; Handy startet mit der
+//          Liste, Filter & Einstellungen in einem Blatt; Handy-Kalender-Abo.
 // v4.66.0: Hinweise beim Anlegen (nachts / abwesend / keine Schicht), Model am
 //          Eintrag mit Empfängern aus dem Dienstplan, Liste „Offen", Verschieben
 //          per Ziehen, Vorlagen, Rückmeldungen der Empfänger.
@@ -23,6 +25,7 @@ import {
   BERLIN, meineZone, wandzeitZuDatum, datumInZone, zeitIn, utcLabel, ortAus, TEAM_ZONEN,
 } from '../zeit'
 import ZeitzonenHinweis from './ZeitzonenHinweis'
+import KalenderAbo from './KalenderAbo'
 
 export const ARTEN = [
   { key: 'aufgabe', label: 'Aufgabe', farbe: '#f59e0b' },
@@ -58,6 +61,10 @@ const OHNE_ENDE_MIN = 30 // Einträge ohne Ende: so hoch wie 30 Minuten
 const plusTage = (tag, n) => { const d = new Date(tag + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 const wochentag = (tag) => (new Date(tag + 'T12:00:00Z').getUTCDay() + 6) % 7 // Mo=0
 const montagVon = (tag) => plusTage(tag, -wochentag(tag))
+const monatErster = (tag) => tag.slice(0, 8) + '01'
+const monatPlus = (tag, n) => { const [y, m] = tag.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + n, 1, 12)).toISOString().slice(0, 10) }
+const monatName = (tag, kurz) => new Date(tag + 'T12:00:00Z').toLocaleDateString('de-DE', { month: kurz ? 'short' : 'long', year: 'numeric', timeZone: 'UTC' })
+const ANSICHT_KEY = (m) => `kalender-ansicht-${m ? 'mobil' : 'desktop'}`
 const kurzTag = (tag) => new Date(tag + 'T12:00:00Z').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
 const normName = (s) => String(s || '').trim().toLowerCase()
 const tageZwischen = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5)
@@ -126,7 +133,7 @@ export function schichtenAus(rows, modelName, vonTag, bisTag) {
       if (!a || !/^\d{1,2}:\d{2}$/.test(a)) continue
       const beginn = wandzeitZuDatum(planTag, a, BERLIN)
       let bisD = b && /^\d{1,2}:\d{2}$/.test(b) ? wandzeitZuDatum(planTag, b, BERLIN) : null
-      if (bisD && bisD <= beginn) bisD = new Date(bisD.getTime() + 24 * 3600 * 1000)
+      if (bisD && bisD <= beginn) bisD = wandzeitZuDatum(plusTage(planTag, 1), b, BERLIN) // über Mitternacht (auch bei Zeitumstellung)
       const modus = val.trainee ? (MODUS[val.trainee_mode] || MODUS.anlernen) : null
       const basis = { beginn, ende: bisD, shift, planTag, model: modelName[modelId] || modelId, entwurf: w.status !== 'live' }
       sch.push({ ...basis, person: val.chatter, zusatz: val.trainee ? `${modus} mit ${val.trainee}` : '' })
@@ -223,6 +230,21 @@ export default function CalendarTab({ userDisplayName }) {
   const zugRef = useRef(null)
   const gezogenRef = useRef(false)
   const rasterGridRef = useRef(null)
+  // v4.67.0: Ansichten
+  const [ansicht, setAnsichtRoh] = useState(() => {
+    const m = typeof window !== 'undefined' && window.innerWidth < 900
+    try { const v = localStorage.getItem(ANSICHT_KEY(m)); if (['woche', 'monat', 'liste'].includes(v)) return v } catch { /* egal */ }
+    return m ? 'liste' : 'woche'
+  })
+  const setAnsicht = (v) => { setAnsichtRoh(v); try { localStorage.setItem(ANSICHT_KEY(mobil), v) } catch { /* egal */ } }
+  const [monatAnker, setMonatAnker] = useState(() => monatErster(datumInZone(new Date(), meineZone()).tag))
+  const [listeVon, setListeVon] = useState(() => datumInZone(new Date(), meineZone()).tag)
+  const [listeTage, setListeTage] = useState(21)
+  const [suche, setSuche] = useState('')
+  const [sucheOffen, setSucheOffen] = useState(false)
+  const [treffer, setTreffer] = useState(null) // null = keine Suche aktiv
+  const [filterBlatt, setFilterBlatt] = useState(false)
+  const [offenBlatt, setOffenBlatt] = useState(false)
 
   useEffect(() => { const t = setInterval(() => setJetzt(Date.now()), 60000); return () => clearInterval(t) }, [])
 
@@ -236,30 +258,40 @@ export default function CalendarTab({ userDisplayName }) {
     if (!rasterRef.current) return
     const h = Math.max(0, Math.min(7, new Date().getHours() - 2))
     rasterRef.current.scrollTop = h * STUNDE_PX
-  }, [mobil])
+  }, [mobil, ansicht])
+
+  // Welcher Zeitraum wird gebraucht? (Woche / Monatsraster / Liste)
+  const bereich = useMemo(() => {
+    if (ansicht === 'monat') {
+      const letzter = plusTage(monatPlus(monatAnker, 1), -1)
+      return { von: montagVon(monatAnker), bis: plusTage(montagVon(letzter), 6) }
+    }
+    if (ansicht === 'liste') return { von: listeVon, bis: plusTage(listeVon, listeTage - 1) }
+    return { von: woche, bis: plusTage(woche, 6) }
+  }, [ansicht, monatAnker, listeVon, listeTage, woche])
+  const bVon = bereich.von, bBis = bereich.bis
 
   const laden = useCallback(async () => {
     setFehler(null)
-    const von = wandzeitZuDatum(plusTage(woche, -1), '00:00', 'UTC').toISOString()
-    const bis = wandzeitZuDatum(plusTage(woche, 8), '23:59', 'UTC').toISOString()
+    const von = wandzeitZuDatum(plusTage(bVon, -1), '00:00', 'UTC').toISOString()
+    const bis = wandzeitZuDatum(plusTage(bBis, 2), '23:59', 'UTC').toISOString()
     const [k, mc, mb, sc, mo] = await Promise.all([
       supabase.from('team_kalender').select('*').gte('beginn', von).lte('beginn', bis).order('beginn'),
       supabase.from('model_calendar').select('id, model_name, title, description, due_date, due_time, category')
-        .in('category', ['termin', 'reise']).gte('due_date', plusTage(woche, -1)).lte('due_date', plusTage(woche, 7)),
+        .in('category', ['termin', 'reise']).gte('due_date', plusTage(bVon, -1)).lte('due_date', plusTage(bBis, 1)),
       supabase.from('model_board').select('id, model_name, category, title, date, date_from, date_to')
         .in('category', ['reise', 'termine']),
       supabase.from('schedule').select('week_start, status, assignments, shift_times')
-        .gte('week_start', plusTage(woche, -7)).lte('week_start', plusTage(woche, 7)),
+        .gte('week_start', plusTage(montagVon(bVon), -7)).lte('week_start', bBis),
       supabase.from('models_contact').select('id, name'),
     ])
     if (k.error) { setFehler(k.error.message.includes('team_kalender') ? 'Die Kalender-Tabelle fehlt noch — bitte das SQL „team-kalender.sql" in Supabase ausführen.' : k.error.message); return }
     setEintraege(k.data || [])
-    const ende = plusTage(woche, 6)
     const ms = []
     for (const r of mc.data || []) ms.push({ key: 'mc' + r.id, model: r.model_name, titel: r.title, von: r.due_date, bis: r.due_date, art: r.category === 'reise' ? 'Reise' : 'Termin' })
     for (const r of mb.data || []) {
       const von = r.date_from || r.date, bis = r.date_to || r.date_from || r.date
-      if (!von || bis < woche || von > ende) continue
+      if (!von || bis < bVon || von > bBis) continue
       ms.push({ key: 'mb' + r.id, model: r.model_name, titel: r.title, von, bis, art: r.category === 'reise' ? 'Reise/Urlaub' : 'Termin' })
     }
     setModelSachen(ms)
@@ -267,9 +299,27 @@ export default function CalendarTab({ userDisplayName }) {
     // Schichten (Plan in deutscher Zeit) → feste Zeitpunkte; gefiltert aufs Team im Memo
     const modelName = Object.fromEntries((mo.data || []).map(m => [String(m.id), m.name]))
     setModelle((mo.data || []).map(m => ({ id: m.id, name: m.name })).filter(m => m.name).sort((x, y) => x.name.localeCompare(y.name, 'de')))
-    const sch = schichtenAus(sc.data, modelName, plusTage(woche, -1), plusTage(woche, 7))
+    const sch = schichtenAus(sc.data, modelName, plusTage(bVon, -1), plusTage(bBis, 1))
     setSchichten(sch)
-  }, [woche])
+  }, [bVon, bBis])
+
+  // v4.67.0: Suche über alle Einträge (1 Jahr zurück, 1 Jahr voraus)
+  useEffect(() => {
+    const q = suche.trim().toLowerCase()
+    if (q.length < 2) { setTreffer(null); return }
+    let ab = false
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from('team_kalender').select('*')
+        .gte('beginn', new Date(Date.now() - 365 * 86400000).toISOString())
+        .lte('beginn', new Date(Date.now() + 365 * 86400000).toISOString())
+        .order('beginn').limit(2000)
+      if (ab) return
+      const passt = (e) => [e.titel, e.notiz, e.model_name, e.erstellt_von, e.folge_titel, artInfo(e.art).label, ...(e.fuer || []), e.fuer_alle ? 'ganzes team' : '']
+        .some(x => String(x || '').toLowerCase().includes(q))
+      setTreffer((data || []).filter(passt))
+    }, 300)
+    return () => { ab = true; clearTimeout(t) }
+  }, [suche])
 
   useEffect(() => { laden() }, [laden])
 
@@ -351,6 +401,30 @@ export default function CalendarTab({ userDisplayName }) {
     return [a, b]
   }, [anzeigeZone])
 
+  // Sichtbare Einträge (Ebenen + Model-Filter) und Schicht-Gruppen — für alle Ansichten
+  const sichtbar = useMemo(() => {
+    const mf = normName(modelFilter)
+    return eintraege.filter(e => ebenen[e.art] && (!mf || normName(e.model_name) === mf))
+  }, [eintraege, ebenen, modelFilter])
+  const schichtGruppen = useMemo(() => {
+    if (!ebenen.schichten) return []
+    const mf = normName(modelFilter)
+    const team = new Set(teamNamen.map(normName))
+    const ich = normName(userDisplayName)
+    const gruppen = {}
+    for (const x of schichten) {
+      const p = normName(x.person)
+      // Mit Model-Filter: ALLE Schichten auf diesem Model (wer betreut es wann?)
+      if (mf) { if (normName(x.model) !== mf) continue } else if (!team.has(p) && p !== ich) continue
+      const s = x.beginn.getTime(), en = x.ende ? x.ende.getTime() : s + 8 * 3600000
+      const k = `${p}|${x.shift}|${s}|${en}`
+      if (!gruppen[k]) gruppen[k] = { k, s, en, person: x.person, ich: p === ich, shift: x.shift, entwurf: false, zeilen: [] }
+      gruppen[k].zeilen.push(x.zusatz ? `${x.model} · ${x.zusatz}` : x.model)
+      if (x.entwurf) gruppen[k].entwurf = true
+    }
+    return Object.values(gruppen)
+  }, [schichten, ebenen, modelFilter, teamNamen, userDisplayName])
+
   const bloeckeProTag = useMemo(() => {
     const m = Object.fromEntries(tage.map(t => [t, []]))
     const eintragen = (start, ende, basis) => {
@@ -361,33 +435,26 @@ export default function CalendarTab({ userDisplayName }) {
         m[t].push({ ...basis, start: (s - a) / 60000, ende: Math.max((e - a) / 60000, (s - a) / 60000 + 20), fortsetzung: start < a, abgeschnitten: ende > b })
       }
     }
-    const mf = normName(modelFilter)
-    for (const e of eintraege) {
-      if (!ebenen[e.art]) continue
-      if (mf && normName(e.model_name) !== mf) continue
+    for (const e of sichtbar) {
       const s = new Date(e.beginn).getTime()
       const en = e.ende ? new Date(e.ende).getTime() : s + OHNE_ENDE_MIN * 60000
       eintragen(s, en, { typ: 'eintrag', id: e.id, daten: e, farbe: artInfo(e.art).farbe })
     }
-    if (ebenen.schichten) {
-      const team = new Set(teamNamen.map(normName))
-      const ich = normName(userDisplayName)
-      const gruppen = {}
-      for (const x of schichten) {
-        const p = normName(x.person)
-        // Mit Model-Filter: ALLE Schichten auf diesem Model (wer betreut es wann?)
-        if (mf) { if (normName(x.model) !== mf) continue } else if (!team.has(p) && p !== ich) continue
-        const s = x.beginn.getTime(), en = x.ende ? x.ende.getTime() : s + 8 * 3600000
-        const k = `${p}|${x.shift}|${s}|${en}`
-        if (!gruppen[k]) gruppen[k] = { s, en, person: x.person, ich: p === ich, shift: x.shift, entwurf: false, zeilen: [] }
-        gruppen[k].zeilen.push(x.zusatz ? `${x.model} · ${x.zusatz}` : x.model)
-        if (x.entwurf) gruppen[k].entwurf = true
-      }
-      for (const [k, g] of Object.entries(gruppen)) eintragen(g.s, g.en, { typ: 'schicht', id: 'sch' + k, daten: g, farbe: SCHICHT_FARBE })
-    }
+    for (const g of schichtGruppen) eintragen(g.s, g.en, { typ: 'schicht', id: 'sch' + g.k, daten: g, farbe: SCHICHT_FARBE })
     for (const t of tage) m[t] = spaltenVerteilen(m[t])
     return m
-  }, [eintraege, schichten, ebenen, teamNamen, userDisplayName, tage, tagesGrenzen, modelFilter])
+  }, [sichtbar, schichtGruppen, tage, tagesGrenzen])
+
+  // v4.67.0: Einträge nach Starttag (Anzeige-Zone) — für Monat und Liste
+  const proTag = useMemo(() => {
+    const m = {}
+    const rein = (tag, it) => { (m[tag] = m[tag] || []).push(it) }
+    for (const e of sichtbar) rein(datumInZone(e.beginn, anzeigeZone).tag, { typ: 'eintrag', t: new Date(e.beginn).getTime(), daten: e })
+    for (const g of schichtGruppen) rein(datumInZone(new Date(g.s), anzeigeZone).tag, { typ: 'schicht', t: g.s, daten: g })
+    for (const k of Object.keys(m)) m[k].sort((a, b) => a.t - b.t)
+    return m
+  }, [sichtbar, schichtGruppen, anzeigeZone])
+  const modelAmTag = useCallback((t) => (ebenen.models ? modelSachen.filter(s => t >= s.von && t <= s.bis && (!modelFilter || normName(s.model) === normName(modelFilter))) : []), [ebenen, modelSachen, modelFilter])
 
   const modelProTag = useMemo(() => {
     const m = Object.fromEntries(tage.map(t => [t, []]))
@@ -787,7 +854,7 @@ export default function CalendarTab({ userDisplayName }) {
 
   const EBENEN = [...ARTEN.map(a => ({ key: a.key, label: a.label, farbe: a.farbe })), { key: 'models', label: 'Models: Termine & Urlaub', farbe: MODEL_FARBE }, { key: 'schichten', label: 'Schichten Team', farbe: SCHICHT_FARBE }]
   const ebenenListe = (
-    <div style={{ display: 'flex', flexDirection: mobil ? 'row' : 'column', gap: 6, flexWrap: mobil ? 'nowrap' : 'wrap', overflowX: mobil ? 'auto' : 'visible', alignItems: mobil ? 'center' : 'flex-start', paddingBottom: mobil ? 2 : 0 }}>
+    <div style={{ display: 'flex', flexDirection: mobil ? 'row' : 'column', gap: 6, flexWrap: 'wrap', alignItems: mobil ? 'center' : 'flex-start' }}>
       {EBENEN.map(e => (
         <button key={e.key} onClick={() => setEbenen(p => ({ ...p, [e.key]: !p[e.key] }))}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', background: ebenen[e.key] ? 'rgba(255,255,255,0.04)' : 'transparent', color: ebenen[e.key] ? 'var(--text-primary)' : 'var(--text-muted)', border: `1px solid ${ebenen[e.key] ? '#2e2e5a' : 'var(--border)'}`, opacity: ebenen[e.key] ? 1 : 0.55 }}>
@@ -1028,6 +1095,174 @@ export default function CalendarTab({ userDisplayName }) {
     </details>
   )
 
+  // ── v4.67.0: Liste (Agenda) ───────────────────────────────────────────────
+  const zeile = (it, vergangen) => {
+    if (it.typ === 'schicht') {
+      const g = it.daten
+      return (
+        <button key={'s' + g.k} onClick={() => setAuswahl({ typ: 'schicht', daten: g })} style={{ display: 'flex', gap: 10, alignItems: 'stretch', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '6px 0', cursor: 'pointer', fontFamily: 'inherit', opacity: vergangen ? 0.55 : 1 }}>
+          <span style={{ width: 44, flexShrink: 0, fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)', paddingTop: 1 }}>{zeitIn(new Date(g.s), anzeigeZone)}</span>
+          <span style={{ width: 3, borderRadius: 2, background: SCHICHT_FARBE, flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 12.5, color: '#cbd5e1', fontWeight: 600 }}>{g.ich ? 'Meine Schicht' : g.person} · {g.shift}{g.entwurf ? ' (Entwurf)' : ''}</span>
+            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)' }}>bis {zeitIn(new Date(g.en), anzeigeZone)} · {g.zeilen.join(' · ')}</span>
+          </span>
+        </button>
+      )
+    }
+    const e = it.daten, a = artInfo(e.art)
+    const offen = e.art === 'aufgabe' && !e.fuer_alle ? (e.fuer || []).filter(n => !(e.erledigt_von || []).some(x => normName(x) === normName(n))) : []
+    const ueber = offen.length > 0 && new Date(e.beginn).getTime() < jetzt
+    const fertig = e.art === 'aufgabe' && !e.fuer_alle && (e.fuer || []).length > 0 && offen.length === 0
+    return (
+      <button key={e.id} onClick={() => setAuswahl({ typ: 'eintrag', daten: e })} style={{ display: 'flex', gap: 10, alignItems: 'stretch', width: '100%', textAlign: 'left', background: auswahl?.daten?.id === e.id ? 'rgba(124,58,237,0.10)' : 'transparent', border: 'none', borderRadius: 8, padding: '7px 4px', cursor: 'pointer', fontFamily: 'inherit', opacity: vergangen || fertig ? 0.6 : 1 }}>
+        <span style={{ width: 44, flexShrink: 0, fontFamily: 'monospace', fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)', paddingTop: 1 }}>{zeitIn(e.beginn, anzeigeZone)}</span>
+        <span style={{ width: 3, borderRadius: 2, background: a.farbe, flexShrink: 0 }} />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, textDecoration: fertig ? 'line-through' : 'none' }}>
+            {ueber ? '⏳ ' : ''}{e.folge_von ? '↳ ' : ''}{e.serie_id ? '🔁 ' : ''}{e.titel}
+          </span>
+          <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 }}>
+            {a.label}{e.ende ? ` · bis ${zeitIn(e.ende, anzeigeZone)}` : ''}{e.model_name ? ` · ${e.model_name}` : ''} · {e.fuer_alle ? 'Ganzes Team' : (e.fuer || []).join(', ')}{(e.erledigt_von || []).length && !e.fuer_alle ? ` · ✓${e.erledigt_von.length}/${(e.fuer || []).length}` : ''}
+          </span>
+        </span>
+      </button>
+    )
+  }
+  const tagKopf = (t, extra) => (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 0 4px', borderBottom: '1px solid var(--border)', marginBottom: 2 }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: t === heute ? '#c4b5fd' : 'var(--text-primary)' }}>
+        {t === heute ? 'Heute · ' : t === plusTage(heute, 1) ? 'Morgen · ' : ''}{new Date(t + 'T12:00:00Z').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' })}
+      </span>
+      {extra}
+    </div>
+  )
+  const modelZeilen = (t) => modelAmTag(t).map(m => (
+    <div key={m.key + t} style={{ display: 'flex', gap: 10, padding: '4px 0', fontSize: 11.5, color: '#6ee7b7' }}>
+      <span style={{ width: 44, flexShrink: 0, fontSize: 10.5, color: 'var(--text-muted)' }}>ganztags</span>
+      <span style={{ width: 3, borderRadius: 2, background: MODEL_FARBE, flexShrink: 0 }} />
+      <span>{m.model} · {m.art}: {m.titel}</span>
+    </div>
+  ))
+  const listenAnsicht = (() => {
+    if (treffer) {
+      const kommend = treffer.filter(e => new Date(e.ende || e.beginn).getTime() >= jetzt)
+      const vorbei = treffer.filter(e => new Date(e.ende || e.beginn).getTime() < jetzt).reverse()
+      const gruppiert = (liste) => {
+        const g = []
+        for (const e of liste) { const t = datumInZone(e.beginn, anzeigeZone).tag; let x = g.find(y => y.t === t); if (!x) { x = { t, items: [] }; g.push(x) } x.items.push({ typ: 'eintrag', daten: e }) }
+        return g
+      }
+      return (
+        <div style={{ ...card, padding: mobil ? '4px 12px 12px' : '6px 16px 16px', flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>{treffer.length} Treffer für „{suche.trim()}"{treffer.length ? '' : ' — nichts gefunden (gesucht in Titel, Notiz, Model, Personen)'}</div>
+          {gruppiert(kommend).map(g => <div key={g.t}>{tagKopf(g.t)}{g.items.map(it => zeile(it, false))}</div>)}
+          {vorbei.length > 0 && <div style={{ ...kopfLabel, marginTop: 16 }}>Vergangen</div>}
+          {gruppiert(vorbei).map(g => <div key={'v' + g.t}>{tagKopf(g.t)}{g.items.map(it => zeile(it, true))}</div>)}
+        </div>
+      )
+    }
+    const tageListe = Array.from({ length: listeTage }, (_, i) => plusTage(listeVon, i))
+    const mitInhalt = tageListe.filter(t => (proTag[t] || []).length || modelAmTag(t).length)
+    return (
+      <div style={{ ...card, padding: mobil ? '4px 12px 12px' : '6px 16px 16px', flex: 1, minWidth: 0 }}>
+        {mitInhalt.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '18px 0' }}>Keine Einträge vom {kurzTag(listeVon)} bis {kurzTag(plusTage(listeVon, listeTage - 1))}.</div>}
+        {tageListe.map(t => {
+          const items = proTag[t] || [], ms = modelAmTag(t)
+          if (!items.length && !ms.length && t !== heute) return null
+          return (
+            <div key={t}>
+              {tagKopf(t, <button onClick={() => oeffneNeu(t)} aria-label={`Eintrag am ${kurzTag(t)}`} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>+</button>)}
+              {modelZeilen(t)}
+              {items.map(it => zeile(it, false))}
+              {!items.length && !ms.length && <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 0 6px 54px' }}>Nichts eingetragen.</div>}
+            </div>
+          )
+        })}
+        <button onClick={() => setListeTage(n => n + 21)} style={{ ...btn(false), width: '100%', marginTop: 12 }}>Weitere 3 Wochen laden</button>
+      </div>
+    )
+  })()
+
+  // ── v4.67.0: Monat ────────────────────────────────────────────────────────
+  const monatsAnsicht = (() => {
+    const start = bereich.von
+    const wochen = Math.round((tageZwischen(bereich.von, bereich.bis) + 1) / 7)
+    const monat = monatAnker.slice(0, 7)
+    return (
+      <div style={{ ...card, overflow: 'hidden', flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', borderBottom: '1px solid var(--border)' }}>
+          {TAGE.map(d => <div key={d} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{d}</div>)}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+          {Array.from({ length: wochen * 7 }, (_, i) => {
+            const t = plusTage(start, i)
+            const items = proTag[t] || [], ms = modelAmTag(t)
+            const eintr = items.filter(x => x.typ === 'eintrag')
+            const imMonat = t.slice(0, 7) === monat
+            const istHeute = t === heute
+            return (
+              <div key={t} onClick={() => { if (mobil) { setListeVon(t); setListeTage(21); setAnsicht('liste') } else { setWoche(montagVon(t)); setAnsicht('woche') } }}
+                style={{ minHeight: mobil ? 58 : 104, borderRight: (i % 7) < 6 ? '1px solid var(--border)' : 'none', borderBottom: '1px solid var(--border)', padding: mobil ? '4px 3px' : '5px 6px', cursor: 'pointer', background: istHeute ? 'rgba(124,58,237,0.08)' : 'transparent', opacity: imMonat ? 1 : 0.45, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: istHeute ? 800 : 600, color: istHeute ? '#c4b5fd' : 'var(--text-secondary)', textAlign: mobil ? 'center' : 'left' }}>{Number(t.slice(8))}</div>
+                {mobil ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center', marginTop: 4 }}>
+                    {ms.length > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: MODEL_FARBE }} />}
+                    {eintr.slice(0, 5).map(x => <span key={x.daten.id} style={{ width: 6, height: 6, borderRadius: '50%', background: artInfo(x.daten.art).farbe }} />)}
+                    {eintr.length > 5 && <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>+{eintr.length - 5}</span>}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 3 }}>
+                    {ms.slice(0, 1).map(m => <div key={m.key} style={{ fontSize: 10, color: '#6ee7b7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}: {m.titel}</div>)}
+                    {eintr.slice(0, 3).map(x => {
+                      const e = x.daten
+                      return (
+                        <div key={e.id} onClick={ev => { ev.stopPropagation(); setAuswahl({ typ: 'eintrag', daten: e }) }} title={e.titel}
+                          style={{ fontSize: 10.5, padding: '1px 4px', borderRadius: 4, borderLeft: `2px solid ${artInfo(e.art).farbe}`, background: artInfo(e.art).farbe + '1f', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{zeitIn(e.beginn, anzeigeZone)}</span> {e.titel}
+                        </div>
+                      )
+                    })}
+                    {eintr.length > 3 && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{eintr.length - 3} weitere</div>}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  })()
+
+  // ── v4.67.0: Kopf / Navigation je Ansicht ─────────────────────────────────
+  const blaettern = (richtung) => {
+    if (ansicht === 'monat') setMonatAnker(monatPlus(monatAnker, richtung))
+    else if (ansicht === 'liste') { setListeVon(plusTage(listeVon, richtung * 7)) }
+    else setWoche(plusTage(woche, richtung * 7))
+  }
+  const zuHeute = () => { setWoche(montagVon(heute)); setMobilTag(heute); setMonatAnker(monatErster(heute)); setListeVon(heute); setListeTage(21) }
+  const kopfTitel = treffer ? 'Suche'
+    : ansicht === 'monat' ? monatName(monatAnker, mobil)
+    : ansicht === 'liste' ? (listeVon === heute ? (mobil ? 'Ab heute' : 'Liste · ab heute') : `ab ${TAGE[wochentag(listeVon)]} ${kurzTag(listeVon)}`)
+    : mobil ? `KW ${kw}` : `KW ${kw} · ${kurzTag(woche)} – ${kurzTag(plusTage(woche, 6))}`
+  const ANSICHTEN = [{ key: 'liste', label: 'Liste' }, { key: 'woche', label: mobil ? 'Tag' : 'Woche' }, { key: 'monat', label: 'Monat' }]
+  const umschalter = (
+    <div style={{ display: 'inline-flex', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: 9, padding: 2, flex: mobil ? 1 : 'none' }}>
+      {(mobil ? ANSICHTEN : [ANSICHTEN[1], ANSICHTEN[2], ANSICHTEN[0]]).map(a => (
+        <button key={a.key} onClick={() => { setAnsicht(a.key); if (a.key !== 'liste') { setSuche(''); setSucheOffen(false) } }}
+          style={{ flex: 1, padding: mobil ? '7px 0' : '5px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: 'none', background: ansicht === a.key ? '#7c3aed' : 'transparent', color: ansicht === a.key ? '#fff' : 'var(--text-secondary)' }}>{a.label}</button>
+      ))}
+    </div>
+  )
+  const suchfeld = (
+    <div style={{ position: 'relative', flex: mobil ? 1 : '0 1 280px' }}>
+      <input value={suche} onChange={e => { setSuche(e.target.value); if (ansicht !== 'liste') setAnsicht('liste') }} autoFocus={mobil && sucheOffen}
+        placeholder="Suchen: Titel, Person, Model …" aria-label="Kalender durchsuchen" style={{ ...inp, paddingRight: 30 }} />
+      {suche && <button onClick={() => setSuche('')} aria-label="Suche leeren" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14 }}>✕</button>}
+    </div>
+  )
+  const filterAktiv = !!modelFilter || Object.values(ebenen).some(v => !v) || zoneModus === 'berlin'
+
   // Formular: Vorschlag „wer hat dann Schicht auf dem Model"
   const schichtVorschlag = (zeitpunkt, gewaehlt, uebernehmen) => {
     if (!form || !form.model_name) return null
@@ -1058,41 +1293,59 @@ export default function CalendarTab({ userDisplayName }) {
       {userDisplayName && <ZeitzonenHinweis displayName={userDisplayName} onZone={() => { setZonenStand(n => n + 1); ladePersonen() }} />}
 
       {/* Kopfzeile */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={() => setWoche(plusTage(woche, -7))} style={btn(false)} aria-label="Vorige Woche">‹</button>
-        <button onClick={() => { setWoche(montagVon(heute)); setMobilTag(heute) }} style={btn(false)}>Heute</button>
-        <button onClick={() => setWoche(plusTage(woche, 7))} style={btn(false)} aria-label="Nächste Woche">›</button>
-        <div style={{ fontSize: mobil ? 15 : 17, fontWeight: 700, color: 'var(--text-primary)', marginLeft: 4 }}>KW {kw} · {kurzTag(woche)} – {kurzTag(plusTage(woche, 6))}</div>
-        <div style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-          {!mobil && 'Zeiten in:'}
-          <button onClick={() => setZoneModus('lokal')} style={btn(zoneModus === 'lokal')}>{mobil ? 'meine Zeit' : `meiner Zeit (${ortAus(meineZone())}, ${utcLabel(meineZone())})`}</button>
-          <button onClick={() => setZoneModus('berlin')} style={btn(zoneModus === 'berlin')}>{mobil ? 'DE' : 'deutscher Zeit'}</button>
+      {!mobil ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => blaettern(-1)} style={btn(false)} aria-label="Zurück">‹</button>
+          <button onClick={zuHeute} style={btn(false)}>Heute</button>
+          <button onClick={() => blaettern(1)} style={btn(false)} aria-label="Weiter">›</button>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginLeft: 4 }}>{kopfTitel}</div>
+          <div style={{ flex: 1 }} />
+          {umschalter}
+          {suchfeld}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+            Zeiten in:
+            <button onClick={() => setZoneModus('lokal')} style={btn(zoneModus === 'lokal')}>{`meiner Zeit (${ortAus(meineZone())}, ${utcLabel(meineZone())})`}</button>
+            <button onClick={() => setZoneModus('berlin')} style={btn(zoneModus === 'berlin')}>deutscher Zeit</button>
+          </div>
         </div>
-      </div>
-
-      {/* Mobil: Neuer Eintrag, Ebenen als Leiste, Tag-Auswahl */}
-      {mobil && (
+      ) : (
         <>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => oeffneNeu(mobilTag)} style={{ ...btn(true), padding: '10px 14px', fontSize: 13, flex: 1 }}>+ Neuer Eintrag</button>
-            {modelWahl}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => blaettern(-1)} style={{ ...btn(false), padding: '7px 11px' }} aria-label="Zurück">‹</button>
+            <button onClick={zuHeute} style={{ ...btn(false), padding: '7px 10px' }}>Heute</button>
+            <button onClick={() => blaettern(1)} style={{ ...btn(false), padding: '7px 11px' }} aria-label="Weiter">›</button>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginLeft: 2 }}>{kopfTitel}</div>
+            <button onClick={() => oeffneNeu(ansicht === 'woche' ? mobilTag : ansicht === 'liste' ? (listeVon < heute ? heute : listeVon) : heute)} style={{ ...btn(true), padding: '6px 13px', fontSize: 18, lineHeight: 1 }} aria-label="Neuer Eintrag">+</button>
           </div>
-          {ebenenListe}
-          {offeneGefiltert.length > 0 && <div style={{ ...card, padding: 10 }}>{offenListe}</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
-            {tage.map(t => {
-              const an = t === mobilTag, istHeute = t === heute
-              const anzahl = (bloeckeProTag[t] || []).length + (modelProTag[t] || []).length
-              return (
-                <button key={t} onClick={() => setMobilTag(t)} style={{ padding: '6px 0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', background: an ? '#7c3aed' : 'var(--bg-card)', color: an ? '#fff' : istHeute ? '#c4b5fd' : 'var(--text-secondary)', border: `1px solid ${an ? '#7c3aed' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700 }}>{TAGE[wochentag(t)]}</span>
-                  <span style={{ fontSize: 10 }}>{kurzTag(t).slice(0, 2)}</span>
-                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: anzahl ? (an ? '#fff' : '#a78bfa') : 'transparent' }} />
-                </button>
-              )
-            })}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {umschalter}
+            <button onClick={() => { if (sucheOffen || suche) { setSucheOffen(false); setSuche('') } else { setSucheOffen(true); setAnsicht('liste') } }} style={{ ...btn(sucheOffen || !!suche), padding: '7px 10px' }} aria-label="Suchen">🔍</button>
+            <button onClick={() => setFilterBlatt(true)} style={{ ...btn(filterAktiv), padding: '7px 10px' }} aria-label="Filter und Einstellungen">☰{filterAktiv ? ' •' : ''}</button>
           </div>
+          {(sucheOffen || suche) && suchfeld}
+          {modelFilter && (
+            <button onClick={() => setModelFilter('')} style={{ ...btn(false), alignSelf: 'flex-start', fontSize: 11, color: '#6ee7b7', borderColor: 'rgba(16,185,129,0.4)' }}>Nur {modelFilter} ✕</button>
+          )}
+          {offeneGefiltert.length > 0 && !treffer && (
+            <button onClick={() => setOffenBlatt(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 9, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit', color: '#fbbf24', fontSize: 12.5, fontWeight: 600 }}>
+              ⏳ {offeneGefiltert.length} Aufgabe{offeneGefiltert.length > 1 ? 'n' : ''} überfällig <span style={{ marginLeft: 'auto' }}>›</span>
+            </button>
+          )}
+          {ansicht === 'woche' && !treffer && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
+              {tage.map(t => {
+                const an = t === mobilTag, istHeute = t === heute
+                const anzahl = (bloeckeProTag[t] || []).length + (modelProTag[t] || []).length
+                return (
+                  <button key={t} onClick={() => setMobilTag(t)} style={{ padding: '6px 0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', background: an ? '#7c3aed' : 'var(--bg-card)', color: an ? '#fff' : istHeute ? '#c4b5fd' : 'var(--text-secondary)', border: `1px solid ${an ? '#7c3aed' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>{TAGE[wochentag(t)]}</span>
+                    <span style={{ fontSize: 10 }}>{kurzTag(t).slice(0, 2)}</span>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: anzahl ? (an ? '#fff' : '#a78bfa') : 'transparent' }} />
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </>
       )}
 
@@ -1106,12 +1359,13 @@ export default function CalendarTab({ userDisplayName }) {
             <div><div style={kopfLabel}>Model</div>{modelWahl}</div>
             <div><div style={kopfLabel}>Ebenen</div>{ebenenListe}</div>
             {offenListe}
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>Doppelklick ins Raster legt einen Eintrag an. Einträge lassen sich mit der Maus verschieben.</div>
+            {ansicht === 'woche' && <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>Doppelklick ins Raster legt einen Eintrag an. Einträge lassen sich mit der Maus verschieben.</div>}
+            <KalenderAbo voll />
             {zonenUebersicht}
           </aside>
         )}
 
-        {raster}
+        {treffer || ansicht === 'liste' ? listenAnsicht : ansicht === 'monat' ? monatsAnsicht : raster}
 
         {/* Details rechts (Desktop) */}
         {!mobil && auswahl && (
@@ -1124,7 +1378,47 @@ export default function CalendarTab({ userDisplayName }) {
         )}
       </div>
 
-      {mobil && <div style={{ ...card, padding: 12 }}>{zonenUebersicht}</div>}
+      {/* Mobil: Filter & Einstellungen als Blatt von unten */}
+      {mobil && filterBlatt && (
+        <div onClick={() => setFilterBlatt(false)} style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={e => e.stopPropagation()} style={{ ...card, borderRadius: '16px 16px 0 0', width: '100%', maxHeight: '88vh', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>Anzeige & Filter</div>
+              <button onClick={() => setFilterBlatt(false)} style={{ ...btn(true), padding: '6px 14px' }}>Fertig</button>
+            </div>
+            <div>
+              <div style={kopfLabel}>Zeiten anzeigen in</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setZoneModus('lokal')} style={{ ...btn(zoneModus === 'lokal'), flex: 1 }}>meiner Zeit ({ortAus(meineZone())})</button>
+                <button onClick={() => setZoneModus('berlin')} style={{ ...btn(zoneModus === 'berlin'), flex: 1 }}>deutscher Zeit</button>
+              </div>
+            </div>
+            <div><div style={kopfLabel}>Model</div>{modelWahl}</div>
+            <div><div style={kopfLabel}>Ebenen</div>{ebenenListe}</div>
+            <KalenderAbo voll />
+            {zonenUebersicht}
+          </div>
+        </div>
+      )}
+
+      {/* Mobil: überfällige Aufgaben */}
+      {mobil && offenBlatt && (
+        <div onClick={() => setOffenBlatt(false)} style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={e => e.stopPropagation()} style={{ ...card, borderRadius: '16px 16px 0 0', width: '100%', maxHeight: '80vh', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fbbf24', flex: 1 }}>⏳ Überfällig</div>
+              <button onClick={() => setOffenBlatt(false)} style={btn(false)}>Schließen</button>
+            </div>
+            {offeneGefiltert.map(e => (
+              <button key={e.id} onClick={() => { setOffenBlatt(false); setAuswahl({ typ: 'eintrag', daten: e }) }}
+                style={{ textAlign: 'left', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 9, padding: '9px 11px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)' }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{e.titel}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{seitText(e.beginn)} · offen: {e.offen.join(', ')}{e.model_name ? ` · ${e.model_name}` : ''}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Details mobil: Blatt von unten */}
       {mobil && auswahl && (
