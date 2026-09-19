@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
+import { sendTelegramMessage, zugestellt } from '../telegram' // v4.61.0
 import { ladeInaktiveNamen, ohneInaktive } from '../people'
 import {
   BERLIN, meineZone, wandzeitZuDatum, datumInZone, zeitIn, utcLabel, ortAus, TEAM_ZONEN,
@@ -20,6 +21,15 @@ export const ARTEN = [
 ]
 export const artInfo = (k) => ARTEN.find(a => a.key === k) || ARTEN[0]
 const MODEL_FARBE = '#10b981'
+const SCHICHT_FARBE = '#64748b'
+// v4.61.0: Admins haben keinen Eintrag in chatters_contact — ihre Telegram-IDs
+// (dieselben wie in telegram.js / den Functions).
+const ADMIN_TG = { chris: '1538601588', rey: '528328429' }
+const ERINNERUNGEN = [
+  { min: null, label: 'keine' }, { min: 15, label: '15 Min vorher' }, { min: 30, label: '30 Min vorher' },
+  { min: 60, label: '1 Std vorher' }, { min: 120, label: '2 Std vorher' }, { min: 1440, label: '1 Tag vorher' },
+]
+const SCHICHT_REIHE = ['Vorschicht', 'Früh', 'Spät', 'Nacht']
 const TAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 // Kalendertag-Arithmetik auf "YYYY-MM-DD" (zeitzonenfrei, über 12:00 UTC)
@@ -28,7 +38,7 @@ const wochentag = (tag) => (new Date(tag + 'T12:00:00Z').getUTCDay() + 6) % 7 //
 const montagVon = (tag) => plusTage(tag, -wochentag(tag))
 const kurzTag = (tag) => new Date(tag + 'T12:00:00Z').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
 
-const leer = () => ({ id: null, titel: '', art: 'aufgabe', tag: datumInZone(new Date(), BERLIN).tag, von: '', bis: '', notiz: '', fuer: [], fuer_alle: false })
+const leer = () => ({ id: null, titel: '', art: 'aufgabe', tag: datumInZone(new Date(), BERLIN).tag, von: '', bis: '', notiz: '', fuer: [], fuer_alle: false, erinnern_min: null, telegram: true })
 
 export default function CalendarTab({ userDisplayName }) {
   const [zoneModus, setZoneModus] = useState('lokal') // 'lokal' | 'berlin'
@@ -38,7 +48,8 @@ export default function CalendarTab({ userDisplayName }) {
   const [eintraege, setEintraege] = useState([])
   const [modelSachen, setModelSachen] = useState([])
   const [personen, setPersonen] = useState([])
-  const [ebenen, setEbenen] = useState({ aufgabe: true, event: true, termin: true, erinnerung: true, models: true })
+  const [ebenen, setEbenen] = useState({ aufgabe: true, event: true, termin: true, erinnerung: true, models: true, schichten: true })
+  const [schichten, setSchichten] = useState([]) // v4.61.0: [{beginn, ende, shift, model, chatter, planTag}]
   const [auswahl, setAuswahl] = useState(null)
   const [form, setForm] = useState(null)
   const [speichert, setSpeichert] = useState(false)
@@ -51,12 +62,16 @@ export default function CalendarTab({ userDisplayName }) {
     // großzügig laden (±1 Tag), damit jede Zeitzone ihre Woche vollständig sieht
     const von = wandzeitZuDatum(plusTage(woche, -1), '00:00', 'UTC').toISOString()
     const bis = wandzeitZuDatum(plusTage(woche, 8), '23:59', 'UTC').toISOString()
-    const [k, mc, mb] = await Promise.all([
+    const [k, mc, mb, sc, mo] = await Promise.all([
       supabase.from('team_kalender').select('*').gte('beginn', von).lte('beginn', bis).order('beginn'),
       supabase.from('model_calendar').select('id, model_name, title, description, due_date, due_time, category')
         .in('category', ['termin', 'reise']).gte('due_date', plusTage(woche, -1)).lte('due_date', plusTage(woche, 7)),
       supabase.from('model_board').select('id, model_name, category, title, date, date_from, date_to')
         .in('category', ['reise', 'termine']),
+      // v4.61.0: Dienstplan — nur lesen, der Dienstplan bleibt die einzige Quelle
+      supabase.from('schedule').select('week_start, status, assignments, shift_times')
+        .gte('week_start', plusTage(woche, -7)).lte('week_start', plusTage(woche, 7)),
+      supabase.from('models_contact').select('id, name'),
     ])
     if (k.error) { setFehler(k.error.message.includes('team_kalender') ? 'Die Kalender-Tabelle fehlt noch — bitte das SQL „team-kalender.sql" in Supabase ausführen.' : k.error.message); return }
     setEintraege(k.data || [])
@@ -71,6 +86,26 @@ export default function CalendarTab({ userDisplayName }) {
       ms.push({ key: 'mb' + r.id, model: r.model_name, titel: r.title, von, bis, art: r.category === 'reise' ? 'Reise/Urlaub' : 'Termin' })
     }
     setModelSachen(ms)
+
+    // v4.61.0: Schichten als feste Zeitpunkte (Plan ist in deutscher Zeit)
+    const modelName = Object.fromEntries((mo.data || []).map(m => [String(m.id), m.name]))
+    const sch = []
+    for (const w of sc.data || []) {
+      const zeiten = w.shift_times || {}
+      for (const [key, val] of Object.entries(w.assignments || {})) {
+        if (!val || !val.chatter || val.chatter === '__FREI__') continue
+        const [modelId, planTag, shift] = key.split('__')
+        if (!planTag || planTag < plusTage(woche, -1) || planTag > plusTage(woche, 7)) continue
+        const spanne = String(val.time_override || zeiten[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+        const [a, b] = spanne.split('-').map(x => x && x.trim())
+        if (!a || !/^\d{1,2}:\d{2}$/.test(a)) continue
+        const beginn = wandzeitZuDatum(planTag, a, BERLIN)
+        let ende = b && /^\d{1,2}:\d{2}$/.test(b) ? wandzeitZuDatum(planTag, b, BERLIN) : null
+        if (ende && ende <= beginn) ende = new Date(ende.getTime() + 24 * 3600 * 1000)
+        sch.push({ beginn, ende, shift, model: modelName[modelId] || modelId, chatter: val.chatter + (val.trainee ? ` + ${val.trainee}` : ''), entwurf: w.status !== 'live' })
+      }
+    }
+    setSchichten(sch)
   }, [woche])
 
   useEffect(() => { laden() }, [laden])
@@ -101,6 +136,24 @@ export default function CalendarTab({ userDisplayName }) {
     return m
   }, [eintraege, tage, anzeigeZone, ebenen])
 
+  // v4.61.0: Schichten je Tag, gebündelt nach Schicht + Uhrzeit (in der Anzeige-Zone)
+  const schichtenProTag = useMemo(() => {
+    const m = Object.fromEntries(tage.map(t => [t, []]))
+    if (!ebenen.schichten) return m
+    const gruppen = {}
+    for (const x of schichten) {
+      const t = datumInZone(x.beginn, anzeigeZone).tag
+      if (!m[t]) continue
+      const von = zeitIn(x.beginn, anzeigeZone), bis = x.ende ? zeitIn(x.ende, anzeigeZone) : ''
+      const k = `${t}|${x.shift}|${von}|${bis}`
+      if (!gruppen[k]) { gruppen[k] = { k, tag: t, shift: x.shift, von, bis, sort: x.beginn.getTime(), zeilen: [], entwurf: false }; m[t].push(gruppen[k]) }
+      gruppen[k].zeilen.push(`${x.model}: ${x.chatter}`)
+      if (x.entwurf) gruppen[k].entwurf = true
+    }
+    for (const t of tage) m[t].sort((a, b) => a.sort - b.sort || SCHICHT_REIHE.indexOf(a.shift) - SCHICHT_REIHE.indexOf(b.shift))
+    return m
+  }, [schichten, tage, anzeigeZone, ebenen])
+
   const modelProTag = useMemo(() => {
     const m = Object.fromEntries(tage.map(t => [t, []]))
     if (!ebenen.models) return m
@@ -112,7 +165,7 @@ export default function CalendarTab({ userDisplayName }) {
   const oeffneNeu = (tag) => { setForm({ ...leer(), tag: tag || leer().tag }); setAuswahl(null) }
   const oeffneBearbeiten = (e) => {
     const b = datumInZone(e.beginn, BERLIN)
-    setForm({ id: e.id, titel: e.titel, art: e.art, tag: b.tag, von: b.zeit, bis: e.ende ? zeitIn(e.ende, BERLIN) : '', notiz: e.notiz || '', fuer: e.fuer || [], fuer_alle: !!e.fuer_alle })
+    setForm({ id: e.id, titel: e.titel, art: e.art, tag: b.tag, von: b.zeit, bis: e.ende ? zeitIn(e.ende, BERLIN) : '', notiz: e.notiz || '', fuer: e.fuer || [], fuer_alle: !!e.fuer_alle, erinnern_min: e.erinnern_min ?? null, telegram: false })
     setAuswahl(null)
   }
   const vorschauBeginn = form && form.tag && form.von ? wandzeitZuDatum(form.tag, form.von, BERLIN) : null
@@ -130,7 +183,13 @@ export default function CalendarTab({ userDisplayName }) {
     const zeile = {
       titel: form.titel.trim(), art: form.art, beginn: beginn.toISOString(), ende: ende ? ende.toISOString() : null,
       notiz: form.notiz.trim() || null, fuer: form.fuer_alle ? [] : form.fuer, fuer_alle: form.fuer_alle,
+      erinnern_min: form.erinnern_min ?? null,
       geaendert_am: new Date().toISOString(),
+    }
+    // v4.61.0: Zeit oder Erinnerung geändert → Erinnerung neu scharf schalten
+    if (form.id) {
+      const alt = eintraege.find(x => x.id === form.id)
+      if (!alt || new Date(alt.beginn).getTime() !== beginn.getTime() || (alt.erinnern_min ?? null) !== (form.erinnern_min ?? null)) zeile.erinnerung_gesendet = false
     }
     setSpeichert(true)
     const { error } = form.id
@@ -139,10 +198,46 @@ export default function CalendarTab({ userDisplayName }) {
     setSpeichert(false)
     if (error) { alert('⚠ Nicht gespeichert: ' + error.message); return }
     logActivity(form.id ? 'kalender.edit' : 'kalender.neu', { entity: zeile.titel, detail: `${form.tag} ${form.von} (DE)` })
+    if (form.telegram) {
+      const r = await benachrichtigen({ ...zeile, beginn }, !!form.id)
+      if (r.fehlt.length || r.fehler.length) {
+        alert(`Gespeichert. Telegram an ${r.ok.length} ${r.ok.length === 1 ? 'Person' : 'Personen'} geschickt.` +
+          (r.fehlt.length ? `\n\nOhne Telegram-ID: ${r.fehlt.join(', ')}` : '') +
+          (r.fehler.length ? `\n\nNICHT angekommen: ${r.fehler.join(', ')}` : ''))
+      }
+    }
     setForm(null)
     // Woche des Eintrags anzeigen
     setWoche(montagVon(datumInZone(beginn, anzeigeZone).tag))
     laden()
+  }
+
+  // v4.61.0: Telegram an die Empfänger — Uhrzeit in IHRER Zeit, sofern das
+  // Portal ihre Zeitzone schon kennt (online_status.zeitzone), sonst deutsche Zeit.
+  const benachrichtigen = async (e, geaendert) => {
+    const namen = e.fuer_alle ? personen : (e.fuer || [])
+    const [kc, os] = await Promise.all([
+      supabase.from('chatters_contact').select('name, telegram_id').in('name', namen),
+      supabase.from('online_status').select('display_name, zeitzone').in('display_name', namen),
+    ])
+    const tg = Object.fromEntries((kc.data || []).filter(x => x.telegram_id).map(x => [x.name, x.telegram_id]))
+    const zonen = Object.fromEntries((os.data || []).filter(x => x.zeitzone).map(x => [x.display_name, x.zeitzone]))
+    const ok = [], fehlt = [], fehler = []
+    const a = artInfo(e.art)
+    for (const n of namen) {
+      if (n === userDisplayName) continue // sich selbst nicht anschreiben
+      const id = tg[n] || ADMIN_TG[String(n).trim().toLowerCase()]
+      if (!id) { fehlt.push(n); continue }
+      const zone = zonen[n] || BERLIN
+      const b = new Date(e.beginn)
+      const wann = `${b.toLocaleDateString('de-DE', { timeZone: zone, weekday: 'long', day: '2-digit', month: '2-digit' })}, ${zeitIn(b, zone)} Uhr`
+      const zusatz = zone === BERLIN ? ' (deutsche Zeit)' : ` (deine Zeit · DE ${zeitIn(b, BERLIN)})`
+      const text = `🗓 <b>${geaendert ? 'Geändert im Kalender' : 'Neu im Kalender'}</b>${userDisplayName ? ` · von ${userDisplayName}` : ''}\n\n` +
+        `<b>${e.titel}</b>\n${a.label} · ${wann}${zusatz}${e.notiz ? `\n\n${e.notiz}` : ''}\n\n– Thirteen 87`
+      const res = await sendTelegramMessage(id, text)
+      if (zugestellt(res)) ok.push(n); else fehler.push(n)
+    }
+    return { ok, fehlt, fehler }
   }
 
   const loeschen = async (e) => {
@@ -179,7 +274,7 @@ export default function CalendarTab({ userDisplayName }) {
 
       {/* Ebenen */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {[...ARTEN.map(a => ({ key: a.key, label: a.label, farbe: a.farbe })), { key: 'models', label: 'Models: Termine & Urlaub', farbe: MODEL_FARBE }].map(e => (
+        {[...ARTEN.map(a => ({ key: a.key, label: a.label, farbe: a.farbe })), { key: 'models', label: 'Models: Termine & Urlaub', farbe: MODEL_FARBE }, { key: 'schichten', label: 'Schichten (Dienstplan)', farbe: SCHICHT_FARBE }].map(e => (
           <button key={e.key} onClick={() => setEbenen(p => ({ ...p, [e.key]: !p[e.key] }))}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: ebenen[e.key] ? 'rgba(255,255,255,0.04)' : 'transparent', color: ebenen[e.key] ? 'var(--text-primary)' : 'var(--text-muted)', border: `1px solid ${ebenen[e.key] ? '#2e2e5a' : 'var(--border)'}`, opacity: ebenen[e.key] ? 1 : 0.6 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: e.farbe }} />{e.label}
@@ -203,6 +298,16 @@ export default function CalendarTab({ userDisplayName }) {
                 <div key={s.key + t} title={`${s.model} · ${s.art}: ${s.titel}`} style={{ fontSize: 10.5, padding: '3px 6px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', color: '#6ee7b7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {s.model} · {s.art}: {s.titel}
                 </div>
+              ))}
+              {schichtenProTag[t].map(g => (
+                <details key={g.k} style={{ fontSize: 10.5, borderRadius: 5, background: 'rgba(100,116,139,0.12)', border: `1px ${g.entwurf ? 'dashed' : 'solid'} rgba(100,116,139,0.35)` }}>
+                  <summary style={{ cursor: 'pointer', padding: '3px 6px', color: '#cbd5e1', listStyle: 'none' }}>
+                    <b>{g.shift}</b> {g.von}{g.bis ? '–' + g.bis : ''} · {g.zeilen.length}{g.entwurf ? ' · Entwurf' : ''}
+                  </summary>
+                  <div style={{ padding: '2px 6px 5px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                    {g.zeilen.map((z, i) => <div key={i}>{z}</div>)}
+                  </div>
+                </details>
               ))}
               {proTag[t].map(e => {
                 const a = artInfo(e.art)
@@ -232,6 +337,7 @@ export default function CalendarTab({ userDisplayName }) {
               {auswahl.notiz && <div style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{auswahl.notiz}</div>}
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Für: {auswahl.fuer_alle ? 'Ganzes Team' : (auswahl.fuer || []).join(', ')}</div>
               {(auswahl.erledigt_von || []).length > 0 && <div style={{ fontSize: 12, color: '#10b981' }}>✓ erledigt von {(auswahl.erledigt_von || []).join(', ')}</div>}
+              {auswahl.erinnern_min ? <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>⏰ Erinnerung {ERINNERUNGEN.find(r => r.min === auswahl.erinnern_min)?.label || `${auswahl.erinnern_min} Min vorher`}{auswahl.erinnerung_gesendet ? ' · verschickt' : ''}</div> : null}
               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>angelegt von {auswahl.erstellt_von || '—'}</div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => oeffneBearbeiten(auswahl)} style={btn(false)}>Bearbeiten</button>
@@ -275,6 +381,18 @@ export default function CalendarTab({ userDisplayName }) {
                   </div>
                 )}
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
+                <label><span style={lbl}>Erinnerung per Telegram</span>
+                  <select value={form.erinnern_min ?? ''} onChange={e => setForm({ ...form, erinnern_min: e.target.value === '' ? null : Number(e.target.value) })} style={inp}>
+                    {ERINNERUNGEN.map(r => <option key={r.label} value={r.min ?? ''}>{r.label}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-primary)', paddingBottom: 8 }}>
+                  <input type="checkbox" checked={!!form.telegram} onChange={e => setForm({ ...form, telegram: e.target.checked })} style={{ accentColor: '#7c3aed' }} />
+                  {form.id ? 'Änderung per Telegram melden' : 'Jetzt per Telegram benachrichtigen'}
+                </label>
+              </div>
+              {form.fuer_alle && (form.telegram || form.erinnern_min) && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -6 }}>Bei „Ganzes Team" geht Telegram an alle aktiven Chatter und das Team.</div>}
               <label><span style={lbl}>Notiz</span><textarea value={form.notiz} onChange={e => setForm({ ...form, notiz: e.target.value })} rows={3} style={{ ...inp, resize: 'vertical' }} /></label>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setForm(null)} disabled={speichert} style={btn(false)}>Abbrechen</button>

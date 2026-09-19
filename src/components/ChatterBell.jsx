@@ -3,6 +3,7 @@ import { Bell, ChevronDown } from 'lucide-react'
 import { supabase } from '../supabase'
 import { useFabOpen } from '../fabPanel'
 import { heuteBerlin } from '../utils' // v4.57.0
+import { meineZone, zeitIn } from '../zeit' // v4.61.0
 
 /**
  * ChatterBell v3.96.0 — Benachrichtigungs-Glocke für das Chatter-Portal.
@@ -74,11 +75,12 @@ const CHIPS = [
   { key: 'shifts', label: 'Schichten' },
   { key: 'todos', label: 'Aufgaben' },
   { key: 'team', label: 'Team' },
+  { key: 'kalender', label: 'Kalender' },
 ]
 // Welcher Filter-Chip deckt welche Meldungsart ab
 const CHIP_OF = {
   offer: 'shifts', schedule: 'shifts', soon: 'shifts',
-  todo: 'todos', announcement: 'team',
+  todo: 'todos', announcement: 'team', kalender: 'kalender',
 }
 
 export default function ChatterBell({
@@ -95,6 +97,7 @@ export default function ChatterBell({
   const [filter, setFilter] = useState('all')
   const [offers, setOffers] = useState([])
   const [schedules, setSchedules] = useState([])
+  const [kalender, setKalender] = useState([]) // v4.61.0
   const [busy, setBusy] = useState(false)
   const [lastSeen, setLastSeen] = useState(() => {
     try {
@@ -163,10 +166,22 @@ export default function ChatterBell({
     setSchedules(data || [])
   }, [])
 
+  // v4.61.0: neu eingetragene Team-Kalender-Einträge für mich (DB liefert nur meine)
+  const loadKalender = useCallback(async () => {
+    if (!displayName) return
+    const seit = new Date(Date.now() - 14 * 86400000).toISOString()
+    const { data, error } = await supabase.from('team_kalender').select('*')
+      .gte('erstellt_am', seit).gte('beginn', new Date(Date.now() - 12 * 3600000).toISOString())
+      .order('erstellt_am', { ascending: false }).limit(30)
+    if (error) { setKalender([]); return }
+    const ich = normName(displayName)
+    setKalender((data || []).filter(e => e.fuer_alle || (e.fuer || []).some(n => normName(n) === ich)))
+  }, [displayName])
+
   useEffect(() => {
     if (!displayName) return
-    loadOffers(); loadSchedules()
-    const t = setInterval(() => { loadOffers(); loadSchedules() }, 60000)
+    loadOffers(); loadSchedules(); loadKalender()
+    const t = setInterval(() => { loadOffers(); loadSchedules(); loadKalender() }, 60000)
     return () => clearInterval(t)
   }, [displayName, loadOffers, loadSchedules])
 
@@ -279,6 +294,19 @@ export default function ChatterBell({
       icon: a.emoji || '📌', tone: '#7c3aed',
       title: `Neue Ankündigung${a.created_by ? ` von ${a.created_by}` : ''}`,
       body: a.text,
+    })
+  }
+
+  // 6) v4.61.0: Neu im Team-Kalender
+  for (const e of kalender) {
+    const beginn = new Date(e.beginn)
+    const tag = beginn.toLocaleDateString('de-DE', { timeZone: meineZone(), weekday: 'short', day: '2-digit', month: '2-digit' })
+    items.push({
+      id: `kal-${e.id}`, kind: 'kalender', ts: e.erstellt_am,
+      icon: '🗓', tone: '#8b5cf6',
+      title: `Neu im Kalender${e.erstellt_von ? ` von ${e.erstellt_von}` : ''}`,
+      body: `${e.titel}\n${tag}, ${zeitIn(beginn, meineZone())} Uhr (deine Zeit)`,
+      action: { label: 'Im Kalender ansehen', tone: '#7c3aed', run: () => { onNavigate?.('heute', 'kalender'); setOpen(false) } },
     })
   }
 

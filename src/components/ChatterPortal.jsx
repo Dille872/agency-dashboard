@@ -976,6 +976,18 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
   }
 
+  // v4.61.0: eigene Zeitzone einmal ablegen — damit Telegram-Nachrichten aus dem
+  // Team-Kalender die Uhrzeit in MEINER Zeit nennen. Eigener Aufruf, nicht im
+  // Heartbeat: fehlt die Spalte noch, darf der Heartbeat nicht mitscheitern.
+  useEffect(() => {
+    if (isPreview || !displayName) return
+    let zone = null
+    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone } catch {}
+    if (!zone) return
+    supabase.from('online_status').update({ zeitzone: zone }).eq('display_name', displayName)
+      .then(({ error }) => { if (error) console.info('zeitzone nicht gespeichert:', error.message) })
+  }, [displayName, isPreview])
+
   const sendHeartbeat = async (shiftOnline) => {
     if (isPreview || !displayName) return // v4.52.0: Vorschau meldet niemanden online
     await supabase.from('online_status').upsert({

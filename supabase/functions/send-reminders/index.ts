@@ -86,6 +86,50 @@ serve(async (_req) => {
       }
     }
 
+    // 3. v4.61.0: Team-Kalender — Erinnerung X Minuten vor Beginn
+    //    Empfänger: namentlich eingetragene Personen, bei „Ganzes Team" alle
+    //    aktiven Chatter + das Team. Uhrzeit in der Zeit des Empfängers, wenn
+    //    das Portal sie kennt (online_status.zeitzone), sonst deutsche Zeit.
+    const ADMIN_TG: Record<string, string> = { chris: '1538601588', rey: '528328429' }
+    const { data: kal, error: kalErr } = await supabase.from('team_kalender').select('*')
+      .eq('erinnerung_gesendet', false).not('erinnern_min', 'is', null)
+      .gte('beginn', new Date(now.getTime() - 30 * 60000).toISOString())
+      .lte('beginn', new Date(now.getTime() + 25 * 3600000).toISOString())
+    if (kalErr) console.error('team_kalender:', kalErr.message)
+    for (const e of kal || []) {
+      const beginn = new Date(e.beginn)
+      if (now.getTime() < beginn.getTime() - e.erinnern_min * 60000) continue
+      let namen: string[] = e.fuer || []
+      if (e.fuer_alle) {
+        const { data: ch } = await supabase.from('chatters_contact').select('name, active')
+        const { data: ur } = await supabase.from('user_roles').select('display_name, status')
+        const gesperrt = new Set((ur || []).filter((u: any) => u.status === 'suspended' || u.status === 'offboarded').map((u: any) => String(u.display_name).toLowerCase()))
+        namen = (ch || []).filter((c: any) => c.active !== false && !gesperrt.has(String(c.name).toLowerCase())).map((c: any) => c.name)
+        namen.push('Chris', 'Rey')
+      }
+      const { data: kc } = await supabase.from('chatters_contact').select('name, telegram_id').in('name', namen)
+      const { data: os } = await supabase.from('online_status').select('display_name, zeitzone').in('display_name', namen)
+      const tg: Record<string, string> = {}
+      for (const k of kc || []) if (k.telegram_id) tg[k.name] = k.telegram_id
+      const zonen: Record<string, string> = {}
+      for (const o of os || []) if (o.zeitzone) zonen[o.display_name] = o.zeitzone
+      const art = ({ aufgabe: 'Aufgabe', event: 'Event', termin: 'Team-Termin', erinnerung: 'Erinnerung' } as Record<string, string>)[e.art] || 'Termin'
+      const minuten = Math.max(0, Math.round((beginn.getTime() - now.getTime()) / 60000))
+      for (const n of [...new Set(namen)]) {
+        const id = tg[n] || ADMIN_TG[String(n).trim().toLowerCase()]
+        if (!id) continue
+        const zone = zonen[n] || 'Europe/Berlin'
+        const uhr = beginn.toLocaleTimeString('de-DE', { timeZone: zone, hour: '2-digit', minute: '2-digit' })
+        const de = beginn.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' })
+        const zusatz = zone === 'Europe/Berlin' ? ' (deutsche Zeit)' : ` (deine Zeit · DE ${de})`
+        const msg = `⏰ <b>Gleich: ${esc(e.titel)}</b>\n\n${art} · ${minuten > 0 ? `in ${minuten} Min, ` : 'jetzt, '}${uhr} Uhr${zusatz}${e.notiz ? `\n\n${esc(e.notiz)}` : ''}\n\n– Thirteen 87`
+        await sendTelegram(id, msg)
+      }
+      // Einmal pro Eintrag — auch wenn einzelne Empfänger scheitern (sonst
+      // bekämen die anderen die Erinnerung bei jedem Lauf erneut).
+      await supabase.from('team_kalender').update({ erinnerung_gesendet: true }).eq('id', e.id)
+    }
+
     return new Response(JSON.stringify({ ok: true }), { status: 200 })
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
