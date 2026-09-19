@@ -226,19 +226,26 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
     if (!swapShift) return
     setSending(true)
     const parts = swapShift.split('__')
-    await supabase.from('shift_swaps').insert({
-      requester_name: displayName,
-      shift_date: parts[0],
-      shift: parts[1],
-      model_name: parts[2] || '?',
-      reason: swapReason || null,
-      status: 'offen',
-    })
-    setSwapShift('')
-    setSwapReason('')
-    await loadMySwaps()
-    setSending(false)
-    alert('✓ Tausch-Anfrage gesendet!')
+    try {
+      const { error } = await supabase.from('shift_swaps').insert({
+        requester_name: displayName,
+        shift_date: parts[0],
+        shift: parts[1],
+        model_name: parts[2] || '?',
+        reason: swapReason || null,
+        status: 'offen',
+      })
+      // v4.53.0: vorher immer „✓ gesendet", auch wenn nichts gespeichert war
+      if (error) { alert('⚠ Tausch-Anfrage NICHT gesendet: ' + error.message); return }
+      setSwapShift('')
+      setSwapReason('')
+      await loadMySwaps()
+      alert('✓ Tausch-Anfrage gesendet!')
+    } catch (e) {
+      alert('⚠ Tausch-Anfrage NICHT gesendet: ' + (e?.message || e))
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -250,7 +257,9 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
           {myNext7Shifts.map((s, i) => {
             const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
             const modelName = s.models[0]?.modelName || '?'
-            const val = `${s.dayIso}__${s.shift}__${modelName}`
+            // v4.53.0: Berliner Plandatum — dayIso ist der LOKALE Tag des Chatters und
+            // weicht bei Nachtschichten außerhalb Europas ab (falsche Zelle im Plan).
+            const val = `${s.berlinDate || s.dayIso}__${s.shift}__${modelName}`
             return <option key={i} value={val}>{dayLabel} · {s.shift} · {modelName}</option>
           })}
         </select>
@@ -1245,7 +1254,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         if (error && felder.handover_text) {
           console.warn('Übergabe konnte nicht gespeichert werden:', error.message)
           await supabase.from('shift_logs').update({ checked_out_at: jetzt }).eq('id', currentLogId)
-          alert('⚠️ Die Schicht wurde beendet, aber die Übergabe konnte nicht gespeichert werden.\nBitte gib sie einem Admin durch.')
+          // v4.53.0: Text mitgeben — das Feld wird gleich geleert
+          alert('⚠️ Die Schicht wurde beendet, aber die Übergabe konnte nicht gespeichert werden.\n\nBitte kopiere deinen Text und gib ihn Chris oder Rey durch:\n\n' + text.trim())
         } else if (felder.handover_text) {
           // v4.45.0: Model-Bezug in einem EIGENEN Aufruf, aus demselben Grund wie
           // seinerzeit `handover_for`: läge die neue Spalte im selben PATCH und
@@ -1554,7 +1564,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   const saveTodoNote = async (todo) => {
     const note = (todoNoteDrafts[todo.id] ?? '').trim()
-    await supabase.from('todos').update({ assignee_note: note || null }).eq('id', todo.id)
+    const { error } = await supabase.from('todos').update({ assignee_note: note || null }).eq('id', todo.id)
+    // v4.53.0: Entwurf behalten und kein Telegram, wenn nicht gespeichert
+    if (error) { alert('⚠ Rückmeldung NICHT gespeichert: ' + error.message); return }
     // v3.39.0: Team benachrichtigen, wenn eine Rückmeldung hinterlassen wird
     if (note) {
       try { await notifyAdmins(`💬 <b>${displayName}</b> – Rückmeldung zu „${todo.title}":\n\n${note}`) } catch (err) { console.error('Telegram-Fehler:', err) }
@@ -1838,11 +1850,16 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     // Extract model names assigned to this chatter
     const todayIso = isoDate(new Date())
     const assignedNames = new Set()
+    // v4.53.0: wie überall sonst normalisiert vergleichen und Co/Trainee/zweite
+    // Hälfte einer geteilten Schicht mitzählen. Vorher exakt `val.chatter ===
+    // displayName` — „anna" ≠ „Anna", und wer als Co eingeteilt war, sah keine Boards.
+    const ichLc = (displayName || '').trim().toLowerCase()
     for (const sched of data || []) {
       for (const [key, val] of Object.entries(sched.assignments || {})) {
-        if (val.chatter === displayName) {
-          assignedNames.add(key.split('__')[0])
-        }
+        if (!val || val.chatter === '__FREI__') continue
+        const haupt = (val.chatter || '').trim().toLowerCase() === ichLc
+        const zweit = (val.trainee || '').trim().toLowerCase() === ichLc
+        if (ichLc && (haupt || zweit)) assignedNames.add(key.split('__')[0])
       }
     }
     // Also get model names from models_contact
@@ -1851,6 +1868,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     for (const m of modelsData || []) modelNameMap[String(m.id)] = m.name
     const resolvedNames = [...assignedNames].map(id => modelNameMap[id] || id).filter(Boolean)
     if (resolvedNames.length > 0) loadAssignedModelData(resolvedNames)
+    else setAssignedModelBoards({}) // v4.53.0: keine Boards vom zuvor angesehenen Chatter stehen lassen
     loadCustomerHistory(resolvedNames) // v3.58.0: Historie nur für zugeteilte Models (wie Boards)
   }
 
@@ -1882,25 +1900,33 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     // newAbsenceShifts = Schichten, an denen man WEG ist.
     // Gespeichert wird die Verfügbarkeit = alle Schichten außer den abwesenden.
     const avail = newAbsenceShifts.length ? SHIFTS.filter(s => !newAbsenceShifts.includes(s)) : null
-    await supabase.from('absences').insert({
-      chatter_name: displayName,
-      date_from: newAbsenceDate,
-      date_to: dateTo,
-      reason: newAbsenceReason || 'Nicht verfügbar',
-      available_shifts: (avail && avail.length) ? avail : null,
-      source: 'chatter',
-    })
-    setNewAbsenceDate('')
-    setNewAbsenceDateTo('')
-    setNewAbsenceReason('')
-    setNewAbsenceShifts([])
-    await loadMyAbsences()
-    setAbsentLoading(false)
-    alert('✓ Abwesenheit eingetragen!')
+    try {
+      const { error } = await supabase.from('absences').insert({
+        chatter_name: displayName,
+        date_from: newAbsenceDate,
+        date_to: dateTo,
+        reason: newAbsenceReason || 'Nicht verfügbar',
+        available_shifts: (avail && avail.length) ? avail : null,
+        source: 'chatter',
+      })
+      // v4.53.0: Formular stehen lassen, sonst glaubt der Chatter, er sei frei
+      if (error) { alert('⚠ Abwesenheit NICHT gespeichert: ' + error.message + '\n\nBitte nochmal versuchen oder dem Team Bescheid geben.'); return }
+      setNewAbsenceDate('')
+      setNewAbsenceDateTo('')
+      setNewAbsenceReason('')
+      setNewAbsenceShifts([])
+      await loadMyAbsences()
+      alert('✓ Abwesenheit eingetragen!')
+    } catch (e) {
+      alert('⚠ Abwesenheit NICHT gespeichert: ' + (e?.message || e))
+    } finally {
+      setAbsentLoading(false)
+    }
   }
 
   const deleteAbsence = async (id) => {
-    await supabase.from('absences').delete().eq('id', id)
+    const { error } = await supabase.from('absences').delete().eq('id', id)
+    if (error) alert('⚠ Abwesenheit NICHT gelöscht: ' + error.message)
     loadMyAbsences()
   }
 
