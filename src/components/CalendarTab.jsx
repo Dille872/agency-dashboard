@@ -50,6 +50,7 @@ export default function CalendarTab({ userDisplayName }) {
   const [modelSachen, setModelSachen] = useState([])
   const [personen, setPersonen] = useState([])
   const [teamNamen, setTeamNamen] = useState([]) // v4.62.0: Admins/Manager/Dienstplan/Creator-Manager
+  const [zonenListe, setZonenListe] = useState([]) // v4.63.0: [{name, zone, bestaetigt}]
   const [ebenen, setEbenen] = useState({ aufgabe: true, event: true, termin: true, erinnerung: true, models: true, schichten: true })
   const [schichten, setSchichten] = useState([]) // v4.61.0: [{beginn, ende, shift, model, chatter, planTag}]
   const [auswahl, setAuswahl] = useState(null)
@@ -131,6 +132,10 @@ export default function CalendarTab({ userDisplayName }) {
         .filter(x => [...(x.roles || []), x.role].some(r => ['admin', 'manager', 'dienstplan', 'creator_manager'].includes(r)))
         .map(x => x.display_name).filter(Boolean)
       setTeamNamen(team)
+      const alle = [...new Set([...team, ...chatter])]
+      const { data: oz } = await supabase.from('online_status').select('display_name, zeitzone, zeitzone_bestaetigt').in('display_name', alle)
+      const map = Object.fromEntries((oz || []).map(o => [o.display_name, o]))
+      setZonenListe(alle.sort((a, b) => a.localeCompare(b, 'de')).map(n => ({ name: n, zone: map[n]?.zeitzone || null, bestaetigt: !!map[n]?.zeitzone_bestaetigt })))
       setPersonen([...new Set([...team, ...chatter])].sort((a, b) => a.localeCompare(b, 'de')))
     })()
   }, [])
@@ -338,6 +343,21 @@ export default function CalendarTab({ userDisplayName }) {
           )
         })}
       </div>
+
+      {/* v4.63.0: Zeitzonen im Team (nur Übersicht — ändern kann jeder selbst im Portal) */}
+      <details style={{ ...card, padding: '8px 12px' }}>
+        <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>🕒 Zeitzonen im Team ({zonenListe.filter(z => z.bestaetigt).length} bestätigt · {zonenListe.filter(z => !z.zone).length} unbekannt)</summary>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '4px 16px', marginTop: 8 }}>
+          {zonenListe.map(z => (
+            <div key={z.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ color: 'var(--text-primary)' }}>{z.name}</span>
+              <span style={{ color: z.zone ? (z.bestaetigt ? '#10b981' : 'var(--text-secondary)') : 'var(--text-muted)' }}>
+                {z.zone ? `${ortAus(z.zone)} · ${utcLabel(z.zone)}${z.bestaetigt ? ' ✓' : ' (erkannt)'}` : 'unbekannt → DE-Zeit'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </details>
 
       {/* Detail */}
       {auswahl && (() => {

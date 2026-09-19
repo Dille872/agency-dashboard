@@ -6,9 +6,22 @@
 
 export const BERLIN = 'Europe/Berlin'
 
-// Zeitzone dieses Browsers, z. B. "Asia/Bangkok"
-export const meineZone = () => {
+// Zeitzone laut Geräte-Uhr (Browser liest sie vom Betriebssystem, NICHT aus
+// der IP — ein VPN ändert daran nichts), z. B. "Asia/Bangkok"
+export const geraeteZone = () => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || BERLIN } catch { return BERLIN }
+}
+
+// v4.63.0: bewusst gewählte Zone (Portal „Meine Zeitzone") hat Vorrang vor
+// der Geräte-Uhr. Gesetzt vom ZeitzonenHinweis.
+let gewaehlteZone = null
+export const setzeMeineZone = (zone) => { gewaehlteZone = zone || null }
+export const meineZone = () => gewaehlteZone || geraeteZone()
+
+// Alle Zonen für die Auswahl (moderne Browser), sonst eine kurze Liste
+export const alleZonen = () => {
+  try { if (Intl.supportedValuesOf) return Intl.supportedValuesOf('timeZone') } catch {}
+  return ['Europe/Berlin', 'Asia/Nicosia', 'Asia/Bangkok', 'America/Argentina/Buenos_Aires', 'Europe/London', 'America/New_York', 'Asia/Dubai', 'Asia/Manila']
 }
 
 // Versatz einer Zone zu UTC in Minuten an einem bestimmten Zeitpunkt

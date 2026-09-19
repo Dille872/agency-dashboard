@@ -9,6 +9,7 @@ import ChatterBell from './ChatterBell'
 import ChatterChat from './ChatterChat'
 import MessageSuggestions from './MessageSuggestions'
 import MeinKalender from './MeinKalender' // v4.60.0
+import ZeitzonenHinweis from './ZeitzonenHinweis' // v4.63.0
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
 import { useTodoMeldung } from '../todoMeldung'
@@ -976,17 +977,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     }
   }
 
-  // v4.61.0: eigene Zeitzone einmal ablegen — damit Telegram-Nachrichten aus dem
-  // Team-Kalender die Uhrzeit in MEINER Zeit nennen. Eigener Aufruf, nicht im
-  // Heartbeat: fehlt die Spalte noch, darf der Heartbeat nicht mitscheitern.
-  useEffect(() => {
-    if (isPreview || !displayName) return
-    let zone = null
-    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone } catch {}
-    if (!zone) return
-    supabase.from('online_status').update({ zeitzone: zone }).eq('display_name', displayName)
-      .then(({ error }) => { if (error) console.info('zeitzone nicht gespeichert:', error.message) })
-  }, [displayName, isPreview])
+  // v4.63.0: Zeitzone wird jetzt vom ZeitzonenHinweis verwaltet (Bestätigung/Auswahl).
+  // Zähler nur, damit Kalender & Glocke nach einer Änderung neu rendern.
+  const [, setZonenStand] = useState(0)
 
   const sendHeartbeat = async (shiftOnline) => {
     if (isPreview || !displayName) return // v4.52.0: Vorschau meldet niemanden online
@@ -2296,6 +2289,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       </header>
 
       <main style={{ padding: '16px 20px', maxWidth: 1200, margin: '0 auto' }}>
+        {/* v4.63.0: Zeitzone bestätigen / Abweichung Gerät ↔ eingestellt */}
+        {!isPreview && displayName && <ZeitzonenHinweis displayName={displayName} onZone={() => setZonenStand(n => n + 1)} />}
         {/* v4.52.0: klar machen, wessen Portal das gerade ist */}
         {isPreview && displayName && (
           <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', color: '#06b6d4', fontSize: 12, fontWeight: 600 }}>
