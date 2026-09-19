@@ -75,6 +75,10 @@ export default function App() {
   const userRoleRef = useRef(null)
   useEffect(() => { userDisplayNameRef.current = userDisplayName }, [userDisplayName])
   useEffect(() => { userRoleRef.current = userRole }, [userRole])
+  // v4.52.0: Im eigenen Chatter-Portal meldet das Portal selbst den Schicht-
+  // Status. Der Admin-Heartbeat hier würde ihn sonst alle 30 s auf false setzen.
+  const viewModeRef = useRef('auto')
+  useEffect(() => { viewModeRef.current = viewMode }, [viewMode])
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -121,11 +125,14 @@ export default function App() {
       // v3.89.0: Chatter NICHT hier upserten – deren shift_online verwaltet der
       // ChatterPortal-Check-in. Sonst überschreibt dieser Heartbeat den Check-in
       // alle 30s auf false → shift-alert hält jeden für "nicht eingecheckt".
-      if (session?.user && userDisplayNameRef.current && userRoleRef.current !== 'chatter') {
+      if (session?.user && userDisplayNameRef.current && userRoleRef.current !== 'chatter' && viewModeRef.current !== 'mein-chatter') {
         supabase.from('online_status').upsert({
           display_name: userDisplayNameRef.current,
           last_seen: new Date().toISOString(),
-          shift_online: false,
+          // v4.52.0: shift_online NICHT mehr mitsenden. Ein Admin, der im eigenen
+          // Portal eingecheckt hat und zurück ins Dashboard wechselt, wäre sonst
+          // nach 30 s wieder „nicht eingecheckt" (Schicht-Alarm!). Beim Upsert
+          // bleibt eine nicht genannte Spalte unverändert.
         }, { onConflict: 'display_name' }).then(() => {})
       }
     }, 30000)
@@ -463,7 +470,7 @@ export default function App() {
   const SNAPSHOT_TABS = ['models', 'chatters', 'briefing', 'performance']
 
   // Role permissions
-  const showChatterPortal = userRole !== null && ((userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter')
+  const showChatterPortal = userRole !== null && ((userRole === 'chatter' && viewMode !== 'admin') || viewMode === 'chatter' || viewMode === 'mein-chatter')
   const showModelPortal = userRole !== null && ((userRole === 'model' && viewMode !== 'admin') || viewMode === 'model')
   const isAdmin = userRole === 'admin'
   const isManager = userRole === 'admin' || userRole === 'manager'
@@ -492,13 +499,22 @@ export default function App() {
     />
   )
 
+  // v4.52.0: Admins/Manager haben zwei Chatter-Ansichten:
+  //   'chatter'      = Vorschau eines anderen Chatters (schreibt nichts automatisch)
+  //   'mein-chatter' = das EIGENE Portal, wie ein Chatter es sieht
+  // key erzwingt einen frischen Aufbau beim Umschalten, damit kein Zustand
+  // (Check-in, Intervalle) von der einen in die andere Ansicht rutscht.
+  const eigenesPortal = viewMode === 'mein-chatter'
   if (showChatterPortal) return (
     <ChatterPortal
+      key={eigenesPortal ? 'mein' : (isManager ? 'vorschau' : 'chatter')}
       session={session}
       displayName={userDisplayName}
       onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
       isSocialMedia={isSocialMedia}
-      isPreview={isAdmin || isManager}
+      isPreview={(isAdmin || isManager) && !eigenesPortal}
+      onSwitchToOwn={isManager ? () => setViewMode('mein-chatter') : null}
+      onSwitchToPreview={isManager ? () => setViewMode('chatter') : null}
     />
   )
 
@@ -694,6 +710,16 @@ export default function App() {
             <Eye size={13} />
             <span className="hide-mobile">Chatter</span>
           </button>
+          {isManager && (
+            <button onClick={() => setViewMode('mein-chatter')} title="Dein eigenes Chatter-Portal (Schichten, Check-in, Vorschläge)" style={{
+              fontSize: 12, padding: '6px 10px', borderRadius: 6,
+              background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
+              color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              👤 <span className="hide-mobile">Mein Portal</span>
+            </button>
+          )}
           <button onClick={() => setViewMode('model')} title="Model-Ansicht" style={{
             fontSize: 12, padding: '6px 10px', borderRadius: 6,
             background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',

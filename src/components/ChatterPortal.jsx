@@ -484,7 +484,13 @@ function CustomerHistorySection({ history }) {
   )
 }
 
-export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview }) {
+// v4.52.0: isPreview = Admin schaut einem Chatter über die Schulter. Dann wird
+// NICHTS automatisch in dessen Namen geschrieben (Heartbeat/online_status,
+// „gelesen"-Marken, Log-Aufräumen, Auto-Checkout). Bewusste Klicks (Board
+// bearbeiten, Abwesenheit eintragen) gehen weiter.
+// onSwitchToOwn / onSwitchToPreview: Umschalten zwischen Vorschau und dem
+// eigenen Chatter-Portal eines Admins.
+export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview, onSwitchToOwn, onSwitchToPreview }) {
   const [theme, setThemeState] = useState(() => getTheme())
   const [showSocialPortal, setShowSocialPortal] = useState(false)
   const [previewChatter, setPreviewChatter] = useState('')
@@ -961,6 +967,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   }
 
   const sendHeartbeat = async (shiftOnline) => {
+    if (isPreview || !displayName) return // v4.52.0: Vorschau meldet niemanden online
     await supabase.from('online_status').upsert({
       display_name: displayName,
       last_seen: new Date().toISOString(),
@@ -1020,6 +1027,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const checkInLockRef = React.useRef(false) // v2.9.6: Race-Lock damit parallele Calls nicht durchgehen
 
   const checkIn = async (shiftName) => {
+    if (isPreview) { alert('In der Vorschau kannst du nicht für diesen Chatter einchecken. Für deine eigene Schicht: „Mein Portal".'); return }
     // v2.9.6: Race-Schutz — wenn schon ein Call läuft, abbrechen
     if (checkInLockRef.current) return
     checkInLockRef.current = true
@@ -1202,6 +1210,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // Der Text landet am eigenen Schicht-Log, nicht am Cleanup-Update weiter unten —
   // sonst bekämen fremde Alt-Logs denselben Text angehängt.
   const checkOut = async (text = null, betrifftModels = null) => {
+    if (isPreview) { alert('In der Vorschau kannst du diesen Chatter nicht auschecken.'); return }
     if (checkOutLockRef.current) return
     checkOutLockRef.current = true
     setIsCheckingOut(true)
@@ -1523,6 +1532,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const list = data || []
     setMyTodos(list)
     // Ungelesene automatisch als "gesehen" markieren (read_by), damit das Team den Lesestatus sieht
+    if (isPreview) return // v4.52.0: Admin-Vorschau ist kein „gelesen"
     for (const t of list) {
       const readBy = Array.isArray(t.read_by) ? t.read_by : []
       if (!readBy.includes(displayName)) {
@@ -1572,6 +1582,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       loadMessages()
       loadAnnouncements()
       loadMyTodos()
+      if (isPreview) return // v4.52.0: kein Heartbeat, keine Übergaben, kein Auto-Checkout
       sendHeartbeat(isOnlineRef.current)
 
       // v4.34.0: Übergaben mitziehen, solange die Schicht läuft. Der Normalfall ist
@@ -1692,6 +1703,16 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .gte('checked_in_at', yesterday)
       .order('checked_in_at', { ascending: false })
     if (error) console.error('loadOnlineStatus error:', error)
+
+    // v4.52.0: In der Vorschau nur anzeigen, nichts aufräumen oder melden
+    if (isPreview) {
+      const offen = (openLogs || [])[0]
+      setIsOnline(!!offen)
+      setCurrentLogId(offen ? offen.id : null)
+      setCurrentShift(offen ? (offen.shift || null) : null)
+      setCheckInTime(offen ? new Date(offen.checked_in_at) : null)
+      return
+    }
 
     // Close all stale logs older than 24h
     await supabase.from('shift_logs')
@@ -1901,7 +1922,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     // get_my_chatter_snapshots filtert serverseitig ueber
     // user_roles -> chatter_aliases -> csv_name und liefert dasselbe Format
     // (business_date + rows), deshalb bleibt die Auswertung unten unveraendert.
-    const { data, error } = await supabase.rpc('get_my_chatter_snapshots')
+    // v4.52.0: In der Vorschau liefert die RPC die Zahlen des ADMINS (sie filtert
+    // nach dem eingeloggten User). Staff darf chatter_snapshots direkt lesen —
+    // dann auf die Zeilen dieses Chatters einschränken, wie es die RPC tut.
+    const { data, error } = isPreview
+      ? await supabase.from('chatter_snapshots').select('business_date, rows').order('business_date')
+          .then(r => ({ ...r, data: (r.data || []).map(s => ({ ...s, rows: (s.rows || []).filter(x => (x.name || '').toLowerCase() === (csvName || '').toLowerCase()) })).filter(s => s.rows.length) }))
+      : await supabase.rpc('get_my_chatter_snapshots')
     if (error) {
       // Nicht still scheitern: ohne Hinweis saehe eine fehlende oder kaputte RPC
       // exakt so aus wie "dieser Chatter hat noch keine Daten".
@@ -1961,7 +1988,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
   // Reload when preview chatter changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (isPreview && displayName) { loadStats(); loadSchedule(); loadContentRequests(); loadModels(); loadGuidelines() } }, [previewChatter])
+  // v4.52.0: Zustand des vorherigen Chatters zurücksetzen — vorher blieben
+  // Online-Status, Log und Statistik von Chatter X beim Wechsel zu Y stehen.
+  useEffect(() => {
+    if (!isPreview) return
+    setIsOnline(false); setCurrentLogId(null); setCurrentShift(null); setCheckInTime(null)
+    setChatterStats(null); setLastStatDate(null); setChatterSnapshots([])
+    if (displayName) { loadStats(); loadSchedule(); loadContentRequests(); loadModels(); loadGuidelines(); loadOnlineStatus() }
+  }, [previewChatter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get my shifts this week
   const myShifts = []
@@ -2205,6 +2239,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           ) : (
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{displayName}</span>
           )}
+          {/* v4.52.0: Admins wechseln zwischen Vorschau und eigenem Portal */}
+          {isPreview && onSwitchToOwn && (
+            <button onClick={onSwitchToOwn} title="Dein eigenes Chatter-Portal — deine Schichten, dein Check-in, deine Vorschläge"
+              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>
+              👤 Mein Portal
+            </button>
+          )}
+          {!isPreview && onSwitchToPreview && (
+            <button onClick={onSwitchToPreview} title="Einem Chatter über die Schulter schauen"
+              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.35)', color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>
+              👁 Chatter ansehen
+            </button>
+          )}
           {isSocialMedia && (
             <button onClick={() => setShowSocialPortal(!showSocialPortal)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: showSocialPortal ? '#ec4899' : 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.3)', color: showSocialPortal ? '#fff' : '#ec4899', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
               Social
@@ -2223,6 +2270,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       </header>
 
       <main style={{ padding: '16px 20px', maxWidth: 1200, margin: '0 auto' }}>
+        {/* v4.52.0: klar machen, wessen Portal das gerade ist */}
+        {isPreview && displayName && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', color: '#06b6d4', fontSize: 12, fontWeight: 600 }}>
+            👁 Vorschau: Du siehst das Portal von <b>{displayName}</b>. {displayName} wird dadurch nicht als online gemeldet und nichts gilt als gelesen. Was du bewusst änderst (Board, Abwesenheit …), wird gespeichert.
+          </div>
+        )}
         {showSocialPortal ? (
           <SocialTab session={session} userDisplayName={displayName} userRole="social_media" />
         ) : (
