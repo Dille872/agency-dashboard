@@ -159,26 +159,39 @@ export default function App() {
     return all.includes('admin') || all.includes('manager')
   }
 
+  // v4.55.0: Wirksame Rolle aus BEIDEN Spalten bestimmen (roles-Array + alte
+  // role-Spalte), nach Rang. Vorher entschied allein `role`: wer per SQL nur
+  // `roles` bekam, sah „nicht eingerichtet"; wer ['chatter','admin'] hatte, aber
+  // role='chatter', landete im Chatter-Portal.
+  const RANG = ['admin', 'manager', 'dienstplan', 'creator_manager', 'model', 'chatter']
+  const wirksameRolle = (role, roles) => {
+    const alle = [...(Array.isArray(roles) ? roles : []), role].filter(Boolean)
+    return RANG.find(r => alle.includes(r)) || alle[0] || null
+  }
+
   // Gibt {role, roles} zurueck, oder null wenn der Account gesperrt/unvollstaendig
   // ist — in dem Fall werden bewusst gar keine Daten nachgeladen.
   const loadUserRole = async () => {
     try {
-      const { data } = await supabase
+      const { data, error: rollenFehler } = await supabase
         .from('user_roles').select('*').eq('user_id', session.user.id).maybeSingle()
+      // v4.55.0: Netz-/Serverfehler ist nicht „nicht eingerichtet"
+      if (rollenFehler) throw rollenFehler
       // Wichtig: KEIN Email-Fallback mehr — der erzeugt Doubletten in online_status
       // (mario.stegmeir vs Mario). Wenn kein display_name in user_roles → Eintrag fehlt.
       const name = data?.display_name
-      if (data && name && data.role) {
+      const rolle = data ? wirksameRolle(data.role, data.roles) : null
+      if (data && name && rolle) {
         // v3.18.0: Account-Status prüfen — stillgelegte/offboardete User dürfen nicht ins Dashboard
         if (data.status === 'suspended' || data.status === 'offboarded') {
           setAccountBlocked({ status: data.status, note: data.status_note || null })
-          setUserRole(data.role) // damit der Lade-Screen endet
+          setUserRole(rolle) // damit der Lade-Screen endet
           setUserDisplayName(name)
           return null // kein online_status-Heartbeat, keine Daten für gesperrte User
         }
         setAccountBlocked(null)
-        const roles = data.roles && data.roles.length > 0 ? data.roles : [data.role]
-        setUserRole(data.role)
+        const roles = [...new Set([...(data.roles || []), data.role].filter(Boolean))]
+        setUserRole(rolle)
         setUserRoles(roles)
         setUserDisplayName(name)
         // v3.89.0: Chatter hier NICHT upserten (siehe Heartbeat oben) – sonst
@@ -190,13 +203,13 @@ export default function App() {
             shift_online: false,
           }, { onConflict: 'display_name' })
         }
-        return { role: data.role, roles }
+        return { role: rolle, roles }
       } else {
         // v3.57.0: Kein sauberer user_roles-Eintrag (fehlende Rolle oder fehlender
         // display_name). Früher wurde hier still auf 'chatter' zurückgefallen — dadurch
         // sahen falsch/nicht eingerichtete Accounts (z.B. ein Model ohne Rolle) unbemerkt
         // die Chatter-Ansicht. Jetzt: klarer Hinweis statt stiller Fehlzuordnung.
-        console.warn('user_roles unvollständig für', session.user.id, { hasRow: !!data, name: data?.display_name, role: data?.role })
+        console.warn('user_roles unvollständig für', session.user.id, { hasRow: !!data, name: data?.display_name, role: data?.role, roles: data?.roles })
         setAccountBlocked({ status: 'not_setup', note: null })
         setUserRole('blocked') // Sentinel != null, damit der Lade-Screen endet
         setUserRoles([])
@@ -205,8 +218,11 @@ export default function App() {
       }
     } catch (err) {
       console.error('loadUserRole error:', err)
-      setUserRole('chatter')
-      setUserRoles(['chatter'])
+      // v4.55.0: kein stiller Rückfall auf 'chatter' mehr (landete ohne Namen im
+      // Chatter-Portal) — stattdessen klarer Hinweis mit Neu-Laden.
+      setAccountBlocked({ status: 'load_error', note: null })
+      setUserRole('blocked')
+      setUserRoles([])
       setUserDisplayName(null)
       return null
     }
@@ -430,9 +446,12 @@ export default function App() {
   if (accountBlocked) {
     const suspended = accountBlocked.status === 'suspended'
     const notSetup = accountBlocked.status === 'not_setup'
-    const icon = notSetup ? '⚠️' : suspended ? '⏸️' : '📦'
-    const title = notSetup ? 'Account nicht korrekt eingerichtet' : suspended ? 'Zugang vorübergehend stillgelegt' : 'Zugang deaktiviert'
-    const message = notSetup
+    const ladeFehler = accountBlocked.status === 'load_error'
+    const icon = ladeFehler ? '📡' : notSetup ? '⚠️' : suspended ? '⏸️' : '📦'
+    const title = ladeFehler ? 'Verbindung fehlgeschlagen' : notSetup ? 'Account nicht korrekt eingerichtet' : suspended ? 'Zugang vorübergehend stillgelegt' : 'Zugang deaktiviert'
+    const message = ladeFehler
+      ? 'Dein Zugang konnte gerade nicht geladen werden. Bitte lade die Seite neu.'
+      : notSetup
       ? 'Deinem Konto ist noch keine Rolle zugewiesen. Bitte wende dich an deine Agentur-Leitung, damit dein Zugang eingerichtet wird.'
       : suspended
         ? 'Dein Konto ist aktuell pausiert. Bitte wende dich an deine Agentur-Leitung, wenn du wieder einsteigen möchtest.'
@@ -451,6 +470,11 @@ export default function App() {
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', background: 'var(--bg-card2)', border: '1px solid #1e1e3a', borderRadius: 8, padding: '10px 12px', marginBottom: 24 }}>
               „{accountBlocked.note}"
             </div>
+          )}
+          {ladeFehler && (
+            <button onClick={() => window.location.reload()} style={{ padding: '10px 22px', borderRadius: 8, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginRight: 8 }}>
+              Neu laden
+            </button>
           )}
           <button onClick={handleLogout} style={{ padding: '10px 22px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Abmelden
@@ -701,6 +725,9 @@ export default function App() {
             <span style={{ fontSize: 13, fontWeight: 600 }}>Menü</span>
           </button>
 
+          {/* v4.55.0: Ansicht-Wechsel nur für Admin/Manager — dienstplan/creator_manager
+              landeten sonst ohne Rückweg im echten Chatter-Portal */}
+          {isManager && (<>
           <button onClick={() => setViewMode('chatter')} title="Chatter-Ansicht" style={{
             fontSize: 12, padding: '6px 10px', borderRadius: 6,
             background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
@@ -731,6 +758,7 @@ export default function App() {
               <span className="hide-mobile">Mein Portal</span>
             </button>
           )}
+          </>)}
           <button onClick={handleLogout} title="Abmelden" style={{
             fontSize: 12, padding: '5px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',

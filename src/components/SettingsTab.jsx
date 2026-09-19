@@ -627,6 +627,11 @@ export default function SettingsTab() {
   const setUserStatus = async (user, newStatus, note) => {
     const name = user.display_name
     const role = user.role
+    // v4.55.0: nicht den letzten aktiven Admin stilllegen
+    if (newStatus !== 'active' && istAktiverAdmin(user) && users.filter(istAktiverAdmin).length <= 1) {
+      alert('Das ist der letzte aktive Admin — stilllegen oder offboarden geht nicht, sonst kommt niemand mehr in die Einstellungen.')
+      return
+    }
     setStatusBusy(true)
     try {
       // 1) Account-Status in user_roles (blockiert/erlaubt Login)
@@ -733,22 +738,38 @@ export default function SettingsTab() {
     }
   }
 
+  // v4.55.0: Rollen sicher umschalten.
+  // - Leeres roles-Array ([]) zählte als „vorhanden" — die alte role-Spalte
+  //   (z. B. 'model') ging dann beim ersten Klick verloren.
+  // - Abwählen der letzten Rolle setzte still ['chatter'] — jetzt Abbruch.
+  // - role (Hauptrolle) = höchste Rolle nach Rang, nicht einfach die erste.
+  // - Der letzte aktive Admin kann sich die Admin-Rolle nicht mehr nehmen.
+  const ROLLEN_RANG = ['admin', 'manager', 'dienstplan', 'creator_manager', 'model', 'chatter']
+  const rollenVon = (u) => [...new Set([...(u?.roles || []), u?.role].filter(Boolean))]
+  const istAktiverAdmin = (u) => rollenVon(u).includes('admin') && u.status !== 'suspended' && u.status !== 'offboarded'
+
   const toggleRole = async (userId, currentRole, newRole) => {
-    // Get current roles array
     const user = users.find(u => u.user_id === userId)
-    const currentRoles = user?.roles || [currentRole]
+    const currentRoles = user ? rollenVon(user) : [currentRole].filter(Boolean)
     let updatedRoles
     if (currentRoles.includes(newRole)) {
       updatedRoles = currentRoles.filter(r => r !== newRole)
-      if (updatedRoles.length === 0) updatedRoles = ['chatter'] // min 1 role
+      if (updatedRoles.length === 0) {
+        alert('Mindestens eine Rolle muss bleiben. Erst die neue Rolle hinzufügen, dann die alte entfernen.')
+        return
+      }
+      if (newRole === 'admin' && users.filter(istAktiverAdmin).length <= 1) {
+        alert('Das ist der letzte aktive Admin — die Admin-Rolle kann nicht entfernt werden, sonst kommt niemand mehr in die Einstellungen.')
+        return
+      }
     } else {
       updatedRoles = [...currentRoles, newRole]
     }
-    // Primary role = first in array
-    const primaryRole = updatedRoles[0]
-    await supabase.from('user_roles').update({ role: primaryRole, roles: updatedRoles }).eq('user_id', userId)
+    const primaryRole = ROLLEN_RANG.find(r => updatedRoles.includes(r)) || updatedRoles[0]
+    const { error } = await supabase.from('user_roles').update({ role: primaryRole, roles: updatedRoles }).eq('user_id', userId)
+    if (error) { alert('⚠ Rollen NICHT gespeichert: ' + error.message); return }
     logActivity('user.roles', {
-      entity: users.find(u => u.user_id === userId)?.display_name || userId,
+      entity: user?.display_name || userId,
       detail: updatedRoles.join(', '),
     })
     setEditingRole(null)
