@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { Lightbulb, Copy, Check, ThumbsUp, ThumbsDown, Sparkles, Loader } from 'lucide-react'
 
@@ -18,12 +18,16 @@ function normShift(label = '') {
   return l
 }
 
+// v4.51.0: Reihenfolge der Schichten innerhalb eines Tages
+const SCHICHT_REIHE = ['Vorschicht', 'Früh', 'Spät', 'Nacht']
+const berlinHeute = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+
 const card = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 12, padding: '16px 18px', marginBottom: 14 }
 const lbl = { fontSize: 10, fontWeight: 700, letterSpacing: '.5px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 7 }
 const sel = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 8, padding: '8px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }
 
 export default function MessageSuggestions({ displayName }) {
-  const [pairs, setPairs] = useState([])        // [{model, shift}]
+  const [pairs, setPairs] = useState([])        // [{model, shift, date}] — v4.51.0: mit Plandatum
   const [occasions, setOccasions] = useState([])
   const [shift, setShift] = useState('')
   const [model, setModel] = useState('')
@@ -36,8 +40,19 @@ export default function MessageSuggestions({ displayName }) {
   const [language, setLanguage] = useState('Deutsch') // v3.90.0: Zielsprache der Vorschläge
   const [usedList, setUsedList] = useState([]) // v3.92.0: zuletzt verwendete Nachrichten
   const [verworfen, setVerworfen] = useState(0) // v4.32.0: als Wiederholung aussortiert
+  // v4.51.0: aktuelle Auswahl für das Neu-Laden beim Tab-Wechsel (Listener hat alte Closure)
+  const auswahlRef = useRef({ model: '', shift: '' })
+  auswahlRef.current = { model, shift }
 
   useEffect(() => { if (displayName) loadContext() }, [displayName])
+  // v4.51.0: Das Portal bleibt oft über Tage offen — beim Zurückkehren in den
+  // Tab den Plan neu lesen, sonst stehen die Models vom Vortag in der Auswahl.
+  useEffect(() => {
+    if (!displayName) return
+    const onVis = () => { if (document.visibilityState === 'visible') loadContext({ auswahlBehalten: true }) }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [displayName]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // v3.84.0: Beim Öffnen/Wechsel den zuletzt generierten Satz wieder laden
   // (bleibt über Reloads stehen, bis der Chatter neu generiert). Inkl. Bewertungen.
@@ -61,7 +76,7 @@ export default function MessageSuggestions({ displayName }) {
     return () => { cancelled = true }
   }, [allowed, model, occasion, displayName])
 
-  const loadContext = async () => {
+  const loadContext = async ({ auswahlBehalten = false } = {}) => {
     // v3.83.0: Freigabe prüfen — nur wer can_suggest=true hat, sieht das Panel
     const { data: me } = await supabase.from('user_roles').select('can_suggest').eq('display_name', displayName).maybeSingle()
     if (!me?.can_suggest) { setAllowed(false); return }
@@ -71,7 +86,7 @@ export default function MessageSuggestions({ displayName }) {
     const { data: occ } = await supabase.from('message_occasions')
       .select('*').eq('active', true).order('sort')
     setOccasions(occ || [])
-    if (occ && occ.length) setOccasion(occ[0].key)
+    if (occ && occ.length && !auswahlBehalten) setOccasion(occ[0].key)
 
     // Meine Schichten + Models aus dem Dienstplan (aktuelle + nächste ~2 Wochen, live)
     // v3.94.0: LOKALES ISO-Datum (toISOString rutscht bei UTC+2 auf den Vortag ->
@@ -105,20 +120,50 @@ export default function MessageSuggestions({ displayName }) {
           const parts = key.split('__')
           const modelName = idToName[parts[0]] || parts[0]
           const sh = parts[2] || ''
-          set.set(`${sh}|${modelName}`, { shift: sh, model: modelName })
+          const date = parts[1] || ''
+          set.set(`${date}|${sh}|${modelName}`, { shift: sh, model: modelName, date })
         }
       }
     }
+    // v4.51.0: Vorher wurde die erste gefundene Schicht der nächsten 2 Wochen
+    // vorausgewählt und die Model-Liste nur für diese Schicht gezeigt. War der
+    // Chatter heute Spät, an anderen Tagen aber Früh, standen oft nur die
+    // Früh-Models in der Auswahl — die heutigen fehlten scheinbar.
+    // Jetzt: sortiert nach Datum/Schicht, vergangene Tage (außer gestern, wegen
+    // Nacht über Mitternacht) raus, und die HEUTIGE Schicht ist vorausgewählt.
+    const heute = berlinHeute()
+    const g = new Date(heute + 'T12:00:00'); g.setDate(g.getDate() - 1)
+    const gestern = g.toISOString().slice(0, 10)
     const list = [...set.values()]
+      .filter(p => !p.date || p.date >= gestern)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || SCHICHT_REIHE.indexOf(a.shift) - SCHICHT_REIHE.indexOf(b.shift))
     setPairs(list)
-    const shifts = [...new Set(list.map(p => p.shift))]
-    if (shifts.length) { setShift(shifts[0]); const first = list.find(p => p.shift === shifts[0]); if (first) setModel(first.model) }
+    const akt = auswahlRef.current
+    if (auswahlBehalten && list.some(p => p.model === akt.model && p.shift === akt.shift)) return
+    const start = list.find(p => p.date === heute) || list.find(p => p.date > heute) || list[0]
+    if (start) { setShift(start.shift); setModel(start.model) } else { setShift(''); setModel('') }
   }
 
+  // Schichten und Models ohne Datum doppelt zusammenfassen, Reihenfolge bleibt (heute zuerst)
   const shifts = [...new Set(pairs.map(p => p.shift))]
+    .sort((a, b) => {
+      const h = berlinHeute()
+      const ah = pairs.some(p => p.shift === a && p.date === h), bh = pairs.some(p => p.shift === b && p.date === h)
+      if (ah !== bh) return ah ? -1 : 1
+      return SCHICHT_REIHE.indexOf(a) - SCHICHT_REIHE.indexOf(b)
+    })
+  const heuteIso = berlinHeute()
   const modelsForShift = [...new Set(pairs.filter(p => p.shift === shift).map(p => p.model))]
+  const heuteInSchicht = new Set(pairs.filter(p => p.shift === shift && p.date === heuteIso).map(p => p.model))
+  // Heute eingeteilte Models zuerst
+  modelsForShift.sort((a, b) => (heuteInSchicht.has(b) ? 1 : 0) - (heuteInSchicht.has(a) ? 1 : 0))
+  const heuteSchichten = new Set(pairs.filter(p => p.date === heuteIso).map(p => p.shift))
 
-  const onShift = (s) => { setShift(s); const m = pairs.find(p => p.shift === s); setModel(m ? m.model : '') }
+  const onShift = (s) => {
+    setShift(s)
+    const m = pairs.find(p => p.shift === s && p.date === heuteIso) || pairs.find(p => p.shift === s)
+    setModel(m ? m.model : '')
+  }
 
   const generate = async () => {
     if (!model || !occasion) return
@@ -207,13 +252,13 @@ export default function MessageSuggestions({ displayName }) {
             <div>
               <span style={lbl}>Schicht</span>
               <select style={sel} value={shift} onChange={e => onShift(e.target.value)}>
-                {shifts.map(s => <option key={s} value={s}>{s || '—'}</option>)}
+                {shifts.map(s => <option key={s} value={s}>{s || '—'}{heuteSchichten.has(s) ? ' · heute' : ''}</option>)}
               </select>
             </div>
             <div>
               <span style={lbl}>Model</span>
               <select style={sel} value={model} onChange={e => setModel(e.target.value)}>
-                {modelsForShift.map(m => <option key={m} value={m}>{m}</option>)}
+                {modelsForShift.map(m => <option key={m} value={m}>{m}{heuteInSchicht.has(m) ? ' · heute' : ''}</option>)}
               </select>
             </div>
             <div>
