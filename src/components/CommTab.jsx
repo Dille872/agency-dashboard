@@ -823,28 +823,25 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     setAvailabilities(map)
   }
 
+  // v4.59.0: Umbenennen über die Datenbank-Funktion chatter_umbenennen().
+  // Vorher wurden nur 5 Tabellen im Browser umgeschrieben (ohne Fehlerprüfung,
+  // ohne user_roles, messages, shift_logs, content_requests, trainee …) — der
+  // Chat zerfiel in zwei Threads, und seit den Sicherheitsregeln hätte der
+  // Chatter seine eigenen Daten nicht mehr gesehen. Die Funktion macht alles in
+  // EINER Transaktion und bricht ab, wenn der neue Name schon vergeben ist.
   const saveChatterName = async () => {
     if (!editChatterName.trim() || !editingChatter) return
     const oldName = editingChatter.name
     const newName = editChatterName.trim()
-    await supabase.from('chatters_contact').update({ name: newName }).eq('id', editingChatter.id)
-    // Update all references
-    await supabase.from('chatter_availability').update({ chatter_name: newName }).eq('chatter_name', oldName)
-    await supabase.from('absences').update({ chatter_name: newName }).eq('chatter_name', oldName)
-    await supabase.from('reminders').update({ chatter_name: newName }).eq('chatter_name', oldName)
-    await supabase.from('shift_swaps').update({ requester_name: newName }).eq('requester_name', oldName)
-    // Update schedule assignments
-    const { data: schedules } = await supabase.from('schedule').select('*')
-    for (const sched of schedules || []) {
-      const assignments = sched.assignments || {}
-      let changed = false
-      for (const [key, val] of Object.entries(assignments)) {
-        if (val.chatter === oldName) { assignments[key].chatter = newName; changed = true }
-      }
-      if (changed) await supabase.from('schedule').update({ assignments }).eq('id', sched.id)
-    }
+    if (oldName === newName) { setEditingChatter(null); return }
+    if (!confirm(`„${oldName}" überall in „${newName}" umbenennen?\n\nBetrifft Login-Namen, Dienstplan, Chat, Schichten, Anfragen, Abwesenheiten usw. Der Chatter meldet sich danach mit demselben Login an, sieht aber den neuen Namen.`)) return
+    const { data, error } = await supabase.rpc('chatter_umbenennen', { p_alt: oldName, p_neu: newName })
+    if (error) { alert('⚠ Umbenennen NICHT durchgeführt (nichts wurde geändert):\n\n' + error.message); return }
+    const liste = Object.entries(data || {}).map(([k, v]) => `· ${k}: ${v}`).join('\n')
+    alert(`✓ „${oldName}" heißt jetzt „${newName}".${liste ? '\n\nGeändert:\n' + liste : ''}`)
     setEditingChatter(null)
     loadChatters()
+    loadMessages()
   }
 
   const addAvailability = async (chatterName) => {
