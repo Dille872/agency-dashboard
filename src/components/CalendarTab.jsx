@@ -88,12 +88,18 @@ export default function CalendarTab({ userDisplayName }) {
     setModelSachen(ms)
 
     // v4.61.0: Schichten als feste Zeitpunkte (Plan ist in deutscher Zeit)
+    // v4.61.1: nur die EIGENEN Schichten — der komplette Plan steht im Dienstplan,
+    // hier wäre er doppelt. Als Haupt-Chatter oder als Co/Trainee/zweite Hälfte.
+    const ichLc = String(userDisplayName || '').trim().toLowerCase()
     const modelName = Object.fromEntries((mo.data || []).map(m => [String(m.id), m.name]))
     const sch = []
     for (const w of sc.data || []) {
       const zeiten = w.shift_times || {}
       for (const [key, val] of Object.entries(w.assignments || {})) {
         if (!val || !val.chatter || val.chatter === '__FREI__') continue
+        const binHaupt = String(val.chatter).trim().toLowerCase() === ichLc
+        const binZweit = String(val.trainee || '').trim().toLowerCase() === ichLc
+        if (!ichLc || (!binHaupt && !binZweit)) continue
         const [modelId, planTag, shift] = key.split('__')
         if (!planTag || planTag < plusTage(woche, -1) || planTag > plusTage(woche, 7)) continue
         const spanne = String(val.time_override || zeiten[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
@@ -102,11 +108,12 @@ export default function CalendarTab({ userDisplayName }) {
         const beginn = wandzeitZuDatum(planTag, a, BERLIN)
         let ende = b && /^\d{1,2}:\d{2}$/.test(b) ? wandzeitZuDatum(planTag, b, BERLIN) : null
         if (ende && ende <= beginn) ende = new Date(ende.getTime() + 24 * 3600 * 1000)
-        sch.push({ beginn, ende, shift, model: modelName[modelId] || modelId, chatter: val.chatter + (val.trainee ? ` + ${val.trainee}` : ''), entwurf: w.status !== 'live' })
+        const partner = binHaupt ? val.trainee : val.chatter
+        sch.push({ beginn, ende, shift, model: modelName[modelId] || modelId, chatter: partner ? `mit ${partner}` : '', entwurf: w.status !== 'live' })
       }
     }
     setSchichten(sch)
-  }, [woche])
+  }, [woche, userDisplayName])
 
   useEffect(() => { laden() }, [laden])
 
@@ -147,7 +154,7 @@ export default function CalendarTab({ userDisplayName }) {
       const von = zeitIn(x.beginn, anzeigeZone), bis = x.ende ? zeitIn(x.ende, anzeigeZone) : ''
       const k = `${t}|${x.shift}|${von}|${bis}`
       if (!gruppen[k]) { gruppen[k] = { k, tag: t, shift: x.shift, von, bis, sort: x.beginn.getTime(), zeilen: [], entwurf: false }; m[t].push(gruppen[k]) }
-      gruppen[k].zeilen.push(`${x.model}: ${x.chatter}`)
+      gruppen[k].zeilen.push(x.chatter ? `${x.model} (${x.chatter})` : x.model)
       if (x.entwurf) gruppen[k].entwurf = true
     }
     for (const t of tage) m[t].sort((a, b) => a.sort - b.sort || SCHICHT_REIHE.indexOf(a.shift) - SCHICHT_REIHE.indexOf(b.shift))
@@ -274,7 +281,7 @@ export default function CalendarTab({ userDisplayName }) {
 
       {/* Ebenen */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {[...ARTEN.map(a => ({ key: a.key, label: a.label, farbe: a.farbe })), { key: 'models', label: 'Models: Termine & Urlaub', farbe: MODEL_FARBE }, { key: 'schichten', label: 'Schichten (Dienstplan)', farbe: SCHICHT_FARBE }].map(e => (
+        {[...ARTEN.map(a => ({ key: a.key, label: a.label, farbe: a.farbe })), { key: 'models', label: 'Models: Termine & Urlaub', farbe: MODEL_FARBE }, { key: 'schichten', label: 'Meine Schichten', farbe: SCHICHT_FARBE }].map(e => (
           <button key={e.key} onClick={() => setEbenen(p => ({ ...p, [e.key]: !p[e.key] }))}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: ebenen[e.key] ? 'rgba(255,255,255,0.04)' : 'transparent', color: ebenen[e.key] ? 'var(--text-primary)' : 'var(--text-muted)', border: `1px solid ${ebenen[e.key] ? '#2e2e5a' : 'var(--border)'}`, opacity: ebenen[e.key] ? 1 : 0.6 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: e.farbe }} />{e.label}
@@ -300,9 +307,9 @@ export default function CalendarTab({ userDisplayName }) {
                 </div>
               ))}
               {schichtenProTag[t].map(g => (
-                <details key={g.k} style={{ fontSize: 10.5, borderRadius: 5, background: 'rgba(100,116,139,0.12)', border: `1px ${g.entwurf ? 'dashed' : 'solid'} rgba(100,116,139,0.35)` }}>
+                <details key={g.k} open style={{ fontSize: 10.5, borderRadius: 5, background: 'rgba(100,116,139,0.12)', border: `1px ${g.entwurf ? 'dashed' : 'solid'} rgba(100,116,139,0.35)` }}>
                   <summary style={{ cursor: 'pointer', padding: '3px 6px', color: '#cbd5e1', listStyle: 'none' }}>
-                    <b>{g.shift}</b> {g.von}{g.bis ? '–' + g.bis : ''} · {g.zeilen.length}{g.entwurf ? ' · Entwurf' : ''}
+                    <b>Meine {/schicht$/i.test(g.shift) ? g.shift : g.shift + 'schicht'}</b> {g.von}{g.bis ? '–' + g.bis : ''}{g.entwurf ? ' · Entwurf' : ''}
                   </summary>
                   <div style={{ padding: '2px 6px 5px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
                     {g.zeilen.map((z, i) => <div key={i}>{z}</div>)}
