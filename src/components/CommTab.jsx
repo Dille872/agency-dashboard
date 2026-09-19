@@ -1338,9 +1338,56 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     }
 
     if (entered.length > 0) {
-      await supabase.from('schedule').update({ assignments }).eq('week_start', weekKey)
+      // v4.58.0: Fehler prüfen — vorher hieß es „✓ im Dienstplan", auch wenn
+      // das Speichern gescheitert war.
+      const { error } = await supabase.from('schedule').update({ assignments }).eq('week_start', weekKey)
+      if (error) {
+        console.error('enterIntoSchedule:', error)
+        return { entered: [], skippedOccupied: [...skippedOccupied, ...entered.map(n => `${n} (Speichern fehlgeschlagen: ${error.message})`)], noSchedule: false }
+      }
     }
     return { entered, skippedOccupied, noSchedule: false }
+  }
+
+  // v4.58.0: Gegenstück zu enterIntoSchedule für „↺ Wieder offen".
+  // Vorher blieb der vergebene Chatter im Dienstplan stehen; die nächste Vergabe
+  // scheiterte dann an „Zelle belegt mit …". Zurückgenommen wird nur, wenn in der
+  // Zelle noch genau der Übernehmende steht (sonst hat jemand inzwischen von Hand
+  // umgeplant — das bleibt). Bei einer Chatter-Anfrage kommt der ursprüngliche
+  // Chatter zurück, bei einem Admin-Angebot wird die Zelle wieder unbesetzt.
+  const undoScheduleEntry = async (rows) => {
+    const offen = rows.filter(r => r.accepted_by)
+    if (!offen.length) return { zurueck: [], belassen: [] }
+    const weekKey = weekStartIso(offen[0].shift_date)
+    const { data: sched, error: ladeFehler } = await supabase
+      .from('schedule').select('week_start, assignments')
+      .eq('week_start', weekKey).maybeSingle()
+    if (ladeFehler || !sched) return { zurueck: [], belassen: offen.map(r => r.model_name), fehler: ladeFehler?.message || 'Woche nicht gefunden' }
+    const assignments = { ...(sched.assignments || {}) }
+    const zurueck = [], belassen = []
+    for (const r of offen) {
+      const model = models.find(m => m.name === r.model_name)
+      const cellKey = model ? `${model.id}__${r.shift_date}__${r.shift}` : null
+      const cell = cellKey ? assignments[cellKey] : null
+      if (!cell || (cell.chatter || '').trim().toLowerCase() !== String(r.accepted_by).trim().toLowerCase()) {
+        belassen.push(r.model_name); continue
+      }
+      assignments[cellKey] = { ...cell, chatter: r.requester_name || '' }
+      zurueck.push(r.model_name)
+    }
+    if (zurueck.length) {
+      const { error } = await supabase.from('schedule').update({ assignments }).eq('week_start', weekKey)
+      if (error) return { zurueck: [], belassen: offen.map(r => r.model_name), fehler: error.message }
+    }
+    return { zurueck, belassen }
+  }
+  const undoMeldung = (res) => {
+    if (!res) return ''
+    if (res.fehler) return `⚠ Dienstplan NICHT zurückgesetzt: ${res.fehler}`
+    const teile = []
+    if (res.zurueck.length) teile.push(`Dienstplan zurückgesetzt: ${res.zurueck.join(', ')}`)
+    if (res.belassen.length) teile.push(`Im Dienstplan nicht angefasst (dort steht inzwischen jemand anderes): ${res.belassen.join(', ')}`)
+    return teile.join('\n')
   }
 
   // v3.33.0: Ergebnis von enterIntoSchedule in eine Admin-Meldung übersetzen
@@ -1407,13 +1454,19 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   // Behält 'abgelehnt'-Reaktionen, löscht 'uebernehmen'/'vielleicht' damit Chatter neu reagieren können
   const resetSwapToOpen = async (swapId) => {
     if (!confirm('Schicht wieder als offen ausschreiben?')) return
-    await supabase.from('shift_swaps').update({
+    // v4.58.0: vorher den Dienstplan-Eintrag des Übernehmenden zurücknehmen
+    const { data: vorher } = await supabase.from('shift_swaps').select('*').eq('id', swapId).maybeSingle()
+    const undo = vorher ? await undoScheduleEntry([vorher]) : null
+    const { error } = await supabase.from('shift_swaps').update({
       status: 'offen', accepted_by: null,
     }).eq('id', swapId)
+    if (error) { alert('⚠ Nicht zurückgesetzt: ' + error.message); return }
     await supabase.from('swap_reactions').delete()
       .eq('swap_id', swapId)
       .in('reaction', ['uebernehmen', 'vielleicht'])
     loadSwaps()
+    const m = undoMeldung(undo)
+    if (m) alert(m)
   }
 
   // Admin schließt Anfrage ab ohne Vergabe
@@ -1524,9 +1577,15 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     if (!rows.length) return
     if (!confirm('Block wieder als offen ausschreiben?')) return
     const ids = rows.map(r => r.id)
-    await supabase.from('shift_swaps').update({ status: 'offen', accepted_by: null }).in('id', ids)
+    // v4.58.0: Dienstplan-Einträge des Übernehmenden zurücknehmen
+    const { data: vorher } = await supabase.from('shift_swaps').select('*').in('id', ids)
+    const undo = vorher?.length ? await undoScheduleEntry(vorher) : null
+    const { error } = await supabase.from('shift_swaps').update({ status: 'offen', accepted_by: null }).in('id', ids)
+    if (error) { alert('⚠ Nicht zurückgesetzt: ' + error.message); return }
     await supabase.from('swap_reactions').delete().in('swap_id', ids).in('reaction', ['uebernehmen', 'vielleicht'])
     loadSwaps()
+    const m = undoMeldung(undo)
+    if (m) alert(m)
   }
 
   const cancelAdminOfferBlock = async (rows) => {

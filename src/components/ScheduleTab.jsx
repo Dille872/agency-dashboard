@@ -905,8 +905,18 @@ export default function ScheduleTab({ session, userDisplayName }) {
             return avails.some(a => {
               if (a.day_of_week !== dayOfWeek) return false
               if (!shiftStart) return true
-              // Check time overlap
-              return shiftStart >= a.time_from && (!shiftEnd || shiftEnd <= a.time_to)
+              // v4.58.0: in Minuten rechnen, Schichten/Verfügbarkeiten über Mitternacht
+              // korrekt behandeln. Vorher Stringvergleich: Nacht 22:00–06:00 passte
+              // in eine Verfügbarkeit 08:00–23:00, weil "06:00" <= "23:00".
+              const min = (t) => { const [h, m] = String(t || '').split(':').map(Number); return isNaN(h) ? null : h * 60 + (m || 0) }
+              const sS = min(shiftStart), aS = min(a.time_from), aE0 = min(a.time_to)
+              if (sS == null || aS == null || aE0 == null) return true
+              let sE = shiftEnd ? min(shiftEnd) : null
+              if (sE != null && sE <= sS) sE += 1440
+              const aE = aE0 <= aS ? aE0 + 1440 : aE0
+              // Beginnt die Schicht nach Mitternacht innerhalb einer Nacht-Verfügbarkeit
+              const passt = (off) => sS + off >= aS && (sE == null || sE + off <= aE)
+              return passt(0) || passt(1440)
             })
           })
 
@@ -1097,7 +1107,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
     }
     const model = models.find(m => String(m.id) === String(modelId))
     const modelName = model?.name || 'Unbekannt'
-    const berlinTime = (shiftTimes[`${modelId}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
+    // v4.58.0: Zell-Override hat Vorrang (wie überall sonst) — vorher wurde er
+    // hier ignoriert und die Erinnerung zur Standardzeit geplant.
+    const zelle = schedule[`${modelId}__${dayIso}__${shift}`]
+    const berlinTime = (zelle?.time_override || shiftTimes[`${modelId}__${shift}`] || '').replace(' (DE)', '').replace('(DE)', '')
     const startTime = berlinTime ? berlinTime.split('-')[0].trim() : ''
 
     // Calculate send_at: shift start time minus hoursBefore
@@ -1113,8 +1126,11 @@ export default function ScheduleTab({ session, userDisplayName }) {
       const utcHour = parseInt(utcFormatter.format(testDate))
       const berlinOffsetHours = berlinHour - utcHour // e.g. +2 for CEST
       // Shift time in UTC = shift time in Berlin minus offset
-      const shiftUtcHour = h - berlinOffsetHours
-      const shiftUtc = new Date(`${dayIso}T${String(((shiftUtcHour % 24) + 24) % 24).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00Z`)
+      // v4.58.0: Date.UTC rechnet den Tagesübertrag selbst. Vorher wurde nur die
+      // Stunde per Modulo umgebrochen, das Datum aber nicht: Schicht 00:30 am 20.
+      // ergab 22:30Z am 20. statt am 19. — die Erinnerung kam 22 h nach Beginn.
+      const [yy, mo, dd] = dayIso.split('-').map(Number)
+      const shiftUtc = new Date(Date.UTC(yy, mo - 1, dd, h - berlinOffsetHours, m || 0))
       sendAt = new Date(shiftUtc.getTime() - hoursBefore * 3600000).toISOString()
     } else {
       sendAt = new Date(Date.now() + hoursBefore * 3600000).toISOString()
