@@ -30,3 +30,6 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Ablage der Claude-App (Anleitungen etc.) – nicht ins Repo
+Claude outputs/

@@ -122,12 +122,59 @@ serve(async (_req) => {
         const uhr = beginn.toLocaleTimeString('de-DE', { timeZone: zone, hour: '2-digit', minute: '2-digit' })
         const de = beginn.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' })
         const zusatz = zone === 'Europe/Berlin' ? ' (deutsche Zeit)' : ` (deine Zeit · DE ${de})`
-        const msg = `⏰ <b>Gleich: ${esc(e.titel)}</b>\n\n${art} · ${minuten > 0 ? `in ${minuten} Min, ` : 'jetzt, '}${uhr} Uhr${zusatz}${e.notiz ? `\n\n${esc(e.notiz)}` : ''}\n\n– Thirteen 87`
+        const bezug = e.folge_titel ? `\n↳ Folgeaufgabe zu: ${esc(e.folge_titel)}` : ''
+        const msg = `⏰ <b>Gleich: ${esc(e.titel)}</b>\n\n${art} · ${minuten > 0 ? `in ${minuten} Min, ` : 'jetzt, '}${uhr} Uhr${zusatz}${bezug}${e.notiz ? `\n\n${esc(e.notiz)}` : ''}\n\n– Thirteen 87`
         await sendTelegram(id, msg)
       }
       // Einmal pro Eintrag — auch wenn einzelne Empfänger scheitern (sonst
       // bekämen die anderen die Erinnerung bei jedem Lauf erneut).
       await supabase.from('team_kalender').update({ erinnerung_gesendet: true }).eq('id', e.id)
+    }
+
+    // 4. v4.66.0: Nachhaken bei überfälligen Aufgaben (nur namentlich zugeteilte)
+    //    - 2 Std nach Fälligkeit: einmal an die, die noch nicht abgehakt haben
+    //    - 12 Std nach Fälligkeit: einmal an Chris + Rey
+    //    Ältere Aufgaben (> 26 Std beim ersten Blick) werden NICHT mehr angeschrieben,
+    //    damit beim ersten Deploy keine Flut alter Aufgaben rausgeht.
+    const NACHHAKEN_MIN = 120, MELDEN_MIN = 720
+    const norm = (x: unknown) => String(x ?? '').trim().toLowerCase()
+    const { data: ueber, error: ueErr } = await supabase.from('team_kalender').select('*')
+      .eq('art', 'aufgabe').eq('fuer_alle', false)
+      .lte('beginn', new Date(now.getTime() - NACHHAKEN_MIN * 60000).toISOString())
+      .gte('beginn', new Date(now.getTime() - 36 * 3600000).toISOString())
+      .or('nachgehakt_am.is.null,eskaliert_am.is.null')
+    if (ueErr) console.error('team_kalender nachhaken:', ueErr.message)
+    for (const e of ueber || []) {
+      const fertig = new Set((e.erledigt_von || []).map(norm))
+      const offen: string[] = (e.fuer || []).filter((n: string) => !fertig.has(norm(n)))
+      if (!offen.length) continue
+      const beginn = new Date(e.beginn)
+      const seitMin = (now.getTime() - beginn.getTime()) / 60000
+      const bezug = e.folge_titel ? `\n↳ Folgeaufgabe zu: ${esc(e.folge_titel)}` : ''
+      if (!e.nachgehakt_am) {
+        if (seitMin > 26 * 60) continue
+        const { data: kc } = await supabase.from('chatters_contact').select('name, telegram_id').in('name', offen)
+        const { data: os } = await supabase.from('online_status').select('display_name, zeitzone').in('display_name', offen)
+        const tg: Record<string, string> = {}
+        for (const k of kc || []) if (k.telegram_id) tg[k.name] = k.telegram_id
+        const zonen: Record<string, string> = {}
+        for (const o of os || []) if (o.zeitzone) zonen[o.display_name] = o.zeitzone
+        for (const n of offen) {
+          const id = tg[n] || ADMIN_TG[norm(n)]
+          if (!id) continue
+          const zone = zonen[n] || 'Europe/Berlin'
+          const uhr = beginn.toLocaleTimeString('de-DE', { timeZone: zone, hour: '2-digit', minute: '2-digit' })
+          const zusatz = zone === 'Europe/Berlin' ? ' (deutsche Zeit)' : ' (deine Zeit)'
+          const msg = `⏳ <b>Noch offen: ${esc(e.titel)}</b>\n\nFällig war ${uhr} Uhr${zusatz}.${bezug}\n\nWenn erledigt: im Portal unter „Heute → Mein Kalender“ abhaken. Klappt etwas nicht? Dort 💬 Rückmeldung schreiben.\n\n– Thirteen 87`
+          await sendTelegram(id, msg)
+        }
+        await supabase.from('team_kalender').update({ nachgehakt_am: now.toISOString() }).eq('id', e.id)
+      } else if (!e.eskaliert_am && seitMin >= MELDEN_MIN) {
+        const std = Math.floor(seitMin / 60)
+        const msg = `⚠️ <b>Seit ${std} Std offen: ${esc(e.titel)}</b>\n\nNoch nicht abgehakt: ${offen.map(esc).join(', ')}${bezug}\n\n– Thirteen 87`
+        for (const id of Object.values(ADMIN_TG)) await sendTelegram(id, msg)
+        await supabase.from('team_kalender').update({ eskaliert_am: now.toISOString() }).eq('id', e.id)
+      }
     }
 
     return new Response(JSON.stringify({ ok: true }), { status: 200 })

@@ -6,6 +6,9 @@
 // v4.65.0: Wiederholungen (Serie = einzelne Zeilen mit serie_id, damit
 //          Erinnerung und „erledigt" pro Termin funktionieren), Erledigt-Meldung
 //          ans Team, Abhaken direkt im Admin-Kalender.
+// v4.66.0: Hinweise beim Anlegen (nachts / abwesend / keine Schicht), Model am
+//          Eintrag mit Empfängern aus dem Dienstplan, Liste „Offen", Verschieben
+//          per Ziehen, Vorlagen, Rückmeldungen der Empfänger.
 //
 // Zeit wie im Dienstplan: EINGABE in deutscher Zeit, gespeichert als fester
 // Zeitpunkt, ANZEIGE in der eigenen Zeit (Geräte-Uhr bzw. bestätigte Zone)
@@ -96,8 +99,54 @@ export async function erledigtMelden(e, erledigtVon, wer) {
   }
 }
 
-const leer = () => ({ id: null, titel: '', art: 'aufgabe', tag: datumInZone(new Date(), BERLIN).tag, von: '', bis: '', notiz: '', fuer: [], fuer_alle: false, erinnern_min: null, telegram: true, folgen: [], folgenAlt: [], wiederholung: '', wdhBis: '', serie_id: null, umfang: 'diesen', folge_von: null, altBeginn: null })
+const leer = () => ({ id: null, titel: '', art: 'aufgabe', tag: datumInZone(new Date(), BERLIN).tag, von: '', bis: '', notiz: '', fuer: [], fuer_alle: false, erinnern_min: null, telegram: true, folgen: [], folgenAlt: [], wiederholung: '', wdhBis: '', serie_id: null, umfang: 'diesen', folge_von: null, altBeginn: null, model_name: '' })
 const neueFolge = (fuer = []) => ({ tmp: Math.random().toString(36).slice(2), titel: '', bezug: 'ende', offset: 0, fuer: [...fuer] })
+
+// v4.66.0: fest eingebaute Vorlagen (eigene kommen aus kalender_vorlagen)
+const STANDARD_VORLAGEN = [
+  { id: 'std-stream', name: 'Stream + Massennachricht', fest: true, daten: { titel: 'Live-Stream', art: 'event', von: '20:00', bis: '22:00', erinnern_min: 30, folgen: [{ titel: 'Massennachricht an die Fans', bezug: 'ende', offset: 0, fuer: [] }] } },
+  { id: 'std-meeting', name: 'Team-Meeting', fest: true, daten: { titel: 'Team-Meeting', art: 'termin', von: '11:00', bis: '12:00', fuer_alle: true, erinnern_min: 60 } },
+  { id: 'std-aufgabe', name: 'Aufgabe mit Frist', fest: true, daten: { titel: '', art: 'aufgabe', von: '18:00', erinnern_min: 60 } },
+]
+
+// Nachts beim Empfänger = vor 7 Uhr oder ab 23 Uhr in seiner Zone
+const NACHT_BIS = 7, NACHT_AB = 23
+
+// Dienstplan-Zeilen → Schichten mit festen Zeitpunkten (Plan ist deutsche Zeit)
+export function schichtenAus(rows, modelName, vonTag, bisTag) {
+  const sch = []
+  for (const w of rows || []) {
+    const zeiten = w.shift_times || {}
+    for (const [key, val] of Object.entries(w.assignments || {})) {
+      if (!val || !val.chatter || val.chatter === '__FREI__') continue
+      const [modelId, planTag, shift] = key.split('__')
+      if (!planTag || planTag < vonTag || planTag > bisTag) continue
+      const spanne = String(val.time_override || zeiten[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
+      const [a, b] = spanne.split('-').map(x => x && x.trim())
+      if (!a || !/^\d{1,2}:\d{2}$/.test(a)) continue
+      const beginn = wandzeitZuDatum(planTag, a, BERLIN)
+      let bisD = b && /^\d{1,2}:\d{2}$/.test(b) ? wandzeitZuDatum(planTag, b, BERLIN) : null
+      if (bisD && bisD <= beginn) bisD = new Date(bisD.getTime() + 24 * 3600 * 1000)
+      const modus = val.trainee ? (MODUS[val.trainee_mode] || MODUS.anlernen) : null
+      const basis = { beginn, ende: bisD, shift, planTag, model: modelName[modelId] || modelId, entwurf: w.status !== 'live' }
+      sch.push({ ...basis, person: val.chatter, zusatz: val.trainee ? `${modus} mit ${val.trainee}` : '' })
+      if (val.trainee) sch.push({ ...basis, person: val.trainee, zusatz: `${modus} bei ${val.chatter}` })
+    }
+  }
+  return sch
+}
+// inkl. Schichtende: eine Folgeaufgabe genau um 22:00 gehört noch zur Spätschicht bis 22:00
+const deckt = (x, t) => x.beginn.getTime() <= t && t <= (x.ende ? x.ende.getTime() : x.beginn.getTime() + 8 * 3600000)
+
+// v4.66.0: Rückmeldung eines Empfängers an Chris und Rey (nicht an sich selbst)
+export async function rueckmeldungMelden(e, text, wer) {
+  const bezug = e.folge_titel ? `\n↳ Folgeaufgabe zu: ${e.folge_titel}` : ''
+  const msg = `💬 <b>${wer || 'Jemand'}</b> – Rückmeldung (Kalender):\n\n<b>${e.titel}</b>${bezug}\n\n${text}`
+  for (const [name, id] of Object.entries(ADMIN_TG)) {
+    if (name === normName(wer)) continue
+    try { await sendTelegramMessage(id, msg) } catch (err) { console.error('Telegram:', err) }
+  }
+}
 
 // Beginn einer Folgeaufgabe aus Event-Zeiten
 const folgeBeginn = (beginn, ende, bezug, offset) => {
@@ -161,6 +210,19 @@ export default function CalendarTab({ userDisplayName }) {
   const [fehler, setFehler] = useState(null)
   const [jetzt, setJetzt] = useState(Date.now())
   const rasterRef = useRef(null)
+  // v4.66.0
+  const [modelle, setModelle] = useState([])          // [{ id, name }]
+  const [modelFilter, setModelFilter] = useState('')  // '' = alle
+  const [abwesenheiten, setAbwesenheiten] = useState([])
+  const [offene, setOffene] = useState([])
+  const [vorlagen, setVorlagen] = useState([])
+  const [formSchichten, setFormSchichten] = useState(null) // Schichten rund ums Formular-Datum (null = noch nicht geladen)
+  const [rueckmeldungen, setRueckmeldungen] = useState([])
+  const [ziehen, setZiehen] = useState(null)          // { id, dx, dy, tage, minuten }
+  const [verschieben, setVerschieben] = useState(null) // { e, beginn, ende, telegram }
+  const zugRef = useRef(null)
+  const gezogenRef = useRef(false)
+  const rasterGridRef = useRef(null)
 
   useEffect(() => { const t = setInterval(() => setJetzt(Date.now()), 60000); return () => clearInterval(t) }, [])
 
@@ -204,29 +266,63 @@ export default function CalendarTab({ userDisplayName }) {
 
     // Schichten (Plan in deutscher Zeit) → feste Zeitpunkte; gefiltert aufs Team im Memo
     const modelName = Object.fromEntries((mo.data || []).map(m => [String(m.id), m.name]))
-    const sch = []
-    for (const w of sc.data || []) {
-      const zeiten = w.shift_times || {}
-      for (const [key, val] of Object.entries(w.assignments || {})) {
-        if (!val || !val.chatter || val.chatter === '__FREI__') continue
-        const [modelId, planTag, shift] = key.split('__')
-        if (!planTag || planTag < plusTage(woche, -1) || planTag > plusTage(woche, 7)) continue
-        const spanne = String(val.time_override || zeiten[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
-        const [a, b] = spanne.split('-').map(x => x && x.trim())
-        if (!a || !/^\d{1,2}:\d{2}$/.test(a)) continue
-        const beginn = wandzeitZuDatum(planTag, a, BERLIN)
-        let bisD = b && /^\d{1,2}:\d{2}$/.test(b) ? wandzeitZuDatum(planTag, b, BERLIN) : null
-        if (bisD && bisD <= beginn) bisD = new Date(bisD.getTime() + 24 * 3600 * 1000)
-        const modus = val.trainee ? (MODUS[val.trainee_mode] || MODUS.anlernen) : null
-        const basis = { beginn, ende: bisD, shift, model: modelName[modelId] || modelId, entwurf: w.status !== 'live' }
-        sch.push({ ...basis, person: val.chatter, zusatz: val.trainee ? `${modus} mit ${val.trainee}` : '' })
-        if (val.trainee) sch.push({ ...basis, person: val.trainee, zusatz: `${modus} bei ${val.chatter}` })
-      }
-    }
+    setModelle((mo.data || []).map(m => ({ id: m.id, name: m.name })).filter(m => m.name).sort((x, y) => x.name.localeCompare(y.name, 'de')))
+    const sch = schichtenAus(sc.data, modelName, plusTage(woche, -1), plusTage(woche, 7))
     setSchichten(sch)
   }, [woche])
 
   useEffect(() => { laden() }, [laden])
+
+  // v4.66.0: offene / überfällige Aufgaben (letzte 14 Tage) — unabhängig von der Woche
+  const ladeOffene = useCallback(async () => {
+    const { data, error } = await supabase.from('team_kalender').select('*')
+      .eq('art', 'aufgabe').eq('fuer_alle', false)
+      .gte('beginn', new Date(Date.now() - 14 * 86400000).toISOString())
+      .lte('beginn', new Date().toISOString())
+      .order('beginn', { ascending: false })
+    if (error) { setOffene([]); return }
+    setOffene((data || []).map(e => ({ ...e, offen: (e.fuer || []).filter(n => !(e.erledigt_von || []).some(x => normName(x) === normName(n))) })).filter(e => e.offen.length))
+  }, [])
+  useEffect(() => { ladeOffene() }, [ladeOffene])
+  useEffect(() => { const t = setInterval(ladeOffene, 5 * 60000); return () => clearInterval(t) }, [ladeOffene])
+
+  // Abwesenheiten (Dienstplan) + Vorlagen — einmal laden
+  const ladeZusatz = useCallback(async () => {
+    const [ab, vl] = await Promise.all([
+      supabase.from('absences').select('chatter_name, date_from, date_to, reason, available_shifts').gte('date_to', plusTage(datumInZone(new Date(), BERLIN).tag, -1)),
+      supabase.from('kalender_vorlagen').select('*').order('name'),
+    ])
+    setAbwesenheiten(ab.data || [])
+    setVorlagen(vl.error ? [] : (vl.data || []))
+  }, [])
+  useEffect(() => { ladeZusatz() }, [ladeZusatz])
+
+  // Schichten rund ums Formular-Datum (für Hinweise + Empfänger nach Model)
+  const formTag = form ? form.tag : null
+  useEffect(() => {
+    if (!formTag) { setFormSchichten(null); return }
+    let ab = false
+    const mo = montagVon(formTag)
+    ;(async () => {
+      const [sc, mc] = await Promise.all([
+        supabase.from('schedule').select('week_start, status, assignments, shift_times').gte('week_start', plusTage(mo, -7)).lte('week_start', mo),
+        supabase.from('models_contact').select('id, name'),
+      ])
+      if (ab) return
+      const modelName = Object.fromEntries((mc.data || []).map(m => [String(m.id), m.name]))
+      setFormSchichten({ tag: formTag, planDa: (sc.data || []).some(w => w.week_start === mo), liste: schichtenAus(sc.data, modelName, plusTage(formTag, -1), plusTage(formTag, 1)) })
+    })()
+    return () => { ab = true }
+  }, [formTag])
+
+  // Rückmeldungen zum ausgewählten Eintrag
+  const auswahlId = auswahl && auswahl.typ === 'eintrag' ? auswahl.daten.id : null
+  useEffect(() => {
+    if (!auswahlId) { setRueckmeldungen([]); return }
+    let ab = false
+    supabase.from('kalender_rueckmeldungen').select('*').eq('kalender_id', auswahlId).order('am').then(({ data }) => { if (!ab) setRueckmeldungen(data || []) })
+    return () => { ab = true }
+  }, [auswahlId])
 
   const ladePersonen = useCallback(async () => {
     const [c, u, inaktiv] = await Promise.all([
@@ -265,8 +361,10 @@ export default function CalendarTab({ userDisplayName }) {
         m[t].push({ ...basis, start: (s - a) / 60000, ende: Math.max((e - a) / 60000, (s - a) / 60000 + 20), fortsetzung: start < a, abgeschnitten: ende > b })
       }
     }
+    const mf = normName(modelFilter)
     for (const e of eintraege) {
       if (!ebenen[e.art]) continue
+      if (mf && normName(e.model_name) !== mf) continue
       const s = new Date(e.beginn).getTime()
       const en = e.ende ? new Date(e.ende).getTime() : s + OHNE_ENDE_MIN * 60000
       eintragen(s, en, { typ: 'eintrag', id: e.id, daten: e, farbe: artInfo(e.art).farbe })
@@ -277,7 +375,8 @@ export default function CalendarTab({ userDisplayName }) {
       const gruppen = {}
       for (const x of schichten) {
         const p = normName(x.person)
-        if (!team.has(p) && p !== ich) continue
+        // Mit Model-Filter: ALLE Schichten auf diesem Model (wer betreut es wann?)
+        if (mf) { if (normName(x.model) !== mf) continue } else if (!team.has(p) && p !== ich) continue
         const s = x.beginn.getTime(), en = x.ende ? x.ende.getTime() : s + 8 * 3600000
         const k = `${p}|${x.shift}|${s}|${en}`
         if (!gruppen[k]) gruppen[k] = { s, en, person: x.person, ich: p === ich, shift: x.shift, entwurf: false, zeilen: [] }
@@ -288,14 +387,17 @@ export default function CalendarTab({ userDisplayName }) {
     }
     for (const t of tage) m[t] = spaltenVerteilen(m[t])
     return m
-  }, [eintraege, schichten, ebenen, teamNamen, userDisplayName, tage, tagesGrenzen])
+  }, [eintraege, schichten, ebenen, teamNamen, userDisplayName, tage, tagesGrenzen, modelFilter])
 
   const modelProTag = useMemo(() => {
     const m = Object.fromEntries(tage.map(t => [t, []]))
     if (!ebenen.models) return m
-    for (const s of modelSachen) for (const t of tage) if (t >= s.von && t <= s.bis) m[t].push(s)
+    for (const s of modelSachen) {
+      if (modelFilter && normName(s.model) !== normName(modelFilter)) continue
+      for (const t of tage) if (t >= s.von && t <= s.bis) m[t].push(s)
+    }
     return m
-  }, [modelSachen, tage, ebenen])
+  }, [modelSachen, tage, ebenen, modelFilter])
 
   // ── Formular ──────────────────────────────────────────────────────────────
   const oeffneNeu = (tag, stunde) => {
@@ -306,12 +408,13 @@ export default function CalendarTab({ userDisplayName }) {
       const de = datumInZone(zeitpunkt, BERLIN)
       f.tag = de.tag; if (stunde != null) f.von = de.zeit
     }
+    if (modelFilter) f.model_name = modelFilter
     setForm(f); setAuswahl(null)
   }
   const oeffneBearbeiten = (e) => {
     const b = datumInZone(e.beginn, BERLIN)
     const folgenAlt = eintraege.filter(x => x.folge_von === e.id)
-    setForm({ id: e.id, titel: e.titel, art: e.art, tag: b.tag, von: b.zeit, bis: e.ende ? zeitIn(e.ende, BERLIN) : '', notiz: e.notiz || '', fuer: e.fuer || [], fuer_alle: !!e.fuer_alle, erinnern_min: e.erinnern_min ?? null, telegram: false, folgen: [], folgenAlt, wiederholung: e.wiederholung || '', wdhBis: '', serie_id: e.serie_id || null, umfang: 'diesen', folge_von: e.folge_von || null, altBeginn: e.beginn })
+    setForm({ id: e.id, titel: e.titel, art: e.art, tag: b.tag, von: b.zeit, bis: e.ende ? zeitIn(e.ende, BERLIN) : '', notiz: e.notiz || '', fuer: e.fuer || [], fuer_alle: !!e.fuer_alle, erinnern_min: e.erinnern_min ?? null, telegram: false, folgen: [], folgenAlt, wiederholung: e.wiederholung || '', wdhBis: '', serie_id: e.serie_id || null, umfang: 'diesen', folge_von: e.folge_von || null, altBeginn: e.beginn, model_name: e.model_name || '' })
     setAuswahl(null)
   }
   const formBeginn = form && form.tag && form.von ? wandzeitZuDatum(form.tag, form.von, BERLIN) : null
@@ -321,6 +424,83 @@ export default function CalendarTab({ userDisplayName }) {
     if (e <= formBeginn) e = new Date(e.getTime() + 24 * 3600 * 1000)
     return e
   })()
+
+  // ── v4.66.0: Hinweise zu den Empfängern (nachts / abwesend / keine Schicht) ──
+  const zoneVon = (n) => zonenListe.find(z => normName(z.name) === normName(n))?.zone || BERLIN
+  const istTeam = (n) => teamNamen.some(t => normName(t) === normName(n))
+  const hinweiseFuer = (namen, zeitpunkt, wofuer) => {
+    const out = []
+    if (!zeitpunkt) return out
+    const t = zeitpunkt.getTime()
+    const tagDe = datumInZone(zeitpunkt, BERLIN).tag
+    const liste = formSchichten && formSchichten.tag === form?.tag ? formSchichten.liste : null
+    for (const n of namen) {
+      if (normName(n) === normName(userDisplayName)) continue
+      const zone = zoneVon(n)
+      const std = Number(zeitIn(zeitpunkt, zone).slice(0, 2))
+      if (std < NACHT_BIS || std >= NACHT_AB) out.push({ stufe: 'nacht', name: n, text: `🌙 ${n}: ${zeitIn(zeitpunkt, zone)} Uhr bei ihm/ihr (${ortAus(zone)})${wofuer}` })
+      const ab = abwesenheiten.find(a => normName(a.chatter_name) === normName(n) && a.date_from <= tagDe && tagDe <= a.date_to)
+      if (ab) {
+        const teil = (ab.available_shifts || []).length ? ` – nur ${ab.available_shifts.join('/')} verfügbar` : ''
+        out.push({ stufe: 'abwesend', name: n, text: `🚫 ${n} ist abgemeldet (${ab.reason || 'abwesend'}${teil})${wofuer}` })
+      } else if (liste && formSchichten.planDa && !istTeam(n) && !liste.some(x => normName(x.person) === normName(n) && deckt(x, t))) {
+        out.push({ stufe: 'schicht', name: n, text: `○ ${n} hat zu der Zeit keine Schicht${wofuer}` })
+      }
+    }
+    return out
+  }
+  const formHinweise = (() => {
+    if (!form || !formBeginn) return []
+    const namen = form.fuer_alle ? [] : form.fuer // „Ganzes Team": keine Einzelprüfung
+    const h = hinweiseFuer(namen, formBeginn, '')
+    for (const f of form.folgen || []) {
+      if (!f.titel.trim()) continue
+      h.push(...hinweiseFuer(f.fuer, folgeBeginn(formBeginn, formEnde, f.bezug, f.offset), ` · Folgeaufgabe „${f.titel.trim()}"`))
+    }
+    return h
+  })()
+
+  // Wer hat zum Zeitpunkt Schicht auf dem Model? (sonst: wer an dem Tag)
+  const inSchicht = (model, zeitpunkt) => {
+    if (!model || !zeitpunkt || !formSchichten || formSchichten.tag !== form?.tag) return null
+    const t = zeitpunkt.getTime()
+    const aufModel = formSchichten.liste.filter(x => normName(x.model) === normName(model))
+    const jetztDa = [...new Set(aufModel.filter(x => deckt(x, t)).map(x => x.person))]
+    const tagDe = datumInZone(zeitpunkt, BERLIN).tag
+    const amTag = [...new Set(aufModel.filter(x => x.planTag === tagDe).map(x => `${x.person} (${x.shift})`))]
+    return { jetztDa, amTag }
+  }
+
+  // ── Vorlagen ──
+  const vorlageAnwenden = (v) => {
+    const d = v.daten || {}
+    setForm(f => ({
+      ...f, titel: d.titel ?? f.titel, art: d.art || f.art, von: d.von ?? f.von, bis: d.bis ?? '', notiz: d.notiz ?? '',
+      fuer: d.fuer_alle ? [] : (d.fuer || f.fuer), fuer_alle: !!d.fuer_alle, erinnern_min: d.erinnern_min ?? null,
+      model_name: d.model_name || f.model_name || '',
+      folgen: (d.folgen || []).map(x => ({ ...neueFolge(x.fuer || []), titel: x.titel || '', bezug: x.bezug || 'ende', offset: x.offset ?? 0 })),
+    }))
+  }
+  const alsVorlageSpeichern = async () => {
+    const name = window.prompt('Name der Vorlage (z. B. „Stream Chiara"):', form.titel || '')
+    if (!name || !name.trim()) return
+    const daten = {
+      titel: form.titel.trim(), art: form.art, von: form.von, bis: form.bis, notiz: form.notiz, fuer: form.fuer_alle ? [] : form.fuer,
+      fuer_alle: form.fuer_alle, erinnern_min: form.erinnern_min, model_name: form.model_name || null,
+      folgen: [...(form.folgen || []).filter(f => f.titel.trim()).map(f => ({ titel: f.titel.trim(), bezug: f.bezug, offset: f.offset, fuer: f.fuer })),
+        ...(form.folgenAlt || []).filter(f => f.folge_offset_min != null).map(f => ({ titel: f.titel, bezug: f.folge_bezug, offset: f.folge_offset_min, fuer: f.fuer || [] }))],
+    }
+    const { error } = await supabase.from('kalender_vorlagen').insert({ name: name.trim(), daten, erstellt_von: userDisplayName || null })
+    if (error) { alert('⚠ Vorlage nicht gespeichert: ' + (error.message.includes('kalender_vorlagen') ? 'Tabelle fehlt — SQL „team-kalender-ausbau.sql" ausführen.' : error.message)); return }
+    ladeZusatz()
+    alert(`Vorlage „${name.trim()}" gespeichert.`)
+  }
+  const vorlageLoeschen = async (v) => {
+    if (!confirm(`Vorlage „${v.name}" löschen?`)) return
+    const { error } = await supabase.from('kalender_vorlagen').delete().eq('id', v.id)
+    if (error) { alert('⚠ ' + error.message); return }
+    ladeZusatz()
+  }
 
   // Telegram an die Empfänger — Uhrzeit in IHRER Zeit (online_status.zeitzone), sonst DE
   const benachrichtigen = async (e, geaendert) => {
@@ -341,7 +521,7 @@ export default function CalendarTab({ userDisplayName }) {
       const b = new Date(e.beginn)
       const wann = `${b.toLocaleDateString('de-DE', { timeZone: zone, weekday: 'long', day: '2-digit', month: '2-digit' })}, ${zeitIn(b, zone)} Uhr`
       const zusatz = zone === BERLIN ? ' (deutsche Zeit)' : ` (deine Zeit · DE ${zeitIn(b, BERLIN)})`
-      const bezug = (e.folge_titel ? `\nFolgeaufgabe zu: ${e.folge_titel}` : '') + (e.serie_hinweis ? `\n🔁 ${e.serie_hinweis}` : '')
+      const bezug = (e.model_name && !normName(e.titel).includes(normName(e.model_name)) ? `\nModel: ${e.model_name}` : '') + (e.folge_titel ? `\nFolgeaufgabe zu: ${e.folge_titel}` : '') + (e.serie_hinweis ? `\n🔁 ${e.serie_hinweis}` : '')
       const text = `🗓 <b>${geaendert ? 'Geändert im Kalender' : 'Neu im Kalender'}</b>${userDisplayName ? ` · von ${userDisplayName}` : ''}\n\n` +
         `<b>${e.titel}</b>\n${a.label} · ${wann}${zusatz}${bezug}${e.notiz ? `\n\n${e.notiz}` : ''}\n\n– Thirteen 87`
       const res = await sendTelegramMessage(id, text)
@@ -364,8 +544,9 @@ export default function CalendarTab({ userDisplayName }) {
     if (!form.titel.trim()) { alert('Titel fehlt.'); return }
     if (!form.tag || !form.von) { alert('Datum und Uhrzeit (deutsche Zeit) fehlen.'); return }
     if (!form.fuer_alle && form.fuer.length === 0) { alert('Für wen ist der Eintrag? Personen wählen oder „Ganzes Team".'); return }
-    const folgenNeu = form.folgen.filter(f => f.titel.trim())
-    if (folgenNeu.some(f => f.fuer.length === 0)) { alert('Jede Folgeaufgabe braucht mindestens eine Person.'); return }
+    // Folgeaufgabe ohne Personen → dieselben Personen wie das Event (z. B. aus einer Vorlage)
+    const folgenNeu = form.folgen.filter(f => f.titel.trim()).map(f => ({ ...f, fuer: f.fuer.length ? f.fuer : (form.fuer_alle ? [] : form.fuer) }))
+    if (folgenNeu.some(f => f.fuer.length === 0)) { alert('Jede Folgeaufgabe braucht mindestens eine Person (bei „Ganzes Team" bitte Personen für die Folgeaufgabe wählen).'); return }
     if (neueSerie && (!form.wdhBis || form.wdhBis <= form.tag)) { alert('Bis wann soll wiederholt werden? Bitte ein Datum nach dem ersten Termin wählen.'); return }
     const tageListe = neueSerie ? serienTage(form.tag, form.wiederholung, form.wdhBis) : [form.tag]
     if (tageListe.length >= MAX_SERIE && !confirm(`Es werden höchstens ${MAX_SERIE} Termine angelegt (bis ${kurzTag(tageListe[tageListe.length - 1])}). Weiter?`)) return
@@ -375,6 +556,7 @@ export default function CalendarTab({ userDisplayName }) {
       titel: form.titel.trim(), art: form.art,
       notiz: form.notiz.trim() || null, fuer: form.fuer_alle ? [] : form.fuer, fuer_alle: form.fuer_alle,
       erinnern_min: form.erinnern_min ?? null, geaendert_am: new Date().toISOString(),
+      model_name: form.model_name || null,
     }
     const serieId = tageListe.length > 1 ? crypto.randomUUID() : null
     const serieFelder = serieId ? { serie_id: serieId, wiederholung: form.wiederholung } : {}
@@ -436,6 +618,7 @@ export default function CalendarTab({ userDisplayName }) {
           if (new Date(f.beginn).getTime() !== neu.getTime()) { upd.beginn = neu.toISOString(); upd.erinnerung_gesendet = false }
         }
         if (f.folge_titel !== p.titel) upd.folge_titel = p.titel
+        if ((f.model_name || null) !== (p.model_name || null)) upd.model_name = p.model_name || null
         if (!Object.keys(upd).length) continue
         const { error } = await supabase.from('team_kalender').update({ ...upd, geaendert_am: new Date().toISOString() }).eq('id', f.id)
         if (error) meldungen.push(`Folgeaufgabe „${f.titel}" nicht angepasst: ${error.message}`)
@@ -457,6 +640,7 @@ export default function CalendarTab({ userDisplayName }) {
         titel: d.titel, art: 'aufgabe', beginn: folgeBeginn(...zeitVon(z), d.bezug, d.offset).toISOString(), ende: null,
         notiz: null, fuer: d.fuer, fuer_alle: false, erinnern_min: form.erinnern_min != null ? Math.min(form.erinnern_min, 60) : null,
         folge_von: z.id, folge_bezug: d.bezug, folge_offset_min: d.offset, folge_titel: z.titel, erstellt_von: userDisplayName || null,
+        model_name: z.model_name || null,
       })
     }
     let angelegt = []
@@ -489,7 +673,7 @@ export default function CalendarTab({ userDisplayName }) {
     setForm(null)
     const tag = datumInZone(erster.beginn, anzeigeZone).tag
     setWoche(montagVon(tag)); setMobilTag(tag)
-    laden()
+    laden(); ladeOffene()
   }
 
   // umfang: 'diesen' | 'folgende' (nur bei Serien)
@@ -510,7 +694,7 @@ export default function CalendarTab({ userDisplayName }) {
     const { error } = await supabase.from('team_kalender').delete().in('id', [...ids, ...(folgen || []).map(f => f.id)])
     if (error) { alert('⚠ Nicht gelöscht: ' + error.message); return }
     logActivity('kalender.loeschen', { entity: e.titel, detail: [haupt.length > 1 ? `${haupt.length} Termine` : '', nF ? `+ ${nF} Folgeaufgabe(n)` : ''].filter(Boolean).join(' ') })
-    setAuswahl(null); laden()
+    setAuswahl(null); laden(); ladeOffene()
   }
 
   // v4.65.0: Aufgaben, in denen ich stehe, direkt hier abhaken
@@ -519,7 +703,78 @@ export default function CalendarTab({ userDisplayName }) {
     if (error) { alert('⚠ Nicht gespeichert: ' + error.message); return }
     if (wert) erledigtMelden(e, data, userDisplayName)
     setAuswahl({ typ: 'eintrag', daten: { ...e, erledigt_von: data || [] } })
-    laden()
+    laden(); ladeOffene()
+  }
+
+  // ── v4.66.0: Verschieben per Ziehen (nur am Computer) ────────────────────
+  const verschobenUm = (e, tageD, minuten) => {
+    const d = datumInZone(e.beginn, anzeigeZone)
+    const b = new Date(wandzeitZuDatum(plusTage(d.tag, tageD), d.zeit, anzeigeZone).getTime() + minuten * 60000)
+    const dauer = e.ende ? new Date(e.ende).getTime() - new Date(e.beginn).getTime() : null
+    return { beginn: b, ende: dauer != null ? new Date(b.getTime() + dauer) : null }
+  }
+  const zugStart = (ev, b) => {
+    if (mobil || b.typ !== 'eintrag' || ev.button !== 0) return
+    const grid = rasterGridRef.current
+    if (!grid) return
+    const r = grid.getBoundingClientRect()
+    const spalte = (r.width - zeitSpalte) / sichtbareTage.length
+    zugRef.current = { id: b.id, e: b.daten, x0: ev.clientX, y0: ev.clientY, spalte, aktiv: false, tage: 0, minuten: 0 }
+    const move = (m) => {
+      const z = zugRef.current
+      if (!z) return
+      const dx = m.clientX - z.x0, dy = m.clientY - z.y0
+      if (!z.aktiv && Math.abs(dx) + Math.abs(dy) < 6) return
+      z.aktiv = true
+      z.tage = Math.round(dx / z.spalte)
+      z.minuten = Math.round(((dy / STUNDE_PX) * 60) / 15) * 15
+      setZiehen({ id: z.id, tage: z.tage, minuten: z.minuten, spalte: z.spalte })
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      const z = zugRef.current
+      zugRef.current = null
+      setZiehen(null)
+      if (!z || !z.aktiv) return
+      gezogenRef.current = true // den folgenden Klick nicht als „Auswählen" werten
+      if (!z.tage && !z.minuten) return
+      setVerschieben({ e: z.e, ...verschobenUm(z.e, z.tage, z.minuten), telegram: false })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  const verschiebenSpeichern = async () => {
+    const { e, beginn, ende, telegram } = verschieben
+    const upd = { beginn: beginn.toISOString(), ende: ende ? ende.toISOString() : null, erinnerung_gesendet: false, geaendert_am: new Date().toISOString() }
+    // Folgeaufgabe von Hand verschoben → neuen Abstand zum Event merken, damit sie weiter mitwandert
+    const haupt = e.folge_von ? eintraege.find(x => x.id === e.folge_von) : null
+    if (haupt && e.folge_offset_min != null) {
+      const basis = e.folge_bezug === 'beginn' || !haupt.ende ? new Date(haupt.beginn) : new Date(haupt.ende)
+      upd.folge_offset_min = Math.round((beginn.getTime() - basis.getTime()) / 60000)
+    }
+    setSpeichert(true)
+    const { data, error } = await supabase.from('team_kalender').update(upd).eq('id', e.id).select().single()
+    if (error) { setSpeichert(false); alert('⚠ Nicht verschoben: ' + error.message); return }
+    const meldungen = []
+    const { data: folgen } = await supabase.from('team_kalender').select('*').eq('folge_von', e.id)
+    for (const f of folgen || []) {
+      if (f.folge_offset_min == null) continue
+      const neu = folgeBeginn(beginn, ende, f.folge_bezug, f.folge_offset_min)
+      const { error: e2 } = await supabase.from('team_kalender').update({ beginn: neu.toISOString(), erinnerung_gesendet: false, geaendert_am: new Date().toISOString() }).eq('id', f.id)
+      if (e2) meldungen.push(`Folgeaufgabe „${f.titel}" nicht verschoben: ${e2.message}`)
+    }
+    if (telegram) {
+      const r = await benachrichtigen(data, true)
+      if (r.fehlt.length) meldungen.push(`Ohne Telegram-ID: ${r.fehlt.join(', ')}`)
+      if (r.fehler.length) meldungen.push(`Telegram NICHT angekommen: ${r.fehler.join(', ')}`)
+    }
+    const de = datumInZone(beginn, BERLIN)
+    logActivity('kalender.edit', { entity: e.titel, detail: `verschoben auf ${de.tag} ${de.zeit} (DE)` })
+    setSpeichert(false); setVerschieben(null)
+    if (meldungen.length) alert('Verschoben.\n\n' + meldungen.join('\n'))
+    laden(); ladeOffene()
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -567,6 +822,7 @@ export default function CalendarTab({ userDisplayName }) {
       <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: a.farbe, background: a.farbe + '22', padding: '3px 8px', borderRadius: 5 }}>{a.label}</span>
+          {e.model_name && <span style={{ fontSize: 10, fontWeight: 700, color: '#6ee7b7', background: 'rgba(16,185,129,0.14)', padding: '3px 8px', borderRadius: 5 }}>{e.model_name}</span>}
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>angelegt von {e.erstellt_von || '—'}</span>
         </div>
         <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.25 }}>{e.titel}</div>
@@ -592,7 +848,19 @@ export default function CalendarTab({ userDisplayName }) {
           </div>
           {e.fuer_alle && (e.erledigt_von || []).length > 0 && <div style={{ fontSize: 12, color: '#10b981' }}>✓ erledigt von {(e.erledigt_von || []).join(', ')}</div>}
           {e.erinnern_min ? <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>⏰ Erinnerung {ERINNERUNGEN.find(r => r.min === e.erinnern_min)?.label || `${e.erinnern_min} Min vorher`}{e.erinnerung_gesendet ? ' · verschickt' : ''}</div> : null}
+          {e.nachgehakt_am && <div style={{ fontSize: 12, color: '#f59e0b' }}>⏳ Nachgehakt {new Date(e.nachgehakt_am).toLocaleString('de-DE', { timeZone: anzeigeZone, weekday: 'short', hour: '2-digit', minute: '2-digit' })}{e.eskaliert_am ? ' · an Chris/Rey gemeldet' : ''}</div>}
         </div>
+        {rueckmeldungen.length > 0 && (
+          <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={kopfLabel}>💬 Rückmeldungen</div>
+            {rueckmeldungen.map(r => (
+              <div key={r.id} style={{ fontSize: 12, color: 'var(--text-primary)' }}>
+                <b>{r.von}</b> <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{new Date(r.am).toLocaleString('de-DE', { timeZone: anzeigeZone, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-secondary)', marginTop: 2 }}>{r.text}</div>
+              </div>
+            ))}
+          </div>
+        )}
         {folgen.length > 0 && (
           <div style={{ background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={kopfLabel}>Folgeaufgaben</div>
@@ -646,7 +914,7 @@ export default function CalendarTab({ userDisplayName }) {
       </div>
       {/* Stunden */}
       <div ref={rasterRef} style={{ overflowY: 'auto', maxHeight: mobil ? 'calc(100vh - 330px)' : 640, minHeight: 320 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: `${zeitSpalte}px repeat(${sichtbareTage.length}, minmax(0, 1fr))`, position: 'relative', height: 24 * STUNDE_PX }}>
+        <div ref={rasterGridRef} style={{ display: 'grid', gridTemplateColumns: `${zeitSpalte}px repeat(${sichtbareTage.length}, minmax(0, 1fr))`, position: 'relative', height: 24 * STUNDE_PX }}>
           <div style={{ position: 'relative' }}>
             {Array.from({ length: 24 }, (_, h) => (
               <div key={h} style={{ position: 'absolute', top: h * STUNDE_PX, right: 6, fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)', transform: 'translateY(2px)' }}>{String(h).padStart(2, '0')}:00</div>
@@ -667,15 +935,22 @@ export default function CalendarTab({ userDisplayName }) {
                   const schicht = b.typ === 'schicht'
                   const aktiv = auswahl && ((auswahl.typ === 'eintrag' && auswahl.daten.id === b.id) || (auswahl.typ === 'schicht' && auswahl.daten === b.daten))
                   const e = b.daten
+                  const gezogen = !!(ziehen && ziehen.id === b.id)
+                  const ueberfaellig = !schicht && e.art === 'aufgabe' && !e.fuer_alle && new Date(e.beginn).getTime() < jetzt && (e.fuer || []).some(n => !(e.erledigt_von || []).some(x => normName(x) === normName(n)))
                   return (
-                    <button key={b.id + '|' + b.start} onClick={() => setAuswahl({ typ: b.typ, daten: e })}
+                    <button key={b.id + '|' + b.start}
+                      onPointerDown={ev => zugStart(ev, b)}
+                      onClick={() => { if (gezogenRef.current) { gezogenRef.current = false; return } setAuswahl({ typ: b.typ, daten: e }) }}
                       style={{
                         position: 'absolute', top: top + 1, height: hoehe, left: `calc(${b.spalte * breiteP}% + 2px)`, width: `calc(${breiteP}% - 4px)`,
                         boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', overflow: 'hidden', padding: '3px 6px',
                         background: schicht ? 'rgba(100,116,139,0.14)' : b.farbe + '26',
                         border: `1px ${schicht && e.entwurf ? 'dashed' : 'solid'} ${b.farbe}66`, borderLeft: `3px solid ${b.farbe}`, borderRadius: 6,
                         borderTopLeftRadius: b.fortsetzung ? 0 : 6, borderBottomLeftRadius: b.abgeschnitten ? 0 : 6,
-                        outline: aktiv ? `2px solid ${b.farbe}` : 'none', outlineOffset: 1, color: 'var(--text-primary)', zIndex: aktiv ? 3 : schicht ? 1 : 2,
+                        outline: aktiv ? `2px solid ${b.farbe}` : 'none', outlineOffset: 1, color: 'var(--text-primary)', zIndex: gezogen ? 6 : aktiv ? 3 : schicht ? 1 : 2,
+                        cursor: !mobil && !schicht ? (gezogen ? 'grabbing' : 'grab') : 'pointer', userSelect: 'none', touchAction: mobil ? 'auto' : 'none',
+                        transform: gezogen ? `translate(${ziehen.tage * ziehen.spalte}px, ${(ziehen.minuten / 60) * STUNDE_PX}px)` : 'none',
+                        opacity: gezogen ? 0.85 : 1, boxShadow: gezogen ? '0 8px 24px rgba(0,0,0,0.45)' : 'none',
                       }}>
                       {schicht ? (
                         <>
@@ -685,9 +960,10 @@ export default function CalendarTab({ userDisplayName }) {
                       ) : (
                         <>
                           <div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.25, color: 'var(--text-primary)', whiteSpace: hoehe < 30 ? 'nowrap' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {e.folge_von ? '↳ ' : ''}{e.serie_id ? '🔁 ' : ''}{e.titel}
+                            {ueberfaellig ? '⏳ ' : ''}{e.folge_von ? '↳ ' : ''}{e.serie_id ? '🔁 ' : ''}{e.titel}
                           </div>
-                          {hoehe > 30 && <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>{zeitIn(e.beginn, anzeigeZone)}{e.ende ? '–' + zeitIn(e.ende, anzeigeZone) : ''} · {e.fuer_alle ? 'Team' : (e.fuer || []).join(', ')}{(e.erledigt_von || []).length ? ` · ✓${e.erledigt_von.length}` : ''}</div>}
+                          {gezogen && <div style={{ fontSize: 10, fontWeight: 700, color: '#fde68a' }}>→ {(() => { const n = verschobenUm(e, ziehen.tage, ziehen.minuten); return `${TAGE[wochentag(datumInZone(n.beginn, anzeigeZone).tag)]} ${zeitIn(n.beginn, anzeigeZone)}` })()}</div>}
+                          {hoehe > 30 && !gezogen && <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>{e.model_name && !normName(e.titel).includes(normName(e.model_name)) ? `${e.model_name} · ` : ''}{zeitIn(e.beginn, anzeigeZone)}{e.ende ? '–' + zeitIn(e.ende, anzeigeZone) : ''} · {e.fuer_alle ? 'Team' : (e.fuer || []).join(', ')}{(e.erledigt_von || []).length ? ` · ✓${e.erledigt_von.length}` : ''}</div>}
                         </>
                       )}
                     </button>
@@ -722,6 +998,60 @@ export default function CalendarTab({ userDisplayName }) {
     </details>
   )
 
+  // v4.66.0: Model-Filter + Liste „Offen"
+  const modelWahl = (
+    <select value={modelFilter} onChange={e => setModelFilter(e.target.value)} aria-label="Nach Model filtern" style={{ ...inp, padding: '6px 8px', fontSize: 12, width: mobil ? 'auto' : '100%' }}>
+      <option value="">Alle Models</option>
+      {modelle.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+    </select>
+  )
+  const seitText = (iso) => {
+    const min = Math.floor((jetzt - new Date(iso).getTime()) / 60000)
+    if (min < 60) return `seit ${min} Min`
+    const h = Math.floor(min / 60)
+    return h < 48 ? `seit ${h} Std` : `seit ${Math.floor(h / 24)} Tagen`
+  }
+  const offeneGefiltert = modelFilter ? offene.filter(e => normName(e.model_name) === normName(modelFilter)) : offene
+  const offenListe = (
+    <details open={!mobil && offeneGefiltert.length > 0 && offeneGefiltert.length <= 6}>
+      <summary style={{ cursor: 'pointer', ...kopfLabel, marginBottom: 0, listStyle: 'none', color: offeneGefiltert.length ? '#f59e0b' : 'var(--text-muted)' }}>⏳ Offen · {offeneGefiltert.length} überfällig ▾</summary>
+      <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+        {offeneGefiltert.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Nichts überfällig.</div>}
+        {offeneGefiltert.map(e => (
+          <button key={e.id} onClick={() => { const t = datumInZone(e.beginn, anzeigeZone).tag; setWoche(montagVon(t)); setMobilTag(t); setAuswahl({ typ: 'eintrag', daten: e }) }}
+            style={{ textAlign: 'left', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '6px 8px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{e.titel}</div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{seitText(e.beginn)} · offen: {e.offen.join(', ')}</div>
+          </button>
+        ))}
+      </div>
+    </details>
+  )
+
+  // Formular: Vorschlag „wer hat dann Schicht auf dem Model"
+  const schichtVorschlag = (zeitpunkt, gewaehlt, uebernehmen) => {
+    if (!form || !form.model_name) return null
+    if (!zeitpunkt) return <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Uhrzeit eingeben — dann schlage ich vor, wer auf {form.model_name} Schicht hat.</div>
+    const v = inSchicht(form.model_name, zeitpunkt)
+    if (!v) return <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Dienstplan wird geladen …</div>
+    if (!formSchichten.planDa && !v.jetztDa.length) return <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Für diese Woche gibt es noch keinen Dienstplan.</div>
+    const fehlen = v.jetztDa.filter(n => !gewaehlt.some(g => normName(g) === normName(n)))
+    return (
+      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {v.jetztDa.length
+          ? <>🧑‍💻 Um {zeitIn(zeitpunkt, BERLIN)} (DE) auf {form.model_name}: <b style={{ color: 'var(--text-primary)' }}>{v.jetztDa.join(', ')}</b>
+              {fehlen.length > 0 && <button type="button" onClick={() => uebernehmen([...gewaehlt, ...fehlen])} style={{ ...btn(false), padding: '3px 8px', fontSize: 11 }}>+ übernehmen</button>}</>
+          : <>Um {zeitIn(zeitpunkt, BERLIN)} (DE) hat niemand Schicht auf {form.model_name}.{v.amTag.length ? ` Am Tag: ${v.amTag.join(', ')}` : ''}</>}
+      </div>
+    )
+  }
+  const hinweisBox = form && formHinweise.length > 0 && (
+    <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 9, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ ...kopfLabel, color: '#f59e0b', marginBottom: 2 }}>Bitte prüfen</div>
+      {formHinweise.map((h, i) => <div key={i} style={{ fontSize: 12, color: h.stufe === 'schicht' ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{h.text}</div>)}
+    </div>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* eigene Zeitzone bestätigen — wie im Portal */}
@@ -744,8 +1074,12 @@ export default function CalendarTab({ userDisplayName }) {
       {/* Mobil: Neuer Eintrag, Ebenen als Leiste, Tag-Auswahl */}
       {mobil && (
         <>
-          <button onClick={() => oeffneNeu(mobilTag)} style={{ ...btn(true), padding: '10px 14px', fontSize: 13 }}>+ Neuer Eintrag</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => oeffneNeu(mobilTag)} style={{ ...btn(true), padding: '10px 14px', fontSize: 13, flex: 1 }}>+ Neuer Eintrag</button>
+            {modelWahl}
+          </div>
           {ebenenListe}
+          {offeneGefiltert.length > 0 && <div style={{ ...card, padding: 10 }}>{offenListe}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
             {tage.map(t => {
               const an = t === mobilTag, istHeute = t === heute
@@ -769,8 +1103,10 @@ export default function CalendarTab({ userDisplayName }) {
         {!mobil && (
           <aside style={{ width: 210, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16, position: 'sticky', top: 12 }}>
             <button onClick={() => oeffneNeu()} style={{ ...btn(true), padding: '10px 14px', fontSize: 13 }}>+ Neuer Eintrag</button>
+            <div><div style={kopfLabel}>Model</div>{modelWahl}</div>
             <div><div style={kopfLabel}>Ebenen</div>{ebenenListe}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>Doppelklick ins Raster legt einen Eintrag zu dieser Uhrzeit an.</div>
+            {offenListe}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>Doppelklick ins Raster legt einen Eintrag an. Einträge lassen sich mit der Maus verschieben.</div>
             {zonenUebersicht}
           </aside>
         )}
@@ -809,6 +1145,17 @@ export default function CalendarTab({ userDisplayName }) {
           <div onClick={e => e.stopPropagation()} style={{ ...card, width: mobil ? '100%' : 'min(900px, 100%)', maxHeight: mobil ? '92vh' : '90vh', overflowY: 'auto', padding: mobil ? 16 : 20, borderRadius: mobil ? '16px 16px 0 0' : 12, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 380px', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>{form.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag'}</div>
+              {!form.id && (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ ...lbl, marginBottom: 0, marginRight: 2 }}>Vorlage:</span>
+                  {[...STANDARD_VORLAGEN, ...vorlagen].map(v => (
+                    <span key={v.id} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                      <button type="button" onClick={() => vorlageAnwenden(v)} style={{ background: v.fest ? 'transparent' : 'rgba(124,58,237,0.12)', border: 'none', color: 'var(--text-secondary)', padding: '4px 9px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>{v.name}</button>
+                      {!v.fest && <button type="button" onClick={() => vorlageLoeschen(v)} aria-label={`Vorlage ${v.name} löschen`} style={{ background: 'transparent', border: 'none', borderLeft: '1px solid var(--border)', color: 'var(--text-muted)', padding: '4px 6px', fontSize: 10, cursor: 'pointer' }}>✕</button>}
+                    </span>
+                  ))}
+                </div>
+              )}
               <label><span style={lbl}>Titel</span><input value={form.titel} onChange={e => setForm({ ...form, titel: e.target.value })} style={inp} placeholder="z. B. Chiara live auf Twitch" /></label>
               <div><span style={lbl}>Art</span>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -845,10 +1192,18 @@ export default function CalendarTab({ userDisplayName }) {
                   )}
                 </div>
               )}
+              <label><span style={lbl}>Model (optional)</span>
+                <select value={form.model_name || ''} onChange={e => setForm({ ...form, model_name: e.target.value })} style={inp}>
+                  <option value="">— kein Model —</option>
+                  {modelle.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  {form.model_name && !modelle.some(m => m.name === form.model_name) && <option value={form.model_name}>{form.model_name}</option>}
+                </select>
+              </label>
               <div><span style={lbl}>Für wen</span>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-primary)', marginBottom: 6 }}>
                   <input type="checkbox" checked={form.fuer_alle} onChange={e => setForm({ ...form, fuer_alle: e.target.checked })} style={{ accentColor: '#7c3aed' }} /> Ganzes Team (alle Chatter + Team)
                 </label>
+                {!form.fuer_alle && form.model_name && <div style={{ marginBottom: 6 }}>{schichtVorschlag(formBeginn, form.fuer, fuer => setForm(f => ({ ...f, fuer })))}</div>}
                 {!form.fuer_alle && <PersonenChips personen={personen} team={teamNamen} gewaehlt={form.fuer} onChange={fuer => setForm({ ...form, fuer })} />}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: mobil ? '1fr' : '1fr 1fr', gap: 10, alignItems: 'end' }}>
@@ -906,6 +1261,8 @@ export default function CalendarTab({ userDisplayName }) {
                           </select>
                           {vorschau && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>→ {zeitIn(vorschau, BERLIN)} DE · {zeitIn(vorschau, meineZone())} bei dir</span>}
                         </div>
+                        {form.model_name && schichtVorschlag(vorschau, f.fuer, fuer => setF({ fuer }))}
+                        {f.fuer.length === 0 && !form.fuer_alle && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Niemand gewählt = dieselben Personen wie beim Event.</div>}
                         <PersonenChips personen={personen} team={teamNamen} gewaehlt={f.fuer} onChange={fuer => setF({ fuer })} klein />
                       </div>
                     )
@@ -913,6 +1270,8 @@ export default function CalendarTab({ userDisplayName }) {
                 </div>
               )}
 
+              {mobil && hinweisBox}
+              {!mobil && <button type="button" onClick={alsVorlageSpeichern} disabled={speichert || !form.titel.trim()} style={{ ...btn(false), alignSelf: 'flex-start', fontSize: 11 }}>☆ Als Vorlage speichern</button>}
               <div style={{ display: 'flex', gap: 8, position: mobil ? 'sticky' : 'static', bottom: 0, background: 'var(--bg-card)', paddingTop: mobil ? 8 : 0 }}>
                 <button onClick={() => setForm(null)} disabled={speichert} style={{ ...btn(false), flex: mobil ? 1 : 'none' }}>Abbrechen</button>
                 <button onClick={speichern} disabled={speichert} style={{ ...btn(true), padding: '8px 18px', flex: mobil ? 2 : 'none' }}>{speichert ? 'Speichert…' : form.id ? 'Speichern' : 'Eintragen'}</button>
@@ -921,10 +1280,40 @@ export default function CalendarTab({ userDisplayName }) {
             <div style={{ flex: '0 1 260px', minWidth: 0 }}>
               <div style={kopfLabel}>So sieht es bei den anderen aus</div>
               {formBeginn ? <ZonenTabelle beginn={formBeginn} /> : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Datum und Uhrzeit eingeben — hier erscheint dann die Uhrzeit in jeder Zeitzone.</div>}
+              {!mobil && hinweisBox && <div style={{ marginTop: 12 }}>{hinweisBox}</div>}
+              {mobil && <button type="button" onClick={alsVorlageSpeichern} disabled={speichert || !form.titel.trim()} style={{ ...btn(false), marginTop: 10, fontSize: 11 }}>☆ Als Vorlage speichern</button>}
             </div>
           </div>
         </div>
       )}
+
+      {/* v4.66.0: Verschieben bestätigen */}
+      {verschieben && (() => {
+        const v = verschieben
+        const alt = datumInZone(v.e.beginn, BERLIN), neu = datumInZone(v.beginn, BERLIN)
+        const nFolgen = eintraege.filter(x => x.folge_von === v.e.id).length
+        const wann = (d) => `${TAGE[wochentag(d.tag)]} ${kurzTag(d.tag)} ${d.zeit}`
+        return (
+          <div onClick={() => !speichert && setVerschieben(null)} style={{ position: 'fixed', inset: 0, zIndex: 9002, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={ev => ev.stopPropagation()} style={{ ...card, width: 'min(420px, 100%)', padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Verschieben?</div>
+              <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>„{v.e.titel}"</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{wann(alt)} → <b style={{ color: '#c4b5fd' }}>{wann(neu)}</b> (DE)</div>
+              {anzeigeZone !== BERLIN && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>bei dir: {zeitIn(v.beginn, anzeigeZone)} Uhr</div>}
+              {v.e.serie_id && <div style={{ fontSize: 12, color: '#c4b5fd' }}>🔁 Nur dieser Termin der Serie wird verschoben.</div>}
+              {nFolgen > 0 && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>↳ {nFolgen} Folgeaufgabe(n) wandern mit.</div>}
+              {v.e.folge_von && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>↳ Der neue Abstand zum Event wird gemerkt.</div>}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-primary)' }}>
+                <input type="checkbox" checked={v.telegram} onChange={ev => setVerschieben({ ...v, telegram: ev.target.checked })} style={{ accentColor: '#7c3aed' }} /> Änderung per Telegram melden
+              </label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setVerschieben(null)} disabled={speichert} style={btn(false)}>Abbrechen</button>
+                <button onClick={verschiebenSpeichern} disabled={speichert} style={{ ...btn(true), padding: '6px 16px' }}>{speichert ? 'Speichert…' : 'Verschieben'}</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
