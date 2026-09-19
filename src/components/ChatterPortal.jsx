@@ -1372,20 +1372,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     // aus — wer den Tab offen hatte, während eine Migration nachgezogen wurde,
     // sah für den Rest des Tages keine Übergaben mehr.
     if (Date.now() < ladePauseBisRef.current) return
-    const seit = new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString()
-    const { data, error } = await supabase
-      .from('shift_logs')
-      .select('id, display_name, shift, checked_out_at, handover_text, handover_at, handover_ack, handover_for, handover_models, handover_about, handover_parts')
-      .not('handover_text', 'is', null)
-      // Zeitgrenze über `handover_at`, nicht über `checked_out_at`: eine per
-      // Telegram (/uebergabe) während der laufenden Schicht geschriebene Übergabe
-      // hat noch kein Check-out und wäre sonst unsichtbar.
-      .gte('handover_at', seit)
-      // Großzügiges Limit, weil erst danach in JS gefiltert wird (eigene und
-      // bereits bestätigte fallen dort weg) — mit einem knappen Limit würden
-      // offene Übergaben still hinten herausfallen.
-      .order('handover_at', { ascending: false })
-      .limit(100)
+    // v4.56.0: über die Funktion `offene_uebergaben()` statt direkt aus
+    // shift_logs. Seit der Sicherheits-Stufe sehen Chatter in shift_logs nur
+    // noch ihre EIGENEN Zeilen — die Übergaben der anderen aus den letzten
+    // 16 Stunden liefert die Funktion (gleicher Filter wie vorher: handover_at
+    // ≥ jetzt−16 h, Text vorhanden, neueste zuerst, max. 100). Die Auswahl, wen
+    // eine Übergabe angeht, passiert unverändert unten in JS.
+    const { data, error } = await supabase.rpc('offene_uebergaben')
     if (error) {
       // Fehlende Spalten = Migration noch nicht ausgeführt. Fünf Minuten Ruhe,
       // dann wird es erneut versucht — so kommt das Feature von selbst zurück,
@@ -1467,16 +1460,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const bestaetigeUebergabe = async (log) => {
     setUebergabeLaedt(true)
     try {
-      const { data: frisch } = await supabase
-        .from('shift_logs').select('handover_ack').eq('id', log.id).maybeSingle()
-      const bisher = frisch?.handover_ack || log.handover_ack || []
-      if (bisher.includes(displayName)) {
-        setEingangUebergaben(prev => prev.filter(l => l.id !== log.id))
-        return
-      }
-      const { error } = await supabase.from('shift_logs')
-        .update({ handover_ack: [...bisher, displayName] })
-        .eq('id', log.id)
+      // v4.56.0: atomar per Funktion (array_append) — Chatter dürfen fremde
+      // shift_logs-Zeilen nicht mehr direkt ändern. Nebeneffekt: zwei
+      // gleichzeitige Bestätigungen überschreiben sich nicht mehr.
+      const { error } = await supabase.rpc('uebergabe_bestaetigen', { p_id: String(log.id) })
       if (error) {
         alert('⚠️ Bestätigung konnte nicht gespeichert werden. Bitte nochmal versuchen.')
         return
