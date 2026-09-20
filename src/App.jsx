@@ -36,13 +36,34 @@ import PresentationToggle from './components/PresentationToggle'
 import Logo from './components/Logo'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 import { useFabPanels } from './fabPanel'
+// v4.68.0: Ansicht in der Adresszeile + eine Quelle fuer die Tab-Rechte
+import { routeLesen, routeSchreiben } from './route'
+import { darfAufTab, startTab } from './zugang'
+
+// Sprungziele, die CommTab ueber seine focus-Prop versteht (dort:
+// activeSection). Was nicht hier steht, wird aus der URL ignoriert.
+const SPRUNG_IN_COMM = {
+  chatters: true, swaps: true, stats: true, shiftlog: true,
+  models: true, 'content-requests': true, 'content-ideas': true, 'content-verlauf': true,
+}
 
 export default function App() {
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [needsPassword, setNeedsPassword] = useState(false)
 
-  const [activeTab, setActiveTab] = useState('models')
+  // v4.68.0: Startansicht kommt aus der Adresszeile, damit Links, Reload und
+  // der Zurueck-Button funktionieren. Geprueft wird sie, sobald die Rolle
+  // feststeht (Effekt weiter unten).
+  const [activeTab, setActiveTab] = useState(() => routeLesen().tab || 'models')
+  // Der erste Schreibvorgang ersetzt den History-Eintrag statt einen neuen
+  // anzulegen — sonst braeuchte das erste Zurueck zwei Klicks.
+  const routeErsetzen = useRef(true)
+  const routeGeprueft = useRef(false)
+  // Sprungbefehl aus dem Aufruf festhalten: der Sync-Effekt unten raeumt
+  // ziel/id schon beim ersten Rendern aus der Adresszeile, die Rolle steht
+  // aber erst ein paar Renderdurchgaenge spaeter fest.
+  const routeStart = useRef(routeLesen())
   // v3.9.0: Mobile + Dropdown
   const [moreOpen, setMoreOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -80,6 +101,43 @@ export default function App() {
   // Status. Der Admin-Heartbeat hier würde ihn sonst alle 30 s auf false setzen.
   const viewModeRef = useRef('auto')
   useEffect(() => { viewModeRef.current = viewMode }, [viewMode])
+
+  // ── Adresszeile ⇄ Ansicht (v4.68.0) ───────────────────────────────────────
+  // Warum Query statt Hash und was ziel/id bedeuten: src/route.js.
+  useEffect(() => {
+    // Chatter- und Model-Portal haben keine Tabs — dort bleibt die Adresszeile
+    // sauber. Beim Vorschau-Modus eines Admins greift das bewusst nicht.
+    const imPortal = (userRole === 'chatter' || userRole === 'model') && viewMode !== 'admin'
+    if (!userRole || imPortal) { routeSchreiben({ tab: null }, { ersetzen: true }); return }
+    routeSchreiben({ tab: activeTab }, { ersetzen: routeErsetzen.current })
+    routeErsetzen.current = false
+  }, [activeTab, userRole, viewMode])
+
+  useEffect(() => {
+    const beiZurueck = () => {
+      const r = routeLesen()
+      routeErsetzen.current = true   // aus der History kommend nichts Neues pushen
+      setActiveTab(r.tab || 'models')
+    }
+    window.addEventListener('popstate', beiZurueck)
+    return () => window.removeEventListener('popstate', beiZurueck)
+  }, [])
+
+  // Sobald die Rolle feststeht: den Tab aus der URL pruefen — ein
+  // weitergeleiteter Link darf niemandem eine Seite oeffnen, die seine Rolle
+  // nicht sehen darf — und einen mitgegebenen Sprungbefehl einmal ausfuehren.
+  useEffect(() => {
+    if (!userRole || routeGeprueft.current) return
+    routeGeprueft.current = true
+    const r = routeStart.current
+    if (r.tab && !darfAufTab(userRole, userRoles, r.tab)) {
+      routeErsetzen.current = true
+      setActiveTab(startTab(userRole, userRoles))
+      return
+    }
+    if (!r.ziel) return
+    if (SPRUNG_IN_COMM[r.ziel]) setCommFocus({ section: r.ziel, id: r.id, ts: Date.now() })
+  }, [userRole, userRoles])
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -504,14 +562,9 @@ export default function App() {
   const isSocialMedia = userRoles.includes('social_media')
   const hasRole = (r) => userRole === r || userRole === 'admin'
 
-  const canAccess = (tab) => {
-    if (userRole === 'admin') return true
-    if (userRole === 'manager') return !['settings', 'billing'].includes(tab)
-    if (userRole === 'dienstplan') return ['schedule', 'chatters-comm', 'kalender'].includes(tab)
-    if (userRole === 'creator_manager') return ['models-comm', 'kalender'].includes(tab)
-    if (isSocialMedia) return ['social'].includes(tab)
-    return false
-  }
+  // v4.68.0: Regeln liegen in src/zugang.js, damit der Routing-Effekt oben
+  // dieselbe Pruefung benutzt wie die Tab-Leiste hier.
+  const canAccess = (tab) => darfAufTab(userRole, userRoles, tab)
 
   if (showModelPortal) return (
     <ModelPortal
@@ -545,10 +598,12 @@ export default function App() {
 
   // Non-admin roles that work in dashboard
   if (userRole === 'dienstplan' && viewMode !== 'admin') {
-    if (activeTab !== 'schedule' && activeTab !== 'chatters-comm') setActiveTab('schedule')
+    // v4.68.0: ersetzen statt pushen — ein erzwungener Wechsel darf keinen
+    // History-Eintrag anlegen, sonst landet Zurueck in einer Schleife.
+    if (activeTab !== 'schedule' && activeTab !== 'chatters-comm') { routeErsetzen.current = true; setActiveTab('schedule') }
   }
   if (userRole === 'creator_manager' && viewMode !== 'admin') {
-    if (activeTab !== 'models-comm') setActiveTab('models-comm')
+    if (activeTab !== 'models-comm') { routeErsetzen.current = true; setActiveTab('models-comm') }
   }
 
   const currentModelSnap = modelSnapshots.find(s => s.businessDate === businessDate)
@@ -920,7 +975,7 @@ export default function App() {
         ) : activeTab === 'models-comm' ? (
           <CommTab key="models-comm" session={session} section="models" displayName={userDisplayName} focus={commFocus} />
         ) : activeTab === 'chatters-comm' ? (
-          <CommTab key="chatters-comm" session={session} section="chatters" displayName={userDisplayName} />
+          <CommTab key="chatters-comm" session={session} section="chatters" displayName={userDisplayName} focus={commFocus} />
         ) : activeTab === 'chat' ? (
           <CommTab key="chat" session={session} section="chat" displayName={userDisplayName} />
         ) : activeTab === 'performance' ? (
