@@ -83,7 +83,7 @@ export default function PresentationToggle() {
       title={on ? 'Zahlen wieder anzeigen' : 'Zahlen ausblenden'}
       className="fab-pill"
       style={{
-        position: 'fixed', left: 20, bottom: 20, zIndex: 99999,
+        position: 'fixed', left: 20, bottom: 'calc(20px + var(--fab-lift, 0px))', zIndex: 99999,
         display: 'inline-flex', alignItems: 'center', gap: 8,
         height: 38, padding: '0 15px', borderRadius: 10,
         background: on ? 'rgba(124,58,237,0.16)' : 'rgba(255,255,255,0.05)',

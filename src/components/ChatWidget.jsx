@@ -15,9 +15,9 @@ export default function ChatWidget({ session, displayName, unread = 0 , isOpen, 
       {open && (
         <div
           style={{
-            position: 'fixed', right: 20, bottom: 150, zIndex: 99998,
+            position: 'fixed', right: 20, bottom: 'calc(150px + var(--fab-lift, 0px))', zIndex: 99998,
             width: 'min(460px, calc(100vw - 40px))',
-            height: 'min(660px, calc(100vh - 140px))',
+            height: 'min(660px, calc(100vh - 160px - var(--fab-lift, 0px)))',
             background: 'var(--bg-base)',
             border: '1px solid var(--border)',
             borderRadius: 16,
@@ -49,7 +49,7 @@ export default function ChatWidget({ session, displayName, unread = 0 , isOpen, 
         title="Chat"
         className="fab-btn"
         style={{
-          position: 'fixed', right: 20, bottom: 20, zIndex: 99999,
+          position: 'fixed', right: 20, bottom: 'calc(20px + var(--fab-lift, 0px))', zIndex: 99999,
           width: 54, height: 54, borderRadius: '50%',
           background: open ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.06)',
           color: '#a78bfa',

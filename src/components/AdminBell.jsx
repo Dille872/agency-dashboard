@@ -324,9 +324,9 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSn
       {open && (
         <div style={{
           // dritte Ebene: über Chat (20) und Team-Glocke (86) sitzt diese bei 152
-          position: 'fixed', right: 20, bottom: 216, zIndex: 99998,
+          position: 'fixed', right: 20, bottom: 'calc(216px + var(--fab-lift, 0px))', zIndex: 99998,
           width: 'min(430px, calc(100vw - 40px))',
-          height: 'min(540px, calc(100vh - 256px))',
+          height: 'min(540px, calc(100vh - 256px - var(--fab-lift, 0px)))',
           background: 'var(--bg-base)', border: '1px solid var(--border-bright)',
           borderRadius: 16, boxShadow: '0 24px 70px rgba(0,0,0,0.6)',
           overflow: 'hidden', display: 'flex', flexDirection: 'column',
@@ -420,7 +420,7 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSn
         title="Was die anderen Admins gemacht haben"
         className="fab-btn"
         style={{
-          position: 'fixed', right: 20, bottom: 152, zIndex: 99999,
+          position: 'fixed', right: 20, bottom: 'calc(152px + var(--fab-lift, 0px))', zIndex: 99999,
           width: 54, height: 54, borderRadius: '50%',
           background: open ? 'rgba(6,182,212,0.18)' : 'rgba(255,255,255,0.06)',
           color: '#06b6d4',

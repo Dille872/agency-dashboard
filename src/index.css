@@ -156,3 +156,39 @@ th { text-align: left; }
 @media (max-width: 768px) {
   .kpi-mini-grid { grid-template-columns: repeat(2, 1fr) !important; }
 }
+
+/* ── v4.71.0: Untere Leiste am Handy (App.jsx, nur Admin/Manager) ─────────
+   Solange die Leiste im DOM haengt, traegt <html> die Klasse mit-leiste.
+   --fab-lift hebt die schwebenden Knoepfe (Chat, Team-Feed, Glocke,
+   Inkognito) ueber die Leiste — sie bleiben schwebend, weil sie Werkzeuge
+   sind und keine Orte (Entscheidung Christoph, v4.69.0). */
+.leiste-mobil { display: none; }
+@media (max-width: 768px) {
+  html.mit-leiste { --fab-lift: calc(62px + env(safe-area-inset-bottom, 0px)); }
+  html.mit-leiste main { padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)) !important; }
+  .leiste-mobil {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+    background: var(--bg-card); border-top: 1px solid var(--border);
+    padding: 4px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Spezifischer als die globale Mobil-Regel "button { padding … !important }" */
+  .leiste-mobil button {
+    flex: 1 1 0; min-height: 52px; padding: 6px 0 2px !important; font-size: 10px !important;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    background: transparent; border: none; color: var(--text-secondary);
+    font-family: inherit; font-weight: 500; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .leiste-mobil button.aktiv { color: var(--accent); font-weight: 700; }
+  .leiste-icon { position: relative; display: inline-flex; }
+  .leiste-zahl {
+    position: absolute; top: -5px; left: 13px; min-width: 16px; height: 16px; padding: 0 4px;
+    box-sizing: border-box; border-radius: 8px; background: #f59e0b; color: #000;
+    font-size: 9.5px; font-weight: 800; line-height: 16px; text-align: center;
+  }
+  .leiste-punkt {
+    position: absolute; top: -2px; right: -4px; width: 8px; height: 8px; border-radius: 4px;
+    background: #f59e0b;
+  }
+  /* Zeilen im Jetzt-Screen: Daumen-Hoehe behalten */
+  .jetzt-zeile { padding: 10px 12px !important; }
+}

@@ -186,9 +186,9 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
     <>
       {open && (
         <div style={{
-          position: 'fixed', right: 20, bottom: 150, zIndex: 99998,
+          position: 'fixed', right: 20, bottom: 'calc(150px + var(--fab-lift, 0px))', zIndex: 99998,
           width: 'min(420px, calc(100vw - 40px))',
-          height: 'min(560px, calc(100vh - 160px))',
+          height: 'min(560px, calc(100vh - 160px - var(--fab-lift, 0px)))',
           background: 'var(--bg-base)', border: '1px solid var(--border)',
           borderRadius: 16, boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
           overflow: 'hidden', display: 'flex', flexDirection: 'column',
@@ -302,7 +302,7 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
         title="Aktivität"
         className="fab-btn"
         style={{
-          position: 'fixed', right: 20, bottom: 86, zIndex: 99999,
+          position: 'fixed', right: 20, bottom: 'calc(86px + var(--fab-lift, 0px))', zIndex: 99999,
           width: 54, height: 54, borderRadius: '50%',
           background: open ? 'rgba(34,211,238,0.18)' : 'rgba(255,255,255,0.06)',
           color: '#22d3ee',

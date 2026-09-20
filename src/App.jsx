@@ -6,7 +6,7 @@ import SuggestionsAdmin from './components/SuggestionsAdmin'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays,
+  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import CalendarTab from './components/CalendarTab' // v4.60.0
@@ -34,6 +34,8 @@ import ModelChatterUpload from './components/ModelChatterUpload'
 import DataStatusTab from './components/DataStatusTab'
 import PresentationToggle from './components/PresentationToggle'
 import Logo from './components/Logo'
+// v4.71.0: Startseite am Handy — wer arbeitet, was wartet, was ist schief
+import JetztView from './components/JetztView'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 import { useFabPanels } from './fabPanel'
 // v4.68.0: Ansicht in der Adresszeile + eine Quelle fuer die Tab-Rechte
@@ -88,6 +90,31 @@ const SPRUNG_IN_COMM = {
   models: true, 'content-requests': true, 'content-ideas': true, 'content-verlauf': true,
 }
 
+// ── Handy: untere Leiste (v4.71.0) ──────────────────────────────────────────
+// Dieselbe Grenze wie .hide-mobile / .tabs-mobile-btn in index.css.
+// Die Leiste selbst blendet CSS ein und aus (.leiste-mobil) — istHandy()
+// entscheidet nur die Startansicht beim ersten Laden.
+const HANDY_MAX = 768
+const istHandy = () => {
+  try { return window.matchMedia(`(max-width: ${HANDY_MAX}px)`).matches } catch { return false }
+}
+// Vier Plaetze, mehr passt nicht mit Daumen-Abstand. Crew und Chat sind die
+// beiden Orte, an denen tagsueber etwas passiert; alles andere liegt hinter
+// "Mehr" — dort dieselben fuenf Bereiche wie am Desktop (BEREICHE).
+// Jetzt ist kein Bereich, sondern die Startseite, und steht deshalb nicht in
+// BEREICHE: am Desktop gibt es sie nur ueber ?tab=jetzt.
+const LEISTE = [
+  { key: 'jetzt', label: 'Jetzt', Icon: Zap },
+  { key: 'chatters-comm', label: 'Crew', Icon: RefreshCw, badge: 'openSwaps' },
+  { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: 'unreadChat' },
+]
+// Ref-Callback statt useEffect: App hat vor dem Render mehrere fruehe returns
+// (Portale, Login), ein Hook an dieser Stelle waere nicht erlaubt. React ruft
+// die Funktion beim Einhaengen mit dem Element und beim Aushaengen mit null.
+const leisteMerken = (el) => {
+  try { document.documentElement.classList.toggle('mit-leiste', !!el) } catch {}
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
@@ -96,7 +123,9 @@ export default function App() {
   // v4.68.0: Startansicht kommt aus der Adresszeile, damit Links, Reload und
   // der Zurueck-Button funktionieren. Geprueft wird sie, sobald die Rolle
   // feststeht (Effekt weiter unten).
-  const [activeTab, setActiveTab] = useState(() => routeLesen().tab || 'models')
+  // v4.71.0: Am Handy startet man ohne Vorgabe im Jetzt-Screen statt in der
+  // Models-Tabelle, die auf 390 px ohnehin nur quer scrollt.
+  const [activeTab, setActiveTab] = useState(() => routeLesen().tab || (istHandy() ? 'jetzt' : 'models'))
   // Der erste Schreibvorgang ersetzt den History-Eintrag statt einen neuen
   // anzulegen — sonst braeuchte das erste Zurueck zwei Klicks.
   const routeErsetzen = useRef(true)
@@ -239,6 +268,13 @@ export default function App() {
     if (!userRole || routeGeprueft.current) return
     routeGeprueft.current = true
     const r = routeStart.current
+    // v4.71.0: Auch die Handy-Startansicht (jetzt) ist nicht fuer jede Rolle da —
+    // ohne Vorgabe aus der Adresszeile bekommt man dann die Startansicht der Rolle.
+    if (!r.tab && !darfAufTab(userRole, userRoles, activeTab)) {
+      routeErsetzen.current = true
+      setActiveTab(startTab(userRole, userRoles))
+      return
+    }
     if (r.tab && !darfAufTab(userRole, userRoles, r.tab)) {
       routeErsetzen.current = true
       setActiveTab(startTab(userRole, userRoles))
@@ -662,7 +698,8 @@ export default function App() {
   const sichtbareBereiche = BEREICHE
     .map(b => ({ ...b, tabs: b.tabs.filter(t => canAccess(t.key)) }))
     .filter(b => b.tabs.length > 0)
-  const aktiverBereich = BEREICH_VON_TAB[activeTab] || 'analyse'
+  // v4.71.0: Jetzt gehoert zu keinem Bereich — dann ist auch keiner markiert.
+  const aktiverBereich = activeTab === 'jetzt' ? null : (BEREICH_VON_TAB[activeTab] || 'analyse')
   const offenerBereich = sichtbareBereiche.find(b => b.key === aktiverBereich)
   const offeneTabs = offenerBereich ? offenerBereich.tabs : []
 
@@ -695,6 +732,22 @@ export default function App() {
     && chatterSnapshots.some(s => s.businessDate === d)
   const datenHeuteOk = tagVollstaendig(gesternISO) || tagVollstaendig(heuteISO)
   const fehlenderTag = tagVollstaendig(gesternISO) ? heuteISO : gesternISO
+
+  // ── Handy-Leiste (v4.71.0) ────────────────────────────────────────────────
+  // Nur fuer Admin/Manager: dienstplan und creator_manager haben ein, zwei Tabs
+  // und brauchen keine Navigation, schon gar keinen Jetzt-Screen mit Umsaetzen.
+  const mitLeiste = isManager && canAccess('jetzt')
+  const mehrZahl = (openTodos || 0) + (unreadModelChanges || 0) + (unreadNotes || 0)
+  const aufLeiste = LEISTE.some(l => l.key === activeTab)
+  // Aus dem Jetzt-Screen heraus: wie ein Klick in der Navigation, plus
+  // Sprungziel (Schichttausch) und — beim fehlenden Datenstand — gleich den
+  // richtigen Tag einstellen, wie der Knopf oben rechts.
+  const oeffneVonJetzt = (tab, focus) => {
+    if (tab === 'datenstand' && !datenHeuteOk) setBusinessDate(fehlenderTag)
+    oeffneTab(tab)
+    if (focus) setCommFocus({ ...focus, ts: Date.now() })
+    window.scrollTo(0, 0)
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
@@ -779,7 +832,9 @@ export default function App() {
             })}
           </div>
 
-          {/* v3.9.0: Mobile Burger */}
+          {/* v3.9.0: Mobile Burger — v4.71.0: nicht mehr bei Admin/Manager,
+              dort oeffnet "Mehr" in der unteren Leiste dasselbe Menue. */}
+          {!mitLeiste && (
           <button className="tabs-mobile-btn" onClick={() => setMobileMenuOpen(true)} style={{
             display: 'none', padding: '6px 10px', borderRadius: 8,
             background: 'transparent', border: '1px solid var(--border)',
@@ -789,6 +844,7 @@ export default function App() {
             <MoreHorizontal size={16} />
             <span style={{ fontSize: 13, fontWeight: 600 }}>Menü</span>
           </button>
+          )}
 
           {/* v4.55.0: Ansicht-Wechsel nur für Admin/Manager — dienstplan/creator_manager
               landeten sonst ohne Rückweg im echten Chatter-Portal */}
@@ -943,6 +999,15 @@ export default function App() {
             <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-secondary)' }}>Noch keine Daten vorhanden</div>
             <div style={{ fontSize: 14, textAlign: 'center' }}>Wähle ein Business Date und lade CSV-Dateien hoch.</div>
           </div>
+        ) : activeTab === 'jetzt' ? (
+          <JetztView
+            modelSnapshots={modelSnapshots}
+            zaehler={{ openSwaps, unreadChat, openTodos, unreadModelChanges, unreadNotes }}
+            canAccess={canAccess}
+            onOpen={oeffneVonJetzt}
+            datenOk={datenHeuteOk}
+            fehlenderTag={fehlenderTag}
+          />
         ) : activeTab === 'models' ? (
           <ModelsView selectedDate={businessDate} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} onDateChange={setBusinessDate} />
         ) : activeTab === 'chatters' ? (
@@ -1032,6 +1097,39 @@ export default function App() {
           <ScheduleTab session={session} userDisplayName={userDisplayName} />
         )}
       </main>
+
+      {/* ── v4.71.0: UNTERE LEISTE (nur Handy, nur Admin/Manager) ──
+          CSS blendet sie ab 769 px aus (.leiste-mobil). Solange sie im DOM
+          haengt, traegt <html> die Klasse mit-leiste — daran haengen der
+          Abstand unter dem Inhalt und die Hoehe der schwebenden Knoepfe. */}
+      {mitLeiste && (
+        <nav className="leiste-mobil" ref={leisteMerken} aria-label="Hauptnavigation">
+          {LEISTE.map(l => {
+            const aktiv = activeTab === l.key
+            const zahl = l.badge ? (BADGES[l.badge] || 0) : 0
+            return (
+              <button key={l.key} onClick={() => { oeffneTab(l.key); window.scrollTo(0, 0) }}
+                aria-current={aktiv ? 'page' : undefined}
+                className={aktiv ? 'aktiv' : undefined}>
+                <span className="leiste-icon">
+                  <l.Icon size={20} strokeWidth={aktiv ? 2.4 : 2} aria-hidden="true" />
+                  {zahl > 0 && <span className="leiste-zahl">{zahl > 99 ? '99+' : zahl}</span>}
+                </span>
+                <span>{l.label}</span>
+              </button>
+            )
+          })}
+          <button onClick={() => setMobileMenuOpen(true)} className={!aufLeiste ? 'aktiv' : undefined}
+            aria-label={mehrZahl > 0 ? `Mehr, ${mehrZahl} offen` : 'Mehr'}>
+            <span className="leiste-icon">
+              <LayoutGrid size={20} strokeWidth={!aufLeiste ? 2.4 : 2} aria-hidden="true" />
+              {mehrZahl > 0 && <span className="leiste-punkt" />}
+            </span>
+            <span>Mehr</span>
+          </button>
+        </nav>
+      )}
+
       {/* v3.61.0: Chat als schwebende Bubble (nur Admin/Manager) */}
       {(isAdmin || isManager) && (
         <>
