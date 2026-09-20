@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// v4.68.0: Meldungen zeigen jetzt auf die Stelle, um die es geht.
+import { linkZeile } from '../_shared/dashboard.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // shift-alert v4.21.0 — neu gedacht
@@ -296,7 +298,8 @@ serve(async (_req) => {
       // sonst wundert man sich über einen Alarm zu einer krummen Uhrzeit.
       const geteiltHinweis = eigeneSpanne ? ' (geteilte Schicht, eigener Abschnitt)' : ''
       const msg = `⚠️ <b>${chatter}</b> hat ${shiftLabel(shift)}${geteiltHinweis}, aber nicht eingecheckt.\n\n` +
-        `Schichtbeginn: ${minsToClock(spanne.start)} Uhr (DE-Zeit) — seit ${verspaetung} Minuten überfällig.`
+        `Schichtbeginn: ${minsToClock(spanne.start)} Uhr (DE-Zeit) — seit ${verspaetung} Minuten überfällig.` +
+        linkZeile('→ Dienstplan öffnen', 'schedule')
       await sendTelegram(CHRIS_TG, msg)
       await sendTelegram(REY_TG, msg)
     }
@@ -367,7 +370,8 @@ serve(async (_req) => {
           .order('checked_in_at')
         if (offen && offen.length > 0) {
           const zeilen = offen.map((l: any) => `● ${l.display_name} — ${l.shift || 'Schicht'}, seit ${l.checked_in_at?.slice(0, 16).replace('T', ' ')}`)
-          const msg = `🧹 <b>Hängende Check-ins</b> (kein Check-out, älter als 16 Stunden):\n\n${zeilen.join('\n')}\n\nSie verfälschen Schicht-Dauer und Export.`
+          const msg = `🧹 <b>Hängende Check-ins</b> (kein Check-out, älter als 16 Stunden):\n\n${zeilen.join('\n')}\n\nSie verfälschen Schicht-Dauer und Export.` +
+            linkZeile('→ Schicht-Log öffnen', 'chatters-comm', 'shiftlog')
           await sendTelegram(CHRIS_TG, msg)
           await sendTelegram(REY_TG, msg)
         }

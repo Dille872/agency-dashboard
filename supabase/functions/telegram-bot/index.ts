@@ -1,4 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+// v4.68.0: Meldungen zeigen jetzt auf die Stelle, um die es geht.
+import { linkZeile } from '../_shared/dashboard.ts'
 
 const SUPABASE_URL = Deno.env.get('DB_URL') || Deno.env.get('SUPABASE_URL')!
 const SUPABASE_KEY = Deno.env.get('DB_SERVICE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -813,7 +815,8 @@ serve(async (req) => {
         })
         await tg(fromId, '✅ Danke! Das Team wurde informiert dass du neuen Content im Tresor hast.')
         for (const adminId of ADMIN_IDS) {
-          await tg(adminId, `📸 <b>${modelData.name}</b> hat neuen Content im OF-Tresor hochgeladen.\n\n⚡ Bei dringenden Anfragen direkt rein und verwenden.`)
+          await tg(adminId, `📸 <b>${modelData.name}</b> hat neuen Content im OF-Tresor hochgeladen.\n\n⚡ Bei dringenden Anfragen direkt rein und verwenden.` +
+            linkZeile('→ Custom Content öffnen', 'models-comm', 'content-requests'))
         }
         return new Response('ok')
       }

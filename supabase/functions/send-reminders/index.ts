@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// v4.68.0: Meldungen zeigen jetzt auf die Stelle, um die es geht.
+import { linkZeile } from '../_shared/dashboard.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -171,7 +173,8 @@ serve(async (_req) => {
         await supabase.from('team_kalender').update({ nachgehakt_am: now.toISOString() }).eq('id', e.id)
       } else if (!e.eskaliert_am && seitMin >= MELDEN_MIN) {
         const std = Math.floor(seitMin / 60)
-        const msg = `⚠️ <b>Seit ${std} Std offen: ${esc(e.titel)}</b>\n\nNoch nicht abgehakt: ${offen.map(esc).join(', ')}${bezug}\n\n– Thirteen 87`
+        const msg = `⚠️ <b>Seit ${std} Std offen: ${esc(e.titel)}</b>\n\nNoch nicht abgehakt: ${offen.map(esc).join(', ')}${bezug}` +
+          linkZeile('→ Im Kalender ansehen', 'kalender') + `\n\n– Thirteen 87`
         for (const id of Object.values(ADMIN_TG)) await sendTelegram(id, msg)
         await supabase.from('team_kalender').update({ eskaliert_am: now.toISOString() }).eq('id', e.id)
       }
