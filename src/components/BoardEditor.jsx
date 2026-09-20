@@ -491,7 +491,11 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
       const a = els[selEl.daten.von], b = els[selEl.daten.nach]
       if (a && b) { const m1 = mitte(a), m2 = mitte(b); bx = (m1.x + m2.x) / 2; by = (m1.y + m2.y) / 2 - 20 }
     } else { bx = selEl.x + selEl.w / 2; by = selEl.y }
-    if (bx != null) leiste = { x: bx * view.k + view.x, y: Math.max(56, by * view.k + view.y - 52) }
+    // Mittig über dem Element, aber nie über den Rand der Fläche hinaus
+    // (sonst sind am linken Rand die Farbknöpfe abgeschnitten)
+    const breite = flaecheRef.current?.clientWidth || 0
+    const halb = Math.min(265, breite / 2)
+    if (bx != null) leiste = { x: Math.max(halb + 8, Math.min(breite - halb - 8, bx * view.k + view.x)), y: Math.max(56, by * view.k + view.y - 52) }
   }
 
   return (
