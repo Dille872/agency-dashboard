@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+// v4.70.0: Tagesverlauf als Balken in der Tagesziel-Tabelle
+import TagesBalken from './TagesBalken'
 import Icon from './Icon'
 import Card from './Card'
 import KpiCard from './KpiCard'
@@ -575,6 +577,28 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
       }
     }
 
+    // v4.70.0: Tagesverlauf der letzten 14 erfassten Tage je Gruppe.
+    // Gemessen wird Msg+Tips — dieselbe Groesse, an der auch das Tagesziel
+    // haengt. Waere hier der Gesamtumsatz, laege die Ziellinie falsch.
+    // Gezaehlt werden erfasste Tage, nicht Kalendertage: fehlt ein Upload,
+    // entsteht keine Luecke, die wie ein Nulltag aussieht.
+    const letzte14 = [...modelSnapshots]
+      .filter(s => s.businessDate <= selectedDate)
+      .sort((a, b) => a.businessDate.localeCompare(b.businessDate))
+      .slice(-14)
+    const verlaufProGruppe = {}
+    for (const name of Object.keys(groups)) verlaufProGruppe[name] = []
+    for (const snap of letzte14) {
+      const proGruppe = {}
+      for (const r of snap.rows) {
+        const gName = getModelGroup(r.creator)
+        proGruppe[gName] = (proGruppe[gName] || 0) + (r.messageRevenue || 0) + (r.tipsRevenue || 0)
+      }
+      for (const name of Object.keys(groups)) {
+        verlaufProGruppe[name].push({ datum: snap.businessDate, wert: proGruppe[name] || 0 })
+      }
+    }
+
     const enriched = Object.values(groups).map(g => {
       const target = targets[g.modelName]
       const dailyRatio = target > 0 ? g.dailyRev / target : null
@@ -590,7 +614,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
         else { status = 'Stark hinterher'; statusColor = 'var(--red)' }
       } else if (g.totalRev < 5) { status = 'Inaktiv' }
       else { status = 'Kein Ziel definiert' }
-      return { ...g, target, dailyRatio, monthlyTarget, sollBisHeute, monthRatio, status, statusColor }
+      return { ...g, target, dailyRatio, monthlyTarget, sollBisHeute, monthRatio, status, statusColor, verlauf: verlaufProGruppe[g.modelName] || [] }
     }).sort((a, b) => {
       const aHasTarget = a.target > 0
       const bHasTarget = b.target > 0
@@ -1027,7 +1051,7 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
             <table>
               <thead>
                 <tr>
-                  {['Model', 'Heute Msg+Tips', 'Heute Total', 'Tagesziel', 'Heute %', 'Monat Msg+Tips', 'Monat Total', 'Monatsziel', 'Soll bis heute', 'Monat %', 'Status', 'Beobachten', 'Varianten'].map(h => (
+                  {['Model', 'Heute Msg+Tips', 'Heute Total', 'Tagesziel', 'Heute %', '14 Tage', 'Monat Msg+Tips', 'Monat Total', 'Monatsziel', 'Soll bis heute', 'Monat %', 'Status', 'Beobachten', 'Varianten'].map(h => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -1068,6 +1092,10 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
                       </td>
                       <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600, color: g.dailyRatio === null ? 'var(--text-muted)' : g.dailyRatio >= 1 ? 'var(--green)' : g.dailyRatio >= 0.7 ? 'var(--yellow)' : 'var(--red)' }}>
                         {g.dailyRatio !== null ? `${(g.dailyRatio * 100).toFixed(0)}%` : '—'}
+                      </td>
+                      {/* v4.70.0: Verlauf statt nur Momentaufnahme — siehe TagesBalken.jsx */}
+                      <td style={{ ...tdStyle, paddingTop: 6, paddingBottom: 6 }}>
+                        <TagesBalken verlauf={g.verlauf} ziel={g.target} />
                       </td>
                       <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{formatMoney(g.monthMsgTips)}</td>
                       <td style={{ ...tdStyle, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{formatMoney(g.monthTotal)}</td>
@@ -1148,6 +1176,24 @@ export default function ModelsView({ selectedDate, modelSnapshots, chatterSnapsh
               Tagesziel = Soll für Messages + Tips Revenue. Subs zählen nicht (kommen monatlich rein).<br />
               Monatsziel = Tagesziel × {targetData.daysInMonth} Tage. Soll bis heute = Tagesziel × Tag {targetData.dayOfMonth}.<br />
               Status basiert auf Monatsfortschritt vs. Soll bis heute (einzelne schwache Tage werden nicht überbewertet).
+            </div>
+            {/* v4.70.0: Die Balken brauchen eine Zeile Erklaerung — ohne sie ist
+                die Ziellinie nur ein Strich und Rot nur eine Farbe. */}
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 11, color: 'var(--text-muted)' }}>
+              <span style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>14 Tage:</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 9, height: 13, background: '#5a5a96', borderRadius: '3px 3px 0 0' }} /> erfasster Tag
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 9, height: 13, background: 'var(--accent)', borderRadius: '3px 3px 0 0' }} /> zuletzt erfasst
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 9, height: 13, background: 'var(--red)', borderRadius: '3px 3px 0 0' }} /> drei Tage in Folge unter Ziel
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 20, height: 1, background: 'var(--text-secondary)' }} /> Tagesziel
+              </span>
+              <span>Höhe je Zeile eigen skaliert — die Form zählt, nicht der Vergleich zwischen Models.</span>
             </div>
           </div>
         )}
