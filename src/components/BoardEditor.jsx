@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, MousePointer2, StickyNote, Square, MoveUpRight, Type,
-  Trash2, CheckSquare, Maximize, Minus, Plus, Undo2, Users, X,
+  Trash2, CheckSquare, Maximize, Minus, Plus, Undo2, Users, X, CalendarPlus,
 } from 'lucide-react'
 import { supabase } from '../supabase'
 import { formatMoneyShort } from '../utils'
@@ -9,6 +9,8 @@ import {
   NOTIZ_FARBEN, RAHMEN_FARBEN, ladeElemente, elementSpeichern, elementLoeschen,
   boardAendern, neueId,
 } from '../boards'
+// v4.74.0: aus dem Board direkt in Kalender oder ToDos
+import BoardEintragen from './BoardEintragen'
 
 // ── Board-Editor (v4.73.0) ─────────────────────────────────────────────────
 //
@@ -41,6 +43,10 @@ const farbeVon = (name) => {
 const lc = (s) => String(s || '').trim().toLowerCase()
 const mitte = (e) => ({ x: e.x + e.w / 2, y: e.y + e.h / 2 })
 
+// Zeiger festhalten, damit das Ziehen auch außerhalb des Elements weiterläuft.
+// Kann werfen (Zeiger schon weg, manche Stifte) — dann eben ohne.
+const fangen = (ev) => { try { ev.currentTarget.setPointerCapture(ev.pointerId) } catch { /* egal */ } }
+
 // Punkt am Rand eines Rechtecks in Richtung eines anderen Punkts — damit
 // Pfeile an der Kante anfangen und nicht in der Mitte der Karte.
 function randpunkt(e, ziel) {
@@ -66,7 +72,8 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
   const [pfeilStart, setPfeilStart] = useState(null)
   const [andere, setAndere] = useState({})     // key → { name, farbe, cursor }
   const [geloescht, setGeloescht] = useState(null)
-  const [todo, setTodo] = useState(null)       // { el, titel, an }
+  const [eintragen, setEintragen] = useState(null)   // { el, start, vorschlag } — Fenster "Eintragen"
+  const [meldung, setMeldung] = useState(null)       // kurze Bestätigung nach dem Eintragen
   const [teamOffen, setTeamOffen] = useState(() => !istHandy())
   const [titel, setTitel] = useState(board.titel)
   const [handy, setHandy] = useState(istHandy)
@@ -302,7 +309,7 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
     }
     setSel(null); setBearbeiten(null); setPfeilStart(null)
     dragRef.current = { art: 'pan', sx: ev.clientX, sy: ev.clientY, v: viewRef.current }
-    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    fangen(ev)
   }
 
   const aufElementRunter = (ev, el) => {
@@ -332,14 +339,14 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
     const start = Object.fromEntries(ids.map(id => [id, { x: elsRef.current[id].x, y: elsRef.current[id].y }]))
     ids.forEach(id => ziehtRef.current.add(id))
     dragRef.current = { art: 'zieh', sx: ev.clientX, sy: ev.clientY, start, bewegt: false }
-    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    fangen(ev)
   }
 
   const aufGriffRunter = (ev, el) => {
     ev.stopPropagation()
     ziehtRef.current.add(el.id)
     dragRef.current = { art: 'groesse', id: el.id, sx: ev.clientX, sy: ev.clientY, w: el.w, h: el.h }
-    ev.currentTarget.setPointerCapture?.(ev.pointerId)
+    fangen(ev)
   }
 
   const bewegen = (ev) => {
@@ -416,19 +423,36 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
     setzeEl(el.id, { daten: { punkte: neu } }, { sofort: true })
   }
 
-  const todoAnlegen = async () => {
-    if (!todo?.titel?.trim()) return
-    const { error } = await supabase.from('todos').insert({
-      title: todo.titel.trim(),
-      description: `Aus dem Board „${titel}“`,
-      priority: 'normal',
-      created_by: ich,
-      assigned_to: todo.an?.trim() || null,
-      read_by: [ich],
-    })
-    if (error) { setFehler('ToDo nicht angelegt: ' + error.message); return }
-    setzeEl(todo.el.id, { daten: { todo: true } }, { sofort: true })
-    setTodo(null)
+  // Was aus dem gewählten Element fürs Eintragen vorgeschlagen wird:
+  // Notiz/Text → Titel; Person → diese Person; Rahmen → sein Titel und alle Leute darin.
+  const vorschlagAus = (el) => {
+    if (!el) return {}
+    if (el.typ === 'notiz' || el.typ === 'text') return { titel: (el.daten.text || '').split('\n')[0].slice(0, 120), notiz: `Aus dem Board „${titel}“` }
+    if (el.typ === 'person') return { titel: '', personen: [el.daten.name], notiz: `Aus dem Board „${titel}“` }
+    if (el.typ === 'rahmen') {
+      const drin = Object.values(elsRef.current).filter(e => e.typ === 'person' && (() => {
+        const m = mitte(e); return m.x > el.x && m.x < el.x + el.w && m.y > el.y && m.y < el.y + el.h
+      })()).map(e => e.daten.name)
+      return { titel: el.daten.titel || '', personen: [...new Set(drin)], notiz: `Aus dem Board „${titel}“` }
+    }
+    return {}
+  }
+
+  const eingetragen = (erg) => {
+    const el = eintragen?.el
+    setEintragen(null)
+    if (el && elsRef.current[el.id]) {
+      const liste = [...(elsRef.current[el.id].daten.eingetragen || []), { wohin: erg.wohin, titel: erg.titel, beginn: erg.beginn || null, an: erg.an || null, von: ich }]
+      setzeEl(el.id, { daten: { eingetragen: liste.slice(-5), ...(erg.wohin === 'todo' ? { todo: true } : {}) } }, { sofort: true })
+    }
+    const wann = erg.beginn ? new Date(erg.beginn).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' (DE)' : ''
+    const t = erg.telegram || {}
+    const zeilen = [erg.wohin === 'kalender' ? `Im Kalender: ${erg.titel} · ${wann}` : `ToDo angelegt: ${erg.titel}${erg.an ? ' → ' + erg.an : ''}`]
+    if (t.ok?.length) zeilen.push(`Telegram an ${t.ok.join(', ')}`)
+    if (t.fehlt?.length) zeilen.push(`Ohne Telegram-ID: ${t.fehlt.join(', ')}`)
+    if (t.fehler?.length) zeilen.push(`Telegram NICHT angekommen: ${t.fehler.join(', ')}`)
+    setMeldung({ text: zeilen.join('\n'), warn: !!(t.fehlt?.length || t.fehler?.length) })
+    setTimeout(() => setMeldung(m => (m && !m.warn ? null : m)), 6000)
   }
 
   const titelSpeichern = async () => {
@@ -442,6 +466,7 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
   const liste = Object.values(els).sort((a, b) => ((a.typ === 'rahmen' ? 0 : 1) - (b.typ === 'rahmen' ? 0 : 1)) || (a.z || 0) - (b.z || 0))
   const selEl = sel ? els[sel] : null
   const anwesend = Object.values(andere)
+  const andereNamen = [...new Set(anwesend.map(a => a.name).filter(n => n && n !== ich))]
   const namenImBoard = new Set(Object.values(els).filter(e => e.typ === 'person').map(e => lc(e.daten.name)))
 
   const WERKZEUGE = [
@@ -571,6 +596,9 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
                       <span style={{ fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
                         {el.daten.von}
                         {el.daten.todo && <span title="Als ToDo angelegt" style={{ display: 'inline-flex' }}><CheckSquare size={11} /></span>}
+                        {(el.daten.eingetragen || []).some(x => x.wohin === 'kalender') && (
+                          <span title={'Im Kalender: ' + el.daten.eingetragen.filter(x => x.wohin === 'kalender').map(x => x.titel).join(', ')} style={{ display: 'inline-flex' }}><CalendarPlus size={11} /></span>
+                        )}
                       </span>
                       <span style={{ display: 'flex', gap: 3 }} title={punkte.join(', ')}>
                         {punkte.map(p => <span key={p} style={{ width: 10, height: 10, borderRadius: 5, background: farbeVon(p), border: '1px solid rgba(0,0,0,0.15)' }} />)}
@@ -640,6 +668,11 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
                 aria-label="Board-Titel" style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', width: handy ? 150 : 260, padding: '4px 2px', outline: 'none' }} />
             </div>
             <div style={{ flex: 1 }} />
+            {/* Ohne Auswahl: leeres Formular. Mit Auswahl füllt die Leiste am Element vor. */}
+            <button type="button" className="board-knopf board-text-knopf" onClick={() => setEintragen({ el: null, start: 'kalender', vorschlag: { notiz: `Aus dem Board „${titel}“` } })}
+              title="Termin oder ToDo eintragen" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 11, padding: '8px 11px', color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', pointerEvents: 'auto' }}>
+              <CalendarPlus size={15} /> {handy ? '' : 'Eintragen'}
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 11, padding: '5px 10px 5px 6px', pointerEvents: 'auto' }}>
               <div style={{ display: 'flex' }}>
                 {[ich, ...anwesend.map(a => a.name)].filter((n, i, a) => n && a.indexOf(n) === i).map((n, i) => (
@@ -648,7 +681,8 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
                   </span>
                 ))}
               </div>
-              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{anwesend.length ? `${anwesend.length + 1} live` : 'nur du'}</span>
+              {/* Gezählt werden Menschen, nicht Fenster: Chris am Rechner und am Handy ist einer */}
+              <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{andereNamen.length ? `${andereNamen.length + 1} live` : 'nur du'}</span>
             </div>
           </div>
 
@@ -669,7 +703,14 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
                   style={{ ...knopf((selEl.daten.punkte || []).includes(ich)), width: 'auto', height: 30, padding: '0 9px', fontSize: 12, fontWeight: 700, gap: 5 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 5, background: farbeVon(ich) }} /> Punkt
                 </button>
-                <button type="button" className="board-knopf board-text-knopf" onClick={() => setTodo({ el: selEl, titel: selEl.daten.text || '', an: '' })} title="Als ToDo anlegen"
+              </>)}
+              {selEl.typ !== 'pfeil' && (<>
+                <span style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 3px' }} />
+                <button type="button" className="board-knopf board-text-knopf" onClick={() => setEintragen({ el: selEl, start: 'kalender', vorschlag: vorschlagAus(selEl) })} title="In den Kalender eintragen"
+                  style={{ ...knopf(false), width: 'auto', height: 30, padding: '0 9px', fontSize: 12, fontWeight: 700, gap: 5 }}>
+                  <CalendarPlus size={14} /> Kalender
+                </button>
+                <button type="button" className="board-knopf board-text-knopf" onClick={() => setEintragen({ el: selEl, start: 'todo', vorschlag: vorschlagAus(selEl) })} title="Als ToDo anlegen"
                   style={{ ...knopf(false), width: 'auto', height: 30, padding: '0 9px', fontSize: 12, fontWeight: 700, gap: 5 }}>
                   <CheckSquare size={14} /> ToDo
                 </button>
@@ -688,7 +729,9 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
           )}
 
           {/* Unten: Zoom + Hinweise */}
-          <div style={{ position: 'absolute', left: 12, bottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Am Handy oben statt unten: unten links sitzt der Inkognito-Schalter,
+              unten rechts sitzen Chat und Glocken */}
+          <div style={{ position: 'absolute', left: 12, ...(handy ? { top: 108, flexWrap: 'wrap' } : { bottom: 12 }), display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
               <button type="button" className="board-knopf" aria-label="Verkleinern" onClick={() => zoomen(1 / 1.2)} style={{ ...knopf(false), width: 30, height: 30 }}><Minus size={14} /></button>
               <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', minWidth: 38, textAlign: 'center' }}>{Math.round(view.k * 100)}%</span>
@@ -705,6 +748,12 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
           </div>
 
           {laden && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Board wird geladen …</div>}
+          {meldung && !fehler && (
+            <div role="status" style={{ position: 'absolute', right: 12, bottom: 12, maxWidth: 380, display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card)', border: `1px solid ${meldung.warn ? '#92400e' : '#14532d'}`, borderRadius: 10, padding: '9px 11px', fontSize: 12, color: meldung.warn ? '#fcd34d' : '#86efac', whiteSpace: 'pre-line', zIndex: 7 }}>
+              <span style={{ flex: 1 }}>{meldung.text}</span>
+              <button type="button" className="board-knopf" onClick={() => setMeldung(null)} aria-label="Meldung schließen" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}><X size={14} /></button>
+            </div>
+          )}
           {fehler && (
             <div style={{ position: 'absolute', right: 12, bottom: 12, maxWidth: 360, display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card)', border: '1px solid #7f1d1d', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#fca5a5' }}>
               <span style={{ flex: 1 }}>{fehler}</span>
@@ -748,31 +797,10 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
         )}
       </div>
 
-      {/* ToDo aus einer Notiz */}
-      {todo && (
-        <div onClick={() => setTodo(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: 'min(420px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border-bright)', borderRadius: 14, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>Als ToDo anlegen</div>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
-              Aufgabe
-              <textarea value={todo.titel} onChange={e => setTodo(t => ({ ...t, titel: e.target.value }))} rows={3}
-                style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', padding: 9, fontFamily: 'inherit', fontSize: 13, resize: 'vertical' }} />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
-              Für wen (leer = alle Admins)
-              <input list="board-todo-namen" value={todo.an} onChange={e => setTodo(t => ({ ...t, an: e.target.value }))}
-                style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', padding: 9, fontFamily: 'inherit', fontSize: 13 }} />
-              <datalist id="board-todo-namen">
-                {[...(team?.leitung || []), ...(team?.chatter || [])].map(p => <option key={p.name} value={p.name} />)}
-              </datalist>
-            </label>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Erscheint unter Zeit → ToDos. Eine Telegram-Nachricht geht dabei nicht raus.</div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" className="board-text-knopf" onClick={() => setTodo(null)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 14px', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Abbrechen</button>
-              <button type="button" className="board-text-knopf" onClick={todoAnlegen} disabled={!todo.titel.trim()} style={{ background: '#7c3aed', border: 'none', borderRadius: 9, padding: '8px 14px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, opacity: todo.titel.trim() ? 1 : 0.5 }}>ToDo anlegen</button>
-            </div>
-          </div>
-        </div>
+      {/* v4.74.0: Kalender / ToDo direkt aus dem Board */}
+      {eintragen && (
+        <BoardEintragen vorschlag={eintragen.vorschlag} start={eintragen.start} team={team} ich={ich}
+          onFertig={eingetragen} onAbbrechen={() => setEintragen(null)} />
       )}
     </div>
   )
