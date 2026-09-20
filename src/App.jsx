@@ -102,43 +102,6 @@ export default function App() {
   const viewModeRef = useRef('auto')
   useEffect(() => { viewModeRef.current = viewMode }, [viewMode])
 
-  // ── Adresszeile ⇄ Ansicht (v4.68.0) ───────────────────────────────────────
-  // Warum Query statt Hash und was ziel/id bedeuten: src/route.js.
-  useEffect(() => {
-    // Chatter- und Model-Portal haben keine Tabs — dort bleibt die Adresszeile
-    // sauber. Beim Vorschau-Modus eines Admins greift das bewusst nicht.
-    const imPortal = (userRole === 'chatter' || userRole === 'model') && viewMode !== 'admin'
-    if (!userRole || imPortal) { routeSchreiben({ tab: null }, { ersetzen: true }); return }
-    routeSchreiben({ tab: activeTab }, { ersetzen: routeErsetzen.current })
-    routeErsetzen.current = false
-  }, [activeTab, userRole, viewMode])
-
-  useEffect(() => {
-    const beiZurueck = () => {
-      const r = routeLesen()
-      routeErsetzen.current = true   // aus der History kommend nichts Neues pushen
-      setActiveTab(r.tab || 'models')
-    }
-    window.addEventListener('popstate', beiZurueck)
-    return () => window.removeEventListener('popstate', beiZurueck)
-  }, [])
-
-  // Sobald die Rolle feststeht: den Tab aus der URL pruefen — ein
-  // weitergeleiteter Link darf niemandem eine Seite oeffnen, die seine Rolle
-  // nicht sehen darf — und einen mitgegebenen Sprungbefehl einmal ausfuehren.
-  useEffect(() => {
-    if (!userRole || routeGeprueft.current) return
-    routeGeprueft.current = true
-    const r = routeStart.current
-    if (r.tab && !darfAufTab(userRole, userRoles, r.tab)) {
-      routeErsetzen.current = true
-      setActiveTab(startTab(userRole, userRoles))
-      return
-    }
-    if (!r.ziel) return
-    if (SPRUNG_IN_COMM[r.ziel]) setCommFocus({ section: r.ziel, id: r.id, ts: Date.now() })
-  }, [userRole, userRoles])
-
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
@@ -206,6 +169,43 @@ export default function App() {
   }, [session?.user?.id]) // v3.41.0: nur bei echtem User-Wechsel laden, nicht bei jedem Token-Refresh
 
   const [userRoles, setUserRoles] = useState([])
+
+  // ── Adresszeile ⇄ Ansicht (v4.68.0) ───────────────────────────────────────
+  // Warum Query statt Hash und was ziel/id bedeuten: src/route.js.
+  useEffect(() => {
+    // Chatter- und Model-Portal haben keine Tabs — dort bleibt die Adresszeile
+    // sauber. Beim Vorschau-Modus eines Admins greift das bewusst nicht.
+    const imPortal = (userRole === 'chatter' || userRole === 'model') && viewMode !== 'admin'
+    if (!userRole || imPortal) { routeSchreiben({ tab: null }, { ersetzen: true }); return }
+    routeSchreiben({ tab: activeTab }, { ersetzen: routeErsetzen.current })
+    routeErsetzen.current = false
+  }, [activeTab, userRole, viewMode])
+
+  useEffect(() => {
+    const beiZurueck = () => {
+      const r = routeLesen()
+      routeErsetzen.current = true   // aus der History kommend nichts Neues pushen
+      setActiveTab(r.tab || 'models')
+    }
+    window.addEventListener('popstate', beiZurueck)
+    return () => window.removeEventListener('popstate', beiZurueck)
+  }, [])
+
+  // Sobald die Rolle feststeht: den Tab aus der URL pruefen — ein
+  // weitergeleiteter Link darf niemandem eine Seite oeffnen, die seine Rolle
+  // nicht sehen darf — und einen mitgegebenen Sprungbefehl einmal ausfuehren.
+  useEffect(() => {
+    if (!userRole || routeGeprueft.current) return
+    routeGeprueft.current = true
+    const r = routeStart.current
+    if (r.tab && !darfAufTab(userRole, userRoles, r.tab)) {
+      routeErsetzen.current = true
+      setActiveTab(startTab(userRole, userRoles))
+      return
+    }
+    if (!r.ziel) return
+    if (SPRUNG_IN_COMM[r.ziel]) setCommFocus({ section: r.ziel, id: r.id, ts: Date.now() })
+  }, [userRole, userRoles])
 
   // v4.24.0: Nur Admin/Manager brauchen die Umsatz-Snapshots im App-State.
   // Chatter- und Model-Portal laden ihre eigenen Zahlen selbst und gefiltert;
