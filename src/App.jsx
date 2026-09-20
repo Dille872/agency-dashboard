@@ -42,6 +42,47 @@ import { darfAufTab, startTab } from './zugang'
 
 // Sprungziele, die CommTab ueber seine focus-Prop versteht (dort:
 // activeSection). Was nicht hier steht, wird aus der URL ignoriert.
+// v4.69.0: Die Navigation, an einer Stelle. Vorher stand die Tab-Liste
+// dreimal im Render — Desktop-Primaer, Desktop-Mehr, Handy-Menue — und die
+// Reihenfolgen waren schon auseinandergelaufen.
+//
+// Geschnitten nach "was tue ich gerade", nicht nach Technik:
+//   Analyse = hinschauen · Kommunikation = reden · Zeit = planen
+//   Verwaltung = pflegen · Einstellungen = einrichten
+// Die tab-keys bleiben unveraendert, damit Rollenrechte (zugang.js) und
+// Links (?tab=...) weiter passen. Nur die Einsortierung ist neu.
+// badge nennt den Zaehler beim Namen; aufgeloest wird er im Render.
+const BEREICHE = [
+  { key: 'analyse', label: 'Analyse', Icon: BarChart3, tabs: [
+    { key: 'models', label: 'Models', Icon: Film },
+    { key: 'chatters', label: 'Chatters', Icon: Users },
+    { key: 'briefing', label: 'Briefing', Icon: Eye },
+    { key: 'performance', label: 'Performance', Icon: TrendingUp },
+  ] },
+  { key: 'kommunikation', label: 'Kommunikation', Icon: MessageCircle, tabs: [
+    { key: 'models-comm', label: 'Creator', Icon: Palette, badge: 'unreadModelChanges' },
+    { key: 'chatters-comm', label: 'Crew', Icon: RefreshCw, badge: 'openSwaps' },
+    { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: 'unreadChat' },
+    { key: 'notes', label: 'Notizen', Icon: FileText, badge: 'unreadNotes' },
+    { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
+    { key: 'social', label: 'Social', Icon: Globe },
+  ] },
+  { key: 'zeit', label: 'Zeit', Icon: Calendar, tabs: [
+    { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
+    { key: 'kalender', label: 'Kalender', Icon: CalendarDays },
+    { key: 'todos', label: 'ToDos', Icon: CheckSquare, badge: 'openTodos' },
+  ] },
+  { key: 'verwaltung', label: 'Verwaltung', Icon: Database, tabs: [
+    { key: 'datenstand', label: 'Daten', Icon: Database },
+    { key: 'billing', label: 'Billing', Icon: DollarSign },
+  ] },
+  { key: 'einstellungen', label: 'Einstellungen', Icon: SettingsIcon, tabs: [
+    { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
+  ] },
+]
+const BEREICH_VON_TAB = {}
+for (const b of BEREICHE) for (const t of b.tabs) BEREICH_VON_TAB[t.key] = b.key
+
 const SPRUNG_IN_COMM = {
   chatters: true, swaps: true, stats: true, shiftlog: true,
   models: true, 'content-requests': true, 'content-ideas': true, 'content-verlauf': true,
@@ -613,6 +654,48 @@ export default function App() {
     ...chatterSnapshots.map(s => s.businessDate),
   ])].sort().reverse()
 
+  // ── Navigation (v4.69.0) ──────────────────────────────────────────────────
+  // BEREICHE oben in der Datei sagt, was es gibt; hier wird daraus gefiltert,
+  // was diese Rolle sehen darf, und die Zaehler werden aufgeloest.
+  const BADGES = { unreadModelChanges, openSwaps, unreadChat, openTodos, unreadNotes }
+  const badgeVon = (tab) => (tab.badge ? (BADGES[tab.badge] || 0) : 0)
+  const sichtbareBereiche = BEREICHE
+    .map(b => ({ ...b, tabs: b.tabs.filter(t => canAccess(t.key)) }))
+    .filter(b => b.tabs.length > 0)
+  const aktiverBereich = BEREICH_VON_TAB[activeTab] || 'analyse'
+  const offenerBereich = sichtbareBereiche.find(b => b.key === aktiverBereich)
+  const offeneTabs = offenerBereich ? offenerBereich.tabs : []
+
+  // Beim Oeffnen verschwinden die Badges — Verhalten unveraendert aus v3.9.
+  const oeffneTab = (key) => {
+    setActiveTab(key)
+    setMoreOpen(false)
+    if (key === 'models-comm') setUnreadModelChanges(0)
+    if (key === 'chatters-comm') setOpenSwaps(0)
+    if (key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
+  }
+  // Ein Bereich fuehrt auf seinen ersten Tab. Ist man schon drin, passiert
+  // nichts — sonst wuerde ein Klick auf "Analyse" von Performance wegspringen.
+  const oeffneBereich = (b) => {
+    if (b.key === aktiverBereich) return
+    if (b.tabs[0]) oeffneTab(b.tabs[0].key)
+  }
+
+  // ── Datenstand (v4.69.0) ──────────────────────────────────────────────────
+  // Der Upload steht seit v4.69.0 unter Verwaltung statt als Dauerstreifen
+  // unter der Kopfzeile. Oben bleibt nur, was wirklich oben hingehoert: die
+  // Meldung, dass heute etwas FEHLT. An allen anderen Tagen ist sie still.
+  // Die Zahlen eines Tages kommen erst am Morgen danach — am 20. wird der 19.
+  // hochgeladen. "Heute fehlt was" waere deshalb fast immer wahr und die
+  // Anzeige binnen einer Woche blinder Alarm. Gemessen wird an GESTERN: liegt
+  // fuer den Vortag beides vor (oder schon fuer heute), ist alles in Ordnung.
+  const heuteISO = todayISO()
+  const gesternISO = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+  const tagVollstaendig = (d) => modelSnapshots.some(s => s.businessDate === d)
+    && chatterSnapshots.some(s => s.businessDate === d)
+  const datenHeuteOk = tagVollstaendig(gesternISO) || tagVollstaendig(heuteISO)
+  const fehlenderTag = tagVollstaendig(gesternISO) ? heuteISO : gesternISO
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
       {/* v4.14.0: Inkognito-Schalter — bewusst HIER und nicht mehr in main.jsx.
@@ -652,123 +735,48 @@ export default function App() {
         </div>
         {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
-          {/* v3.9.0: Desktop-Tabs */}
+          {/* v4.69.0: still wenn alles da ist, laut wenn nicht. Ein Klick
+              springt in den Upload — und stellt gleich den heutigen Tag ein. */}
+          {canAccess('datenstand') && (
+            <button
+              onClick={() => { if (!datenHeuteOk) setBusinessDate(fehlenderTag); oeffneTab('datenstand') }}
+              title={datenHeuteOk ? 'Model- und Chatter-Datei des letzten Tages sind da' : `Fuer ${fehlenderTag} fehlt mindestens eine Datei — hier hochladen`}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 12, fontWeight: 700,
+                background: datenHeuteOk ? 'transparent' : 'rgba(245,158,11,0.12)',
+                border: `1px solid ${datenHeuteOk ? 'var(--border)' : 'rgba(245,158,11,0.5)'}`,
+                color: datenHeuteOk ? 'var(--text-secondary)' : '#f59e0b',
+              }}>
+              <Database size={13} strokeWidth={2.4} />
+              <span className="hide-sm">{datenHeuteOk ? 'Daten aktuell' : `Daten fehlen: ${fehlenderTag.slice(8, 10)}.${fehlenderTag.slice(5, 7)}.`}</span>
+            </button>
+          )}
+          {/* v4.69.0: Bereichszeile. Die Unterpunkte des offenen Bereichs
+              stehen in einem eigenen Streifen direkt unter der Kopfzeile. */}
           <div className="tabs-desktop" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-            {(() => {
-              const TABS_PRIMARY = [
-                { key: 'models', label: 'Models', Icon: Film },
-                { key: 'chatters', label: 'Chatters', Icon: Users },
-                { key: 'briefing', label: 'Briefing', Icon: BarChart3 },
-                { divider: true },
-                { key: 'models-comm', label: 'Creator', Icon: Palette, badge: unreadModelChanges },
-                { key: 'chatters-comm', label: 'Crew', Icon: RefreshCw, badge: openSwaps },
-                { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: unreadChat },
-                { divider: true },
-                { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
-                { key: 'kalender', label: 'Kalender', Icon: CalendarDays },
-                { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
-              ]
-              const TABS_MORE = [
-                { key: 'notes', label: 'Notizen', Icon: FileText, badge: unreadNotes },
-                { key: 'todos', label: 'ToDos', Icon: CheckSquare, badge: openTodos },
-                { key: 'performance', label: 'Performance', Icon: TrendingUp },
-                { key: 'social', label: 'Social', Icon: Globe },
-                { key: 'billing', label: 'Billing', Icon: DollarSign },
-                { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
-                { key: 'datenstand', label: 'Datenstand', Icon: Database },
-              ]
-              const visiblePrimary = TABS_PRIMARY.filter(t => t.divider || canAccess(t.key))
-              const visibleMore = TABS_MORE.filter(t => canAccess(t.key))
-              const moreBadgeSum = visibleMore.reduce((s, t) => s + (t.badge || 0), 0)
-              const isMoreActive = visibleMore.some(t => t.key === activeTab)
-
-              const renderTab = (tab) => (
-                <button key={tab.key} onClick={() => {
-                  setActiveTab(tab.key)
-                  setMoreOpen(false)
-                  if (tab.key === 'models-comm') setUnreadModelChanges(0)
-                  if (tab.key === 'chatters-comm') setOpenSwaps(0)
-                  if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
-                }} style={{
+            {sichtbareBereiche.map(b => {
+              const aktiv = b.key === aktiverBereich
+              const zahl = b.tabs.reduce((n, t) => n + badgeVon(t), 0)
+              return (
+                <button key={b.key} onClick={() => oeffneBereich(b)} style={{
                   padding: '6px 12px', borderRadius: 8,
-                  background: activeTab === tab.key ? '#7c3aed' : 'transparent',
-                  color: activeTab === tab.key ? '#fff' : (tab.badge > 0 ? '#f59e0b' : 'var(--text-secondary)'),
+                  background: aktiv ? '#7c3aed' : 'transparent',
+                  color: aktiv ? '#fff' : (zahl > 0 ? '#f59e0b' : 'var(--text-secondary)'),
                   fontWeight: 600, fontSize: 13, transition: 'all 0.15s',
-                  border: `1px solid ${activeTab === tab.key ? '#7c3aed' : (tab.badge > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)')}`,
-                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
-                  fontFamily: 'inherit',
+                  border: `1px solid ${aktiv ? '#7c3aed' : (zahl > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)')}`,
+                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                  whiteSpace: 'nowrap', fontFamily: 'inherit',
                 }}>
-                  <tab.Icon size={14} strokeWidth={2.2} />
-                  <span>{tab.label}</span>
-                  {tab.badge > 0 && activeTab !== tab.key && (
-                    <span style={{
-                      background: '#f59e0b', color: '#000', fontSize: 10,
-                      fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4,
-                    }}>{tab.badge}</span>
+                  <b.Icon size={14} strokeWidth={2.2} />
+                  <span>{b.label}</span>
+                  {zahl > 0 && !aktiv && (
+                    <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4 }}>{zahl}</span>
                   )}
                 </button>
               )
-
-              return (
-                <>
-                  {visiblePrimary.map((tab, i) => tab.divider ? (
-                    <div key={`d_${i}`} style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
-                  ) : renderTab(tab))}
-                  {/* Mehr ▼ Dropdown */}
-                  {visibleMore.length > 0 && (
-                    <div style={{ position: 'relative' }}>
-                      <button onClick={() => setMoreOpen(v => !v)} style={{
-                        padding: '6px 12px', borderRadius: 8,
-                        background: isMoreActive ? '#7c3aed' : (moreOpen ? 'rgba(124,58,237,0.1)' : 'transparent'),
-                        color: isMoreActive ? '#fff' : (moreBadgeSum > 0 ? '#f59e0b' : 'var(--text-secondary)'),
-                        fontWeight: 600, fontSize: 13,
-                        border: `1px solid ${isMoreActive ? '#7c3aed' : (moreBadgeSum > 0 ? 'rgba(245,158,11,0.4)' : 'var(--border)')}`,
-                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit',
-                      }}>
-                        <MoreHorizontal size={14} strokeWidth={2.2} />
-                        <span>Mehr</span>
-                        {moreBadgeSum > 0 && !isMoreActive && (
-                          <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4 }}>{moreBadgeSum}</span>
-                        )}
-                        <span style={{ fontSize: 9, opacity: 0.7 }}>{moreOpen ? '▲' : '▼'}</span>
-                      </button>
-                      {moreOpen && (
-                        <>
-                          <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-                          <div style={{
-                            position: 'absolute', top: 'calc(100% + 4px)', right: 0,
-                            background: 'var(--bg-card)', border: '1px solid var(--border)',
-                            borderRadius: 8, padding: 4, minWidth: 180, zIndex: 999,
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                            display: 'flex', flexDirection: 'column', gap: 2,
-                          }}>
-                            {visibleMore.map(tab => (
-                              <button key={tab.key} onClick={() => {
-                                setActiveTab(tab.key); setMoreOpen(false)
-                                if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
-                              }} style={{
-                                padding: '8px 12px', borderRadius: 6,
-                                background: activeTab === tab.key ? 'rgba(124,58,237,0.15)' : 'transparent',
-                                color: activeTab === tab.key ? '#a78bfa' : (tab.badge > 0 ? '#f59e0b' : 'var(--text-primary)'),
-                                fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer',
-                                display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
-                                fontFamily: 'inherit', width: '100%',
-                              }}>
-                                <tab.Icon size={14} strokeWidth={2.2} />
-                                <span style={{ flex: 1 }}>{tab.label}</span>
-                                {tab.badge > 0 && (
-                                  <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{tab.badge}</span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </>
-              )
-            })()}
+            })}
           </div>
 
           {/* v3.9.0: Mobile Burger */}
@@ -832,16 +840,17 @@ export default function App() {
         </div>
       </header>
 
-      {/* v3.9.0: Mobile Menu Overlay */}
+      {/* v4.69.0: Handy-Menue — dieselbe Einteilung wie am Desktop, nur
+          untereinander. Vorher hingen hier 16 gleichrangige Eintraege. */}
       {mobileMenuOpen && (
         <div onClick={() => setMobileMenuOpen(false)} style={{
           position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)',
         }}>
           <div onClick={e => e.stopPropagation()} style={{
             position: 'absolute', top: 0, right: 0, bottom: 0,
-            background: 'var(--bg-card)', width: 'min(280px, 80vw)',
+            background: 'var(--bg-card)', width: 'min(300px, 85vw)',
             borderLeft: '1px solid var(--border)', padding: 16,
-            display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto',
+            display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Navigation</span>
@@ -850,104 +859,78 @@ export default function App() {
                 fontSize: 20, cursor: 'pointer', padding: 4, fontFamily: 'inherit',
               }}>✕</button>
             </div>
-            {[
-              { key: 'models', label: 'Models', Icon: Film },
-              { key: 'chatters', label: 'Chatters', Icon: Users },
-              { key: 'briefing', label: 'Briefing', Icon: BarChart3 },
-              { key: 'notes', label: 'Notizen', Icon: FileText, badge: unreadNotes },
-              { key: 'todos', label: 'ToDos', Icon: CheckSquare, badge: openTodos },
-              { key: 'models-comm', label: 'Creator', Icon: Palette, badge: unreadModelChanges },
-              { key: 'chatters-comm', label: 'Crew', Icon: RefreshCw, badge: openSwaps },
-              { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: unreadChat },
-              { key: 'performance', label: 'Performance', Icon: TrendingUp },
-              { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
-              { key: 'kalender', label: 'Kalender', Icon: CalendarDays },
-              { key: 'social', label: 'Social', Icon: Globe },
-              { key: 'billing', label: 'Billing', Icon: DollarSign },
-              { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
-              { key: 'datenstand', label: 'Datenstand', Icon: Database },
-              { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
-            ].filter(t => canAccess(t.key)).map(tab => (
-              <button key={tab.key} onClick={() => {
-                setActiveTab(tab.key); setMobileMenuOpen(false)
-                if (tab.key === 'models-comm') setUnreadModelChanges(0)
-                if (tab.key === 'chatters-comm') setOpenSwaps(0)
-                if (tab.key === 'notes') { lastNoteCheck.current = new Date().toISOString(); setUnreadNotes(0) }
-              }} style={{
-                padding: '10px 12px', borderRadius: 6,
-                background: activeTab === tab.key ? '#7c3aed' : 'transparent',
-                color: activeTab === tab.key ? '#fff' : (tab.badge > 0 ? '#f59e0b' : 'var(--text-primary)'),
-                fontWeight: 600, fontSize: 14, border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
-                fontFamily: 'inherit', width: '100%',
-              }}>
-                <tab.Icon size={16} strokeWidth={2.2} />
-                <span style={{ flex: 1 }}>{tab.label}</span>
-                {tab.badge > 0 && (
-                  <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{tab.badge}</span>
-                )}
-              </button>
-            ))}
+            {sichtbareBereiche.map(b => {
+              const tabs = b.tabs.filter(t => canAccess(t.key))
+              return (
+                <div key={b.key} style={{ marginBottom: 10 }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    color: 'var(--text-secondary)', padding: '6px 12px 4px', display: 'flex', alignItems: 'center', gap: 7,
+                  }}>
+                    <b.Icon size={12} strokeWidth={2.4} />
+                    {b.label}
+                  </div>
+                  {tabs.map(tab => {
+                    const zahl = badgeVon(tab)
+                    return (
+                      <button key={tab.key} onClick={() => { oeffneTab(tab.key); setMobileMenuOpen(false) }} style={{
+                        padding: '10px 12px', borderRadius: 6,
+                        background: activeTab === tab.key ? '#7c3aed' : 'transparent',
+                        color: activeTab === tab.key ? '#fff' : (zahl > 0 ? '#f59e0b' : 'var(--text-primary)'),
+                        fontWeight: 600, fontSize: 14, border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                        fontFamily: 'inherit', width: '100%',
+                      }}>
+                        <tab.Icon size={16} strokeWidth={2.2} />
+                        <span style={{ flex: 1 }}>{tab.label}</span>
+                        {zahl > 0 && (
+                          <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{zahl}</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
 
-      {/* ── TOOLBAR (v3.9.0: kompakter) ── */}
-      <div style={{
+      {/* ── v4.69.0: UNTERZEILE ──
+          Zeigt die Unterpunkte des offenen Bereichs. Hier stand bis v4.68 der
+          Dauerstreifen mit Business Date und den drei Upload-Kacheln; der
+          liegt jetzt unter Verwaltung → Daten. */}
+      <div className="tabs-desktop" style={{
         background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
-        padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        padding: '7px 16px', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
       }}>
-        {/* Date controls */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <label style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Business Date</label>
-            <input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} />
-          </div>
-          {allDates.length > 0 && (
-            <select value={businessDate} onChange={e => setBusinessDate(e.target.value)} style={{
-              background: 'var(--bg-input)', border: '1px solid var(--border)',
-              color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6,
-              fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', outline: 'none', maxWidth: 130, marginTop: 12,
+        {offenerBereich && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+            color: 'var(--text-muted)', marginRight: 8,
+          }}>{offenerBereich.label}</span>
+        )}
+        {offeneTabs.length > 1 && offeneTabs.map(tab => {
+          const aktiv = activeTab === tab.key
+          const zahl = badgeVon(tab)
+          return (
+            <button key={tab.key} onClick={() => oeffneTab(tab.key)} style={{
+              padding: '6px 12px', borderRadius: 7,
+              background: aktiv ? 'var(--bg-card2)' : 'transparent',
+              color: aktiv ? 'var(--text-primary)' : (zahl > 0 ? '#f59e0b' : 'var(--text-secondary)'),
+              border: `1px solid ${aktiv ? 'var(--border-bright)' : 'transparent'}`,
+              fontWeight: aktiv ? 700 : 500, fontSize: 12.5, cursor: 'pointer',
+              fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
             }}>
-              {allDates.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          )}
-          {(currentModelSnap || currentChatterSnap) && (
-            <button onClick={() => deleteDay(businessDate)} style={{
-              padding: '5px 9px', background: 'transparent', marginTop: 12,
-              border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
-              borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-            }} title={`Tag ${businessDate} löschen`}>🗑 Tag löschen</button>
-          )}
-        </div>
-        {/* Uploads (UploadBox-Komponente bleibt unverändert) */}
-        <div className="upload-row-compact" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
-          <UploadBox
-            label="Daily Model"
-            onFile={handleModelUpload}
-            lastFileName={currentModelSnap?.fileName}
-            lastDate={currentModelSnap?.uploadedAt ? new Date(currentModelSnap.uploadedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null}
-          />
-          <UploadBox
-            label="Daily Chatter"
-            onFile={handleChatterUpload}
-            lastFileName={currentChatterSnap?.fileName}
-            lastDate={currentChatterSnap?.uploadedAt ? new Date(currentChatterSnap.uploadedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null}
-          />
-          {/* v4.31.0: Model-Einzeldateien. Braucht die Model-CSV desselben Tages als
-              Nachschlagewerk — daran werden die Dateien ueber ihre Summe erkannt. */}
-          <ModelChatterUpload
-            key={`mcu_${businessDate}_${einzelReload}`}
-            businessDate={businessDate}
-            modelRows={currentModelSnap?.rows || []}
-            session={session}
-            onSaved={() => setEinzelReload(n => n + 1)}
-          />
-        </div>
-        {/* Version only */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
-        </div>
+              <tab.Icon size={13} strokeWidth={2.2} />
+              <span>{tab.label}</span>
+              {zahl > 0 && !aktiv && (
+                <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{zahl}</span>
+              )}
+            </button>
+          )
+        })}
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
       </div>
 
       {/* ── MAIN ── */}
@@ -989,7 +972,60 @@ export default function App() {
         ) : activeTab === 'vorschlaege' ? (
           <SuggestionsAdmin />
         ) : activeTab === 'datenstand' ? (
-          <DataStatusTab key={`ds_${einzelReload}`} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* v4.69.0: Hier ist der Upload zuhause — zusammen mit der Anzeige,
+                was schon drin ist. Beides macht man ohnehin in einem Zug. */}
+            <div style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12,
+              padding: 14, display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 150 }}>
+                <label style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Business Date</label>
+                <input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} />
+                {allDates.length > 0 && (
+                  <select value={businessDate} onChange={e => setBusinessDate(e.target.value)} style={{
+                    background: 'var(--bg-input)', border: '1px solid var(--border)',
+                    color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6,
+                    fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', outline: 'none',
+                  }}>
+                    {allDates.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                )}
+                {(currentModelSnap || currentChatterSnap) && (
+                  <button onClick={() => deleteDay(businessDate)} style={{
+                    padding: '5px 9px', background: 'transparent',
+                    border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.7)',
+                    borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'inherit', whiteSpace: 'nowrap',
+                  }} title={`Tag ${businessDate} loeschen`}>🗑 Tag löschen</button>
+                )}
+              </div>
+              <div className="upload-row-compact" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
+                <UploadBox
+                  label="Daily Model"
+                  onFile={handleModelUpload}
+                  lastFileName={currentModelSnap?.fileName}
+                  lastDate={currentModelSnap?.uploadedAt ? new Date(currentModelSnap.uploadedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null}
+                />
+                <UploadBox
+                  label="Daily Chatter"
+                  onFile={handleChatterUpload}
+                  lastFileName={currentChatterSnap?.fileName}
+                  lastDate={currentChatterSnap?.uploadedAt ? new Date(currentChatterSnap.uploadedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null}
+                />
+                {/* v4.31.0: Model-Einzeldateien. Braucht die Model-CSV desselben Tages als
+                    Nachschlagewerk — daran werden die Dateien ueber ihre Summe erkannt. */}
+                <ModelChatterUpload
+                  key={`mcu_${businessDate}_${einzelReload}`}
+                  businessDate={businessDate}
+                  modelRows={currentModelSnap?.rows || []}
+                  session={session}
+                  onSaved={() => setEinzelReload(n => n + 1)}
+                />
+              </div>
+            </div>
+            <DataStatusTab key={`ds_${einzelReload}`} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
+          </div>
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : (
