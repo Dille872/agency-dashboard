@@ -6,7 +6,7 @@ import SuggestionsAdmin from './components/SuggestionsAdmin'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid,
+  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import CalendarTab from './components/CalendarTab' // v4.60.0
@@ -36,6 +36,8 @@ import PresentationToggle from './components/PresentationToggle'
 import Logo from './components/Logo'
 // v4.71.0: Startseite am Handy — wer arbeitet, was wartet, was ist schief
 import JetztView from './components/JetztView'
+// v4.73.0: gemeinsame Whiteboards fuer Admin/Manager
+import BoardsTab from './components/BoardsTab'
 import { parseCSV, parseModelRow, parseChatterRow, todayISO } from './utils'
 import { useFabPanels } from './fabPanel'
 // v4.68.0: Ansicht in der Adresszeile + eine Quelle fuer die Tab-Rechte
@@ -66,6 +68,8 @@ const BEREICHE = [
     { key: 'chatters-comm', label: 'Crew', Icon: RefreshCw, badge: 'openSwaps' },
     { key: 'chat', label: 'Chat', Icon: MessageCircle, badge: 'unreadChat' },
     { key: 'notes', label: 'Notizen', Icon: FileText, badge: 'unreadNotes' },
+    // v4.73.0: nur Admin/Manager — die anderen Rollen kommen nach zugang.js ohnehin nicht hin
+    { key: 'boards', label: 'Boards', Icon: LayoutDashboard },
     { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
     { key: 'social', label: 'Social', Icon: Globe },
   ] },
@@ -1008,6 +1012,8 @@ export default function App() {
             datenOk={datenHeuteOk}
             fehlenderTag={fehlenderTag}
           />
+        ) : activeTab === 'boards' ? (
+          <BoardsTab userDisplayName={userDisplayName} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'models' ? (
           <ModelsView selectedDate={businessDate} modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} onDateChange={setBusinessDate} />
         ) : activeTab === 'chatters' ? (

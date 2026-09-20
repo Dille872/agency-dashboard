@@ -192,3 +192,14 @@ th { text-align: left; }
   /* Zeilen im Jetzt-Screen: Daumen-Hoehe behalten */
   .jetzt-zeile { padding: 10px 12px !important; }
 }
+
+/* ── v4.73.0: Boards ─────────────────────────────────────────────────────── */
+.board-editor { height: calc(100vh - 150px); position: relative; }
+@media (max-width: 768px) {
+  .board-editor { height: calc(100dvh - 190px); }
+  /* Die globale Mobil-Regel "button { padding … !important }" würde die
+     quadratischen Werkzeug-Knöpfe verziehen. */
+  .board-editor button { padding: 0 !important; }
+  .board-editor .board-text-knopf { padding: 6px 10px !important; }
+  .board-editor .board-zeile { padding: 7px 9px !important; }
+}
