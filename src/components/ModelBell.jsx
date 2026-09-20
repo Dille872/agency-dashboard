@@ -18,10 +18,12 @@ import { heuteBerlin } from '../utils' // v4.57.0
  *   model_calendar       → anstehende Termine (nächste 7 Tage)
  *   model_board_activity → Board-Änderungen durch das Team
  *
- * Gelesen-Zustand in localStorage. Offene Anfragen und heutige/morgige Termine
+ * Gelesen-Zustand seit v4.72.0 pro Login (gelesen_stand). Offene Anfragen und heutige/morgige Termine
  * gelten immer als ungelesen — die sollen nicht durch "Alles gelesen" verschwinden.
  */
 
+// v4.72.0: Gelesen-Stand pro Login statt pro Gerät (src/gelesen.js)
+import { useGelesen } from '../gelesen'
 const SEEN_KEY = (name) => `modelbell_seen_${name || 'default'}`
 
 function relTime(iso) {
@@ -67,16 +69,8 @@ export default function ModelBell({ displayName, onNavigate , isOpen, onToggle }
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [filter, setFilter] = useState('all')
   const [items, setItems] = useState([])
-  const [lastSeen, setLastSeen] = useState(() => {
-    try {
-      const stored = localStorage.getItem(SEEN_KEY(displayName))
-      if (stored) return stored
-      // Erster Aufruf: ab jetzt zählen, sonst wäre die ganze Historie ungelesen.
-      const now = new Date().toISOString()
-      localStorage.setItem(SEEN_KEY(displayName), now)
-      return now
-    } catch { return new Date().toISOString() }
-  })
+  // Zählt ab dem ersten Aufruf ("ab jetzt"), sonst wäre die ganze Historie ungelesen.
+  const [lastSeen, gelesenMarkieren] = useGelesen('modelbell', { lokalKey: SEEN_KEY(displayName), startJetzt: true })
 
   const load = useCallback(async () => {
     if (!displayName) return
@@ -178,9 +172,7 @@ export default function ModelBell({ displayName, onNavigate , isOpen, onToggle }
   const shown = filter === 'all' ? items : items.filter(it => it.kind === filter)
 
   const markAll = () => {
-    const now = new Date().toISOString()
-    setLastSeen(now)
-    try { localStorage.setItem(SEEN_KEY(displayName), now) } catch {}
+    gelesenMarkieren()
   }
   const close = () => { setOpen(false); markAll() }
 

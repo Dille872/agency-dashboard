@@ -21,10 +21,12 @@ import { wdhLabel } from './CalendarTab' // v4.65.0
  *   - Props todos                             → neu zugewiesene Aufgaben
  *   - Props announcements                     → neue Pinnwand-Einträge
  *
- * Gelesen-Zustand liegt in localStorage (Zeitstempel des letzten "Alles gelesen").
+ * Gelesen-Zustand liegt seit v4.72.0 pro Login in gelesen_stand (localStorage nur Zwischenspeicher) (Zeitstempel des letzten "Alles gelesen").
  * Angebote gelten IMMER als ungelesen, bis reagiert wurde — die sollen nicht verschwinden.
  */
 
+// v4.72.0: Gelesen-Stand pro Login statt pro Gerät (src/gelesen.js)
+import { useGelesen } from '../gelesen'
 const SEEN_KEY = (name) => `chatterbell_seen_${name || 'default'}`
 const normName = (s) => (s || '').trim().toLowerCase()
 
@@ -100,17 +102,8 @@ export default function ChatterBell({
   const [schedules, setSchedules] = useState([])
   const [kalender, setKalender] = useState([]) // v4.61.0
   const [busy, setBusy] = useState(false)
-  const [lastSeen, setLastSeen] = useState(() => {
-    try {
-      const stored = localStorage.getItem(SEEN_KEY(displayName))
-      if (stored) return stored
-      // Erster Aufruf: ab jetzt zählen. Sonst wäre beim allerersten Öffnen alles
-      // Alte (Aufgaben, Ankündigungen) auf einen Schlag "ungelesen".
-      const now = new Date().toISOString()
-      localStorage.setItem(SEEN_KEY(displayName), now)
-      return now
-    } catch { return new Date().toISOString() }
-  })
+  // Zählt ab dem ersten Aufruf ("ab jetzt"), sonst wäre die ganze Historie ungelesen.
+  const [lastSeen, gelesenMarkieren] = useGelesen('chatterbell', { lokalKey: SEEN_KEY(displayName), startJetzt: true })
 
   // ── Schichtangebote laden (gleiche Filterlogik wie SwapModal) ──
   const loadOffers = useCallback(async () => {
@@ -326,9 +319,7 @@ export default function ChatterBell({
   const shown = filter === 'all' ? items : items.filter(it => CHIP_OF[it.kind] === filter)
 
   const markAll = () => {
-    const now = new Date().toISOString()
-    setLastSeen(now)
-    try { localStorage.setItem(SEEN_KEY(displayName), now) } catch {}
+    gelesenMarkieren()
   }
 
   // Beim Öffnen NICHT sofort alles als gelesen markieren — sonst verschwinden

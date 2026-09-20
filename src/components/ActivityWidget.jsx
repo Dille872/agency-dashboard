@@ -5,6 +5,8 @@ import { useFabOpen } from '../fabPanel'
 
 // v3.61.0: Aktivitäts-Feed. v3.61.4: lucide-Icons + Pills.
 // v3.62.0: Klick öffnet den passenden Tab · Ungelesen-Markierung · "Alles gelesen" · Filter-Chips.
+// v4.72.0: Gelesen-Stand pro Login statt pro Gerät (src/gelesen.js)
+import { useGelesen } from '../gelesen'
 const SEEN_KEY = 'activity_last_seen'
 
 // v4.2.0: 'chatter' bündelt ALLES, was eine Person aus dem Team getan hat —
@@ -70,9 +72,7 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
   const [items, setItems] = useState([])
   const [filter, setFilter] = useState('all')
   const [hovered, setHovered] = useState(null)
-  const [lastSeen, setLastSeen] = useState(() => {
-    try { return localStorage.getItem(SEEN_KEY) || '' } catch { return '' }
-  })
+  const [lastSeen, gelesenMarkieren] = useGelesen('teamfeed', { lokalKey: SEEN_KEY })
   const [seenAtOpen, setSeenAtOpen] = useState('') // Schnappschuss für Hervorhebung während des Öffnens
   const [personFilter, setPersonFilter] = useState('') // v4.2.0: eine bestimmte Person herausgreifen
 
@@ -161,9 +161,7 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
       const next = !o
       if (next) {
         setSeenAtOpen(lastSeen)              // was war neu → für Hervorhebung merken
-        const now = new Date().toISOString()
-        setLastSeen(now)                     // Badge zurücksetzen
-        try { localStorage.setItem(SEEN_KEY, now) } catch {}
+        gelesenMarkieren()                   // Badge zurücksetzen — auf allen Geräten
         load()
       }
       return next
@@ -171,10 +169,7 @@ export default function ActivityWidget({ onNavigate , isOpen, onToggle }) {
   }
 
   const markAllRead = () => {
-    const now = new Date().toISOString()
-    setSeenAtOpen(now)
-    setLastSeen(now)
-    try { localStorage.setItem(SEEN_KEY, now) } catch {}
+    setSeenAtOpen(gelesenMarkieren())
   }
 
   const handleClick = (it) => {

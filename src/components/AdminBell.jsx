@@ -28,6 +28,8 @@ import {
  * darum, zu sehen was die anderen tun.
  */
 
+// v4.72.0: Gelesen-Stand pro Login statt pro Gerät (src/gelesen.js)
+import { useGelesen } from '../gelesen'
 const SEEN_KEY = 'adminbell_last_seen'
 const norm = (s) => (s || '').trim().toLowerCase()
 
@@ -87,9 +89,7 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSn
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [filter, setFilter] = useState('all')
   const [items, setItems] = useState([])
-  const [lastSeen, setLastSeen] = useState(() => {
-    try { return localStorage.getItem(SEEN_KEY) || '' } catch { return '' }
-  })
+  const [lastSeen, gelesenMarkieren] = useGelesen('adminbell', { lokalKey: SEEN_KEY })
 
   const load = useCallback(async () => {
     const since = new Date(); since.setDate(since.getDate() - 14)
@@ -294,9 +294,7 @@ export default function AdminBell({ me, onNavigate , isOpen, onToggle, chatterSn
   const visible = alleItems.filter(it => filter === 'all' || it.cat === filter)
 
   const markSeen = () => {
-    const now = new Date().toISOString()
-    setLastSeen(now)
-    try { localStorage.setItem(SEEN_KEY, now) } catch {}
+    gelesenMarkieren()
     // v4.28.0: Abgelaufene Beobachtungen sind jetzt gesehen → quittieren und
     // schließen. Erst hier, nicht schon beim Berechnen: sonst wäre die
     // Abschlussmeldung weg, bevor sie jemand gelesen hat.
