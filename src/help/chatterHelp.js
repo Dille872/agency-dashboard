@@ -68,6 +68,7 @@ export const HELP_TOPICS = [
     body: [
       'Sobald du für heute eingeteilt bist, klebt oben eine Leiste mit deiner Schicht. „⚪ Schicht noch nicht gestartet" heißt: bitte einchecken. „🟢 Schicht aktiv" heißt: alles gut, das Team sieht dich als online.',
       'Einchecken kannst du ab 4 Stunden vor Schichtbeginn. Die Uhrzeiten rechnet das Portal automatisch in deine lokale Zeit um — auch wenn du gerade nicht in Deutschland bist.',
+      'Unter dem Schichtnamen stehen die Models dieser Schicht mit ihrem Zustand — online, Pause, nicht da oder auf Reise. So weißt du schon vor dem Start, woran du bist.',
     ],
     steps: [
       'Oben auf „Schicht starten" tippen. Hast du an dem Tag mehrere Schichten, wähl vorher im Auswahlfeld die richtige — sonst bleibt der Knopf grau.',
@@ -214,6 +215,27 @@ export const HELP_TOPICS = [
   },
 
   // ── Models ───────────────────────────────────────────────────────────────
+  {
+    id: 'heutemodels',
+    icon: '✈️',
+    tab: 'heute',
+    title: 'Deine Models heute',
+    short: 'Jedes Model deiner Schicht auf einen Blick: Zustand, Reise, Termine, Preise, No Gos.',
+    body: [
+      'Ganz oben im Tab „Heute" steht für jedes Model deiner Schicht eine Karte. Oben rechts auf der Karte der Zustand: Online (gerade im Dashboard), Pause oder Nicht da (mit Uhrzeit, wenn das Model eine gesetzt hat), Offline oder Auf Reise.',
+      'Ist ein Model auf Reise, steht der Reiseplan groß oben auf der Karte: wohin, bis wann und was das Model dazu notiert hat. Darunter: was diese Woche ansteht (Termine, Videos, Reisen), offene Custom-Aufträge, Preise, No Gos, Einschränkungen und Services.',
+      'Der gelbe Kasten „Neu seit deiner letzten Schicht" zeigt, was am Board geändert wurde, seit du das letzte Mal ausgecheckt hast. Geänderte Preise und No Gos sind zusätzlich mit NEU markiert.',
+      'Bist du eingecheckt, siehst du die Models deiner laufenden Schicht. Sonst die Models aller heutigen Schichten — und hast du heute keine Schicht, alle Models, denen du zugeteilt bist. Am Handy wechselst du oben zwischen den Models.',
+    ],
+    steps: [
+      'Vor dem Start einmal alle Karten durchschauen — vor allem den gelben Kasten und Reisen.',
+      '„Ganzes Board" öffnet den kompletten Steckbrief im Tab „Models".',
+    ],
+    watch: [
+      'Die Karte zeigt eine Auswahl. Verbindlich ist das ganze Board — wenn etwas fehlt oder unklar ist, dort nachsehen.',
+      'Den Zustand setzt das Model selbst. Steht dort „Offline", heißt das nur, dass es gerade nicht im Dashboard ist.',
+    ],
+  },
   {
     id: 'models',
     icon: '🎬',
@@ -469,6 +491,7 @@ export const TOUR_IDS = [
   'schichtleiste',
   'cockpit',
   'tabs',
+  'heutemodels',
   'shifts',
   'kalender',
   'zeitzone',

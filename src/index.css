@@ -203,3 +203,16 @@ th { text-align: left; }
   .board-editor .board-text-knopf { padding: 6px 10px !important; }
   .board-editor .board-zeile { padding: 7px 9px !important; }
 }
+
+/* v4.75.0: Chatter-Portal, Tab „Heute" — links die Models der Schicht, rechts
+   Aufgaben/Kalender/Schichten/Notiz. Unter 1000px untereinander (Models zuerst). */
+.heute-raster {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+.heute-links, .heute-rechts { min-width: 0; }
+@media (max-width: 1000px) {
+  .heute-raster { display: block; }
+}

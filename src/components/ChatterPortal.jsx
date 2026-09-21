@@ -10,6 +10,8 @@ import ChatterChat from './ChatterChat'
 import MessageSuggestions from './MessageSuggestions'
 import MeinKalender from './MeinKalender' // v4.60.0
 import ZeitzonenHinweis from './ZeitzonenHinweis' // v4.63.0
+import HeuteModels from './HeuteModels' // v4.75.0
+import { useModelLage, zustand, reiseHeute } from '../modelLage' // v4.75.0
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
 import { useTodoMeldung } from '../todoMeldung'
@@ -355,6 +357,7 @@ function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = '
           justifyContent: 'space-between',
           fontFamily: 'inherit',
           color: 'var(--text-primary)',
+          textAlign: 'left', // v4.75.0: in der schmalen rechten Spalte bricht der Titel um
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 600 }}>
@@ -2189,6 +2192,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const laufendeSchicht = currentShift || selectedShift || (todayShifts.length === 1 ? todayShifts[0].shift : null)
   const laufenderEintrag = todayShifts.find(s => s.shift === laufendeSchicht)
   const laufendeModels = [...new Set((laufenderEintrag?.models || []).map(m => m.modelName || m))]
+  // v4.75.0: Welche Models gehören auf „Heute"? Eingecheckt: die der laufenden
+  // Schicht. Sonst: alle heutigen Schichten, die noch nicht vorbei sind. Ohne
+  // Schicht heute: alle zugeteilten Models (Reise-Infos zählen trotzdem).
+  const heuteModelNamen = (() => {
+    if (isOnline && laufendeModels.length) return laufendeModels
+    const n = Date.now()
+    return [...new Set(todayShifts
+      .filter(s => !s.window || s.window.end.getTime() > n)
+      .flatMap(s => (s.models || []).map(m => m.modelName || m))
+      .filter(Boolean))]
+  })()
+  const kartenNamen = heuteModelNamen.length ? heuteModelNamen : Object.keys(assignedModelBoards)
+  const modelLage = useModelLage(kartenNamen, displayName)
   // v4.45.0: Models zur Auswahl im Übergabe-Fenster — mit ID, weil `handover_about`
   // IDs speichert. Nach dem automatischen Auschecken gibt es keinen laufenden
   // Eintrag mehr; dann alle Models des Tages, damit die Auswahl nicht leer ist.
@@ -2288,7 +2304,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </div>
       </header>
 
-      <main style={{ padding: '16px 20px', maxWidth: 1200, margin: '0 auto' }}>
+      <main style={{ padding: '16px 20px', maxWidth: 1360, margin: '0 auto' }}>
         {/* v4.63.0: Zeitzone bestätigen / Abweichung Gerät ↔ eingestellt */}
         {!isPreview && displayName && <ZeitzonenHinweis displayName={displayName} onZone={() => setZonenStand(n => n + 1)} />}
         {/* v4.52.0: klar machen, wessen Portal das gerade ist */}
@@ -2382,9 +2398,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   ? (laufendeSchicht ? ` · ${laufendeSchicht}` : '')
                   : todayShifts.length === 1 ? ` · ${todayShifts[0].shift}` : ''}
               </div>
-              {isOnline && laufendeModels.length > 0 && (
-                <div style={{ fontSize: 11, color: '#10b981', marginBottom: 2 }}>
-                  Models: {laufendeModels.join(', ')}
+              {/* v4.75.0: Statt „Models: A, B" (nur eingecheckt) jetzt immer die
+                  Models der Schicht mit ihrem Zustand — auch schon vor dem Start. */}
+              {heuteModelNamen.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, margin: '4px 0 5px' }}>
+                  {heuteModelNamen.map(n => {
+                    const z = zustand(modelLage.kontakte[n], reiseHeute(assignedModelBoards[n]?.reise))
+                    return (
+                      <span key={n} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 8, background: z.farbe + '17', border: `1px solid ${z.farbe}55` }}>
+                        <b style={{ color: 'var(--text-primary)' }}>{n}</b>
+                        <span style={{ color: z.farbe, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{z.art === 'reise' ? `✈ ${reiseHeute(assignedModelBoards[n]?.reise)?.title || 'Reise'}` : z.text}</span>
+                      </span>
+                    )
+                  })}
                 </div>
               )}
               {/* Weitere Schichten desselben lokalen Tages — einzeln, mit lokaler Zeit */}
@@ -2607,6 +2633,25 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )
         })()}
 
+        {/* v4.75.0: Tab „Heute" zweispaltig — links die Models der Schicht,
+            rechts der Rest wie bisher. In den anderen Tabs ist der Rahmen ein
+            normaler Block (die Abwesenheit aus „Organisation" liegt mit drin). */}
+        <div className={tab === 'heute' ? 'heute-raster' : undefined}>
+        {tab === 'heute' && (
+          <div data-help="heutemodels" className="heute-links">
+            <HeuteModels
+              namen={kartenNamen}
+              titel={heuteModelNamen.length ? 'Deine Models heute' : 'Deine Models'}
+              lage={modelLage}
+              boards={assignedModelBoards}
+              services={assignedServices}
+              custom={assignedCustomContent}
+              videos={assignedModelVideos}
+              onBoard={(n) => { setSelectedModelInfo(n); goTab('models'); openPanel('models') }}
+            />
+          </div>
+        )}
+        <div className={tab === 'heute' ? 'heute-rechts' : undefined}>
         <Collapsible helpId="todos" hidden={tab !== 'heute' || myTodos.length === 0} isCollapsed={collapsed.todos} onToggle={() => toggleCollapse('todos')} icon="📋" title="Meine Aufgaben" badge={myTodos.filter(t => !t.completed).length || null} badgeColor="#ef4444">
           {myTodos.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px 2px' }}>Aktuell keine Aufgaben für dich.</div>
@@ -2873,6 +2918,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             </div>
           </div>
         </Collapsible>
+        </div>{/* ── Ende heute-rechts ── */}
+        </div>{/* ── Ende heute-raster ── */}
 
         {/* v3.81.0: KI-Nachrichten-Vorschläge · v3.95.0: im Models-Tab.
             display:none statt Ausbau — sonst gingen erzeugte Vorschläge beim Tab-Wechsel verloren. */}
