@@ -216,3 +216,9 @@ th { text-align: left; }
 @media (max-width: 1000px) {
   .heute-raster { display: block; }
 }
+/* v4.76.0: Fenster „Neu seit deiner letzten Schicht" — am Handy unten angedockt,
+   am Rechner mittig */
+@media (min-width: 700px) {
+  .model-neu-huelle { align-items: center !important; }
+  .model-neu-fenster { border-radius: 18px !important; }
+}

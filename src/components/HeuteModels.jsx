@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { datumInZone, BERLIN } from '../zeit'
+import { datumInZone, BERLIN, meineZone, versatzMinuten, zeitIn } from '../zeit'
 import { plusTage } from '../jetzt'
-import { reiseHeute, reiseBald, zustand } from '../modelLage'
+import { reiseHeute, reiseBald, zustand, listeAus } from '../modelLage'
 
 // ── Chatter-Portal, Tab „Heute": Deine Models (v4.75.0) ─────────────────────
 //
@@ -46,6 +46,20 @@ const chip = (farbe, stark) => ({
   color: farbe, fontWeight: stark ? 700 : 500,
 })
 
+// v4.76.0: Uhrzeit beim Model (models_contact.zeitzone, setzt das Model-Portal
+// automatisch aus dem Gerät des Models) — mit Abstand zur eigenen Zeit.
+function ortszeit(zone) {
+  if (!zone) return null
+  try {
+    const jetzt = new Date()
+    const ich = meineZone()
+    const diff = Math.round((versatzMinuten(zone, jetzt) - versatzMinuten(ich, jetzt)) / 30) / 2
+    if (diff === 0) return null   // gleiche Zeit wie ich — keine neue Information
+    const abstand = `${diff > 0 ? '+' : '−'}${String(Math.abs(diff)).replace('.', ',')} h zu dir`
+    return { uhr: zeitIn(jetzt, zone), abstand }
+  } catch { return null }
+}
+
 function Neu() {
   return <span style={{ fontSize: 9, fontWeight: 800, color: '#f59e0b', marginLeft: 5, letterSpacing: '0.04em' }}>NEU</span>
 }
@@ -54,6 +68,9 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
   const heute = heuteBerlin()
   const reise = reiseHeute(board.reise, heute)
   const z = zustand(kontakt, reise)
+  const oz = ortszeit(kontakt?.zeitzone)
+  const geht = listeAus(reise?.reise_geht)
+  const gehtNicht = listeAus(reise?.reise_geht_nicht)
   const neuTitel = new Set(aenderungen.filter(a => a.action !== 'gelöscht').map(a => lc(a.details)))
   const istNeu = (t) => neuTitel.has(lc(t))
 
@@ -103,6 +120,7 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+            {oz && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>bei ihr <b style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{oz.uhr}</b> · {oz.abstand}</div>}
             {z.zeile && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{z.zeile}</div>}
           </div>
           <span style={{ ...chip(z.farbe), borderRadius: 20, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>{z.text}</span>
@@ -128,6 +146,20 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
               </div>
             )}
             {reise.content && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 7, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{reise.content}</div>}
+          </div>
+        )}
+        {reise && (geht.length > 0 || gehtNicht.length > 0) && (
+          <div style={{ marginTop: 10 }}>
+            <div style={label}>Während der Reise</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {geht.map(t => <span key={'g' + t} style={chip('#10b981')}>✓ {t}</span>)}
+              {gehtNicht.map(t => <span key={'n' + t} style={chip('#ef4444')}>✕ {t}</span>)}
+            </div>
+          </div>
+        )}
+        {reise?.reise_fans && (
+          <div style={{ marginTop: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 9, padding: '8px 10px', fontSize: 12, lineHeight: 1.45, color: 'var(--text-primary)' }}>
+            <b style={{ color: '#f59e0b' }}>So sagst du's Fans:</b> {reise.reise_fans}
           </div>
         )}
       </div>
@@ -281,6 +313,73 @@ export default function HeuteModels({ namen, titel, lage, boards, services, cust
       {schmal
         ? karte(aktiv)
         : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12, alignItems: 'start' }}>{namen.map(karte)}</div>}
+    </div>
+  )
+}
+
+// ── Beim Einloggen: was ist neu? (v4.76.0) ──────────────────────────────────
+//
+// Erscheint einmal, wenn sich seit der letzten eigenen Schicht etwas an den
+// Boards der heutigen Models geändert hat, das dieser Login noch nicht
+// bestätigt hat. „Gelesen" merkt sich den Zeitpunkt pro Login
+// (gelesen_stand, Schlüssel 'chattermodels') — am Handy ist es dann auch weg.
+// Laufende Reisen stehen immer oben mit dabei, weil sie die ganze Schicht prägen.
+// zIndex über den runden Knöpfen unten rechts (Hilfe/Glocke/Chat liegen bei 99999).
+export function ModelNeuFenster({ namen, lage, boards, gesehenBis, onGelesen }) {
+  const heute = heuteBerlin()
+  const neu = namen.flatMap(n => (lage.aenderungen[n] || [])
+    .filter(a => !gesehenBis || new Date(a.created_at) > new Date(gesehenBis))
+    .map(a => ({ ...a, model: n })))
+  if (!neu.length) return null
+  const reisen = namen.map(n => ({ n, r: reiseHeute(boards[n]?.reise, heute) })).filter(x => x.r)
+  const FARBE = { reise: '#0891b2', nogos: '#ef4444', einschraenkungen: '#f59e0b', preise: '#f59e0b', termine: '#ec4899' }
+
+  return (
+    <div className="model-neu-huelle" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }}>
+      <div role="dialog" aria-label="Neu seit deiner letzten Schicht" style={{
+        width: 'min(520px, 100%)', maxHeight: '88vh', overflowY: 'auto', boxSizing: 'border-box',
+        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '18px 18px 0 0',
+        padding: '16px 18px 22px', display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 0,
+      }} className="model-neu-fenster">
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', letterSpacing: '0.06em' }}>BEVOR DU LOSLEGST</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginTop: 3 }}>
+            {neu.length === 1 ? '1 Sache hat sich' : `${neu.length} Sachen haben sich`} seit deiner letzten Schicht geändert
+          </div>
+        </div>
+
+        {reisen.map(({ n, r }) => (
+          <div key={'r' + n} style={{ display: 'flex', gap: 11, padding: '10px 12px', borderRadius: 11, background: 'rgba(8,145,178,0.12)', border: '1px solid rgba(8,145,178,0.4)' }}>
+            <span style={{ fontSize: 20 }}>✈</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{n} ist auf Reise: {r.title}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.4 }}>
+                {r.date_to ? `bis ${tagKurz(r.date_to)}` : ''}
+                {listeAus(r.reise_geht_nicht).length > 0 ? ` · geht nicht: ${listeAus(r.reise_geht_nicht).join(', ')}` : ''}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {neu.slice(0, 12).map(a => {
+            const f = FARBE[a.category] || '#a78bfa'
+            return (
+              <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '8px 11px', borderRadius: 9, background: f + '12', border: `1px solid ${f}44`, fontSize: 12.5 }}>
+                <b style={{ color: 'var(--text-primary)', minWidth: 56 }}>{a.model}</b>
+                <span style={{ color: 'var(--text-secondary)', minWidth: 0 }}>
+                  <span style={{ color: f, fontWeight: 600 }}>{KATEGORIE[a.category] || a.category}</span> {a.action}: {a.details}
+                </span>
+              </div>
+            )
+          })}
+          {neu.length > 12 && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>+ {neu.length - 12} weitere — stehen auf den Karten</div>}
+        </div>
+
+        <button type="button" onClick={onGelesen} style={{ background: '#7c3aed', border: 'none', borderRadius: 12, padding: '13px', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          Gelesen — Schicht kann kommen
+        </button>
+      </div>
     </div>
   )
 }

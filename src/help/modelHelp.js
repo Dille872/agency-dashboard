@@ -119,7 +119,7 @@ export const HELP_TOPICS = [
     steps: [
       'Bei der passenden Kategorie auf „+ Hinzufügen".',
       'Titel eintragen (Pflicht), dazu Beschreibung und Preis, wenn es passt.',
-      'Beim Reiseplan gibt es zusätzlich „Von" und „Bis".',
+      'Beim Reiseplan gibt es zusätzlich „Von" und „Bis" — und drei Felder für deine Chatter: was während der Reise geht, was nicht geht (jeweils mit Komma trennen) und optional einen Satz, den sie Fans sagen können. Das sehen die Chatter groß auf ihrer Startseite, solange die Reise läuft.',
       'Mit ✎ änderst du einen Eintrag später, mit ✕ löschst du ihn.',
     ],
     watch: [

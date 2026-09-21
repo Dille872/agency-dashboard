@@ -223,7 +223,9 @@ export const HELP_TOPICS = [
     short: 'Jedes Model deiner Schicht auf einen Blick: Zustand, Reise, Termine, Preise, No Gos.',
     body: [
       'Ganz oben im Tab „Heute" steht für jedes Model deiner Schicht eine Karte. Oben rechts auf der Karte der Zustand: Online (gerade im Dashboard), Pause oder Nicht da (mit Uhrzeit, wenn das Model eine gesetzt hat), Offline oder Auf Reise.',
-      'Ist ein Model auf Reise, steht der Reiseplan groß oben auf der Karte: wohin, bis wann und was das Model dazu notiert hat. Darunter: was diese Woche ansteht (Termine, Videos, Reisen), offene Custom-Aufträge, Preise, No Gos, Einschränkungen und Services.',
+      'Neben dem Namen steht, wie spät es gerade beim Model ist — das Portal nimmt die Zeitzone vom Gerät des Models, auf Reisen stellt sie sich also mit um.',
+      'Ist ein Model auf Reise, steht der Reiseplan groß oben auf der Karte: wohin, bis wann, was während der Reise geht und was nicht, und — falls eingetragen — ein Satz, den du Fans sagen kannst. Darunter: was diese Woche ansteht (Termine, Videos, Reisen), offene Custom-Aufträge, Preise, No Gos, Einschränkungen und Services.',
+      'Hat sich seit deiner letzten Schicht etwas geändert, kommt beim Öffnen einmal ein Fenster „Bevor du loslegst" mit allen Änderungen. Mit „Gelesen" ist es weg — auch auf deinen anderen Geräten.',
       'Der gelbe Kasten „Neu seit deiner letzten Schicht" zeigt, was am Board geändert wurde, seit du das letzte Mal ausgecheckt hast. Geänderte Preise und No Gos sind zusätzlich mit NEU markiert.',
       'Bist du eingecheckt, siehst du die Models deiner laufenden Schicht. Sonst die Models aller heutigen Schichten — und hast du heute keine Schicht, alle Models, denen du zugeteilt bist. Am Handy wechselst du oben zwischen den Models.',
     ],

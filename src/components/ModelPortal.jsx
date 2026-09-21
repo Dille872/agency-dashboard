@@ -165,6 +165,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [newDate, setNewDate] = useState('')
   const [newDateFrom, setNewDateFrom] = useState('')
   const [newDateTo, setNewDateTo] = useState('')
+  // v4.76.0: Reise-Zusatz — was geht, was nicht, Satz für Fans (Chatter sehen es auf „Heute")
+  const [newGeht, setNewGeht] = useState('')
+  const [newGehtNicht, setNewGehtNicht] = useState('')
+  const [newFans, setNewFans] = useState('')
   const [editingItem, setEditingItem] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -183,6 +187,39 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     const interval = setInterval(heartbeat, 60000)
     return () => clearInterval(interval)
   }, [displayName])
+
+  // v4.76.0: Zeitzone des Geräts merken, damit die Chatter „bei ihr 18:52" sehen.
+  // Auf Reise stellt sich das Handy selbst um — beim nächsten Öffnen stimmt es wieder.
+  // Eigener Aufruf (nicht im Heartbeat): fehlt die Spalte noch, darf last_seen
+  // nicht mit kaputtgehen. Nie in der Admin-Vorschau — sonst stünde die Zone
+  // des Admins beim Model.
+  useEffect(() => {
+    if (!displayName || isPreview) return
+    let zone = null
+    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || null } catch { /* egal */ }
+    if (!zone) return
+    supabase.from('models_contact').update({ zeitzone: zone }).eq('name', displayName)
+      .then(({ error }) => { if (error) console.warn('Zeitzone nicht gespeichert:', error.message) })
+  }, [displayName, isPreview])
+
+  // v4.76.0: Reise-Zusatzfelder nur mitschicken, wenn es ein Reise-Eintrag ist.
+  // Fehlen die Spalten noch (SQL nicht gelaufen), ohne sie speichern statt gar nicht.
+  const reiseFelder = () => ({
+    reise_geht: newGeht.trim() || null,
+    reise_geht_nicht: newGehtNicht.trim() || null,
+    reise_fans: newFans.trim() || null,
+  })
+  const boardSchreiben = async (zeile, kategorie, id = null) => {
+    const mit = kategorie === 'reise' ? { ...zeile, ...reiseFelder() } : zeile
+    const lauf = (z) => id ? supabase.from('model_board').update(z).eq('id', id) : supabase.from('model_board').insert(z)
+    let { error } = await lauf(mit)
+    if (error && kategorie === 'reise' && /reise_/.test(error.message || '')) {
+      ;({ error } = await lauf(zeile))
+      if (!error) alert('Gespeichert — aber „Was geht / geht nicht / Satz für Fans" sind noch nicht freigeschaltet. Bitte dem Team Bescheid geben.')
+    }
+    if (error) alert('Nicht gespeichert: ' + error.message)
+    return !error
+  }
 
   const loadModelStatus = async () => {
     const { data } = await supabase.from('models_contact').select('*').eq('name', displayName).single()
@@ -496,9 +533,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     if (!newTitle.trim()) return
     setSaving(true)
     const items = board[category] || []
-    await supabase.from('model_board').insert({ model_name: displayName, category, title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null, date: newDate || null, date_from: newDateFrom || null, date_to: newDateTo || null, sort_order: items.length })
+    const ok = await boardSchreiben({ model_name: displayName, category, title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null, date: newDate || null, date_from: newDateFrom || null, date_to: newDateTo || null, sort_order: items.length }, category)
+    if (!ok) { setSaving(false); return }
     await logActivity('hinzugefügt', category, newTitle.trim())
-    setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo(''); setAddingCat(null)
+    setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo(''); setNewGeht(''); setNewGehtNicht(''); setNewFans(''); setAddingCat(null)
     await loadBoard(); setSaving(false)
   }
 
@@ -511,9 +549,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const saveBoardEdit = async () => {
     if (!editingItem) return
     setSaving(true)
-    await supabase.from('model_board').update({ title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null, date: newDate || null, date_from: newDateFrom || null, date_to: newDateTo || null }).eq('id', editingItem.id)
+    const ok = await boardSchreiben({ title: newTitle.trim(), content: newContent.trim() || null, price: newPrice.trim() || null, date: newDate || null, date_from: newDateFrom || null, date_to: newDateTo || null }, editingItem.category, editingItem.id)
+    if (!ok) { setSaving(false); return }
     await logActivity('bearbeitet', editingItem.category, newTitle.trim())
-    setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo('')
+    setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo(''); setNewGeht(''); setNewGehtNicht(''); setNewFans('')
     await loadBoard(); setSaving(false)
   }
 
@@ -1279,6 +1318,17 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                             </div>
                           </div>
                         )}
+                        {/* v4.76.0: Reise-Zusatz für die Chatter */}
+                        {cat.key === 'reise' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                            <div><label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Was geht während der Reise? (mit Komma trennen)</label>
+                            <input value={newGeht} onChange={e => setNewGeht(e.target.value)} style={inputS} placeholder="Was geht während der Reise? (mit Komma trennen, z. B. Pool, Bikini, Audios)" /></div>
+                            <div><label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Was geht NICHT?</label>
+                            <input value={newGehtNicht} onChange={e => setNewGehtNicht(e.target.value)} style={inputS} placeholder="Was geht NICHT? (z. B. Video-Call, Studio-Sets, Custom)" /></div>
+                            <div><label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Satz für Fans (optional)</label>
+                            <input value={newFans} onChange={e => setNewFans(e.target.value)} style={inputS} placeholder="Satz für Fans (optional), z. B. „bin grad im Urlaub ☀️“" /></div>
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={saveBoardEdit} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
                           <button onClick={() => setEditingItem(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
@@ -1304,10 +1354,17 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                               })()}
                             </div>
                             {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.4 }}>{item.content}</div>}
+                            {cat.key === 'reise' && (item.reise_geht || item.reise_geht_nicht || item.reise_fans) && (
+                              <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+                                {item.reise_geht && <div style={{ color: '#10b981' }}>✓ {item.reise_geht}</div>}
+                                {item.reise_geht_nicht && <div style={{ color: '#ef4444' }}>✕ {item.reise_geht_nicht}</div>}
+                                {item.reise_fans && <div style={{ color: 'var(--text-muted)' }}>Für Fans: „{item.reise_fans}“</div>}
+                              </div>
+                            )}
                             {item.price && <div style={{ fontSize: 12, fontWeight: 700, color: cat.color, marginTop: 4 }}>{item.price}</div>}
                           </div>
                           <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-                            <button onClick={() => { setEditingItem(item); setNewTitle(item.title); setNewContent(item.content || ''); setNewPrice(item.price || ''); setNewDate(item.date || ''); setNewDateFrom(item.date_from || ''); setNewDateTo(item.date_to || '') }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>✎</button>
+                            <button onClick={() => { setEditingItem(item); setNewTitle(item.title); setNewContent(item.content || ''); setNewPrice(item.price || ''); setNewDate(item.date || ''); setNewDateFrom(item.date_from || ''); setNewDateTo(item.date_to || ''); setNewGeht(item.reise_geht || ''); setNewGehtNicht(item.reise_geht_nicht || ''); setNewFans(item.reise_fans || '') }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>✎</button>
                             <button onClick={() => deleteBoardItem(item)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
                               onMouseEnter={e => e.target.style.color = '#ef4444'} onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
                           </div>
@@ -1333,13 +1390,24 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                         </div>
                       </div>
                     )}
+                    {/* v4.76.0: Reise-Zusatz für die Chatter */}
+                    {cat.key === 'reise' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                        <div><label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Was geht während der Reise? (mit Komma trennen)</label>
+                        <input value={newGeht} onChange={e => setNewGeht(e.target.value)} style={inputS} placeholder="Was geht während der Reise? (mit Komma trennen, z. B. Pool, Bikini, Audios)" /></div>
+                        <div><label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Was geht NICHT?</label>
+                        <input value={newGehtNicht} onChange={e => setNewGehtNicht(e.target.value)} style={inputS} placeholder="Was geht NICHT? (z. B. Video-Call, Studio-Sets, Custom)" /></div>
+                        <div><label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Satz für Fans (optional)</label>
+                        <input value={newFans} onChange={e => setNewFans(e.target.value)} style={inputS} placeholder="Satz für Fans (optional), z. B. „bin grad im Urlaub ☀️“" /></div>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => addBoardItem(cat.key)} disabled={saving || !newTitle.trim()} style={{ background: newTitle.trim() ? '#7c3aed' : 'var(--border)', color: newTitle.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Hinzufügen</button>
-                      <button onClick={() => { setAddingCat(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo('') }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                      <button onClick={() => { setAddingCat(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo(''); setNewGeht(''); setNewGehtNicht(''); setNewFans('') }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => { setAddingCat(cat.key); setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo('') }}
+                  <button onClick={() => { setAddingCat(cat.key); setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo(''); setNewGeht(''); setNewGehtNicht(''); setNewFans('') }}
                     style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 8, padding: '7px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
                     + Hinzufügen
                   </button>

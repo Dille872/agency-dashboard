@@ -70,6 +70,24 @@ export function zustand(kontakt, reise, jetzt = Date.now()) {
   return { art: 'unbekannt', text: 'Kein Status', farbe: '#8888aa', zeile: null }
 }
 
+// v4.76.0: models_contact.zeitzone (sql/model-reise-und-zeitzone.sql). Solange
+// das SQL nicht gelaufen ist, gibt es die Spalte nicht — dann ohne sie laden,
+// sonst fiele der ganze Zustand weg.
+let ohneZone = false
+async function kontakteLaden(liste) {
+  const basis = 'name, status, status_until, status_note, last_seen'
+  if (!ohneZone) {
+    const r = await supabase.from('models_contact').select(basis + ', zeitzone').in('name', liste)
+    if (!r.error) return r
+    if (!/zeitzone/.test(r.error.message || '')) return r
+    ohneZone = true
+  }
+  return supabase.from('models_contact').select(basis).in('name', liste)
+}
+
+// Freitext-Liste ("Pool, Strand\nBikini") → ['Pool', 'Strand', 'Bikini']
+export const listeAus = (text) => String(text || '').split(/[,;\n]+/).map(t => t.trim()).filter(Boolean)
+
 const LEER = { kontakte: {}, kalender: {}, aenderungen: {}, seit: null, geladen: false }
 
 /**
@@ -86,7 +104,7 @@ export function useModelLage(namen, ich) {
     const heute = heuteBerlin()
     try {
       const [k, mc, log] = await Promise.all([
-        supabase.from('models_contact').select('name, status, status_until, status_note, last_seen').in('name', liste),
+        kontakteLaden(liste),
         supabase.from('model_calendar').select('id, model_name, title, due_date, due_time, category')
           .in('model_name', liste).in('category', ['termin', 'reise'])
           .gte('due_date', heute).lte('due_date', plusTage(heute, 7)).order('due_date'),

@@ -10,7 +10,8 @@ import ChatterChat from './ChatterChat'
 import MessageSuggestions from './MessageSuggestions'
 import MeinKalender from './MeinKalender' // v4.60.0
 import ZeitzonenHinweis from './ZeitzonenHinweis' // v4.63.0
-import HeuteModels from './HeuteModels' // v4.75.0
+import HeuteModels, { ModelNeuFenster } from './HeuteModels' // v4.75.0 / v4.76.0
+import { useGelesen } from '../gelesen' // v4.76.0
 import { useModelLage, zustand, reiseHeute } from '../modelLage' // v4.75.0
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
@@ -2205,6 +2206,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   })()
   const kartenNamen = heuteModelNamen.length ? heuteModelNamen : Object.keys(assignedModelBoards)
   const modelLage = useModelLage(kartenNamen, displayName)
+  // v4.76.0: „Bevor du loslegst"-Fenster — Gelesen-Stand pro Login
+  const [modelNeuGesehen, modelNeuGelesen] = useGelesen('chattermodels', { lokalKey: `chattermodels_seen_${displayName || 'x'}` })
   // v4.45.0: Models zur Auswahl im Übergabe-Fenster — mit ID, weil `handover_about`
   // IDs speichert. Nach dem automatischen Auschecken gibt es keinen laufenden
   // Eintrag mehr; dann alle Models des Tages, damit die Auswahl nicht leer ist.
@@ -2240,6 +2243,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   return (
     <HelpProvider topics={HELP_TOPICS} tour={TOUR_IDS}>
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+      {/* v4.76.0: Neu seit der letzten Schicht — nicht in der Admin-Vorschau */}
+      {!isPreview && !tourOpen && modelLage.geladen && (
+        <ModelNeuFenster namen={kartenNamen} lage={modelLage} boards={assignedModelBoards}
+          gesehenBis={modelNeuGesehen} onGelesen={modelNeuGelesen} />
+      )}
       {/* Header */}
       <header ref={headerRef} style={{
         position: 'sticky', top: 0, zIndex: 100,
