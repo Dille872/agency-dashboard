@@ -227,7 +227,7 @@ export const HELP_TOPICS = [
       'Ist ein Model auf Reise, steht der Reiseplan groß oben auf der Karte: wohin, bis wann, was während der Reise geht und was nicht, und — falls eingetragen — ein Satz, den du Fans sagen kannst. Darunter: was diese Woche ansteht (Termine, Videos, Reisen), offene Custom-Aufträge, Preise, No Gos, Einschränkungen und Services.',
       'Hat sich seit deiner letzten Schicht etwas geändert, kommt beim Öffnen einmal ein Fenster „Bevor du loslegst" mit allen Änderungen. Mit „Gelesen" ist es weg — auch auf deinen anderen Geräten.',
       'Der gelbe Kasten „Neu seit deiner letzten Schicht" zeigt, was am Board geändert wurde, seit du das letzte Mal ausgecheckt hast. Geänderte Preise und No Gos sind zusätzlich mit NEU markiert.',
-      'Bist du eingecheckt, siehst du die Models deiner laufenden Schicht. Sonst die Models aller heutigen Schichten — und hast du heute keine Schicht, alle Models, denen du zugeteilt bist. Am Handy wechselst du oben zwischen den Models.',
+      'Bist du eingecheckt, siehst du die Models deiner laufenden Schicht. Sonst die Models aller heutigen Schichten — und hast du heute keine Schicht (mehr), die Models deiner nächsten Schicht. Am Handy wechselst du oben zwischen den Models.',
     ],
     steps: [
       'Vor dem Start einmal alle Karten durchschauen — vor allem den gelben Kasten und Reisen.',
@@ -251,7 +251,7 @@ export const HELP_TOPICS = [
     watch: [
       'Das ist die verbindliche Quelle. Im Zweifel gilt, was hier steht — nicht, was du dich zu erinnern glaubst.',
       'Nur lesbar; gepflegt wird es vom Team und vom Model selbst.',
-      'Du siehst hier die Models, bei denen du als Hauptchatter eingeteilt bist. Wenn du nur zum Anlernen dabei bist, fehlt das Model in dieser Liste — frag dann deinen Hauptchatter.',
+      'Du siehst hier die Models, bei denen du von gestern bis in 7 Tagen im Dienstplan stehst — als Hauptchatter, Co oder zum Anlernen. Fehlt ein Model, bist du in diesem Zeitraum dort nicht eingetragen.',
     ],
   },
   {

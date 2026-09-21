@@ -1851,9 +1851,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     // Hälfte einer geteilten Schicht mitzählen. Vorher exakt `val.chatter ===
     // displayName` — „anna" ≠ „Anna", und wer als Co eingeteilt war, sah keine Boards.
     const ichLc = (displayName || '').trim().toLowerCase()
+    // v4.76.1: Nur Einträge von gestern bis in 7 Tagen zählen. Geladen werden
+    // ganze Wochen (inkl. der Vorwoche, sobald gestern Sonntag war) — ohne
+    // diesen Filter tauchten Models auf, bei denen man vor einer Woche mal
+    // ausgeholfen hat (Fall Chris am 21.09.: Julia, Fari, Leoni vom 14.09.).
+    const vonTag = isoDate(new Date(basis.getTime() - 864e5))
+    const bisTag = isoDate(new Date(basis.getTime() + 7 * 864e5))
     for (const sched of data || []) {
       for (const [key, val] of Object.entries(sched.assignments || {})) {
         if (!val || val.chatter === '__FREI__') continue
+        const planTag = key.split('__')[1]
+        if (planTag && (planTag < vonTag || planTag > bisTag)) continue
         const haupt = (val.chatter || '').trim().toLowerCase() === ichLc
         const zweit = (val.trainee || '').trim().toLowerCase() === ichLc
         if (ichLc && (haupt || zweit)) assignedNames.add(key.split('__')[0])
@@ -2204,7 +2212,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       .flatMap(s => (s.models || []).map(m => m.modelName || m))
       .filter(Boolean))]
   })()
-  const kartenNamen = heuteModelNamen.length ? heuteModelNamen : Object.keys(assignedModelBoards)
+  // v4.76.1: Ohne Schicht heute die Models der NÄCHSTEN Schicht — nicht alle
+  // zugeteilten (das waren bei Chris sechs, relevant sind drei).
+  const naechsteSchicht = heuteModelNamen.length ? null
+    : myNext7Shifts.find(s => !s.window || s.window.end.getTime() > Date.now()) || null
+  const naechsteNamen = naechsteSchicht
+    ? [...new Set((naechsteSchicht.models || []).map(m => m.modelName || m).filter(Boolean))]
+    : []
+  const kartenNamen = heuteModelNamen.length ? heuteModelNamen
+    : naechsteNamen.length ? naechsteNamen
+    : Object.keys(assignedModelBoards)
+  const kartenTitel = heuteModelNamen.length ? 'Deine Models heute'
+    : naechsteSchicht ? `Deine nächste Schicht · ${naechsteSchicht.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} ${naechsteSchicht.shift}`
+    : 'Deine Models'
   const modelLage = useModelLage(kartenNamen, displayName)
   // v4.76.0: „Bevor du loslegst"-Fenster — Gelesen-Stand pro Login
   const [modelNeuGesehen, modelNeuGelesen] = useGelesen('chattermodels', { lokalKey: `chattermodels_seen_${displayName || 'x'}` })
@@ -2649,7 +2669,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           <div data-help="heutemodels" className="heute-links">
             <HeuteModels
               namen={kartenNamen}
-              titel={heuteModelNamen.length ? 'Deine Models heute' : 'Deine Models'}
+              titel={kartenTitel}
               lage={modelLage}
               boards={assignedModelBoards}
               services={assignedServices}
