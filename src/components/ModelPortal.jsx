@@ -28,6 +28,8 @@ import ModelKalender from './ModelKalender' // v4.78.0
 import { reiseHeute } from '../modelLage' // v4.77.0
 import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
 import { Balken } from './Skeleton' // v4.92.0
+import ModelEinfuehrung, { themenStand } from './ModelEinfuehrung' // v4.95.0
+import { steckbriefLaden } from '../steckbrief' // v4.95.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -318,7 +320,13 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     }
   }, [displayName])
 
+  const loadSteckbrief = async () => {
+    if (!displayName) return
+    setSteckbrief(await steckbriefLaden(displayName))
+  }
+
   const loadAll = async () => {
+    loadSteckbrief()
     loadBoard(); loadCalendar(); loadContentRequests(); loadAliasesAndRevenue().finally(() => setSubsGeladen(true)); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
   }
 
@@ -740,6 +748,14 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   // v4.77.0: Bereich öffnen — gemeinsam für die Knöpfe oben und die Leiste unten
   const [mehrOffen, setMehrOffen] = useState(false)
   const [appOffen, setAppOffen] = useState(false) // v4.91.0
+  // v4.95.0: Steckbrief „Über mich“ / Einführung
+  const [steckbrief, setSteckbrief] = useState({ fehlt: true, zeile: null })
+  const [einfuehrung, setEinfuehrung] = useState(null)   // null | 'einfuehrung' | 'bearbeiten'
+  const [einfWeg, setEinfWeg] = useState(false)          // „Später“ getippt → bis zum nächsten Laden nicht mehr aufdrängen
+  const einfStatus = steckbrief.zeile?.einfuehrung_status
+  useEffect(() => {
+    if (!isPreview && !einfWeg && !einfuehrung && (einfStatus === 'offen' || einfStatus === 'laeuft')) setEinfuehrung('einfuehrung')
+  }, [einfStatus, isPreview, einfWeg, einfuehrung])
   const oeffneBereich = async (key) => {
     setActiveSection(key)
     setMehrOffen(false)
@@ -1246,6 +1262,27 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             {/* v4.77.0: Neuer Steckbrief — Reise, Angebot, Preise, No Gos (ModelSteckbrief.jsx).
                 Ersetzt die Ja/Nein-Karte „Services" und die Listen Preise / No Gos / Reiseplan.
                 Dieselben Daten wie vorher, nur einfacher zu pflegen. */}
+            {/* v4.95.0: Steckbrief „Über mich“ — öffnet die Einführung zum Ausfüllen/Bearbeiten */}
+            {!steckbrief.fehlt && (() => {
+              const st = themenStand(steckbrief.zeile?.antworten)
+              const laeuft = einfStatus === 'offen' || einfStatus === 'laeuft'
+              return (
+                <div data-help="steckbrief" style={{ ...cardS, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 12, border: `1px solid ${laeuft ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`, background: laeuft ? 'linear-gradient(135deg, rgba(245,158,11,0.12), var(--bg-card) 70%)' : undefined }}>
+                  <span style={{ fontSize: 24 }}>👤</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7 }}>Über mich <HelpDot topic="steckbrief" /></div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {laeuft ? 'Das Team bittet dich, deinen Steckbrief auszufüllen.' : st.voll ? `${st.voll} von ${st.gesamt} Themen ausgefüllt · lesen deine Chatter` : 'Noch leer, erzähl deinen Chattern von dir'}
+                    </div>
+                  </div>
+                  {!isPreview && (
+                    <button type="button" onClick={() => { setEinfWeg(false); setEinfuehrung(laeuft ? 'einfuehrung' : 'bearbeiten') }} style={{ padding: '9px 13px', borderRadius: 11, border: 'none', background: '#f59e0b', color: '#1a1205', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                      {laeuft ? 'Weitermachen' : st.voll ? 'Bearbeiten' : 'Ausfüllen'}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
             <div data-help="services">
               <ModelSteckbrief displayName={displayName} board={board} services={services} isPreview={isPreview}
                 logActivity={logActivity} onGeaendert={() => Promise.all([loadBoard(), loadServices()])} />
@@ -1855,6 +1892,13 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         </div>
       )}
       {appOffen && <AppFenster farbe="#f59e0b" onZu={() => setAppOffen(false)} />}
+      {einfuehrung && !isPreview && (
+        <ModelEinfuehrung name={displayName} zeile={steckbrief.zeile} art={einfuehrung} wer={displayName}
+          board={board} services={services} logActivity={logActivity}
+          onBoardGeaendert={() => Promise.all([loadBoard(), loadServices()])}
+          onGespeichert={loadSteckbrief}
+          onZu={(fertig) => { setEinfuehrung(null); if (!fertig) setEinfWeg(true); loadSteckbrief() }} />
+      )}
 
       {/* v3.99.0: Glocke + Chat-Bubble — wie im Chatter-Portal */}
       {!isPreview && displayName && (

@@ -61,6 +61,7 @@ export default function SettingsTab() {
   const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('chatter')
+  const [inviteEinfuehrung, setInviteEinfuehrung] = useState(true) // v4.95.0: Models starten mit der Steckbrief-Einführung
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteMsg, setInviteMsg] = useState('')
   const [inviteErr, setInviteErr] = useState('')
@@ -273,7 +274,16 @@ export default function SettingsTab() {
       setInviteBusy(false); return
     }
     logActivity('user.invite', { entity: name, detail: `${mail} · ${inviteRole}` })
-    setInviteMsg(`${mail} ist freigeschaltet. Die Person kann jetzt auf der Anmeldeseite „Konto erstellen" wählen.`)
+    // v4.95.0: Neues Model → Einführung vormerken. ignoreDuplicates: gibt es für
+    // den Namen schon einen Steckbrief, wird er nicht angefasst.
+    let einfHinweis = ''
+    if (inviteRole === 'model' && inviteEinfuehrung) {
+      const { error: sbErr } = await supabase.from('model_steckbrief').upsert(
+        { model_name: name, einfuehrung_status: 'offen', geschickt_am: new Date().toISOString(), geschickt_von: wer },
+        { onConflict: 'model_name', ignoreDuplicates: true })
+      einfHinweis = sbErr ? ` ⚠ Einführung konnte nicht vorgemerkt werden (${sbErr.message}).` : ' Beim ersten Login startet die Steckbrief-Einführung.'
+    }
+    setInviteMsg(`${mail} ist freigeschaltet. Die Person kann jetzt auf der Anmeldeseite „Konto erstellen" wählen.${einfHinweis}`)
     setInviteName(''); setInviteEmail('')
     setInviteBusy(false)
     loadInvites()
@@ -1326,6 +1336,12 @@ export default function SettingsTab() {
                   }}>{r.label}</button>
                 ))}
               </div>
+              {inviteRole === 'model' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={inviteEinfuehrung} onChange={e => setInviteEinfuehrung(e.target.checked)} />
+                  Einführung beim ersten Login (Steckbrief, Angebot, Preise, No Gos)
+                </label>
+              )}
               <button onClick={addInvite} disabled={inviteBusy || !inviteEmail || !inviteName}
                 style={{ padding: '9px', borderRadius: 7, background: inviteEmail && inviteName ? '#10b981' : 'var(--border)', color: inviteEmail && inviteName ? '#04211a' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                 {inviteBusy ? '⏳ Wird freigeschaltet…' : '✓ Freischalten'}

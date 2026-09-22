@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { datumInZone, BERLIN, meineZone, versatzMinuten, zeitIn } from '../zeit'
 import { plusTage } from '../jetzt'
 import { reiseHeute, reiseBald, zustand, listeAus } from '../modelLage'
+import SteckbriefAnsicht from './SteckbriefAnsicht' // v4.95.0
+import { hatWert } from '../steckbrief'
 
 // ── Chatter-Portal, Tab „Heute": Deine Models (v4.75.0) ─────────────────────
 //
@@ -64,7 +66,8 @@ function Neu() {
   return <span style={{ fontSize: 9, fontWeight: 800, color: '#f59e0b', marginLeft: 5, letterSpacing: '0.04em' }}>NEU</span>
 }
 
-function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [], kontakt, kalender = [], aenderungen = [], onBoard }) {
+function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [], kontakt, kalender = [], aenderungen = [], onBoard, steckbrief }) {
+  const [ueberOffen, setUeberOffen] = useState(false) // v4.95.0
   const heute = heuteBerlin()
   const reise = reiseHeute(board.reise, heute)
   const z = zustand(kontakt, reise)
@@ -263,6 +266,15 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
           </div>
         )}
 
+        {/* v4.95.0: Steckbrief „Über …“ — eingeklappt, damit die Karte kurz bleibt */}
+        {steckbrief && Object.values(steckbrief.antworten || {}).some(hatWert) && (
+          ueberOffen
+            ? <SteckbriefAnsicht name={name} zeile={steckbrief} kompakt rechts={<button type="button" onClick={() => setUeberOffen(false)} style={{ background: 'transparent', border: 'none', padding: 0, color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>zuklappen</button>} />
+            : <button type="button" onClick={() => setUeberOffen(true)} style={{ alignSelf: 'stretch', textAlign: 'left', padding: '9px 11px', borderRadius: 11, border: '1px solid rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.07)', color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                👤 Über {steckbrief.antworten?.fan_name || name} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· Steckbrief, Chat-Stil, Grenzen</span> <span style={{ float: 'right', color: 'var(--text-muted)' }}>▸</span>
+              </button>
+        )}
+
         <button type="button" onClick={() => onBoard(name)} style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', padding: 0, color: '#a78bfa', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
           Ganzes Board →
         </button>
@@ -271,7 +283,7 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
   )
 }
 
-export default function HeuteModels({ namen, titel, lage, boards, services, custom, videos, onBoard }) {
+export default function HeuteModels({ namen, titel, lage, boards, services, custom, videos, onBoard, steckbriefe = {} }) {
   const schmal = useSchmal()
   const [gewaehlt, setGewaehlt] = useState(null)
   if (!namen.length) return null
@@ -280,7 +292,7 @@ export default function HeuteModels({ namen, titel, lage, boards, services, cust
 
   const karte = (n) => (
     <ModelKarte key={n} name={n} board={boards[n]} services={services[n]} custom={custom[n]} videos={videos[n]}
-      kontakt={lage.kontakte[n]} kalender={lage.kalender[n]} aenderungen={lage.aenderungen[n]} onBoard={onBoard} />
+      kontakt={lage.kontakte[n]} kalender={lage.kalender[n]} aenderungen={lage.aenderungen[n]} onBoard={onBoard} steckbrief={steckbriefe[n]} />
   )
 
   return (

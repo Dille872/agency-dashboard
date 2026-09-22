@@ -322,3 +322,13 @@ th { text-align: left; }
 .skel-puls { animation: skel-puls 1.6s ease-in-out infinite; }
 @keyframes skel-puls { 0%, 100% { opacity: 1 } 50% { opacity: 0.45 } }
 @media (prefers-reduced-motion: reduce) { .skel, .skel-puls { animation: none; } }
+
+/* v4.95.0: Model-Einführung — Handy-Regel für Knöpfe/Felder überschreiben */
+@media (max-width: 768px) {
+  .einfuehrung .einf-knopf { padding: 14px !important; font-size: 15px !important; }
+  .einfuehrung .einf-klein { padding: 8px 12px !important; font-size: 12.5px !important; }
+  .einfuehrung .einf-balken { padding: 0 !important; }
+  .einfuehrung .chip-btn { padding: 8px 13px !important; font-size: 13.5px !important; }
+  .einfuehrung .einf-feld { font-size: 16px !important; }
+  .einfuehrung .einf-raster { grid-template-columns: 1fr 1fr !important; }
+}

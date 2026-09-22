@@ -131,6 +131,26 @@ export const HELP_TOPICS = [
   },
 
   {
+    id: 'steckbrief',
+    icon: '👤',
+    tab: 'board',
+    title: 'Über mich (Steckbrief)',
+    short: 'Deine Fan-Version: was die Chatter über dich erzählen dürfen.',
+    body: [
+      'Im Steckbrief stehen deine Basics, Aussehen, Interessen, dein Chat-Stil und deine Grenzen. Deine Chatter lesen ihn und erzählen es genau so deinen Fans. So erzählt jeder dasselbe über dich.',
+      'Schreib nur, was Fans wissen dürfen, also deine „Fan-Version“: Region statt Stadt, kein Nachname, kein Arbeitgeber.',
+    ],
+    steps: [
+      'Im Board oben bei „Über mich“ auf „Ausfüllen“ oder „Bearbeiten“ tippen.',
+      'Thema für Thema durchgehen, Chips antippen oder kurz schreiben. Felder mit * sind Pflicht.',
+      'Angebot, Preise und No Gos trägst du im selben Durchgang ein, sie landen direkt in deinem Board.',
+    ],
+    watch: [
+      'Es wird automatisch gespeichert. „Später weitermachen“ geht jederzeit, du landest dann wieder an derselben Stelle.',
+      'Schickt dir das Team die Einführung, startet sie beim nächsten Öffnen des Portals von selbst. Was du schon ausgefüllt hast, steht dann schon drin.',
+    ],
+  },
+  {
     id: 'services',
     icon: '✅',
     tab: 'board',

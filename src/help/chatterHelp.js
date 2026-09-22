@@ -290,6 +290,21 @@ export const HELP_TOPICS = [
     ],
   },
   {
+    id: 'ueber',
+    icon: '👤',
+    tab: 'models',
+    title: 'Über das Model (Steckbrief)',
+    short: 'Was du Fans über das Model erzählen darfst, von ihr selbst ausgefüllt.',
+    body: [
+      'Jedes Model füllt einen Steckbrief aus: Basics, Aussehen, Interessen, Chat-Stil, Sexualität & Grenzen, Kommunikation. Das ist ihre Fan-Version. Genau so erzählst du es den Fans.',
+      'Du findest ihn unter „Meine Models“ über dem Board und in der Model-Karte bei „Heute“ („👤 Über …“).',
+    ],
+    watch: [
+      'Steht etwas nicht im Steckbrief, nichts erfinden. Frag im Team-Chat nach.',
+      'Beim Beziehungsstatus zählt „Was wird Fans erzählt“, nicht der echte Status.',
+    ],
+  },
+  {
     id: 'suggestions',
     icon: '💬',
     tab: 'models',

@@ -11,6 +11,7 @@ import { SocialLinksEditor } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
 import { heuteBerlin } from '../utils' // v4.57.0
 import ReiseListe from './ReiseListe' // v4.94.0: alte Reisen ins Archiv
+import SteckbriefAdmin from './SteckbriefAdmin' // v4.95.0
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 
@@ -1198,6 +1199,11 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const [modelServices, setModelServices] = useState({})
   const [modelCustomContent, setModelCustomContent] = useState({})
   const [selectedBoardModel, setSelectedBoardModel] = useState(null)
+  // v4.95.0: Board des gewählten Models laden — der CreatorHero-Export braucht Angebot und No Gos
+  useEffect(() => {
+    if (selectedModel?.name && modelBoards[selectedModel.name] === undefined) loadModelBoard(selectedModel.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModel?.name])
 
   const loadModelBoardActivity = async () => {
     const { data } = await supabase.from('model_board_activity')
@@ -2072,6 +2078,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       {/* MODELS */}
       {activeSection === 'models' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20 }}>
+          {/* v4.95.0: Steckbrief „Über …“, Einführung schicken (einzeln/mehrere), CreatorHero-Export.
+              Model links in der Liste antippen → sein Steckbrief erscheint hier. */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <SteckbriefAdmin models={activeModels} gewaehlt={selectedModel?.name || null} userName={userName}
+              board={(selectedModel && modelBoards[selectedModel.name]) || {}} services={(selectedModel && modelServices[selectedModel.name]) || {}} />
+          </div>
           <Card title="Models">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
               {activeModels.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Noch keine Models angelegt</div>}

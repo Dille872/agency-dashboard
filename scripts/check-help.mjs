@@ -13,7 +13,7 @@ const PORTALE = [
     help: 'src/help/chatterHelp.js',
     extra: ['src/components/ChatterOrga.jsx'], // v4.82.0: Anker absence/swap sitzen dort
     collapsible: true,
-    ankerlos: ['ueberblick', 'angebote', 'bell', 'chat', 'pinnwand', 'zeitzone', 'app'], // zeitzone: Hinweis sitzt in ZeitzonenHinweis.jsx · app: AppInstallieren.jsx
+    ankerlos: ['ueberblick', 'angebote', 'bell', 'chat', 'pinnwand', 'zeitzone', 'app', 'ueber'], // zeitzone: Hinweis sitzt in ZeitzonenHinweis.jsx · app: AppInstallieren.jsx · ueber: SteckbriefAnsicht.jsx
   },
   {
     name: 'Model-Portal',

@@ -32,6 +32,8 @@ import HelpFab from './HelpFab'
 import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
 import { SkelModels } from './Skeleton' // v4.92.0
 import ReiseListe from './ReiseListe' // v4.94.0
+import SteckbriefAnsicht from './SteckbriefAnsicht' // v4.95.0
+import { useSteckbriefe } from '../steckbrief' // v4.95.0
 import { HELP_TOPICS, TOUR_IDS } from '../help/chatterHelp'
 
 const CHRIS_TG = '1538601588'
@@ -624,6 +626,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [newRequestDeadline, setNewRequestDeadline] = useState('asap')
   const [sendingRequest, setSendingRequest] = useState(false)
   const [assignedModelBoards, setAssignedModelBoards] = useState({}) // modelName → board map
+  const steckbriefe = useSteckbriefe(Object.keys(assignedModelBoards)) // v4.95.0: „Über …“ je Model
   const [assignedModelSocials, setAssignedModelSocials] = useState({}) // modelName → social links[]
   const [assignedModelVideos, setAssignedModelVideos] = useState({}) // modelName → videos
   const [assignedServices, setAssignedServices] = useState({}) // modelName → services
@@ -2588,6 +2591,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               custom={assignedCustomContent}
               videos={assignedModelVideos}
               onBoard={(n) => { setSelectedModelInfo(n); goTab('models'); openPanel('models') }}
+              steckbriefe={steckbriefe.map}
             />
           </div>
         )}
@@ -2835,6 +2839,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               ))}
             </div>
 
+            {/* v4.95.0: Steckbrief „Über …“ über dem Board */}
+            {selectedModelInfo && steckbriefe.map[selectedModelInfo] && (
+              <div style={{ marginBottom: 10 }}>
+                <SteckbriefAnsicht key={selectedModelInfo} name={selectedModelInfo} zeile={steckbriefe.map[selectedModelInfo]} />
+              </div>
+            )}
             {selectedModelInfo && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
                 {/* Board categories */}
