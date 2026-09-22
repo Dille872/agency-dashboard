@@ -180,7 +180,7 @@ export default function TodoTab({ session, userDisplayName }) {
   const byStatus = filter === 'offen' ? openTodos : filter === 'erledigt' ? doneTodos : todos
   const displayed = filterPerson ? byStatus.filter(t => t.assigned_to === filterPerson || t.created_by === filterPerson) : byStatus
 
-  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 16px', marginBottom: 10 }
+  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 16, padding: '14px 16px', marginBottom: 10 } // v4.84.0
   const inputS = { width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none' }
 
   return (
@@ -214,71 +214,77 @@ export default function TodoTab({ session, userDisplayName }) {
               border: '1px solid rgba(245,158,11,0.3)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}>✓ Alle als gelesen markieren</button>
           )}
-          <button onClick={() => setShowAdd(!showAdd)} style={{
-            padding: '6px 14px', borderRadius: 7, background: 'rgba(124,58,237,0.15)', color: '#a78bfa',
-            border: '1px solid rgba(124,58,237,0.3)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+          <button onClick={() => setShowAdd(true)} style={{
+            padding: '8px 14px', borderRadius: 11, background: '#7c3aed', color: '#fff',
+            border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
           }}>+ Neue Aufgabe</button>
         </div>
       </div>
 
-      {/* Add form */}
-      {showAdd && (
-        <div style={{ ...cardS, border: '1px solid #7c3aed', marginBottom: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input value={newTitle} onChange={e => setNewTitle(e.target.value)} style={inputS} placeholder="Aufgabe *" autoFocus
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && addTodo()} />
-            <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} style={{ ...inputS, resize: 'vertical' }} rows={2} placeholder="Beschreibung (optional)" />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Zuständig</label>
-                <select value={newAssignedTo} onChange={e => setNewAssignedTo(e.target.value)} style={inputS}>
-                  <option value="">Alle / Offen</option>
-                  {adminNames.length > 0 && (
-                    <optgroup label="Team">
-                      {adminNames.map(n => <option key={n} value={n}>{n}</option>)}
-                    </optgroup>
-                  )}
-                  {chatterNames.length > 0 && (
-                    <optgroup label="Chatter">
-                      {chatterNames.map(n => <option key={n} value={n}>{n}</option>)}
-                    </optgroup>
-                  )}
-                  {modelNames.length > 0 && (
-                    <optgroup label="Models">
-                      {modelNames.map(n => <option key={n} value={n}>{n}</option>)}
-                    </optgroup>
-                  )}
-                </select>
+      {/* v4.84.0: Neue Aufgabe als Fenster von unten — Personen und Priorität als Chips */}
+      {showAdd && (() => {
+        const lbl = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 7, display: 'block' }
+        const feld = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '11px 12px', borderRadius: 12, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }
+        const chip = (an, farbe = '#7c3aed') => ({ fontSize: 13, padding: '8px 13px', borderRadius: 20, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: an ? farbe + '2a' : 'transparent', border: `1px solid ${an ? farbe : 'var(--border)'}`, color: an ? farbe : 'var(--text-secondary)' })
+        const zu = () => { if (!saving) setShowAdd(false) }
+        const gruppen = [['Team', adminNames, '#7c3aed'], ['Chatter', chatterNames, '#06b6d4'], ['Models', modelNames, '#ec4899']].filter(([, l]) => l.length > 0)
+        const ok = !!newTitle.trim() && !saving
+        return (
+          <div className="steckbrief-huelle" onClick={zu} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div className="steckbrief-fenster" onClick={e => e.stopPropagation()} role="dialog" aria-label="Neue Aufgabe" style={{ width: 'min(520px, 100%)', maxHeight: 'min(92vh, 860px)', boxSizing: 'border-box', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '22px 22px 0 0', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '14px 18px 10px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Das Team bekommt eine Telegram-Nachricht</div>
+                  <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)' }}>Neue Aufgabe</div>
+                </div>
+                <button type="button" onClick={zu} aria-label="Schließen" style={{ width: 36, height: 36, borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 17, cursor: 'pointer', flexShrink: 0 }}>×</button>
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Priorität</label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {Object.entries(PRIORITY_LABELS).map(([k, l]) => (
-                    <button key={k} onClick={() => setNewPriority(k)} style={{
-                      flex: 1, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
-                      background: newPriority === k ? PRIORITY_COLORS[k] + '22' : 'transparent',
-                      color: newPriority === k ? PRIORITY_COLORS[k] : 'var(--text-muted)',
-                      border: `1px solid ${newPriority === k ? PRIORITY_COLORS[k] : 'var(--border)'}`,
-                    }}>{l}</button>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '4px 18px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <span style={lbl}>Was ist zu tun?</span>
+                  <input value={newTitle} onChange={e => setNewTitle(e.target.value)} style={feld} placeholder="z. B. Luna neue Preise eintragen" autoFocus />
+                  <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} style={{ ...feld, resize: 'vertical', marginTop: 8 }} rows={2} placeholder="Details (optional)" />
+                </div>
+                <div>
+                  <span style={lbl}>Wie wichtig?</span>
+                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                    {Object.entries(PRIORITY_LABELS).map(([k, l]) => (
+                      <button key={k} type="button" className="chip-btn" onClick={() => setNewPriority(k)} style={chip(newPriority === k, PRIORITY_COLORS[k])}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span style={lbl}>Für wen?</span>
+                  <button type="button" className="chip-btn" onClick={() => setNewAssignedTo('')} style={chip(!newAssignedTo, '#10b981')}>Alle / wer Zeit hat</button>
+                  {gruppen.map(([titel, namen, farbe]) => (
+                    <div key={titel} style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 5 }}>{titel}</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {namen.map(n => <button key={n} type="button" className="chip-btn" onClick={() => setNewAssignedTo(n)} style={chip(newAssignedTo === n, farbe)}>{n}</button>)}
+                      </div>
+                    </div>
                   ))}
+                  {newAssignedTo && !adminNames.includes(newAssignedTo) && (
+                    <div style={{ fontSize: 11.5, color: assigneeTelegramMap[newAssignedTo] ? '#6ee7b7' : '#fcd34d', marginTop: 8 }}>
+                      {assigneeTelegramMap[newAssignedTo] ? `${newAssignedTo} bekommt die Aufgabe per Telegram.` : `${newAssignedTo} hat kein Telegram hinterlegt — sieht es nur im Portal.`}
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={addTodo} disabled={saving || !newTitle.trim()} style={{
-                flex: 1, padding: '8px', borderRadius: 7, background: newTitle.trim() ? '#7c3aed' : 'var(--border)',
-                color: newTitle.trim() ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-              }}>{saving ? '...' : '+ Speichern & Benachrichtigen'}</button>
-              <button onClick={() => setShowAdd(false)} style={{ padding: '8px 14px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+              <div style={{ padding: '10px 18px 18px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+                <button type="button" className="gross-btn" onClick={addTodo} disabled={!ok} style={{ width: '100%', padding: 14, borderRadius: 14, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 15, fontWeight: 800, cursor: ok ? 'pointer' : 'default', opacity: ok ? 1 : 0.45, fontFamily: 'inherit' }}>
+                  {saving ? 'Speichere …' : newTitle.trim() ? '+ Speichern & benachrichtigen' : 'Erst Aufgabe eintragen'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Open todos */}
       {(filter === 'alle' || filter === 'offen') && displayed.filter(t => !t.completed).length > 0 && (
         <div style={cardS}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Offen · {displayed.filter(t => !t.completed).length}</div>
+          <div style={{ fontSize: 15, color: 'var(--text-primary)', fontWeight: 700, marginBottom: 10 }}>Offen · {displayed.filter(t => !t.completed).length}</div>
           {displayed.filter(t => !t.completed).map(todo => {
             const color = PRIORITY_COLORS[todo.priority] || '#f59e0b'
             const unread = isUnread(todo)
@@ -327,7 +333,7 @@ export default function TodoTab({ session, userDisplayName }) {
       {/* Done todos */}
       {(filter === 'alle' || filter === 'erledigt') && displayed.filter(t => t.completed).length > 0 && (
         <div style={cardS}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Erledigt · {displayed.filter(t => t.completed).length}</div>
+          <div style={{ fontSize: 15, color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 10 }}>Erledigt · {displayed.filter(t => t.completed).length}</div>
           {displayed.filter(t => t.completed).map(todo => (
             <div key={todo.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, marginBottom: 6, background: 'var(--bg-card2)', border: '0.5px solid var(--border)', opacity: 0.55 }}>
               <div onClick={() => toggleTodo(todo)} style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: 1, cursor: 'pointer', background: '#10b981', border: '1.5px solid #10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

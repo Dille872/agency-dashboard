@@ -5,24 +5,22 @@ export default function Card({ title, children, style = {}, accent }) {
     <div style={{
       background: 'var(--bg-card)',
       border: `1px solid ${accent ? 'var(--accent)' : 'var(--border)'}`,
-      borderRadius: 'var(--radius)',
+      borderRadius: 16, // v4.84.0: neuer Look
       padding: '20px 22px',
       boxShadow: accent ? 'var(--shadow-glow)' : 'var(--shadow)',
       ...style,
     }}>
       {title && (
+        // v4.84.0: Titel im neuen Stil — normal geschrieben, fett, ohne lila Strich
         <div style={{
-          fontSize: 12,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
+          fontSize: 15,
+          color: 'var(--text-primary)',
           fontWeight: 700,
-          marginBottom: 16,
+          marginBottom: 14,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
         }}>
-          <span style={{ width: 3, height: 12, background: 'var(--accent)', borderRadius: 2, display: 'inline-block' }} />
           {title}
         </div>
       )}

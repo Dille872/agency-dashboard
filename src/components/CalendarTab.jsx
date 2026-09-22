@@ -849,6 +849,8 @@ export default function CalendarTab({ userDisplayName }) {
   const inp = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }
   const lbl = { fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }
   const btn = (aktiv) => ({ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: aktiv ? '#7c3aed' : 'transparent', color: aktiv ? '#fff' : 'var(--text-secondary)', border: `1px solid ${aktiv ? '#7c3aed' : 'var(--border)'}`, whiteSpace: 'nowrap' })
+  // v4.84.0: Auswahl-Chips im Formular
+  const chipK = (aktiv, farbe = '#7c3aed') => ({ padding: '7px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: aktiv ? farbe + '2a' : 'transparent', color: aktiv ? farbe : 'var(--text-secondary)', border: `1px solid ${aktiv ? farbe : 'var(--border)'}`, whiteSpace: 'nowrap' })
   const kopfLabel = { fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }
   const kw = (() => { const d = new Date(woche + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 3); const j = new Date(Date.UTC(d.getUTCFullYear(), 0, 4)); return 1 + Math.round(((d - j) / 864e5 - 3 + ((j.getUTCDay() + 6) % 7)) / 7) })()
 
@@ -1436,9 +1438,9 @@ export default function CalendarTab({ userDisplayName }) {
       {/* Formular */}
       {form && (
         <div onClick={() => !speichert && setForm(null)} style={{ position: 'fixed', inset: 0, zIndex: 9001, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: mobil ? 'flex-end' : 'center', justifyContent: 'center', padding: mobil ? 0 : 16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ ...card, width: mobil ? '100%' : 'min(900px, 100%)', maxHeight: mobil ? '92vh' : '90vh', overflowY: 'auto', padding: mobil ? 16 : 20, borderRadius: mobil ? '16px 16px 0 0' : 12, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+          <div className="kal-form" onClick={e => e.stopPropagation()} style={{ ...card, width: mobil ? '100%' : 'min(900px, 100%)', maxHeight: mobil ? '92vh' : '90vh', overflowY: 'auto', padding: mobil ? 18 : 22, borderRadius: mobil ? '22px 22px 0 0' : 22, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 380px', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>{form.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag'}</div>
+              <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)' }}>{form.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag'}</div>
               {!form.id && (
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span style={{ ...lbl, marginBottom: 0, marginRight: 2 }}>Vorlage:</span>
@@ -1461,6 +1463,16 @@ export default function CalendarTab({ userDisplayName }) {
                 <label><span style={lbl}>von</span><input type="time" value={form.von} onChange={e => setForm({ ...form, von: e.target.value })} style={inp} /></label>
                 <label><span style={lbl}>bis (optional)</span><input type="time" value={form.bis} onChange={e => setForm({ ...form, bis: e.target.value })} style={inp} /></label>
               </div>
+              {/* v4.84.0: Schnellwahl für Tag und Uhrzeit */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: -4 }}>
+                {[['Heute', heute], ['Morgen', plusTage(heute, 1)]].map(([t, d]) => (
+                  <button key={t} type="button" className="kal-chip" onClick={() => setForm({ ...form, tag: d })} style={chipK(form.tag === d, '#06b6d4')}>{t}</button>
+                ))}
+                <span style={{ width: 6 }} />
+                {['10:00', '12:00', '15:00', '18:00', '20:00', '21:00'].map(z => (
+                  <button key={z} type="button" className="kal-chip" onClick={() => setForm({ ...form, von: z })} style={{ ...chipK(form.von === z), fontFamily: 'monospace' }}>{z}</button>
+                ))}
+              </div>
               {/* v4.65.0: Wiederholung */}
               {form.serie_id ? (
                 <div style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 9, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1473,11 +1485,13 @@ export default function CalendarTab({ userDisplayName }) {
                 </div>
               ) : !form.folge_von && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
-                  <label><span style={lbl}>Wiederholen</span>
-                    <select value={form.wiederholung} onChange={e => setForm({ ...form, wiederholung: e.target.value, wdhBis: form.wdhBis || (form.tag ? plusTage(form.tag, 56) : '') })} style={inp}>
-                      {WIEDERHOLUNGEN.map(w => <option key={w.key} value={w.key}>{w.label}</option>)}
-                    </select>
-                  </label>
+                  <div style={{ gridColumn: '1 / -1' }}><span style={lbl}>Wiederholen</span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {WIEDERHOLUNGEN.map(w => (
+                        <button key={w.key} type="button" className="kal-chip" onClick={() => setForm({ ...form, wiederholung: w.key, wdhBis: form.wdhBis || (form.tag ? plusTage(form.tag, 56) : '') })} style={chipK(form.wiederholung === w.key)}>{w.key ? w.label : 'einmalig'}</button>
+                      ))}
+                    </div>
+                  </div>
                   {form.wiederholung && <label><span style={lbl}>bis einschließlich</span><input type="date" min={form.tag} value={form.wdhBis} onChange={e => setForm({ ...form, wdhBis: e.target.value })} style={inp} /></label>}
                   {serienVorschau && (
                     <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -1486,31 +1500,31 @@ export default function CalendarTab({ userDisplayName }) {
                   )}
                 </div>
               )}
-              <label><span style={lbl}>Model (optional)</span>
-                <select value={form.model_name || ''} onChange={e => setForm({ ...form, model_name: e.target.value })} style={inp}>
-                  <option value="">— kein Model —</option>
-                  {modelle.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                  {form.model_name && !modelle.some(m => m.name === form.model_name) && <option value={form.model_name}>{form.model_name}</option>}
-                </select>
-              </label>
+              <div><span style={lbl}>Model (optional)</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button type="button" className="kal-chip" onClick={() => setForm({ ...form, model_name: '' })} style={chipK(!form.model_name, '#8888aa')}>kein Model</button>
+                  {modelle.map(m => <button key={m.id} type="button" className="kal-chip" onClick={() => setForm({ ...form, model_name: m.name })} style={chipK(form.model_name === m.name, '#ec4899')}>{m.name}</button>)}
+                  {form.model_name && !modelle.some(m => m.name === form.model_name) && <button type="button" className="kal-chip" style={chipK(true, '#ec4899')}>{form.model_name}</button>}
+                </div>
+              </div>
               <div><span style={lbl}>Für wen</span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-primary)', marginBottom: 6 }}>
-                  <input type="checkbox" checked={form.fuer_alle} onChange={e => setForm({ ...form, fuer_alle: e.target.checked })} style={{ accentColor: '#7c3aed' }} /> Ganzes Team (alle Chatter + Team)
-                </label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <button type="button" className="kal-chip" onClick={() => setForm({ ...form, fuer_alle: true })} style={chipK(form.fuer_alle, '#10b981')}>👥 Ganzes Team</button>
+                  <button type="button" className="kal-chip" onClick={() => setForm({ ...form, fuer_alle: false })} style={chipK(!form.fuer_alle)}>Bestimmte Personen</button>
+                </div>
                 {!form.fuer_alle && form.model_name && <div style={{ marginBottom: 6 }}>{schichtVorschlag(formBeginn, form.fuer, fuer => setForm(f => ({ ...f, fuer })))}</div>}
                 {!form.fuer_alle && <PersonenChips personen={personen} team={teamNamen} gewaehlt={form.fuer} onChange={fuer => setForm({ ...form, fuer })} />}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: mobil ? '1fr' : '1fr 1fr', gap: 10, alignItems: 'end' }}>
-                <label><span style={lbl}>Erinnerung per Telegram</span>
-                  <select value={form.erinnern_min ?? ''} onChange={e => setForm({ ...form, erinnern_min: e.target.value === '' ? null : Number(e.target.value) })} style={inp}>
-                    {ERINNERUNGEN.map(r => <option key={r.label} value={r.min ?? ''}>{r.label}</option>)}
-                  </select>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-primary)', paddingBottom: 8 }}>
-                  <input type="checkbox" checked={!!form.telegram} onChange={e => setForm({ ...form, telegram: e.target.checked })} style={{ accentColor: '#7c3aed' }} />
-                  {form.id ? 'Änderung per Telegram melden' : 'Jetzt per Telegram benachrichtigen'}
-                </label>
+              <div><span style={lbl}>Erinnerung per Telegram</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {ERINNERUNGEN.map(r => (
+                    <button key={r.label} type="button" className="kal-chip" onClick={() => setForm({ ...form, erinnern_min: r.min })} style={chipK((form.erinnern_min ?? null) === r.min, '#06b6d4')}>{r.label}</button>
+                  ))}
+                </div>
               </div>
+              <button type="button" className="kal-chip" onClick={() => setForm({ ...form, telegram: !form.telegram })} style={{ ...chipK(!!form.telegram, '#06b6d4'), alignSelf: 'flex-start' }}>
+                {form.telegram ? '✓ ' : ''}{form.id ? 'Änderung per Telegram melden' : 'Jetzt per Telegram benachrichtigen'}
+              </button>
               <label><span style={lbl}>Notiz</span><textarea value={form.notiz} onChange={e => setForm({ ...form, notiz: e.target.value })} rows={2} style={{ ...inp, resize: 'vertical' }} /></label>
 
               {/* Folgeaufgaben — bei Events und Team-Terminen */}

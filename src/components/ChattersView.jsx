@@ -1357,11 +1357,11 @@ function HealthSubScore({ label, score, color, detail }) {
 function Collapsible({ title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-      <button onClick={() => setOpen(o => !o)} style={{
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+      <button className="klapp-kopf" onClick={() => setOpen(o => !o)} style={{
         width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
-        padding: '12px 16px', cursor: 'pointer', color: 'var(--text-muted)',
-        fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
+        padding: '14px 16px', cursor: 'pointer', color: 'var(--text-primary)', // v4.84.0: neuer Titel-Stil
+        fontSize: 14.5, fontWeight: 700,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         fontFamily: 'inherit'
       }}>

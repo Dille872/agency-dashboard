@@ -29,7 +29,7 @@ export default function SocialTab({ session, userDisplayName, userRole }) {
   const [newTrend, setNewTrend] = useState({ title: '', description: '', platform: '', priority: 'hoch' })
   const [newPerf, setNewPerf] = useState({ week_start: '', follower_count: '', follower_delta: '', avg_views: '', posts_count: '' })
 
-  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '14px 16px', marginBottom: 10 }
+  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 16, padding: '14px 16px', marginBottom: 10 } // v4.84.0
   const inputS = { width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none' }
   const itemS = { background: 'var(--bg-card2)', borderRadius: 8, padding: '8px 10px', marginBottom: 6, border: '1px solid #1e1e3a' }
 
@@ -177,41 +177,66 @@ export default function SocialTab({ session, userDisplayName, userRole }) {
           {/* Accounts per model */}
           <div style={cardS}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>Aktive Accounts</div>
-              <button onClick={() => setShowAddAccount(!showAddAccount)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, background: 'rgba(236,72,153,0.12)', color: '#ec4899', border: '1px solid rgba(236,72,153,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>+ Account</button>
+              <div style={{ fontSize: 15, color: 'var(--text-primary)', fontWeight: 700 }}>Aktive Accounts</div>
+              <button onClick={() => setShowAddAccount(true)} style={{ fontSize: 13, padding: '8px 14px', borderRadius: 11, background: '#ec4899', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Account</button>
             </div>
 
-            {showAddAccount && (
-              <div style={{ ...itemS, border: '1px solid #ec4899', marginBottom: 12 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  <div>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Model</label>
-                    <select value={newAccount.model_name} onChange={e => setNewAccount(p => ({ ...p, model_name: e.target.value }))} style={inputS}>
-                      <option value="">Wählen...</option>
-                      {activeModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Plattform</label>
-                    <select value={newAccount.platform} onChange={e => setNewAccount(p => ({ ...p, platform: e.target.value }))} style={inputS}>
-                      {PLATFORMS.map(pl => <option key={pl}>{pl}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Account-Name</label>
-                    <input value={newAccount.account_name} onChange={e => setNewAccount(p => ({ ...p, account_name: e.target.value }))} style={inputS} placeholder="@username" />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Thema / Stil</label>
-                    <input value={newAccount.theme} onChange={e => setNewAccount(p => ({ ...p, theme: e.target.value }))} style={inputS} placeholder="z.B. Lifestyle, OF-Promo" />
+            {/* v4.84.0: Neuer Account als Fenster von unten — Model und Plattform als Kacheln */}
+            {showAddAccount && (() => {
+              const PL = { TikTok: ['🎵', '#06b6d4'], Instagram: ['📸', '#ec4899'], YouTube: ['▶', '#ef4444'], Twitter: ['𝕏', '#a78bfa'], Snapchat: ['👻', '#f59e0b'] }
+              const lbl = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 7, display: 'block' }
+              const feld = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '11px 12px', borderRadius: 12, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }
+              const chip = (an, farbe) => ({ fontSize: 13, padding: '8px 13px', borderRadius: 20, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: an ? farbe + '2a' : 'transparent', border: `1px solid ${an ? farbe : 'var(--border)'}`, color: an ? farbe : 'var(--text-secondary)' })
+              const ok = !!newAccount.model_name && !!newAccount.account_name.trim() && !saving
+              const zu = () => { if (!saving) setShowAddAccount(false) }
+              return (
+                <div className="steckbrief-huelle" onClick={zu} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <div className="steckbrief-fenster" onClick={e => e.stopPropagation()} role="dialog" aria-label="Neuer Account" style={{ width: 'min(520px, 100%)', maxHeight: 'min(92vh, 800px)', boxSizing: 'border-box', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '22px 22px 0 0', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '14px 18px 10px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                      <div style={{ flex: 1, fontSize: 19, fontWeight: 700, color: 'var(--text-primary)' }}>Neuer Social-Account</div>
+                      <button type="button" onClick={zu} aria-label="Schließen" style={{ width: 36, height: 36, borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 17, cursor: 'pointer' }}>×</button>
+                    </div>
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '4px 18px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div>
+                        <span style={lbl}>Für welches Model?</span>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {activeModels.map(m => <button key={m.name} type="button" className="chip-btn" onClick={() => setNewAccount(p => ({ ...p, model_name: m.name }))} style={chip(newAccount.model_name === m.name, '#ec4899')}>{m.name}</button>)}
+                        </div>
+                        {activeModels.length === 0 && <div style={{ fontSize: 12.5, color: '#fcd34d' }}>Noch kein Model mit aktivem Tracking — erst unter ⚙ Tracking eins einschalten.</div>}
+                      </div>
+                      <div>
+                        <span style={lbl}>Plattform</span>
+                        <div className="raster-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7 }}>
+                          {PLATFORMS.map(pl => {
+                            const an = newAccount.platform === pl
+                            const [ic, farbe] = PL[pl] || ['•', '#7c3aed']
+                            return (
+                              <button key={pl} type="button" className="chip-btn" onClick={() => setNewAccount(p => ({ ...p, platform: pl }))} style={{
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '11px 4px', borderRadius: 13, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
+                                background: an ? farbe + '22' : 'var(--bg-card2)', border: `1px solid ${an ? farbe : 'var(--border)'}`, color: an ? farbe : 'var(--text-secondary)',
+                              }}><span style={{ fontSize: 18 }}>{ic}</span>{pl}</button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <span style={lbl}>Account-Name</span>
+                        <input value={newAccount.account_name} onChange={e => setNewAccount(p => ({ ...p, account_name: e.target.value }))} style={{ ...feld, fontFamily: 'monospace' }} placeholder="@username" />
+                      </div>
+                      <div>
+                        <span style={lbl}>Thema / Stil <span style={{ textTransform: 'none', fontWeight: 500, letterSpacing: 0 }}>(optional)</span></span>
+                        <input value={newAccount.theme} onChange={e => setNewAccount(p => ({ ...p, theme: e.target.value }))} style={feld} placeholder="z. B. Lifestyle, OF-Promo" />
+                      </div>
+                    </div>
+                    <div style={{ padding: '10px 18px 18px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+                      <button type="button" className="gross-btn" onClick={addAccount} disabled={!ok} style={{ width: '100%', padding: 14, borderRadius: 14, border: 'none', background: '#ec4899', color: '#fff', fontSize: 15, fontWeight: 800, cursor: ok ? 'pointer' : 'default', opacity: ok ? 1 : 0.45, fontFamily: 'inherit' }}>
+                        {saving ? 'Speichere …' : !newAccount.model_name ? 'Erst Model wählen' : !newAccount.account_name.trim() ? 'Account-Name fehlt' : '+ Account anlegen'}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={addAccount} disabled={saving} style={{ flex: 1, padding: '7px', borderRadius: 7, background: '#ec4899', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Speichern</button>
-                  <button onClick={() => setShowAddAccount(false)} style={{ padding: '7px 12px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
-                </div>
-              </div>
-            )}
+              )
+            })()}
 
             {activeModels.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>Kein Tracking aktiv – unter ⚙ Tracking aktivieren</div>}
 

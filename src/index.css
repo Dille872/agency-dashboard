@@ -275,3 +275,12 @@ th { text-align: left; }
   .schalter-btn { padding: 0 !important; }
 }
 @media (max-width: 768px) { .dp-tag { padding: 7px 2px !important; } }
+
+/* v4.84.0: Admin — Chips in Kalender-Formular und Custom-Content-Filtern
+   behalten am Handy ihre Größe; Klapp-Titel im neuen Stil */
+@media (max-width: 768px) {
+  .kal-form .kal-chip { padding: 7px 12px !important; font-size: 12.5px !important; }
+  .filter-chip { padding: 6px 11px !important; font-size: 12px !important; }
+  .klapp-kopf { padding: 14px 16px !important; font-size: 14.5px !important; }
+  .steckbrief-fenster .raster-3 .chip-btn { padding: 11px 4px !important; font-size: 12.5px !important; }
+}

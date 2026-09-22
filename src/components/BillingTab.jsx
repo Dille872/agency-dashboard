@@ -199,7 +199,7 @@ export default function BillingTab() {
     months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'))
   }
 
-  const card = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
+  const card = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 16, padding: '16px 18px' } // v4.84.0
   const inp = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }
 
   return (
@@ -280,7 +280,7 @@ export default function BillingTab() {
                   </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
+                <div className="kpi-mini-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
                   {[['Gesamt', rev.total, 'var(--text-primary)'], ['Subs', rev.subs, '#a78bfa'], ['Chat', rev.chat, '#06b6d4'], ['Tips', rev.tips, '#f59e0b']].map(item => (
                     <div key={item[0]} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item[0]}</div>
@@ -290,7 +290,7 @@ export default function BillingTab() {
                 </div>
 
                 {s && (
-                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
+                  <div className="raster-2" style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
                     <div style={{ background: 'rgba(16,185,129,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
                       <div style={{ fontSize: 10, color: '#10b981', marginBottom: 3 }}>Model ({100 - s.percentage}%)</div>
                       <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{money(modelShare)}</div>
@@ -355,7 +355,7 @@ export default function BillingTab() {
                   </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
+                <div className="kpi-mini-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
                   {[['Chat Revenue', rev.chat, '#06b6d4'], ['Gesamt', rev.total, 'var(--text-primary)']].map(item => (
                     <div key={item[0]} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item[0]}</div>
@@ -365,7 +365,7 @@ export default function BillingTab() {
                 </div>
 
                 {s && (
-                  <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
+                  <div className="raster-2" style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
                     <div style={{ background: 'rgba(6,182,212,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(6,182,212,0.2)' }}>
                       <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter ({s.percentage}%)</div>
                       <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{money(chatterShare)}</div>

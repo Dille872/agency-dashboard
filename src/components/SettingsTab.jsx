@@ -871,9 +871,9 @@ export default function SettingsTab() {
     setNewCA({ chatter_name: '', csv_name: '', telegram_id: '' }); loadChatterAliases()
   }
 
-  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
+  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 16, padding: '16px 18px' } // v4.84.0
   const inputS = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: '100%' }
-  const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }
+  const labelS = { fontSize: 15, color: 'var(--text-primary)', fontWeight: 700, marginBottom: 12 } // v4.84.0: Titel im neuen Stil
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

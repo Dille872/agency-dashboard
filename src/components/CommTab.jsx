@@ -5,6 +5,7 @@ import { logActivity } from '../activity'
 import { parseSystemMessage, systemMessagePreview } from '../systemMessage'
 import { sendTelegramMessage, sendTelegramMediaGroup, zugestellt } from '../telegram'
 import Card from './Card'
+import AnkuendigungFenster from './AnkuendigungFenster' // v4.84.0
 import OnlineStatus from './OnlineStatus'
 import { SocialLinksEditor } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
@@ -2287,8 +2288,8 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 return (
                   <div key={chatter.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                     <div onClick={() => setSelectedChatter(isSelected ? null : chatter)} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: showAvailability === chatter.name ? '8px 8px 0 0' : 8,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, // v4.84.0: bricht am Handy um
+                      padding: '11px 12px', background: 'var(--bg-card2)', borderRadius: showAvailability === chatter.name ? '13px 13px 0 0' : 13,
                       border: `1px solid ${isSelected ? '#06b6d4' : 'var(--border)'}`,
                       cursor: 'pointer', transition: 'border-color 0.15s',
                     }}>
@@ -2319,7 +2320,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           </div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
                         <button onClick={e => { e.stopPropagation(); setShowAvailability(showAvailability === chatter.name ? null : chatter.name) }}
                           style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.1)' : 'transparent', color: availabilities[chatter.name]?.length ? '#06b6d4' : 'var(--text-muted)', border: `1px solid ${availabilities[chatter.name]?.length ? 'rgba(6,182,212,0.3)' : 'var(--border)'}`, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <CalendarDays size={11} strokeWidth={2.2} /> {availabilities[chatter.name]?.length ? availabilities[chatter.name].length : '+'}
@@ -2336,7 +2337,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     </div>
                     {/* Availability panel */}
                     {showAvailability === chatter.name && (
-                      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid #06b6d4', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
+                      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid #06b6d4', borderTop: 'none', borderRadius: '0 0 13px 13px', padding: '10px 12px' }}>
                         <div style={{ fontSize: 10, color: '#06b6d4', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Verfügbarkeit</div>
                         {/* Existing */}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
@@ -2376,7 +2377,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             </div>
             {showAddChatter
               ? <AddContactForm type="chatter" onSave={addChatter} onCancel={() => setShowAddChatter(false)} isOwner={isOwner} />
-              : <button onClick={() => setShowAddChatter(true)} style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 8, padding: '9px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>+ Chatter hinzufügen</button>
+              : <button onClick={() => setShowAddChatter(true)} style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: '#a78bfa', borderRadius: 13, padding: '11px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Chatter hinzufügen</button>
             }
           </Card>
 
@@ -2388,65 +2389,22 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 Max. 2 aktive Posts gleichzeitig oben. Chatter können einzelne Posts archivieren.
               </div>
 
-              {/* Neue Ankündigung */}
-              {!showAnnForm ? (
-                <button onClick={() => setShowAnnForm(true)} style={{
-                  alignSelf: 'flex-start', fontSize: 12, padding: '6px 14px', borderRadius: 7,
-                  background: '#7c3aed', border: 'none', color: '#fff',
-                  cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
-                }}>
-                  + Neue Ankündigung
-                </button>
-              ) : (
-                <div style={{ background: 'var(--bg-card2)', border: '1px solid #7c3aed', borderRadius: 10, padding: 12 }}>
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Emoji:</label>
-                    <input type="text" value={newAnnEmoji} onChange={e => setNewAnnEmoji(e.target.value)} maxLength={2}
-                      style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: 5, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: 44, textAlign: 'center' }} />
-                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                      {['📌', '⚽', '📢', '🎯', '⚡', '🎬', '🚨', '🎉', '📋'].map(e => (
-                        <button key={e} type="button" onClick={() => setNewAnnEmoji(e)} style={{
-                          fontSize: 14, padding: '3px 7px', borderRadius: 5, cursor: 'pointer',
-                          background: newAnnEmoji === e ? 'rgba(124,58,237,0.2)' : 'transparent',
-                          border: `1px solid ${newAnnEmoji === e ? '#7c3aed' : 'var(--border)'}`,
-                        }}>{e}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <textarea
-                    value={newAnnText}
-                    onChange={e => setNewAnnText(e.target.value)}
-                    placeholder="z.B. 'Heute 20:30 Zoom Call' oder 'Fußball heute Abend 😄'"
-                    style={{
-                      width: '100%', minHeight: 70, background: 'var(--bg-input)', border: '1px solid var(--border)',
-                      color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 6, fontSize: 12,
-                      fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box',
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>Läuft ab:</label>
-                    <input type="datetime-local" value={newAnnExpiresAt} onChange={e => setNewAnnExpiresAt(e.target.value)}
-                      style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'inherit', outline: 'none' }} />
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(optional)</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                    <button onClick={postAnnouncement} disabled={!newAnnText.trim()} style={{
-                      fontSize: 12, padding: '6px 14px', borderRadius: 6,
-                      background: newAnnText.trim() ? '#7c3aed' : 'var(--border)',
-                      border: 'none', color: '#fff', cursor: newAnnText.trim() ? 'pointer' : 'not-allowed',
-                      fontFamily: 'inherit', fontWeight: 600,
-                    }}>
-                      Posten
-                    </button>
-                    <button onClick={() => { setShowAnnForm(false); setNewAnnText(''); setNewAnnEmoji('📌'); setNewAnnExpiresAt('') }} style={{
-                      fontSize: 12, padding: '6px 14px', borderRadius: 6,
-                      background: 'transparent', border: '1px solid var(--border)',
-                      color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
-                    }}>
-                      Abbrechen
-                    </button>
-                  </div>
-                </div>
+              {/* v4.84.0: Neue Ankündigung als Fenster von unten (AnkuendigungFenster.jsx) */}
+              <button onClick={() => setShowAnnForm(true)} style={{
+                alignSelf: 'flex-start', fontSize: 13, padding: '9px 16px', borderRadius: 12,
+                background: '#7c3aed', border: 'none', color: '#fff',
+                cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700,
+              }}>
+                + Neue Ankündigung
+              </button>
+              {showAnnForm && (
+                <AnkuendigungFenster
+                  emoji={newAnnEmoji} setEmoji={setNewAnnEmoji}
+                  text={newAnnText} setText={setNewAnnText}
+                  ablauf={newAnnExpiresAt} setAblauf={setNewAnnExpiresAt}
+                  onPosten={postAnnouncement}
+                  onZu={() => { setShowAnnForm(false); setNewAnnText(''); setNewAnnEmoji('📌'); setNewAnnExpiresAt('') }}
+                />
               )}
 
               {/* Liste der Ankündigungen */}
@@ -3595,27 +3553,24 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
           {/* Model + Chatter + Search Filter */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
-            <select value={contentModelFilter} onChange={e => setContentModelFilter(e.target.value)} style={{
-              fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-              background: contentModelFilter !== 'all' ? 'rgba(236,72,153,0.15)' : 'var(--bg-input)',
-              border: `1px solid ${contentModelFilter !== 'all' ? '#ec4899' : 'var(--border)'}`,
-              color: contentModelFilter !== 'all' ? '#ec4899' : 'var(--text-secondary)',
-              fontWeight: 600, fontFamily: 'inherit', outline: 'none'
-            }}>
-              <option value="all">Alle Models</option>
-              {uniqueModels.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-
-            <select value={contentChatterFilter} onChange={e => setContentChatterFilter(e.target.value)} style={{
-              fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-              background: contentChatterFilter !== 'all' ? 'rgba(6,182,212,0.15)' : 'var(--bg-input)',
-              border: `1px solid ${contentChatterFilter !== 'all' ? '#06b6d4' : 'var(--border)'}`,
-              color: contentChatterFilter !== 'all' ? '#06b6d4' : 'var(--text-secondary)',
-              fontWeight: 600, fontFamily: 'inherit', outline: 'none'
-            }}>
-              <option value="all">Alle Chatter</option>
-              {uniqueChatters.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            {/* v4.84.0: Model und Chatter als Chips statt Auswahlfelder (am Handy wischbar) */}
+            {[
+              ['Model', contentModelFilter, setContentModelFilter, uniqueModels, '#ec4899'],
+              ['Chatter', contentChatterFilter, setContentChatterFilter, uniqueChatters, '#06b6d4'],
+            ].map(([titel, wert, setWert, liste, farbe]) => (
+              <div key={titel} className="chip-reihe" style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', overflowX: 'auto', paddingBottom: 2 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, width: 54 }}>{titel}</span>
+                {['all', ...liste].map(v => {
+                  const an = wert === v
+                  return (
+                    <button key={v} type="button" className="filter-chip" onClick={() => setWert(v)} style={{
+                      flexShrink: 0, fontSize: 12, padding: '6px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
+                      background: an ? farbe + '26' : 'transparent', border: `1px solid ${an ? farbe : 'var(--border)'}`, color: an ? farbe : 'var(--text-secondary)',
+                    }}>{v === 'all' ? 'Alle' : v}</button>
+                  )
+                })}
+              </div>
+            ))}
 
             <input
               type="text"
@@ -3623,7 +3578,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               onChange={e => setContentSearch(e.target.value)}
               placeholder="Suche Kunde / Text..."
               style={{
-                fontSize: 11, padding: '4px 10px', borderRadius: 6,
+                fontSize: 13, padding: '8px 12px', borderRadius: 11,
                 background: contentSearch ? 'rgba(245,158,11,0.1)' : 'var(--bg-input)',
                 border: `1px solid ${contentSearch ? '#f59e0b' : 'var(--border)'}`,
                 color: 'var(--text-primary)',
@@ -4880,64 +4835,22 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
               Maximal 2 aktive Posts gleichzeitig oben sichtbar (sortiert nach Priorität, dann Datum).
               Chatter können einzelne Posts archivieren — sie verschwinden dann von oben aber bleiben im Verlauf.
             </div>
-            {!showAnnForm ? (
-              <button onClick={() => setShowAnnForm(true)} style={{
-                fontSize: 13, padding: '8px 16px', borderRadius: 8,
-                background: '#7c3aed', border: 'none', color: '#fff',
-                cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600
-              }}>
-                + Neue Ankündigung
-              </button>
-            ) : (
-              <div style={{ background: 'var(--bg-card2)', border: '1px solid #7c3aed', borderRadius: 10, padding: 14 }}>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Emoji:</label>
-                  <input type="text" value={newAnnEmoji} onChange={e => setNewAnnEmoji(e.target.value)} maxLength={2}
-                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '5px 10px', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: 50, textAlign: 'center' }} />
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {['📌', '⚽', '📢', '🎯', '⚡', '🎬', '🚨', '🎉', '📋'].map(e => (
-                      <button key={e} type="button" onClick={() => setNewAnnEmoji(e)} style={{
-                        fontSize: 16, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
-                        background: newAnnEmoji === e ? 'rgba(124,58,237,0.2)' : 'transparent',
-                        border: `1px solid ${newAnnEmoji === e ? '#7c3aed' : 'var(--border)'}`,
-                      }}>{e}</button>
-                    ))}
-                  </div>
-                </div>
-                <textarea
-                  value={newAnnText}
-                  onChange={e => setNewAnnText(e.target.value)}
-                  placeholder="Was wollt ihr mitteilen? z.B. 'Heute 20:30 Zoom Call - Thema Q3 Goals' oder 'Fußball heute Abend nicht vergessen 😄'"
-                  style={{
-                    width: '100%', minHeight: 80, background: 'var(--bg-input)', border: '1px solid var(--border)',
-                    color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 7, fontSize: 13,
-                    fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box'
-                  }}
-                />
-                <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Läuft ab:</label>
-                  <input type="datetime-local" value={newAnnExpiresAt} onChange={e => setNewAnnExpiresAt(e.target.value)}
-                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '5px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(optional - leer = kein Ablauf)</span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <button onClick={postAnnouncement} disabled={!newAnnText.trim()} style={{
-                    fontSize: 13, padding: '8px 16px', borderRadius: 8,
-                    background: newAnnText.trim() ? '#7c3aed' : 'var(--border)',
-                    border: 'none', color: '#fff', cursor: newAnnText.trim() ? 'pointer' : 'not-allowed',
-                    fontFamily: 'inherit', fontWeight: 600
-                  }}>
-                    Posten
-                  </button>
-                  <button onClick={() => { setShowAnnForm(false); setNewAnnText(''); setNewAnnEmoji('📌'); setNewAnnExpiresAt('') }} style={{
-                    fontSize: 13, padding: '8px 16px', borderRadius: 8,
-                    background: 'transparent', border: '1px solid var(--border)',
-                    color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit'
-                  }}>
-                    Abbrechen
-                  </button>
-                </div>
-              </div>
+            {/* v4.84.0: Fenster statt Formular */}
+            <button onClick={() => setShowAnnForm(true)} style={{
+              fontSize: 13, padding: '9px 16px', borderRadius: 12,
+              background: '#7c3aed', border: 'none', color: '#fff',
+              cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700
+            }}>
+              + Neue Ankündigung
+            </button>
+            {showAnnForm && (
+              <AnkuendigungFenster
+                emoji={newAnnEmoji} setEmoji={setNewAnnEmoji}
+                text={newAnnText} setText={setNewAnnText}
+                ablauf={newAnnExpiresAt} setAblauf={setNewAnnExpiresAt}
+                onPosten={postAnnouncement}
+                onZu={() => { setShowAnnForm(false); setNewAnnText(''); setNewAnnEmoji('📌'); setNewAnnExpiresAt('') }}
+              />
             )}
           </div>
 
