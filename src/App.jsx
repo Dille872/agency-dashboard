@@ -185,10 +185,26 @@ export default function App() {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setAuthLoading(false)
-    })
+    // v4.96.1: Fehler abfangen. Vorher ohne catch — war die gespeicherte
+    // Anmeldung kaputt („Invalid Refresh Token“), kam getSession nie sauber
+    // zurück und die Seite hing für immer auf dem Lade-Bildschirm. Jetzt:
+    // kaputte Anmeldung lokal verwerfen → Login-Seite erscheint.
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('getSession-Fehler, Anmeldung wird verworfen:', error.message)
+          supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+          setSession(null)
+        } else {
+          setSession(data?.session ?? null)
+        }
+      })
+      .catch((err) => {
+        console.error('getSession fehlgeschlagen:', err)
+        supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+        setSession(null)
+      })
+      .finally(() => setAuthLoading(false))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       // v3.41.0: Session-Referenz nur bei echtem Login/Logout ändern.
       // Supabase feuert beim Zurückwechseln zum Browser-Tab ein TOKEN_REFRESHED-Event –
@@ -576,7 +592,12 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   // v4.92.0: Platzhalter-Seite statt „Daten werden geladen...“
-  if (authLoading || (session && userRole === null)) return <SkelSeite />
+  if (authLoading || (session && userRole === null)) return (
+    <SkelSeite onAbmelden={async () => {
+      try { await supabase.auth.signOut({ scope: 'local' }) } catch { /* egal, lokal weg */ }
+      window.location.reload()
+    }} />
+  )
 
   if (!session) return <LoginPage />
 

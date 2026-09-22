@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import Logo from './Logo'
 
 // ── Platzhalter-Karten beim Laden (v4.92.0) ────────────────────────────────
@@ -70,9 +70,21 @@ export function SkelModels({ anzahl = 2 }) {
 }
 
 // Ganze Seite beim Start (Anmeldung wird geprüft, Rollen geladen)
-export function SkelSeite() {
+// v4.96.1: Dauert das Laden länger als 10 s, erscheint ein Hinweis mit
+// „Neu laden“ und „Neu anmelden“ — statt ewig nur grauer Karten.
+export function SkelSeite({ onAbmelden }) {
+  const [lange, setLange] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setLange(true), 10000); return () => clearTimeout(t) }, [])
   return (
     <div role="status" aria-label="Lädt" style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)' }}>
+      {lange && (
+        <div style={{ position: 'fixed', left: '50%', top: '40%', transform: 'translate(-50%, -50%)', zIndex: 10, width: 'min(360px, calc(100vw - 32px))', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 18, padding: '18px 18px 16px', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'center' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>Das dauert länger als üblich</div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>Vielleicht ist die Verbindung langsam oder die Anmeldung abgelaufen.</div>
+          <button type="button" className="gross-btn" onClick={() => window.location.reload()} style={{ padding: 12, borderRadius: 12, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Neu laden</button>
+          {onAbmelden && <button type="button" className="gross-btn" onClick={onAbmelden} style={{ padding: 11, borderRadius: 12, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Neu anmelden</button>}
+        </div>
+      )}
       <div style={{ height: 56, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px', background: 'var(--bg-card)' }}>
         <span className="skel-puls" style={{ display: 'flex' }}><Logo size={26} /></span>
         <Balken w={150} h={13} />
