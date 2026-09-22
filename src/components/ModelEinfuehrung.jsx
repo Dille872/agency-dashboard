@@ -79,6 +79,10 @@ export default function ModelEinfuehrung({ name, zeile, art = 'einfuehrung', boa
     ? Math.min(Math.max(0, schritte.findIndex(s => s.key === zeile?.einfuehrung_schritt)), schritte.length - 1)
     : 0
   const [idx, setIdx] = useState(startIdx)
+  // v4.95.1: weitester erreichter Schritt — bis dahin darf man über den Balken
+  // auch wieder VORWÄRTS springen. Vorher hing das am gespeicherten Schritt, der
+  // sich beim Zurückspringen mit änderte (dann ging es per Balken nicht mehr vor).
+  const [maxIdx, setMaxIdx] = useState(startIdx)
   const [antworten, setAntworten] = useState(() => ({ ...(zeile?.antworten || {}) }))
   const [hinweis, setHinweis] = useState('')
   const [speichert, setSpeichert] = useState(false)
@@ -115,7 +119,7 @@ export default function ModelEinfuehrung({ name, zeile, art = 'einfuehrung', boa
 
   const gehe = async (neu) => {
     await speichern({ einfuehrung_schritt: schritte[neu].key })
-    setIdx(neu); setHinweis('')
+    setIdx(neu); setMaxIdx(m => Math.max(m, neu)); setHinweis('')
     koerper.current?.scrollTo?.(0, 0)
   }
 
@@ -164,7 +168,7 @@ export default function ModelEinfuehrung({ name, zeile, art = 'einfuehrung', boa
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 10 }}>
             {schritte.map((x, i) => (
-              <button key={x.key} type="button" title={x.titel} aria-label={x.titel} onClick={() => i !== idx && (art !== 'einfuehrung' || i < idx || i <= startIdx) && gehe(i)} className="einf-balken"
+              <button key={x.key} type="button" title={x.titel} aria-label={x.titel} onClick={() => i !== idx && (art !== 'einfuehrung' || i <= maxIdx) && gehe(i)} className="einf-balken"
                 style={{ flex: 1, height: 6, padding: 0, border: 'none', borderRadius: 3, cursor: 'pointer', background: i < idx ? O : i === idx ? 'rgba(245,158,11,0.55)' : 'var(--border)' }} />
             ))}
           </div>
