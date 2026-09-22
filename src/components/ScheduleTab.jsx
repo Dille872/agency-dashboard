@@ -309,6 +309,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const [chatterSearch, setChatterSearch] = useState('')
   const [mobileDay, setMobileDay] = useState(() => todayBerlin())
   const [editSheet, setEditSheet] = useState(null) // { modelId, dayIso, shift } or null
+  // v4.93.0: Ziehen & Ablegen am Rechner
+  const ziehQuelleRef = useRef(null)                 // { modelId, dayIso, shift } der gezogenen Zelle
+  const [ziehAktiv, setZiehAktiv] = useState(null)   // Schlüssel der gezogenen Zelle (für Abblenden)
+  const [ziehZiel, setZiehZiel] = useState(null)     // { key, kopie } — Zelle unter dem Mauszeiger
+  const [ziehFrage, setZiehFrage] = useState(null)   // { quelle, ziel, kopie } — Ziel belegt: Tauschen/Überschreiben?
+  const [ziehToast, setZiehToast] = useState(null)   // { text, vorher: {key: alterWert|undefined} }
+  const ziehToastTimer = useRef(null)
+  // Wochenwechsel: Rückgängig würde sonst Zellen in die neue Woche schreiben
+  useEffect(() => { setZiehToast(null); setZiehFrage(null) }, [weekStart])
   // v4.83.0: neue Kopfzeile — „⋯ Mehr“-Fenster und Suche am Handy
   const [mehrOffen, setMehrOffen] = useState(false)
   const [sucheOffen, setSucheOffen] = useState(false)
@@ -1544,6 +1553,157 @@ export default function ScheduleTab({ session, userDisplayName }) {
     return erlaubt.map(m => m.name)
   }
 
+  // ── v4.93.0: Ziehen & Ablegen (nur am Rechner) ─────────────────────────────
+  // Ziehen = verschieben (Quelle wird leer), ⌥/Alt beim Loslassen = kopieren.
+  // Mitgenommen wird wie beim „Auch bei anderen Models“: Chatter, Modus, zweite
+  // Person, Split-Zeiten, Notiz, Bestätigt. Die abweichende Zeit (time_override)
+  // bleibt an der Zelle — jedes Model/jede Schicht hat eigene Zeiten.
+  // „Jede Woche so“ (recurring) wird NICHT verschoben, nur die Belegung dieser Woche.
+  const BELEGUNG_FELDER = ['chatter', 'note', 'confirmed', 'trainee', 'trainee_mode', 'split_a_von', 'split_a_bis', 'split_b_von', 'split_b_bis']
+  const belegungVon = (c) => ({
+    chatter: c.chatter || '', note: c.note || '', confirmed: c.confirmed !== false,
+    trainee: c.trainee || null, trainee_mode: c.trainee_mode || null,
+    split_a_von: c.split_a_von || null, split_a_bis: c.split_a_bis || null,
+    split_b_von: c.split_b_von || null, split_b_bis: c.split_b_bis || null,
+  })
+  const mitBelegung = (alt, bel) => {
+    const neu = { ...alt }
+    for (const f of BELEGUNG_FELDER) neu[f] = bel[f]
+    return neu
+  }
+  const LEER = { chatter: '', note: '', confirmed: true }
+  const zellText = (pos) => {
+    const m = models.find(x => x.id === pos.modelId)
+    return `${m ? m.name + ' ' : ''}${kurzTag(pos.dayIso)} ${pos.shift}`
+  }
+  // Warnungen für eine Person in einer Zielzelle. `ohne` = Zellschlüssel, die
+  // nicht mitzählen (beim Verschieben die Quelle, dazu immer das Ziel selbst).
+  const ziehWarnungen = (name, ziel, ohne) => {
+    if (!name || name === '__FREI__') return []
+    const w = []
+    if (isAbsent(name, ziel.dayIso, ziel.shift)) w.push(`${name} ist an dem Tag als abwesend eingetragen.`)
+    const drin = (c) => c.chatter === name || (c.trainee === name && ['co', 'split'].includes(zellModus(c)))
+    const amTag = []
+    for (const m of models) for (const sh of ALL_SHIFTS) {
+      const k = getCellKey(m.id, ziel.dayIso, sh)
+      if (ohne.includes(k)) continue
+      if (drin(getCell(m.id, ziel.dayIso, sh))) amTag.push(sh === ziel.shift ? `${m.name} (gleiche Schicht)` : `${m.name} ${sh}`)
+    }
+    if (amTag.length) w.push(`${name} hat an dem Tag schon: ${amTag.join(', ')} — Doppelschicht.`)
+    const hier = zellSpanne(ziel.modelId, ziel.dayIso, ziel.shift, getCell(ziel.modelId, ziel.dayIso, ziel.shift))
+    if (hier) {
+      let knapp = null
+      for (const off of [-1, 1]) {
+        const d = new Date(ziel.dayIso + 'T12:00:00'); d.setDate(d.getDate() + off)
+        const nIso = isoDate(d)
+        if (!weekIsos.includes(nIso)) continue
+        for (const sh of ALL_SHIFTS) for (const m of models) {
+          if (ohne.includes(getCellKey(m.id, nIso, sh))) continue
+          const c2 = getCell(m.id, nIso, sh)
+          if (!drin(c2)) continue
+          const sp = zellSpanne(m.id, nIso, sh, c2)
+          if (!sp) continue
+          const luecke = off < 0 ? hier.start - sp.ende : sp.start - hier.ende
+          if (luecke < PAUSE_MIN_STD * 60 && (!knapp || luecke < knapp.luecke)) knapp = { luecke, text: `${kurzTag(nIso)} ${sh}` }
+        }
+      }
+      if (knapp) w.push(`${name} hätte nur ${Math.max(0, Math.round(knapp.luecke / 30) / 2)} Std Pause zu ${knapp.text}.`)
+    }
+    return w
+  }
+  const zeigeZiehToast = (text, vorher) => {
+    clearTimeout(ziehToastTimer.current)
+    setZiehToast({ text, vorher })
+    ziehToastTimer.current = setTimeout(() => setZiehToast(null), 9000)
+  }
+  const ziehRueckgaengig = () => {
+    if (!ziehToast) return
+    const { vorher } = ziehToast
+    setSchedule(prev => {
+      const n = { ...prev }
+      for (const [k, v] of Object.entries(vorher)) { if (v === undefined) delete n[k]; else n[k] = v }
+      return n
+    })
+    clearTimeout(ziehToastTimer.current)
+    setZiehToast(null)
+  }
+  // art: 'verschieben' | 'kopieren' | 'tauschen' | 'ueberschreiben'
+  const ziehAusfuehren = (quelle, ziel, art, kopieBeiUeberschreiben = false) => {
+    const qKey = getCellKey(quelle.modelId, quelle.dayIso, quelle.shift)
+    const zKey = getCellKey(ziel.modelId, ziel.dayIso, ziel.shift)
+    const q = getCell(quelle.modelId, quelle.dayIso, quelle.shift)
+    const z = getCell(ziel.modelId, ziel.dayIso, ziel.shift)
+    const kopie = art === 'kopieren' || (art === 'ueberschreiben' && kopieBeiUeberschreiben)
+    const tausch = art === 'tauschen'
+    // Warnungen: gezogene Person im Ziel, beim Tauschen zusätzlich die andere in der Quelle
+    const ohneZ = kopie ? [zKey] : [zKey, qKey]
+    const warn = [
+      ...ziehWarnungen(q.chatter, ziel, ohneZ),
+      ...(['co', 'split'].includes(zellModus(q)) && q.trainee ? ziehWarnungen(q.trainee, ziel, ohneZ) : []),
+      ...(tausch ? ziehWarnungen(z.chatter, quelle, [zKey, qKey]) : []),
+    ]
+    if (warn.length && !window.confirm(`Achtung:\n\n• ${warn.join('\n• ')}\n\nTrotzdem ${tausch ? 'tauschen' : kopie ? 'kopieren' : 'verschieben'}?`)) return
+    const vorher = { [qKey]: schedule[qKey], [zKey]: schedule[zKey] }
+    setSchedule(prev => {
+      const n = { ...prev }
+      const qa = prev[qKey] || { chatter: '', note: '' }
+      const za = prev[zKey] || { chatter: '', note: '' }
+      n[zKey] = mitBelegung(za, belegungVon(qa))
+      if (tausch) n[qKey] = mitBelegung(qa, belegungVon(za))
+      else if (!kopie) n[qKey] = { ...LEER }
+      return n
+    })
+    const wer = q.chatter === '__FREI__' ? 'Freischicht' : q.chatter
+    const gleichesModel = quelle.modelId === ziel.modelId
+    const zielText = gleichesModel ? `${kurzTag(ziel.dayIso)} ${ziel.shift}` : zellText(ziel)
+    const text = tausch
+      ? `${wer} ⇄ ${z.chatter === '__FREI__' ? 'Freischicht' : z.chatter} getauscht`
+      : `${wer} auf ${zielText} ${kopie ? 'kopiert' : 'verschoben'}`
+    zeigeZiehToast(text, vorher)
+    logActivity('schedule.drag', { entity: `KW ${getKW(weekStart)}`, detail: `${text} (von ${zellText(quelle)})` })
+  }
+  const zelleAbgelegt = (ziel, kopie) => {
+    const quelle = ziehQuelleRef.current
+    ziehQuelleRef.current = null
+    setZiehAktiv(null); setZiehZiel(null)
+    if (!quelle) return
+    if (quelle.modelId === ziel.modelId && quelle.dayIso === ziel.dayIso && quelle.shift === ziel.shift) return
+    const q = getCell(quelle.modelId, quelle.dayIso, quelle.shift)
+    if (!q.chatter) return
+    const z = getCell(ziel.modelId, ziel.dayIso, ziel.shift)
+    // Gleiche Person steht schon im Ziel → nichts zu fragen, einfach übernehmen
+    if (z.chatter && z.chatter === q.chatter && (z.trainee || null) === (q.trainee || null)) { ziehAusfuehren(quelle, ziel, 'ueberschreiben', kopie); return }
+    if (z.chatter) { setZiehFrage({ quelle, ziel, kopie }); return }
+    ziehAusfuehren(quelle, ziel, kopie ? 'kopieren' : 'verschieben')
+  }
+  // Handler für eine Zelle im Desktop-Raster
+  const ziehProps = (pos, cell) => {
+    if (isMobile) return {}
+    const key = getCellKey(pos.modelId, pos.dayIso, pos.shift)
+    return {
+      draggable: !!cell.chatter,
+      onDragStart: (e) => {
+        ziehQuelleRef.current = pos
+        e.dataTransfer.effectAllowed = 'copyMove'
+        try { e.dataTransfer.setData('text/plain', key) } catch {}
+        setTimeout(() => setZiehAktiv(key), 0)
+      },
+      onDragEnd: () => { ziehQuelleRef.current = null; setZiehAktiv(null); setZiehZiel(null) },
+      onDragOver: (e) => {
+        if (!ziehQuelleRef.current) return
+        e.preventDefault()
+        const kopie = e.altKey
+        e.dataTransfer.dropEffect = kopie ? 'copy' : 'move'
+        if (!ziehZiel || ziehZiel.key !== key || ziehZiel.kopie !== kopie) setZiehZiel({ key, kopie })
+      },
+      onDragLeave: (e) => {
+        if (e.currentTarget.contains(e.relatedTarget)) return
+        setZiehZiel(z => (z && z.key === key ? null : z))
+      },
+      onDrop: (e) => { e.preventDefault(); zelleAbgelegt(pos, e.altKey) },
+    }
+  }
+
   const openSwapMap = {}
   for (const s of openSwaps) {
     const key = `${s.model_name}__${s.shift_date}__${s.shift}`
@@ -1553,6 +1713,45 @@ export default function ScheduleTab({ session, userDisplayName }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingRight: (!isMobile && editSheet) ? 404 : 0, transition: 'padding-right .15s' }}>
+      {/* v4.93.0: Ziehen auf belegte Zelle — Tauschen / Überschreiben / Abbrechen */}
+      {ziehFrage && (() => {
+        const { quelle, ziel, kopie } = ziehFrage
+        const q = getCell(quelle.modelId, quelle.dayIso, quelle.shift)
+        const z = getCell(ziel.modelId, ziel.dayIso, ziel.shift)
+        const nm = (c) => c.chatter === '__FREI__' ? 'Freischicht' : `${c.chatter}${c.trainee ? ` + ${c.trainee}` : ''}`
+        const zu = () => setZiehFrage(null)
+        const wahl = (art) => { setZiehFrage(null); ziehAusfuehren(quelle, ziel, art, kopie) }
+        const knopfF = (farbe, voll) => ({ width: '100%', padding: 13, borderRadius: 13, fontSize: 14.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', border: voll ? 'none' : `1px solid ${farbe}`, background: voll ? farbe : 'transparent', color: voll ? '#fff' : farbe, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 2 })
+        return (
+          <div onClick={zu} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Zelle ist belegt" style={{ width: 'min(420px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: '18px 18px 16px', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>Da ist schon jemand</div>
+              <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                <b style={{ color: 'var(--text-primary)' }}>{zellText(ziel)}</b> ist mit <b style={{ color: 'var(--text-primary)' }}>{nm(z)}</b> belegt. Du ziehst <b style={{ color: 'var(--text-primary)' }}>{nm(q)}</b> von {zellText(quelle)}{kopie ? ' (Kopie)' : ''}.
+              </div>
+              <button type="button" onClick={() => wahl('tauschen')} style={knopfF('#7c3aed', true)}>
+                <span>⇄ Tauschen</span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, opacity: 0.85 }}>{q.chatter === '__FREI__' ? 'Freischicht' : q.chatter} → {zellText(ziel)} · {z.chatter === '__FREI__' ? 'Freischicht' : z.chatter} → {zellText(quelle)}</span>
+              </button>
+              <button type="button" onClick={() => wahl('ueberschreiben')} style={knopfF('#f59e0b', false)}>
+                <span>Überschreiben</span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)' }}>{nm(z)} fliegt raus{kopie ? '' : `, ${zellText(quelle)} wird leer`}</span>
+              </button>
+              <button type="button" onClick={zu} style={{ ...knopfF('var(--text-muted)', false), border: '1px solid var(--border)', textAlign: 'center', alignItems: 'center' }}>Abbrechen</button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* v4.93.0: Rückgängig-Hinweis nach dem Ziehen */}
+      {ziehToast && (
+        <div role="status" style={{ position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 99990, display: 'flex', alignItems: 'center', gap: 14, padding: '11px 12px 11px 16px', borderRadius: 14, background: '#1b1b35', border: '1px solid #3a3a6a', color: '#f0f0ff', fontSize: 13.5, fontWeight: 600, boxShadow: '0 12px 40px rgba(0,0,0,0.45)', maxWidth: 'calc(100vw - 32px)' }}>
+          <span style={{ minWidth: 0 }}>{ziehToast.text}</span>
+          <button type="button" onClick={ziehRueckgaengig} style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid #7c3aed', background: 'rgba(124,58,237,0.25)', color: '#ddd6fe', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>↶ Rückgängig</button>
+          <button type="button" onClick={() => setZiehToast(null)} aria-label="Schließen" style={{ background: 'transparent', border: 'none', color: '#8888aa', fontSize: 16, cursor: 'pointer', padding: '0 4px' }}>×</button>
+        </div>
+      )}
+
       {/* v3.27.0: Ausschreiben-/Block-Modal */}
       {blockOffer && (
         <BlockOfferModal
@@ -1873,6 +2072,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
       ) : (
       /* ───────── DESKTOP VIEW ───────── */
       <>
+      {/* v4.93.0: Hinweis aufs Ziehen */}
+      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -6, display: 'flex', gap: 6, alignItems: 'center' }}>
+        <span aria-hidden="true">✥</span> Schichten per Ziehen verschieben · mit gedrückter ⌥/Alt-Taste kopieren · danach „Rückgängig“ möglich
+      </div>
       {/* Schedule - Card Layout */}
       <div style={{ overflowX: 'auto' }}>
         {/* v4.83.0: Tageskopf mit „X offen“ und der Tages-Notiz (vorher eigene Zeile) */}
@@ -2079,11 +2282,21 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         finalBorderStyle = 'dashed'
                       }
                       const istGewaehlt = !!editSheet && editSheet.modelId === model.id && editSheet.dayIso === dayIso && editSheet.shift === shift
-                      const finalBoxShadow = istGewaehlt ? '0 0 0 2px #7c3aed, 0 0 14px rgba(124,58,237,0.45)' : searchBoxShadow
+                      // v4.93.0: Ziehen — Ziel hervorheben (lila = verschieben, grün = kopieren), Quelle abblenden
+                      const istZiel = ziehZiel && ziehZiel.key === cellId
+                      const zielFarbe = istZiel ? (ziehZiel.kopie ? '#10b981' : '#7c3aed') : null
+                      const finalBoxShadow = istZiel ? `0 0 0 2px ${zielFarbe}, 0 0 16px ${zielFarbe}80` : istGewaehlt ? '0 0 0 2px #7c3aed, 0 0 14px rgba(124,58,237,0.45)' : searchBoxShadow
 
                       return (
                         <div key={di} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
-                          style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px ${finalBorderStyle} ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
+                          {...ziehProps({ modelId: model.id, dayIso, shift }, cell)}
+                          title={cell.chatter && !isMobile ? 'Klicken zum Bearbeiten · ziehen zum Verschieben · mit ⌥/Alt kopieren' : undefined}
+                          style={{ position: 'relative', background: istZiel ? `${zielFarbe}1f` : finalBg, border: `${finalBorderWidth}px ${finalBorderStyle} ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: cell.chatter ? 'grab' : 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.15s, background 0.15s, opacity 0.15s', opacity: ziehAktiv === cellId ? 0.4 : 1 }}>
+                          {istZiel && (
+                            <div style={{ position: 'absolute', bottom: -9, left: '50%', transform: 'translateX(-50%)', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 4, background: zielFarbe, color: '#fff', whiteSpace: 'nowrap', zIndex: 4, pointerEvents: 'none' }}>
+                              {ziehZiel.kopie ? '+ KOPIEREN' : cell.chatter ? '⇄ BELEGT' : '→ HIERHER'}
+                            </div>
+                          )}
                           {showSwap && (
                             <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Angebot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 6, right: isTrainee ? 6 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
                               {swapHere.isAdminOffer ? '🔄 AUSGESCHRIEBEN' : '↔ TAUSCH'}
