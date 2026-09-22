@@ -1224,7 +1224,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 Dieselben Daten wie vorher, nur einfacher zu pflegen. */}
             <div data-help="services">
               <ModelSteckbrief displayName={displayName} board={board} services={services} isPreview={isPreview}
-                logActivity={logActivity} onGeaendert={() => { loadBoard(); loadServices() }} />
+                logActivity={logActivity} onGeaendert={() => Promise.all([loadBoard(), loadServices()])} />
             </div>
 
             {/* Custom Content */}

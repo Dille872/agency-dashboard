@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { useGelesen } from '../gelesen'
 import { heuteBerlin } from '../utils'
@@ -165,16 +165,26 @@ function ReiseFenster({ reise, onSpeichern, onLoeschen, onZu }) {
 }
 
 // ── Preise: eine Zeile, zum Bearbeiten antippen ──
-function PreisZeile({ item, onSpeichern, onLoeschen, onAbbrechen, neu }) {
+function PreisZeile({ item, onSpeichern, onLoeschen, onAbbrechen, neu, griff, zieht }) {
   const [offen, setOffen] = useState(!!neu)
   const [leistung, setLeistung] = useState(item?.title || '')
   const [preis, setPreis] = useState(item?.price || '')
   const [details, setDetails] = useState(item?.content || '')
   if (!offen) {
     return (
+      <div style={{
+        display: 'flex', alignItems: 'stretch', borderRadius: 11, background: zieht ? 'rgba(124,58,237,0.16)' : 'var(--bg-card2)',
+        border: `1px solid ${zieht ? '#7c3aed' : 'transparent'}`, boxShadow: zieht ? '0 8px 22px rgba(0,0,0,0.45)' : 'none',
+        transform: zieht ? 'scale(1.015)' : 'none', transition: 'transform .12s, box-shadow .12s', position: 'relative', zIndex: zieht ? 2 : 'auto',
+      }}>
+      {/* v4.89.0: Griff zum Verschieben — gedrückt halten und hoch/runter ziehen */}
+      {griff && (
+        <span {...griff} role="button" aria-label="Zum Verschieben ziehen" title="Gedrückt halten und ziehen, um die Reihenfolge zu ändern"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, flexShrink: 0, cursor: zieht ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none', color: zieht ? '#c4b5fd' : 'var(--text-muted)', fontSize: 15, letterSpacing: -2 }}>⋮⋮</span>
+      )}
       <button type="button" onClick={() => setOffen(true)} title="Antippen zum Bearbeiten" style={{
-        display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 11,
-        background: 'var(--bg-card2)', border: '1px solid transparent', cursor: 'pointer', fontFamily: 'inherit',
+        display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, textAlign: 'left', padding: griff ? '10px 12px 10px 2px' : '10px 12px', borderRadius: 11,
+        background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
       }}>
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.35 }}>{item.title}</span>
@@ -184,6 +194,7 @@ function PreisZeile({ item, onSpeichern, onLoeschen, onAbbrechen, neu }) {
           ? <><span style={{ ...klein, flexShrink: 0 }}>ab</span><b style={{ fontFamily: 'monospace', fontSize: 14.5, color: '#10b981', flexShrink: 0 }}>{item.price}</b></>
           : <span style={{ fontSize: 11, color: ORANGE, flexShrink: 0 }}>Preis fehlt</span>}
       </button>
+      </div>
     )
   }
   const ok = leistung.trim()
@@ -214,7 +225,14 @@ export default function ModelSteckbrief({ displayName, board, services, isPrevie
   const [details, setDetails] = useState(false)
   const [geprueft, pruefen] = useGelesen('modelboard_geprueft', { lokalKey: `modelboard_geprueft_${displayName || 'x'}` })
 
-  const preise = board.preise || []
+  const preiseBoard = board.preise || []
+  // v4.89.0: Reihenfolge der Preise per Ziehen ändern. Während des Ziehens und
+  // bis das Board neu geladen ist, gilt die lokale Reihenfolge (ids).
+  const [preisOrdnung, setPreisOrdnung] = useState(null)
+  const [ziehtId, setZiehtId] = useState(null)
+  const [sortiertSpeichert, setSortiertSpeichert] = useState(false)
+  const preisListeRef = useRef(null)
+  const preise = preisOrdnung ? preisOrdnung.map(id => preiseBoard.find(p => p.id === id)).filter(Boolean) : preiseBoard
   const nogos = board.nogos || []
   const reisen = [...(board.reise || [])].sort((a, b) => String(a.date_from || a.date_to || '').localeCompare(String(b.date_from || b.date_to || '')))
   const reisenAktuell = reisen.filter(r => !(r.date_to || r.date_from) || (r.date_to || r.date_from) >= heute)
@@ -232,23 +250,69 @@ export default function ModelSteckbrief({ displayName, board, services, isPrevie
 
   const fertigMelden = async (aktion, kategorie, text) => { await logActivity(aktion, kategorie, text); onGeaendert() }
 
-  // ── Board-Zeilen ──
-  const anlegen = async (kategorie, felder) => {
-    const ok = await schreiben({ zeile: { model_name: displayName, category: kategorie, sort_order: (board[kategorie] || []).length, ...felder } })
-    if (ok) await fertigMelden('hinzugefügt', kategorie, felder.title)
-    return ok
-  }
-  const aendern = async (item, felder) => {
-    const ok = await schreiben({ id: item.id, zeile: felder })
-    if (ok) await fertigMelden('bearbeitet', item.category, felder.title || item.title)
-    return ok
-  }
-  const loeschen = async (item) => {
-    const { error } = await supabase.from('model_board').delete().eq('id', item.id)
-    if (error) { alert('Nicht gelöscht: ' + error.message); return false }
-    await fertigMelden('gelöscht', item.category, item.title)
-    return true
-  }
+  // ── Preise sortieren (Ziehen am Griff ⋮⋮, Maus und Touch) ──
+  // Bewegung und Loslassen hören auf window — beim Umsortieren verschiebt React
+  // die Zeilen im DOM, ein Pointer-Capture am Griff ginge dabei verloren.
+  const ordnungRef = useRef(null)
+  ordnungRef.current = preisOrdnung
+  const preisGriff = (id) => ({
+    onPointerDown: (e) => {
+      if (e.button !== undefined && e.button !== 0) return
+      e.preventDefault()
+      setPreisOrdnung(preise.map(p => p.id))
+      setZiehtId(id)
+    },
+  })
+  useEffect(() => {
+    if (!ziehtId) return
+    // Am Handy sonst: Seite scrollt mit bzw. der Browser bricht die Geste ab
+    const nichtScrollen = (e) => { if (e.cancelable) e.preventDefault() }
+    const bewegen = (e) => {
+      if (!preisListeRef.current) return
+      // Zeilen nach ihrer sichtbaren Position sortieren (CSS order, siehe unten)
+      const zeilen = [...preisListeRef.current.querySelectorAll('[data-preis-id]')]
+        .map(el => el.getBoundingClientRect()).sort((a, b) => a.top - b.top)
+      let ziel = zeilen.length - 1
+      for (let i = 0; i < zeilen.length; i++) {
+        if (e.clientY < zeilen[i].top + zeilen[i].height / 2) { ziel = i; break }
+      }
+      setPreisOrdnung(prev => {
+        if (!prev) return prev
+        const von = prev.indexOf(ziehtId)
+        if (von === -1 || von === ziel) return prev
+        const neu = prev.filter(x => x !== ziehtId)
+        neu.splice(ziel, 0, ziehtId)
+        return neu
+      })
+    }
+    const loslassen = async () => {
+      window.removeEventListener('touchmove', nichtScrollen)
+      window.removeEventListener('pointermove', bewegen)
+      window.removeEventListener('pointerup', loslassen)
+      window.removeEventListener('pointercancel', loslassen)
+      setZiehtId(null)
+      const ordnung = ordnungRef.current || []
+      const aenderungen = ordnung.map((pid, i) => ({ pid, i })).filter(({ pid, i }) => preiseBoard.find(p => p.id === pid)?.sort_order !== i)
+      if (!aenderungen.length) { setPreisOrdnung(null); return }
+      setSortiertSpeichert(true)
+      const ergebnisse = await Promise.all(aenderungen.map(({ pid, i }) => supabase.from('model_board').update({ sort_order: i }).eq('id', pid)))
+      const fehler = ergebnisse.find(r => r.error)
+      if (fehler) alert('Reihenfolge NICHT (ganz) gespeichert: ' + fehler.error.message)
+      await onGeaendert()
+      setSortiertSpeichert(false)
+      setPreisOrdnung(null)
+    }
+    window.addEventListener('touchmove', nichtScrollen, { passive: false })
+    window.addEventListener('pointermove', bewegen)
+    window.addEventListener('pointerup', loslassen)
+    window.addEventListener('pointercancel', loslassen)
+    return () => {
+      window.removeEventListener('touchmove', nichtScrollen)
+      window.removeEventListener('pointermove', bewegen)
+      window.removeEventListener('pointerup', loslassen)
+      window.removeEventListener('pointercancel', loslassen)
+    }
+  }, [ziehtId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Angebot: antippen = ja / nein ──
   const angebotTippen = async (a) => {
@@ -395,15 +459,23 @@ export default function ModelSteckbrief({ displayName, board, services, isPrevie
           <span style={titel}>Preise</span>
           {!neuerPreis && <button type="button" onClick={() => setNeuerPreis(true)} style={linkKnopf('#a78bfa')}>+ Preis</button>}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div ref={preisListeRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {preise.length === 0 && !neuerPreis && <div style={{ ...klein, fontSize: 12 }}>Noch keine Preise. Leistung + ab-Preis reicht, z. B. „Video — ab $40".</div>}
-          {preise.map(p => (
-            <PreisZeile key={`${p.id}|${p.title}|${p.price || ''}|${p.content || ''}`} item={p}
-              onSpeichern={(f) => aendern(p, f)} onLoeschen={() => loeschen(p)} />
+          {/* Die DOM-Reihenfolge bleibt beim Ziehen gleich (sonst bricht der
+              Browser die Touch-Geste ab); sichtbar umsortiert wird per CSS order. */}
+          {preiseBoard.map(p => (
+            <div key={p.id} data-preis-id={p.id} style={{ order: Math.max(0, preise.findIndex(x => x.id === p.id)) }}>
+              <PreisZeile key={`${p.id}|${p.title}|${p.price || ''}|${p.content || ''}`} item={p}
+                griff={preise.length > 1 ? preisGriff(p.id) : null} zieht={ziehtId === p.id}
+                onSpeichern={(f) => aendern(p, f)} onLoeschen={() => loeschen(p)} />
+            </div>
           ))}
+          {preise.length > 1 && (
+            <div style={{ ...klein, fontSize: 11, order: 9999 }}>{sortiertSpeichert ? 'Reihenfolge wird gespeichert …' : '⋮⋮ gedrückt halten und ziehen, um die Reihenfolge zu ändern — so sehen es auch die Chatter.'}</div>
+          )}
           {neuerPreis && (
-            <PreisZeile neu onAbbrechen={() => setNeuerPreis(false)}
-              onSpeichern={async (f) => { const ok = await anlegen('preise', f); if (ok) setNeuerPreis(false); return ok }} />
+            <div style={{ order: 9998 }}><PreisZeile neu onAbbrechen={() => setNeuerPreis(false)}
+              onSpeichern={async (f) => { const ok = await anlegen('preise', f); if (ok) setNeuerPreis(false); return ok }} /></div>
           )}
         </div>
       </div>

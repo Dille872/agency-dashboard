@@ -120,6 +120,7 @@ export const HELP_TOPICS = [
     steps: [
       'Reise: auf „+ Reise", Ziel und Von/Bis eintragen, dann die Chips antippen — einmal = geht (grün), zweimal = geht nicht (rot), dreimal = weg. Optional ein Satz, den die Chatter Fans sagen können.',
       'Preise: auf „+ Preis", Leistung und ab-Preis eintragen, z. B. „Video" und „$40". Eine Zeile antippen zum Ändern oder Löschen.',
+      'Reihenfolge: links an der Zeile auf ⋮⋮ drücken, gedrückt halten und hoch oder runter ziehen. In dieser Reihenfolge sehen es auch die Chatter.',
       'No Gos: Vorschläge (gestrichelt) antippen, um sie zu übernehmen. Rot = gilt für dich. Nochmal antippen entfernt es (mit Rückfrage). „+ eigenes" für alles andere.',
     ],
     watch: [
