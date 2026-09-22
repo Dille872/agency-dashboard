@@ -33,6 +33,17 @@ export function reiseHeute(items = [], heute = heuteBerlin()) {
   }) || null
 }
 
+// v4.94.0: Reisen in anstehend/laufend und vergangen teilen. Vergangen = das
+// letzte eingetragene Datum liegt vor heute. Ohne Datum gilt als anstehend.
+// Gelöscht wird nichts — Vergangenes landet nur im „Archiv“ (ausgeklappt).
+export function teileReisen(items = [], heute = heuteBerlin()) {
+  const ende = (r) => r.date_to || r.date_from || ''
+  const start = (r) => r.date_from || r.date_to || ''
+  const aktuell = items.filter(r => !ende(r) || ende(r) >= heute).sort((a, b) => start(a).localeCompare(start(b)))
+  const alt = items.filter(r => ende(r) && ende(r) < heute).sort((a, b) => ende(b).localeCompare(ende(a)))
+  return { aktuell, alt }
+}
+
 // Reisen, die in den nächsten 7 Tagen beginnen
 export function reiseBald(items = [], heute = heuteBerlin()) {
   const grenze = plusTage(heute, 7)

@@ -10,6 +10,7 @@ import OnlineStatus from './OnlineStatus'
 import { SocialLinksEditor } from './SocialLinks'
 import { convertHeicIfNeeded } from '../imageUtils'
 import { heuteBerlin } from '../utils' // v4.57.0
+import ReiseListe from './ReiseListe' // v4.94.0: alte Reisen ins Archiv
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 
@@ -5224,7 +5225,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   return (
                     <div key={cat} style={{ background: 'var(--bg-card)', border: `1px solid #1e1e3a`, borderLeft: `3px solid ${color}`, borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
                       <div style={{ fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>{catLabels[cat] || cat}</div>
-                      {items.map(item => (
+                      {cat === 'reise' ? <ReiseListe items={items} farbe={color} gross /> : items.map(item => (
                         <div key={item.id} style={{ padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)', marginBottom: 6 }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
                           {item.content && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{item.content}</div>}

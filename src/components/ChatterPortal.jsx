@@ -31,6 +31,7 @@ import HelpTour from './HelpTour'
 import HelpFab from './HelpFab'
 import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
 import { SkelModels } from './Skeleton' // v4.92.0
+import ReiseListe from './ReiseListe' // v4.94.0
 import { HELP_TOPICS, TOUR_IDS } from '../help/chatterHelp'
 
 const CHRIS_TG = '1538601588'
@@ -2844,7 +2845,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   return (
                     <div key={cat} style={{ background: 'var(--bg-card)', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
                       <div style={{ fontSize: 9, color, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>{catLabels[cat] || cat}</div>
-                      {items.map(item => (
+                      {cat === 'reise' ? <ReiseListe items={items} farbe={color} /> : items.map(item => (
                         <div key={item.id} style={{ padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a', marginBottom: 5 }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
                           {item.content && <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>{item.content}</div>}
