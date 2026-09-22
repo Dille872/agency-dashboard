@@ -206,12 +206,13 @@ export const HELP_TOPICS = [
     short: 'Was du veröffentlichst — mit Vorschaubild und Release-Datum.',
     body: [
       'Trag hier ein, welche Videos anstehen oder erschienen sind. Die Chatter sehen die Liste und können Kunden darauf ansprechen.',
+      'Oben stehen die Videos unter „Demnächst", darunter die schon „Veröffentlicht" sind. Ältere siehst du mit „Alle … anzeigen".',
     ],
     steps: [
-      'Auf „+ Neues Video eintragen".',
-      'Titel eintragen (Pflicht), dazu Beschreibung und Release-Datum.',
-      'Optional ein Vorschaubild auswählen (JPG oder PNG).',
-      'Speichern.',
+      'Oben rechts auf „+ Neu" — ein Fenster fährt von unten hoch.',
+      'Titel eintragen (Pflicht), dazu Beschreibung und „Kommt raus am".',
+      'Optional „📷 Bild auswählen" für ein Vorschaubild (JPG oder PNG).',
+      'Auf „Speichern".',
     ],
     watch: [
       'Hier wird nur ein Vorschaubild hochgeladen, nicht das Video selbst.',
@@ -253,10 +254,10 @@ export const HELP_TOPICS = [
     body: [
       'Oben die aktiven Aufträge, darunter die erledigten. Zu jedem siehst du, was gewünscht ist, von welchem Chatter er kommt, für welchen Kunden, den Preis und wie dringend es ist.',
       'Ist etwas angezahlt oder schon bezahlt, steht das im Balken darunter — inklusive Hinweis, wenn ein Restbetrag überfällig ist.',
-      'Wenn du fertig bist, tippst du auf „✓ Erledigt". Dann bekommt genau der Chatter, der die Anfrage gestellt hat, sofort eine Telegram-Nachricht und kann rausschicken.',
+      'Wenn du fertig bist, tippst du auf „✓ Fertig — als erledigt melden". Dann bekommt genau der Chatter, der die Anfrage gestellt hat, sofort eine Telegram-Nachricht und kann rausschicken.',
     ],
     watch: [
-      '„✓ Erledigt" lässt sich nicht zurücknehmen. Erst hochladen, dann klicken.',
+      '„✓ Fertig — als erledigt melden" lässt sich nicht zurücknehmen. Erst hochladen, dann tippen.',
       'Hier stehen nur Aufträge, die das Team bestätigt hat. Was noch in Prüfung ist, siehst du nicht — es kann also sein, dass die Glocke etwas meldet, das hier noch nicht auftaucht.',
       'Am Bezahlstatus kannst du nichts ändern, den pflegt das Team.',
       'Einen Auftrag ablehnen kannst du hier nicht — wenn etwas gegen deine Regeln geht, schreib dem Team.',
@@ -284,7 +285,9 @@ export const HELP_TOPICS = [
     title: 'Umsatz',
     short: 'Was im laufenden Monat zusammengekommen ist.',
     body: [
-      'Die Summe des laufenden Kalendermonats in Dollar. Hast du mehrere Accounts, siehst du zusätzlich die Aufteilung.',
+      'Oben groß die Summe des laufenden Kalendermonats in Dollar, darunter der Schnitt pro Tag (bis gestern).',
+      'Hast du mehrere Accounts, siehst du unter „Nach Account" die Aufteilung als Balken.',
+      'Deine Subs mit Vergleich zum Vormonat stehen im Subs-Tracker auf der Übersicht.',
     ],
     watch: [
       'Nur der laufende Monat — es gibt keine Historie und kein Zurückblättern.',
