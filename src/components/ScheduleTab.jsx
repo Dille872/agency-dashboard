@@ -1442,6 +1442,23 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setTimeout(() => abwesendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
+  // v4.87.0: Schichtzeit einer Zelle als Minuten (Start/Ende) relativ zu einem
+  // festen Tag — für den Pausen-Hinweis. Ende vor Start = über Mitternacht.
+  // null, wenn keine Zeit hinterlegt ist.
+  const tagNr = (iso) => Math.round(Date.parse(iso + 'T12:00:00Z') / 86400000)
+  const zellSpanne = (mId, dIso, sh, c) => {
+    const txt = ((c && c.time_override) || shiftTimes[`${mId}__${sh}`] || '').replace(/\s*\(DE\)/g, '')
+    const m = txt.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/)
+    if (!m) return null
+    const basis = tagNr(dIso) * 1440
+    const start = basis + (+m[1]) * 60 + (+m[2])
+    let ende = basis + (+m[3]) * 60 + (+m[4])
+    if (ende <= start) ende += 1440
+    return { start, ende }
+  }
+  const PAUSE_MIN_STD = 8 // weniger Ruhezeit zwischen zwei Schichten → Hinweis
+  const kurzTag = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short' })
+
   // v4.83.0: Wer passt in diese Schicht? Für die Karten im Schicht-Fenster.
   const personenFuer = (modelId, dayIso, shift) => {
     const kennt = (name) => {
@@ -1462,7 +1479,31 @@ export default function ScheduleTab({ session, userDisplayName }) {
         const c2 = getCell(m.id, dayIso, shift)
         return c2.chatter === name || (c2.trainee === name && ['co', 'split'].includes(zellModus(c2)))
       }).map(m => m.name)
-      return { name, abwesend, woche: zaehleSchichten(name), andere, gleiche, kennt: kennt(name) }
+      // v4.87.0: Ruhezeit zur Schicht davor (Vortag) und danach (Folgetag).
+      // Nur innerhalb der geladenen Woche — über den Wochenwechsel hinaus
+      // sind die Nachbarschichten nicht bekannt.
+      let pause = null
+      const hier = zellSpanne(modelId, dayIso, shift, getCell(modelId, dayIso, shift))
+      if (hier) {
+        const nachbarn = []
+        for (const off of [-1, 1]) {
+          const d = new Date(dayIso + 'T12:00:00'); d.setDate(d.getDate() + off)
+          const nIso = isoDate(d)
+          if (!weekIsos.includes(nIso)) continue
+          for (const sh of ALL_SHIFTS) for (const m of models) {
+            const c2 = getCell(m.id, nIso, sh)
+            const drin = c2.chatter === name || (c2.trainee === name && ['co', 'split'].includes(zellModus(c2)))
+            if (!drin) continue
+            const sp = zellSpanne(m.id, nIso, sh, c2)
+            if (!sp) continue
+            const luecke = off < 0 ? hier.start - sp.ende : sp.start - hier.ende
+            nachbarn.push({ luecke, text: `${kurzTag(nIso)} ${sh}`, vorher: off < 0 })
+          }
+        }
+        const knapp = nachbarn.filter(n => n.luecke < PAUSE_MIN_STD * 60).sort((a, b) => a.luecke - b.luecke)[0]
+        if (knapp) pause = { std: Math.max(0, Math.round(knapp.luecke / 30) / 2), zu: knapp.text, vorher: knapp.vorher }
+      }
+      return { name, abwesend, woche: zaehleSchichten(name), andere, gleiche, kennt: kennt(name), pause }
     })
   }
 

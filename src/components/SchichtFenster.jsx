@@ -44,6 +44,7 @@ function PersonKarte({ p, gewaehlt, onClick }) {
   const info = []
   if (p.abwesend) info.push(<span key="a" style={{ color: '#fca5a5' }}>🌴 abwesend{p.abwesend.reason ? ` · ${p.abwesend.reason}` : ''}</span>)
   else if (p.andere.length) info.push(<span key="d" style={{ color: '#fcd34d' }}>hat an dem Tag schon {p.andere.join(' + ')}</span>)
+  else if (p.pause) info.push(<span key="p" style={{ color: '#fcd34d' }}>⏱ nur {String(p.pause.std).replace('.', ',')} Std Pause {p.pause.vorher ? 'nach' : 'vor'} {p.pause.zu}</span>)
   else info.push(<span key="f" style={{ color: '#6ee7b7' }}>frei</span>)
   info.push(<span key="w"> · {p.woche} {p.woche === 1 ? 'Schicht' : 'Schichten'} diese Woche</span>)
   if (p.gleiche.length) info.push(<span key="g"> · betreut dann auch {p.gleiche.join(', ')}</span>)
@@ -93,7 +94,7 @@ export default function SchichtFenster({
   const { passt, lieberNicht } = useMemo(() => {
     const liste = personen.filter(p => !q || p.name.toLowerCase().includes(q))
     const passt = liste.filter(p => !p.abwesend && !p.andere.length)
-      .sort((a, b) => (Number(b.kennt || b.gleiche.length > 0) - Number(a.kennt || a.gleiche.length > 0)) || (a.woche - b.woche) || a.name.localeCompare(b.name))
+      .sort((a, b) => (Number(!!a.pause) - Number(!!b.pause)) || (Number(b.kennt || b.gleiche.length > 0) - Number(a.kennt || a.gleiche.length > 0)) || (a.woche - b.woche) || a.name.localeCompare(b.name))
     const lieberNicht = liste.filter(p => p.abwesend || p.andere.length)
       .sort((a, b) => Number(!!a.abwesend) - Number(!!b.abwesend) || a.name.localeCompare(b.name))
     return { passt, lieberNicht }
@@ -165,6 +166,11 @@ export default function SchichtFenster({
           {ichSelbst?.abwesend && (
             <div style={{ fontSize: 12.5, color: '#fecaca', padding: '9px 12px', borderRadius: 12, background: 'rgba(239,68,68,0.09)', border: '1px solid rgba(239,68,68,0.4)' }}>
               🌴 {chatter} ist an dem Tag als abwesend eingetragen{ichSelbst.abwesend.reason ? ` (${ichSelbst.abwesend.reason})` : ''}.
+            </div>
+          )}
+          {ichSelbst?.pause && !ichSelbst?.andere?.length && (
+            <div style={{ fontSize: 12, color: '#fde68a', lineHeight: 1.45, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
+              ⏱ {chatter} hätte nur {String(ichSelbst.pause.std).replace('.', ',')} Std Pause {ichSelbst.pause.vorher ? 'nach' : 'vor'} der Schicht {ichSelbst.pause.zu}.
             </div>
           )}
           {ichSelbst?.andere?.length > 0 && (

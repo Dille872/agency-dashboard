@@ -7,6 +7,25 @@ import MeldeHinweis from './MeldeHinweis'
 const PRIORITY_COLORS = { wichtig: '#ef4444', normal: '#f59e0b', niedrig: '#06b6d4' }
 const PRIORITY_LABELS = { wichtig: 'Wichtig', normal: 'Normal', niedrig: 'Niedrig' }
 
+// v4.87.0: Frist-Helfer (Berliner Datum)
+const heuteIsoB = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
+const plusTageIso = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+const fristLabel = (iso) => {
+  const h = heuteIsoB()
+  if (iso === h) return 'heute'
+  if (iso === plusTageIso(h, 1)) return 'morgen'
+  return new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+}
+// Farbe/Text für die Anzeige in der Liste
+const fristChip = (iso) => {
+  if (!iso) return null
+  const h = heuteIsoB()
+  if (iso < h) return { text: `überfällig · ${fristLabel(iso)}`, farbe: '#ef4444' }
+  if (iso === h) return { text: 'fällig heute', farbe: '#f97316' }
+  if (iso === plusTageIso(h, 1)) return { text: 'fällig morgen', farbe: '#f59e0b' }
+  return { text: `fällig ${fristLabel(iso)}`, farbe: '#06b6d4' }
+}
+
 export default function TodoTab({ session, userDisplayName }) {
   const [todos, setTodos] = useState([])
   const [filter, setFilter] = useState('offen')
@@ -16,6 +35,8 @@ export default function TodoTab({ session, userDisplayName }) {
   const [newDesc, setNewDesc] = useState('')
   const [newPriority, setNewPriority] = useState('normal')
   const [newAssignedTo, setNewAssignedTo] = useState('')
+  const [newDue, setNewDue] = useState('') // v4.87.0: Frist (Spalte todos.due_date), leer = ohne
+  const [dueEigen, setDueEigen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [adminNames, setAdminNames] = useState([])
   const [chatterNames, setChatterNames] = useState([])
@@ -101,27 +122,34 @@ export default function TodoTab({ session, userDisplayName }) {
   const addTodo = async () => {
     if (!newTitle.trim()) return
     setSaving(true)
-    const { error } = await supabase.from('todos').insert({
+    const zeile = {
       title: newTitle.trim(),
       description: newDesc.trim() || null,
       priority: newPriority,
       created_by: userDisplayName,
       assigned_to: newAssignedTo || null,
       read_by: [userDisplayName],
-    })
+    }
+    // v4.87.0: Frist nur mitschicken, wenn gesetzt — ohne Frist klappt es auch,
+    // solange die Spalte due_date noch nicht angelegt ist.
+    if (newDue) zeile.due_date = newDue
+    const { error } = await supabase.from('todos').insert(zeile)
     if (error) {
-      alert('Fehler: ' + error.message)
+      alert(/due_date/.test(error.message || '')
+        ? '⚠ Aufgabe NICHT gespeichert: Die Spalte für die Frist fehlt noch in der Datenbank (sql/todos-frist.sql). Ohne Frist geht es sofort.'
+        : 'Fehler: ' + error.message)
       setSaving(false)
       return
     }
-    await notifyOtherAdmins(`📋 <b>Neue Aufgabe von ${userDisplayName}</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}${newAssignedTo ? '\nFür: ' + newAssignedTo : ''}`)
+    const fristText = newDue ? `\nFällig: ${fristLabel(newDue)}` : ''
+    await notifyOtherAdmins(`📋 <b>Neue Aufgabe von ${userDisplayName}</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}${newAssignedTo ? '\nFür: ' + newAssignedTo : ''}${fristText}`)
     // v3.38.0/v3.40.0: zugewiesene Person (Chatter oder Model) direkt benachrichtigen; Admins erhalten die Info über notifyOtherAdmins
     if (newAssignedTo && !adminNames.includes(newAssignedTo) && assigneeTelegramMap[newAssignedTo]) {
       try {
-        await sendTelegramMessage(assigneeTelegramMap[newAssignedTo], `📋 <b>Neue Aufgabe für dich</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}\nVon: ${userDisplayName}`)
+        await sendTelegramMessage(assigneeTelegramMap[newAssignedTo], `📋 <b>Neue Aufgabe für dich</b>\n\n${newTitle.trim()}${newDesc ? '\n' + newDesc.trim() : ''}\n\nPriorität: ${PRIORITY_LABELS[newPriority]}${fristText}\nVon: ${userDisplayName}`)
       } catch (err) { console.error('Telegram-Fehler:', err) }
     }
-    setNewTitle(''); setNewDesc(''); setNewPriority('normal'); setNewAssignedTo(''); setShowAdd(false)
+    setNewTitle(''); setNewDesc(''); setNewPriority('normal'); setNewAssignedTo(''); setNewDue(''); setDueEigen(false); setShowAdd(false)
     setSaving(false)
   }
 
@@ -254,6 +282,27 @@ export default function TodoTab({ session, userDisplayName }) {
                   </div>
                 </div>
                 <div>
+                  <span style={lbl}>Bis wann?</span>
+                  {(() => {
+                    const h = heuteIsoB()
+                    const wt = new Date(h + 'T12:00:00').getDay() // 0 = So
+                    const sonntag = plusTageIso(h, wt === 0 ? 0 : 7 - wt)
+                    const opts = [['', 'Ohne Frist'], [h, 'Heute'], [plusTageIso(h, 1), 'Morgen'], [sonntag, 'Diese Woche']]
+                    return (
+                      <>
+                        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                          {opts.map(([v, t]) => (
+                            <button key={t} type="button" className="chip-btn" onClick={() => { setNewDue(v); setDueEigen(false) }} style={chip(!dueEigen && newDue === v, '#06b6d4')}>{t}</button>
+                          ))}
+                          <button type="button" className="chip-btn" onClick={() => setDueEigen(true)} style={chip(dueEigen, '#06b6d4')}>Datum …</button>
+                        </div>
+                        {dueEigen && <input type="date" min={h} value={newDue} onChange={e => setNewDue(e.target.value)} style={{ ...feld, marginTop: 8, fontFamily: 'monospace' }} />}
+                        {newDue && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>Fällig {fristLabel(newDue)}</div>}
+                      </>
+                    )
+                  })()}
+                </div>
+                <div>
                   <span style={lbl}>Für wen?</span>
                   <button type="button" className="chip-btn" onClick={() => setNewAssignedTo('')} style={chip(!newAssignedTo, '#10b981')}>Alle / wer Zeit hat</button>
                   {gruppen.map(([titel, namen, farbe]) => (
@@ -285,7 +334,8 @@ export default function TodoTab({ session, userDisplayName }) {
       {(filter === 'alle' || filter === 'offen') && displayed.filter(t => !t.completed).length > 0 && (
         <div style={cardS}>
           <div style={{ fontSize: 15, color: 'var(--text-primary)', fontWeight: 700, marginBottom: 10 }}>Offen · {displayed.filter(t => !t.completed).length}</div>
-          {displayed.filter(t => !t.completed).map(todo => {
+          {/* v4.87.0: mit Frist zuerst, die dringendste oben */}
+          {[...displayed.filter(t => !t.completed)].sort((a, b) => (a.due_date ? 0 : 1) - (b.due_date ? 0 : 1) || String(a.due_date || '').localeCompare(String(b.due_date || ''))).map(todo => {
             const color = PRIORITY_COLORS[todo.priority] || '#f59e0b'
             const unread = isUnread(todo)
             return (
@@ -312,6 +362,7 @@ export default function TodoTab({ session, userDisplayName }) {
                   <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 4, background: color + '22', color }}>{PRIORITY_LABELS[todo.priority]}</span>
                     {todo.assigned_to && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>→ {todo.assigned_to}</span>}
+                    {(() => { const f = fristChip(todo.due_date); return f ? <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 4, background: f.farbe + '22', color: f.farbe }}>⏰ {f.text}</span> : null })()}
                     <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>von {todo.created_by} · {formatDate(todo.created_at)}</span>
                     {unread && (
                       <button onClick={() => markTodoRead(todo)} style={{
