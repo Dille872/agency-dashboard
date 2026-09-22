@@ -68,6 +68,7 @@ export default function SchichtFenster({
   art = 'sheet', model, dayIso, shift, schichtFarbe, standardZeit = '', cell, personen = [], admins = [],
   MODE_META, zellModus, isRecurring, onRecurring, onChatter, onCell, onModus, onLeeren, onAusschreiben,
   reminderAktiv, onReminder, sendingReminder, swapHier, onZu,
+  andereModels = [], onUebernehmen,
 }) {
   const chatter = cell.chatter || ''
   const isFrei = chatter === '__FREI__'
@@ -76,11 +77,16 @@ export default function SchichtFenster({
   const [suche, setSuche] = useState('')
   const [zweiteOffen, setZweiteOffen] = useState(!!cell.trainee)
   const [andereZeit, setAndereZeit] = useState(!!cell.time_override)
+  // v4.85.0: dieselbe Belegung für weitere Models derselben Schicht
+  const [kopieOffen, setKopieOffen] = useState(false)
+  const [kopieZiele, setKopieZiele] = useState([])
+  const [kopieFertig, setKopieFertig] = useState('')
 
   // Neue Zelle angeklickt (Desktop-Leiste bleibt offen) → Zustand zurücksetzen
   const zellKey = `${model?.id}__${dayIso}__${shift}`
   useEffect(() => {
     setWaehlen(!cell.chatter); setSuche(''); setZweiteOffen(!!cell.trainee); setAndereZeit(!!cell.time_override)
+    setKopieOffen(false); setKopieZiele([]); setKopieFertig('')
   }, [zellKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = suche.trim().toLowerCase()
@@ -259,6 +265,57 @@ export default function SchichtFenster({
               </div>
             </div>
           </div>
+          {/* v4.85.0: Gleiche Belegung für weitere Models (gleicher Tag, gleiche Schicht) */}
+          {andereModels.length > 0 && (
+            <div style={{ padding: '12px 13px', borderRadius: 14, background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Auch bei anderen Models</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{chatter}{zweiteAktiv && cell.trainee ? ` + ${cell.trainee}` : ''} · {shift} · gleiche Einstellungen</div>
+                </div>
+                {!kopieOffen && <button type="button" className="chip-btn" onClick={() => { setKopieOffen(true); setKopieFertig('') }} style={chipSt(false)}>+ Model</button>}
+              </div>
+              {kopieFertig && <div style={{ fontSize: 12, color: '#6ee7b7', marginTop: 8 }}>✓ Übernommen für {kopieFertig}</div>}
+              {kopieOffen && (() => {
+                const frei = andereModels.filter(m => !m.belegt)
+                const ziele = andereModels.filter(m => kopieZiele.includes(m.id))
+                return (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {andereModels.map(m => {
+                        const gleich = m.belegt === chatter
+                        const an = kopieZiele.includes(m.id)
+                        const fremd = !!m.belegt && !gleich
+                        return (
+                          <button key={m.id} type="button" className="chip-btn" disabled={gleich}
+                            onClick={() => setKopieZiele(z => z.includes(m.id) ? z.filter(x => x !== m.id) : [...z, m.id])}
+                            style={{ ...chipSt(an, fremd ? '#f59e0b' : LILA), opacity: gleich ? 0.55 : 1, cursor: gleich ? 'default' : 'pointer' }}>
+                            {an ? '✓ ' : '+ '}{m.name}
+                            <span style={{ fontWeight: 500, fontSize: 11.5, color: gleich ? '#6ee7b7' : fremd ? '#fcd34d' : 'var(--text-muted)' }}> · {gleich ? 'schon ' + chatter : m.belegt === '__FREI__' ? 'Freischicht' : m.belegt || 'frei'}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {frei.length > 1 && <button type="button" className="chip-btn" onClick={() => setKopieZiele(frei.map(m => m.id))} style={chipSt(false, '#10b981')}>Alle freien ({frei.length})</button>}
+                      <button type="button" className="chip-btn" onClick={() => { setKopieOffen(false); setKopieZiele([]) }} style={chipSt(false)}>Abbrechen</button>
+                    </div>
+                    {ziele.some(m => m.belegt && m.belegt !== chatter) && (
+                      <div style={{ fontSize: 11.5, color: '#fde68a' }}>⚠ Bei {ziele.filter(m => m.belegt && m.belegt !== chatter).map(m => m.name).join(', ')} steht schon jemand — du wirst vorm Überschreiben gefragt.</div>
+                    )}
+                    <button type="button" className="gross-btn" disabled={ziele.length === 0}
+                      onClick={() => {
+                        const erledigt = onUebernehmen(ziele.map(m => m.id))
+                        if (erledigt && erledigt.length) { setKopieFertig(erledigt.join(', ')); setKopieOffen(false); setKopieZiele([]) }
+                      }}
+                      style={{ padding: 12, borderRadius: 12, border: 'none', background: LILA, color: '#fff', fontWeight: 800, fontSize: 14, fontFamily: 'inherit', cursor: ziele.length ? 'pointer' : 'default', opacity: ziele.length ? 1 : 0.45 }}>
+                      {ziele.length ? `Für ${ziele.length} ${ziele.length === 1 ? 'Model' : 'Models'} übernehmen` : 'Models antippen'}
+                    </button>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
           <button type="button" className="chip-btn" onClick={onAusschreiben} style={{ ...chipSt(!!swapHier, '#f59e0b'), alignSelf: 'flex-start' }}>🔄 {swapHier ? 'Ist ausgeschrieben — nochmal' : 'Ausschreiben (zum Tausch anbieten)'}</button>
         </>
       )}

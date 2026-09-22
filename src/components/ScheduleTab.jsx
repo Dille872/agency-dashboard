@@ -1454,6 +1454,43 @@ export default function ScheduleTab({ session, userDisplayName }) {
     })
   }
 
+  // v4.85.0: Belegung einer Zelle für weitere Models derselben Schicht übernehmen.
+  // Kopiert Chatter, Modus, zweite Person, Split-Zeiten, Notiz und „Bestätigt“ —
+  // NICHT die abweichende Zeit (time_override), weil jedes Model eigene
+  // Schichtzeiten hat. Belegte Zellen werden nur nach Rückfrage überschrieben.
+  // Gibt die Namen der tatsächlich geänderten Models zurück.
+  const uebernehmeBelegung = (vonModelId, dayIso, shift, zielIds) => {
+    const quelle = getCell(vonModelId, dayIso, shift)
+    if (!quelle.chatter) return []
+    const ziele = models.filter(m => zielIds.includes(m.id))
+    const belegt = ziele.filter(m => { const c = getCell(m.id, dayIso, shift); return c.chatter && c.chatter !== quelle.chatter })
+    let erlaubt = ziele
+    if (belegt.length) {
+      const liste = belegt.map(m => { const c = getCell(m.id, dayIso, shift); return `• ${m.name}: ${c.chatter === '__FREI__' ? 'Freischicht' : c.chatter}${c.trainee ? ` + ${c.trainee}` : ''}` }).join('\n')
+      const ueberschreiben = window.confirm(`Bei ${belegt.length === 1 ? 'diesem Model' : 'diesen Models'} ist die Schicht schon belegt:\n\n${liste}\n\nÜberschreiben?`)
+      if (!ueberschreiben) {
+        erlaubt = ziele.filter(m => !belegt.includes(m))
+        if (!erlaubt.length) return []
+        if (!window.confirm(`Dann nur bei den freien übernehmen (${erlaubt.map(m => m.name).join(', ')})?`)) return []
+      }
+    }
+    for (const m of erlaubt) {
+      const alt = getCell(m.id, dayIso, shift)
+      const neu = {
+        ...alt,
+        chatter: quelle.chatter,
+        note: quelle.note || '',
+        confirmed: quelle.confirmed !== false,
+        trainee: quelle.trainee || null,
+        trainee_mode: quelle.trainee_mode || null,
+        split_a_von: quelle.split_a_von || null, split_a_bis: quelle.split_a_bis || null,
+        split_b_von: quelle.split_b_von || null, split_b_bis: quelle.split_b_bis || null,
+      }
+      setCell(m.id, dayIso, shift, neu)
+    }
+    return erlaubt.map(m => m.name)
+  }
+
   const openSwapMap = {}
   for (const s of openSwaps) {
     const key = `${s.model_name}__${s.shift_date}__${s.shift}`
@@ -2117,6 +2154,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
             sendingReminder={sendingReminder}
             swapHier={openSwapMap[`${model.name}__${dayIso}__${shift}`]}
             onZu={() => setEditSheet(null)}
+            andereModels={models.filter(m => m.id !== modelId).map(m => ({ id: m.id, name: m.name, belegt: getCell(m.id, dayIso, shift).chatter || '' }))}
+            onUebernehmen={(ids) => uebernehmeBelegung(modelId, dayIso, shift, ids)}
           />
         )
       })()}
