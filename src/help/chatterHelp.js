@@ -239,6 +239,22 @@ export const HELP_TOPICS = [
     ],
   },
   {
+    id: 'wermachtwas',
+    icon: '🧩',
+    tab: 'models',
+    title: 'Wer macht was',
+    short: 'Alle deine Models nebeneinander: Angebot, Preise, No Gos.',
+    body: [
+      'Betreust du mehrere Models, stehen sie hier in einer Tabelle nebeneinander: was sie anbieten (✓ / ✕), ihre Preise und ihre No Gos. So musst du nicht zwischen den Boards hin- und herspringen.',
+      'Ist ein Model gerade auf Reise und hat etwas unter „geht nicht" angetippt, steht dort „✕ (Reise)" — auch wenn es das sonst anbietet.',
+      'Die Suche oben filtert alle Zeilen, z. B. nach „Füße" oder „Video". Einen Namen antippen öffnet das ganze Board dieses Models darunter.',
+    ],
+    watch: [
+      '„–" heißt: nicht eingetragen — nicht automatisch erlaubt. Im Zweifel im ganzen Board nachsehen oder fragen.',
+      'Bei nur einem Model wird die Tabelle nicht angezeigt.',
+    ],
+  },
+  {
     id: 'models',
     icon: '🎬',
     tab: 'models',

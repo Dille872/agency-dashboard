@@ -24,6 +24,7 @@ import HelpFab from './HelpFab'
 import { HELP_TOPICS as MODEL_HELP, TOUR_IDS as MODEL_TOUR } from '../help/modelHelp'
 import { heuteBerlin } from '../utils' // v4.57.0
 import ModelSteckbrief from './ModelSteckbrief' // v4.77.0
+import ModelKalender from './ModelKalender' // v4.78.0
 import { reiseHeute } from '../modelLage' // v4.77.0
 
 const CATEGORIES = [
@@ -1431,74 +1432,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {activeSection === 'kalender' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <SektionsKopf id="kalender" titel="Kalender" />
-            <div style={cardS}>
-              <div style={{ ...labelS, marginBottom: 16 }}><span style={{ width: 3, height: 11, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />Neuer Eintrag</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Titel *</label>
-                  <input value={calTitle} onChange={e => setCalTitle(e.target.value)} style={inputS} placeholder="z.B. Content-Anfrage erledigen" />
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Kategorie</label>
-                  <select value={calCategory} onChange={e => setCalCategory(e.target.value)} style={{ ...inputS }}>
-                    {CAL_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Fällig am *</label>
-                  <input type="date" value={calDate} onChange={e => setCalDate(e.target.value)} style={inputS} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Uhrzeit</label>
-                  <input type="time" value={calTime} onChange={e => setCalTime(e.target.value)} style={inputS} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Erinnerung</label>
-                  <select value={calReminder} onChange={e => setCalReminder(e.target.value)} style={inputS}>
-                    <option value="">Keine Erinnerung</option>
-                    <option value="1">1 Stunde vorher</option>
-                    <option value="3">3 Stunden vorher</option>
-                    <option value="12">12 Stunden vorher</option>
-                    <option value="24">24 Stunden vorher</option>
-                    <option value="48">2 Tage vorher</option>
-                  </select>
-                </div>
-              </div>
-              <input value={calDesc} onChange={e => setCalDesc(e.target.value)} style={{ ...inputS, marginBottom: 10 }} placeholder="Beschreibung (optional)" />
-              <button onClick={addCalItem} disabled={saving || !calTitle.trim() || !calDate}
-                style={{ background: calTitle.trim() && calDate ? '#7c3aed' : 'var(--border)', color: calTitle.trim() && calDate ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 7, padding: '8px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                + Eintrag speichern
-              </button>
-            </div>
-
-            {calItems.length === 0 ? (
-              <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>Noch keine Kalender-Einträge</div>
-            ) : calItems.map(item => {
-              const cat = CAL_CATEGORIES.find(c => c.key === item.category)
-              const isOverdue = item.due_date < today
-              const isToday = item.due_date === today
-              return (
-                <div key={item.id} style={{ ...cardS, borderLeft: `4px solid ${isOverdue ? '#ef4444' : cat?.color || '#7c3aed'}`, borderRadius: '0 10px 10px 0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: isOverdue ? '#ef4444' : 'var(--text-primary)' }}>{item.title}</span>
-                        <span style={{ fontSize: 10, background: `${cat?.color}20`, color: cat?.color, padding: '1px 7px', borderRadius: 4, fontWeight: 600 }}>{cat?.label}</span>
-                        {item.reminder_hours && <span style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', padding: '1px 7px', borderRadius: 4 }}>🔔 {item.reminder_hours}h vorher</span>}
-                      </div>
-                      {item.description && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{item.description}</div>}
-                      <div style={{ fontSize: 11, fontFamily: 'monospace', color: isOverdue ? '#ef4444' : isToday ? '#10b981' : 'var(--text-muted)' }}>
-                        {isOverdue ? '⚠ Überfällig · ' : isToday ? '● Heute · ' : ''}
-                        {new Date(item.due_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                        {item.due_time && <span style={{ color: '#a78bfa' }}> · {item.due_time.slice(0, 5)} Uhr</span>}
-                      </div>
-                    </div>
-                    <button onClick={() => deleteCalItem(item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
-                      onMouseEnter={e => e.target.style.color = '#ef4444'} onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
-                  </div>
-                </div>
-              )
-            })}
+            {/* v4.78.0: neuer Look — Wochenstreifen, Karten, „+ Neu" (ModelKalender.jsx) */}
+            <ModelKalender displayName={displayName} items={calItems} onGeaendert={loadCalendar} />
           </div>
         )}
 

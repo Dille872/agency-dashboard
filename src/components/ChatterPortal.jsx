@@ -11,6 +11,7 @@ import MessageSuggestions from './MessageSuggestions'
 import MeinKalender from './MeinKalender' // v4.60.0
 import ZeitzonenHinweis from './ZeitzonenHinweis' // v4.63.0
 import HeuteModels, { ModelNeuFenster } from './HeuteModels' // v4.75.0 / v4.76.0
+import WerMachtWas from './WerMachtWas' // v4.78.0
 import { useGelesen } from '../gelesen' // v4.76.0
 import { useModelLage, zustand, reiseHeute } from '../modelLage' // v4.75.0
 import { getTheme, setTheme } from '../theme'
@@ -2519,7 +2520,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             Stats vom {new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
           </div>
         )}
-        <div data-help="cockpit" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12 }}>
+        <div data-help="cockpit" className="kpi-mini-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12 }}>
           {[
             { label: 'Revenue', val: formatMoney(chatterStats?.revenue || 0), good: revDelta >= 0, accent: '#10b981' },
             { label: 'Buy Rate', val: chatterStats ? `${(chatterStats.buyRate || 0).toFixed(0)}%` : '—', good: (chatterStats?.buyRate || 0) >= 25, accent: '#06b6d4' },
@@ -2951,6 +2952,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* v3.81.0: KI-Nachrichten-Vorschläge · v3.95.0: im Models-Tab.
             display:none statt Ausbau — sonst gingen erzeugte Vorschläge beim Tab-Wechsel verloren. */}
+        {/* v4.78.0: Alle eigenen Models nebeneinander (WerMachtWas.jsx) */}
+        {tab === 'models' && (
+          <div data-help="wermachtwas">
+            <WerMachtWas namen={Object.keys(assignedModelBoards)} boards={assignedModelBoards} services={assignedServices}
+              models={models} aenderungen={modelLage.aenderungen}
+              onBoard={(n) => {
+                setSelectedModelInfo(n); openPanel('models')
+                setTimeout(() => document.querySelector('[data-help="models"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+              }} />
+          </div>
+        )}
         <div data-help="suggestions" style={{ display: tab === 'models' ? 'block' : 'none' }}>
           <MessageSuggestions displayName={displayName} />
         </div>
