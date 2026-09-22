@@ -12,6 +12,7 @@ import MeinKalender from './MeinKalender' // v4.60.0
 import ZeitzonenHinweis from './ZeitzonenHinweis' // v4.63.0
 import HeuteModels, { ModelNeuFenster } from './HeuteModels' // v4.75.0 / v4.76.0
 import WerMachtWas from './WerMachtWas' // v4.78.0
+import CustomAnfrageFenster from './CustomAnfrageFenster' // v4.81.0
 import { useGelesen } from '../gelesen' // v4.76.0
 import { useModelLage, zustand, reiseHeute } from '../modelLage' // v4.75.0
 import { getTheme, setTheme } from '../theme'
@@ -41,6 +42,13 @@ const CONTENT_TYPE_META = {
   audio:     { label: 'Sprachnachricht', live: false, showImages: false, showOutfit: false, showQuantity: true,  durLabel: 'Länge / Anzahl', durPlaceholder: '2 Min' },
   bild:      { label: 'Bild',            live: false, showImages: true,  showOutfit: true,  showQuantity: true,  durLabel: 'Anzahl',         durPlaceholder: '' },
   sonstiges: { label: 'Sonstiges',       live: false, showImages: true,  showOutfit: true,  showQuantity: true,  durLabel: 'Länge / Anzahl', durPlaceholder: '' },
+}
+// v4.81.0: Filter für die Anfrage-Liste im Chatter-Portal
+const ANFRAGE_FILTER = {
+  offen: (st) => st === 'neu' || st === 'angefragt',
+  bestaetigt: (st) => st === 'bestaetigt',
+  erledigt: (st) => st === 'erledigt' || st === 'abgelehnt',
+  alle: () => true,
 }
 // Label-Helfer (fällt auf den rohen Key zurück, falls ein alter/unbekannter Typ auftaucht)
 const contentTypeLabel = (t) => (CONTENT_TYPE_META[t]?.label || t || '')
@@ -592,6 +600,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [announcements, setAnnouncements] = useState([])
   const [showAnnArchive, setShowAnnArchive] = useState(false)
   const [showNewRequestForm, setShowNewRequestForm] = useState(false)
+  const [anfrageFilter, setAnfrageFilter] = useState(null) // v4.81.0: null = automatisch (Offen, wenn es offene gibt)
   // Content-Ideen
   const [contentIdeas, setContentIdeas] = useState([])
   // v3.2.0: Guidelines (von Admin gepflegt, hier nur lesen)
@@ -843,14 +852,15 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     loadContentIdeas()
   }
 
+  // v4.81.0: gibt true/false zurück — das neue Anfrage-Fenster schließt nur bei Erfolg
   const submitContentRequest = async () => {
-    if (!newRequestModel || !newRequestText.trim()) return
+    if (!newRequestModel || !newRequestText.trim()) return false
     // v3.73.0: Ohne gültigen Namen kann chatter_name (NOT NULL) nicht gesetzt werden ->
     // der Insert würde still abgelehnt, während Telegram trotzdem raus ginge. Deshalb hier
     // hart abbrechen und den User bitten, sich neu einzuloggen bzw. den Namen setzen zu lassen.
     if (!displayName || !displayName.trim()) {
       alert('⚠️ Dein Anzeigename fehlt – die Anfrage kann nicht gespeichert werden.\n\nBitte einmal ab- und wieder anmelden. Wenn das nicht hilft, meldet sich ein Admin (Name muss im Profil hinterlegt werden).')
-      return
+      return false
     }
     setSendingRequest(true)
 
@@ -946,7 +956,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           '\n\nEs wurde KEINE Telegram-Benachrichtigung gesendet und die Eingaben bleiben erhalten.' +
           '\nBitte einen Screenshot dieser Meldung an einen Admin schicken.'
         )
-        return
+        return false
       }
 
       // Ab hier: Insert war erfolgreich -> Admins per Telegram benachrichtigen
@@ -978,9 +988,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       setNewRequestQuantity('1'); setNewRequestCustomerId(''); setNewRequestImages([]); setNewRequestDeadline('asap')
       await loadContentRequests()
       alert('✓ Anfrage gesendet!')
+      return true
     } catch (e) {
       console.error('content_requests-Insert Ausnahme:', e)
       alert('⚠️ Anfrage konnte nicht gesendet werden (Netzwerk-/Serverfehler). Bitte erneut versuchen.')
+      return false
     } finally {
       // v3.72.0: Button immer wieder freigeben — vorher blieb er bei Fehlern gesperrt.
       setSendingRequest(false)
@@ -3095,193 +3107,60 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {/* Content Requests */}
         <Collapsible helpId="content" hidden={tab !== 'content'} isCollapsed={collapsed.content} onToggle={() => toggleCollapse('content')} icon="🎬" title="Custom Content" badge={contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length || null} badgeColor="#06b6d4">
         <div>
-            {!showNewRequestForm ? (
-              <button onClick={() => setShowNewRequestForm(true)} style={{
-                width: '100%', padding: '10px 14px', borderRadius: 11,
-                background: 'rgba(124,58,237,0.1)', border: '1px dashed rgba(124,58,237,0.3)',
-                color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit',
-                fontWeight: 600, fontSize: 13, marginBottom: 12
-              }}>+ Neue Content-Anfrage erstellen</button>
-            ) : (
-            <div style={{ background: 'var(--bg-card2)', borderRadius: 11, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Neue Anfrage</div>
-              <button onClick={() => setShowNewRequestForm(false)} style={{
-                background: 'transparent', border: 'none', color: 'var(--text-muted)',
-                cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', padding: 0
-              }}>✕</button>
-            </div>
-            {/* v3.50.0: Typ-Auswahl (volle Breite, 6 Typen inkl. Live-Leistungen 🔴) */}
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Typ *</label>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                {Object.entries(CONTENT_TYPE_META).map(([k, meta]) => (
-                  <button key={k} onClick={() => setNewRequestType(k)} style={{
-                    flex: '1 1 28%', minWidth: 88, padding: '6px 4px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
-                    background: newRequestType === k ? 'rgba(124,58,237,0.2)' : 'transparent',
-                    color: newRequestType === k ? '#a78bfa' : 'var(--text-muted)',
-                    border: `1px solid ${newRequestType === k ? '#7c3aed' : 'var(--border)'}`,
-                  }}>{meta.live ? '🔴 ' : ''}{meta.label}</button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Model / Profil *</label>
-                <select value={newRequestProfile} onChange={e => {
-                    const pn = e.target.value
-                    const opt = profileOptions.find(o => o.profileName === pn)
-                    setNewRequestProfile(pn)
-                    setNewRequestModel(opt ? opt.modelName : '')
-                  }}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
-                  <option value="">— wählen —</option>
-                  {Object.entries(profileOptionsByModel).map(([modelName, opts]) => (
-                    (opts.length === 1 && opts[0].profileName === modelName)
-                      ? <option key={modelName} value={opts[0].profileName}>{modelName}</option>
-                      : <optgroup key={modelName} label={modelName}>
-                          {opts.map(o => <option key={o.profileName} value={o.profileName}>{o.profileName}</option>)}
-                        </optgroup>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Kundennummer</label>
-                <input value={newRequestCustomerId} onChange={e => setNewRequestCustomerId(e.target.value)}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                  placeholder="#FAN-xxxx" />
-              </div>
-            </div>
-
-            {/* v3.50.0: Bezahl-Status als 3-Stufen-Umschalter (mappt intern auf deposit_paid / remainder_paid) */}
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Bezahlung</label>
-              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-                {[['anfrage','Anfrage','#a78bfa'],['angezahlt','Angezahlt','#f59e0b'],['bezahlt','Bezahlt','#10b981']].map(([k,l,c]) => (
-                  <button key={k} onClick={() => setNewRequestPayStatus(k)} style={{
-                    flex: 1, padding: '6px 4px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
-                    background: newRequestPayStatus === k ? c + '22' : 'transparent',
-                    color: newRequestPayStatus === k ? c : 'var(--text-muted)',
-                    border: `1px solid ${newRequestPayStatus === k ? c : 'var(--border)'}`,
-                  }}>{l}</button>
-                ))}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: newRequestPayStatus === 'angezahlt' ? '1fr 1fr' : '1fr', gap: 8 }}>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Gesamtpreis</label>
-                  <input type="number" value={newRequestPrice} onChange={e => setNewRequestPrice(e.target.value)}
-                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                    placeholder="$0" />
-                </div>
-                {newRequestPayStatus === 'angezahlt' && (
-                  <div>
-                    <label style={{ fontSize: 10, color: '#f59e0b', display: 'block', marginBottom: 3 }}>Anzahlung erhalten</label>
-                    <input type="number" value={newRequestDeposit} onChange={e => setNewRequestDeposit(e.target.value)}
-                      style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #f59e0b55', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                      placeholder="$0" />
-                  </div>
-                )}
-              </div>
-              {newRequestPayStatus === 'angezahlt' && !(parseFloat(newRequestDeposit) > 0) && (
-                <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4 }}>Bitte Anzahlungsbetrag eintragen, sonst wird nichts als bezahlt markiert.</div>
-              )}
-            </div>
-
-            {/* Länge / Anzahl – Label & Felder je nach Typ */}
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{(CONTENT_TYPE_META[newRequestType] || {}).durLabel || 'Länge / Anzahl'}</label>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input value={newRequestDuration} onChange={e => setNewRequestDuration(e.target.value)}
-                  style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                  placeholder={(CONTENT_TYPE_META[newRequestType] || {}).durPlaceholder || ''} />
-                {(CONTENT_TYPE_META[newRequestType] || {}).showQuantity && (
-                  <input type="number" value={newRequestQuantity} onChange={e => setNewRequestQuantity(e.target.value)} min="1"
-                    style={{ width: 60, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                    placeholder="1" />
-                )}
-              </div>
-            </div>
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Wunsch des Kunden *</label>
-              <textarea value={newRequestText} onChange={e => setNewRequestText(e.target.value)} rows={2}
-                placeholder="Was möchte der Kunde genau?"
-                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
-            </div>
-
-            {/* v3.50.0: Outfit (nur bei sichtbaren/visuellen Typen) */}
-            {(CONTENT_TYPE_META[newRequestType] || {}).showOutfit && (
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Outfit</label>
-                <input value={newRequestOutfit} onChange={e => setNewRequestOutfit(e.target.value)}
-                  placeholder="z.B. rotes Kleid, Dessous, casual …"
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
-              </div>
+            {/* v4.81.0: Die Anfrage läuft jetzt über ein Fenster in 4 Schritten
+                (CustomAnfrageFenster.jsx). Gleiche Felder, gleiche Speicherung. */}
+            <button onClick={() => setShowNewRequestForm(true)} style={{
+              width: '100%', padding: '13px 14px', borderRadius: 13,
+              background: '#7c3aed', border: 'none',
+              color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
+              fontWeight: 800, fontSize: 14, marginBottom: 12
+            }}>+ Neue Custom-Anfrage</button>
+            {showNewRequestForm && (
+              <CustomAnfrageFenster
+                typMeta={CONTENT_TYPE_META}
+                f={{
+                  type: newRequestType, model: newRequestModel, profile: newRequestProfile, customerId: newRequestCustomerId,
+                  duration: newRequestDuration, quantity: newRequestQuantity, text: newRequestText, outfit: newRequestOutfit,
+                  special: newRequestSpecial, images: newRequestImages, price: newRequestPrice, payStatus: newRequestPayStatus,
+                  deposit: newRequestDeposit, deadline: newRequestDeadline,
+                }}
+                set={{
+                  type: setNewRequestType, model: setNewRequestModel, profile: setNewRequestProfile, customerId: setNewRequestCustomerId,
+                  duration: setNewRequestDuration, quantity: setNewRequestQuantity, text: setNewRequestText, outfit: setNewRequestOutfit,
+                  special: setNewRequestSpecial, images: setNewRequestImages, price: setNewRequestPrice, payStatus: setNewRequestPayStatus,
+                  deposit: setNewRequestDeposit, deadline: setNewRequestDeadline,
+                }}
+                meineModels={Object.keys(assignedModelBoards).filter(n => profileOptionsByModel[n])}
+                profileOptionsByModel={profileOptionsByModel}
+                boards={assignedModelBoards} services={assignedServices} models={models}
+                kundenHistorie={customerHistory}
+                sending={sendingRequest}
+                onSenden={async () => { if (await submitContentRequest()) setShowNewRequestForm(false) }}
+                onZu={() => { if (!sendingRequest) setShowNewRequestForm(false) }}
+              />
             )}
 
-            {/* v3.50.0: Besonderheiten (immer) */}
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Besonderheiten</label>
-              <textarea value={newRequestSpecial} onChange={e => setNewRequestSpecial(e.target.value)} rows={2}
-                placeholder="z.B. Name nennen, bestimmte Ansprache, No-Gos, Requisiten …"
-                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
-            </div>
-
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Dringlichkeit</label>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                {[['asap','⚡ So schnell wie möglich','#ef4444'],['hours','⏰ In den nächsten Stunden','#f97316'],['days','📅 1-2 Tage','#f59e0b'],['week','🗓 Diese Woche','#10b981']].map(([k,l,c]) => (
-                  <button key={k} onClick={() => setNewRequestDeadline(k)} style={{
-                    padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
-                    background: newRequestDeadline === k ? c + '22' : 'transparent',
-                    color: newRequestDeadline === k ? c : 'var(--text-muted)',
-                    border: `1px solid ${newRequestDeadline === k ? c : 'var(--border)'}`,
-                  }}>{l}</button>
+          {/* Request history — v4.81.0 mit Filtern */}
+          {contentRequests.length > 0 && (() => {
+            const zahl = (k) => contentRequests.filter(r => ANFRAGE_FILTER[k](r.status)).length
+            const aktiv = anfrageFilter || (zahl('offen') > 0 ? 'offen' : 'alle')
+            return (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                {[['offen', 'Offen'], ['bestaetigt', 'Bestätigt'], ['erledigt', 'Erledigt'], ['alle', 'Alle']].map(([k, l]) => (
+                  <button key={k} type="button" className="chip-btn" onClick={() => setAnfrageFilter(k)} style={{
+                    fontSize: 12.5, padding: '6px 12px', borderRadius: 20, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                    background: aktiv === k ? 'rgba(124,58,237,0.2)' : 'transparent', border: `1px solid ${aktiv === k ? '#7c3aed' : 'var(--border)'}`,
+                    color: aktiv === k ? '#c4b5fd' : 'var(--text-secondary)',
+                  }}>{l}{k !== 'alle' && zahl(k) > 0 ? ` ${zahl(k)}` : ''}</button>
                 ))}
               </div>
-            </div>
-
-            {/* Image upload – v3.50.0: nur bei Typen, wo Referenzbilder sinnvoll sind */}
-            {(CONTENT_TYPE_META[newRequestType] || {}).showImages && (
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Referenzbilder (optional · max. 5)</label>
-              <label style={{ display: 'block', border: '1.5px dashed #2e2e5a', borderRadius: 10, padding: '10px', textAlign: 'center', cursor: 'pointer', background: 'var(--bg-input)' }}>
-                <input type="file" accept="image/*" multiple style={{ display: 'none' }}
-                  onChange={e => {
-                    const files = Array.from(e.target.files).slice(0, 5)
-                    setNewRequestImages(prev => [...prev, ...files].slice(0, 5))
-                    e.target.value = ''
-                  }} />
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>+ Bilder auswählen</span>
-              </label>
-              {newRequestImages.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                  {newRequestImages.map((file, i) => (
-                    <div key={i} style={{ position: 'relative' }}>
-                      <img src={URL.createObjectURL(file)} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid #2e2e5a' }} />
-                      <button onClick={() => setNewRequestImages(prev => prev.filter((_, j) => j !== i))}
-                        style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#ef4444', border: 'none', color: '#fff', fontSize: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            )}
-
-            <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim()} style={{
-              width: '100%', background: (newRequestModel && newRequestText.trim()) ? '#06b6d4' : 'var(--border)',
-              color: (newRequestModel && newRequestText.trim()) ? '#fff' : 'var(--text-muted)',
-              border: 'none', borderRadius: 10, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            }}>{sendingRequest ? 'Bilder werden hochgeladen...' : '+ Anfrage senden'}</button>
-          </div>
-          )}
-
-          {/* Request history */}
+            )
+          })()}
           {contentRequests.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>Keine Anfragen in den letzten 2 Wochen</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {contentRequests.map(req => {
+              {contentRequests.filter(r => ANFRAGE_FILTER[anfrageFilter || (contentRequests.some(x => ANFRAGE_FILTER.offen(x.status)) ? 'offen' : 'alle')](r.status)).map(req => {
                 const statusColor = req.status === 'erledigt' ? '#10b981' : req.status === 'bestaetigt' ? '#06b6d4' : req.status === 'angefragt' ? '#f59e0b' : req.status === 'abgelehnt' ? '#ef4444' : '#a78bfa'
                 const statusLabel = req.status === 'erledigt' ? '✓ Erledigt' : req.status === 'bestaetigt' ? '✓ Bestätigt' : req.status === 'angefragt' ? '⏳ Angefragt' : req.status === 'abgelehnt' ? '✕ Abgelehnt' : '● Neu'
                 const remainder = (req.price || 0) - (req.deposit || 0)
