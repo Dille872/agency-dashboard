@@ -803,12 +803,24 @@ export default function ScheduleTab({ session, userDisplayName }) {
     const nextKey = isoDate(next)
     const nextKw = getKW(next)
     const newA = {}
+    let woechentlichBestaetigt = 0
     for (const [key, val] of Object.entries(schedule)) {
       const parts = key.split('__')
       const d = new Date(parts[1] + 'T00:00:00'); d.setDate(d.getDate() + 7)
       const newKey = `${parts[0]}__${isoDate(d)}__${parts[2]}`
       // Freischichten unverändert lassen — die brauchen keine Klärung
-      newA[newKey] = (aufKlaerung && val && val.chatter && val.chatter !== '__FREI__') ? { ...val, confirmed: false } : val
+      if (aufKlaerung && val && val.chatter && val.chatter !== '__FREI__') {
+        // v4.86.0: Wer an genau diesem Wochentag, in dieser Schicht und bei diesem
+        // Model als „wöchentlich“ eingetragen ist, bleibt bestätigt — das ist ja
+        // schon fest abgesprochen. Alle anderen gehen auf „Klärung nötig“.
+        const dow = d.getDay() === 0 ? 6 : d.getDay() - 1
+        const wdh = recurring[getRecurringKey(parts[0], dow, parts[2])]
+        const fest = !!wdh && wdh.chatter === val.chatter
+        if (fest) woechentlichBestaetigt++
+        newA[newKey] = fest ? { ...val, confirmed: true } : { ...val, confirmed: false }
+      } else {
+        newA[newKey] = val
+      }
     }
     const { data: rows, error: ladeFehler } = await supabase.from('schedule').select('*').eq('week_start', nextKey).order('id')
     if (ladeFehler) { alert('⚠ KW ' + nextKw + ' konnte nicht geladen werden: ' + ladeFehler.message); return }
@@ -829,7 +841,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
       }
       shift_times = { ...shiftTimes, ...(ex.shift_times || {}) } // bestehende Zeiten haben Vorrang
     } else {
-      if (!window.confirm(`Plan auf KW ${nextKw} übertragen${aufKlaerung ? ' und alle Schichten auf "Klärung nötig" setzen' : ''}?`)) return
+      if (!window.confirm(`Plan auf KW ${nextKw} übertragen${aufKlaerung ? ` und alle Schichten auf "Klärung nötig" setzen${woechentlichBestaetigt ? ` — außer ${woechentlichBestaetigt} wöchentlich feste, die bleiben bestätigt` : ''}` : ''}?`)) return
       assignments = newA
       shift_times = ex ? { ...shiftTimes, ...(ex.shift_times || {}) } : shiftTimes
       ergaenzt = Object.keys(newA).length
@@ -841,7 +853,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setWeekStart(next)
     alert(ex && belegt > 0
       ? `✓ ${ergaenzt} leere Schicht(en) in KW ${nextKw} ergänzt — Bestehendes unverändert.`
-      : `✓ Plan auf KW ${nextKw} übertragen${aufKlaerung ? ' — alle Schichten auf "Klärung nötig"' : ''}!`)
+      : `✓ Plan auf KW ${nextKw} übertragen${aufKlaerung ? ` — Schichten auf "Klärung nötig"${woechentlichBestaetigt ? `, ${woechentlichBestaetigt} wöchentlich feste bleiben bestätigt` : ''}` : ''}!`)
   }
 
   const [autoPlanning, setAutoPlanning] = useState(false)
@@ -1623,7 +1635,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
               {zeile('⚡', '#f59e0b', autoPlanning ? 'Plane …' : 'Auto-Plan', 'offene Schichten automatisch vorschlagen lassen', autoGeneratePlan, autoPlanning)}
               <div style={lblM}>Nächste Woche</div>
               {zeile('↻', '#a78bfa', 'Als Vorlage übernehmen', `KW ${kw + 1 > 53 ? 1 : kw + 1} startet mit diesem Plan (nur leere Zellen)`, () => alsVorlageUebertragen(false))}
-              {zeile('↻', '#f59e0b', 'Vorlage + alles auf Klärung', 'wie oben, aber jeder muss neu bestätigen', () => alsVorlageUebertragen(true))}
+              {zeile('↻', '#f59e0b', 'Vorlage + alles auf Klärung', 'wie oben, aber jeder muss neu bestätigen — wöchentlich feste bleiben bestätigt', () => alsVorlageUebertragen(true))}
               <div style={lblM}>Nachschauen</div>
               {zeile('🕑', '#8888aa', 'Verlauf', 'wann der Plan an wen verschickt wurde', () => { setLogModalOpen(true); loadSendLog() })}
             </div>
