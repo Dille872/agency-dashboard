@@ -11,6 +11,7 @@ const PORTALE = [
     name: 'Chatter-Portal',
     portal: 'src/components/ChatterPortal.jsx',
     help: 'src/help/chatterHelp.js',
+    extra: ['src/components/ChatterOrga.jsx'], // v4.82.0: Anker absence/swap sitzen dort
     collapsible: true,
     ankerlos: ['ueberblick', 'angebote', 'bell', 'chat', 'pinnwand', 'zeitzone'], // zeitzone: Hinweis sitzt in ZeitzonenHinweis.jsx
   },
@@ -43,7 +44,7 @@ function tags(src, name) {
 let fehlerGesamt = 0
 
 for (const cfg of PORTALE) {
-  const portal = readFileSync(cfg.portal, 'utf8')
+  const portal = [cfg.portal, ...(cfg.extra || [])].map(f => readFileSync(f, 'utf8')).join('\n')
   const help = readFileSync(cfg.help, 'utf8')
   const ankerlos = new Set(cfg.ankerlos)
 

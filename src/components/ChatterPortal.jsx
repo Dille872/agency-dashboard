@@ -13,6 +13,8 @@ import ZeitzonenHinweis from './ZeitzonenHinweis' // v4.63.0
 import HeuteModels, { ModelNeuFenster } from './HeuteModels' // v4.75.0 / v4.76.0
 import WerMachtWas from './WerMachtWas' // v4.78.0
 import CustomAnfrageFenster from './CustomAnfrageFenster' // v4.81.0
+import ChatterOrga from './ChatterOrga' // v4.82.0
+import ContentIdeeFenster from './ContentIdeeFenster' // v4.82.0
 import { useGelesen } from '../gelesen' // v4.76.0
 import { useModelLage, zustand, reiseHeute } from '../modelLage' // v4.75.0
 import { getTheme, setTheme } from '../theme'
@@ -213,128 +215,7 @@ function getKW(date) {
   return Math.ceil(((d - onejan) / 86400000 + onejan.getDay() + 1) / 7)
 }
 
-function SwapRequestForm({ displayName, myNext7Shifts }) {
-  const [swapShift, setSwapShift] = useState('')
-  const [swapReason, setSwapReason] = useState('')
-  const [sending, setSending] = useState(false)
-  const [mySwaps, setMySwaps] = useState([])
-
-  const loadMySwaps = async () => {
-    if (!displayName) return
-    // v4.22.0: 'abgelaufen' ist für den Chatter kein Ergebnis, sondern Rauschen —
-    // die Schicht hat begonnen und bleibt bei ihm. Für Admins bleibt der Eintrag
-    // unter „Schicht-Anfragen" sichtbar, damit die Historie vollständig ist.
-    const { data } = await supabase.from('shift_swaps').select('*')
-      .eq('requester_name', displayName)
-      .neq('status', 'abgelaufen')
-      .order('shift_date', { ascending: true })
-      .limit(10)
-    setMySwaps(data || [])
-  }
-
-  useEffect(() => {
-    loadMySwaps()
-  }, [])
-
-  const submitSwap = async () => {
-    if (!swapShift) return
-    setSending(true)
-    const parts = swapShift.split('__')
-    try {
-      const { error } = await supabase.from('shift_swaps').insert({
-        requester_name: displayName,
-        shift_date: parts[0],
-        shift: parts[1],
-        model_name: parts[2] || '?',
-        reason: swapReason || null,
-        status: 'offen',
-      })
-      // v4.53.0: vorher immer „✓ gesendet", auch wenn nichts gespeichert war
-      if (error) { alert('⚠ Tausch-Anfrage NICHT gesendet: ' + error.message); return }
-      setSwapShift('')
-      setSwapReason('')
-      await loadMySwaps()
-      alert('✓ Tausch-Anfrage gesendet!')
-    } catch (e) {
-      alert('⚠ Tausch-Anfrage NICHT gesendet: ' + (e?.message || e))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-        <select value={swapShift} onChange={e => setSwapShift(e.target.value)}
-          style={{ flex: 1, minWidth: 160, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: swapShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
-          <option value="">— Schicht wählen —</option>
-          {myNext7Shifts.map((s, i) => {
-            const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
-            const modelName = s.models[0]?.modelName || '?'
-            // v4.53.0: Berliner Plandatum — dayIso ist der LOKALE Tag des Chatters und
-            // weicht bei Nachtschichten außerhalb Europas ab (falsche Zelle im Plan).
-            const val = `${s.berlinDate || s.dayIso}__${s.shift}__${modelName}`
-            return <option key={i} value={val}>{dayLabel} · {s.shift} · {modelName}</option>
-          })}
-        </select>
-        <input value={swapReason} onChange={e => setSwapReason(e.target.value)}
-          placeholder="Grund (optional)"
-          style={{ flex: 1, minWidth: 120, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
-        <button onClick={submitSwap} disabled={!swapShift || sending}
-          style={{ background: swapShift ? 'rgba(245,158,11,0.15)' : 'var(--border)', color: swapShift ? '#f59e0b' : 'var(--text-muted)', border: `1px solid ${swapShift ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`, borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-          {sending ? '...' : '↔ Anfragen'}
-        </button>
-      </div>
-      {mySwaps.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {mySwaps.map(s => {
-            const cancel = async () => {
-              if (!confirm('Tausch-Anfrage stornieren?')) return
-              const { error, count } = await supabase
-                .from('shift_swaps')
-                .delete({ count: 'exact' })
-                .eq('id', s.id)
-                .eq('status', 'offen')
-              if (error) {
-                alert('Fehler beim Stornieren: ' + error.message)
-                return
-              }
-              if (count === 0) {
-                alert('Stornieren nicht möglich — die Schicht wurde inzwischen bereits vom Admin bearbeitet.')
-              }
-              await loadMySwaps()
-            }
-            const statusLabel =
-              s.status === 'offen' ? 'Offen'
-              : s.status === 'angenommen' ? `✓ ${s.accepted_by || 'übernommen'}`
-              : 'Abgeschlossen'
-            const statusColor =
-              s.status === 'offen' ? '#f59e0b'
-              : s.status === 'angenommen' ? '#10b981'
-              : '#ef4444'
-            return (
-              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, gap: 8 }}>
-                <span style={{ color: 'var(--text-secondary)', flex: 1, minWidth: 0 }}>
-                  {new Date(s.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {s.shift} · {s.model_name}
-                </span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: statusColor }}>
-                  {statusLabel}
-                </span>
-                {s.status === 'offen' && (
-                  <button onClick={cancel} style={{
-                    fontSize: 10, padding: '2px 7px', borderRadius: 5,
-                    background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
-                    color: 'rgba(239,68,68,0.7)', cursor: 'pointer', fontFamily: 'inherit',
-                  }}>✕</button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
+// v4.82.0: SwapRequestForm ist in ChatterOrga.jsx aufgegangen (Fenster „Schicht abgeben“).
 
 // Helper: kollabierbare Sektion - außerhalb der Component definiert
 // damit es nicht bei jedem Render neu erstellt wird (was Focus-Loss in Inputs verursacht)
@@ -587,10 +468,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [weekStart] = useState(() => getWeekStart(new Date()))
   const [myReminders, setMyReminders] = useState([])
   const [myAbsences, setMyAbsences] = useState([])
-  const [newAbsenceDate, setNewAbsenceDate] = useState('')
-  const [newAbsenceDateTo, setNewAbsenceDateTo] = useState('') // v4.47.0: optionales Bis-Datum, leer = nur ein Tag
-  const [newAbsenceReason, setNewAbsenceReason] = useState('')
-  const [newAbsenceShifts, setNewAbsenceShifts] = useState([]) // v3.29.0: leer = ganzer Tag, sonst nur diese Schichten verfügbar
+  // v4.82.0: Formularwerte der Abwesenheit liegen jetzt in ChatterOrga.jsx
   const [next7Schedules, setNext7Schedules] = useState([])
   const [absentLoading, setAbsentLoading] = useState(false)
   // v3.98.0: In "Meine Schichten" ist nur die heutige Schicht offen. null = Standard
@@ -1914,34 +1792,34 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     setMyAbsences(data || [])
   }
 
-  const addAbsence = async () => {
-    if (!newAbsenceDate) return
+  // v4.82.0: Werte kommen aus dem Fenster „Ich kann nicht“ (ChatterOrga.jsx).
+  // Gibt true/false zurück — das Fenster schließt nur, wenn gespeichert wurde.
+  const addAbsence = async ({ von, bis, grund, wegSchichten = [] }) => {
+    if (!von) return false
     // v4.47.0: Zeitraum. Bis leer = eintägig.
-    const dateTo = newAbsenceDateTo || newAbsenceDate
-    if (dateTo < newAbsenceDate) { alert('Das Bis-Datum liegt vor dem Von-Datum.'); return }
+    const dateTo = bis || von
+    if (dateTo < von) { alert('Das Bis-Datum liegt vor dem Von-Datum.'); return false }
     setAbsentLoading(true)
-    // newAbsenceShifts = Schichten, an denen man WEG ist.
+    // wegSchichten = Schichten, an denen man WEG ist.
     // Gespeichert wird die Verfügbarkeit = alle Schichten außer den abwesenden.
-    const avail = newAbsenceShifts.length ? SHIFTS.filter(s => !newAbsenceShifts.includes(s)) : null
+    const avail = wegSchichten.length ? SHIFTS.filter(s => !wegSchichten.includes(s)) : null
     try {
       const { error } = await supabase.from('absences').insert({
         chatter_name: displayName,
-        date_from: newAbsenceDate,
+        date_from: von,
         date_to: dateTo,
-        reason: newAbsenceReason || 'Nicht verfügbar',
+        reason: grund || 'Nicht verfügbar',
         available_shifts: (avail && avail.length) ? avail : null,
         source: 'chatter',
       })
       // v4.53.0: Formular stehen lassen, sonst glaubt der Chatter, er sei frei
-      if (error) { alert('⚠ Abwesenheit NICHT gespeichert: ' + error.message + '\n\nBitte nochmal versuchen oder dem Team Bescheid geben.'); return }
-      setNewAbsenceDate('')
-      setNewAbsenceDateTo('')
-      setNewAbsenceReason('')
-      setNewAbsenceShifts([])
+      if (error) { alert('⚠ Abwesenheit NICHT gespeichert: ' + error.message + '\n\nBitte nochmal versuchen oder dem Team Bescheid geben.'); return false }
       await loadMyAbsences()
       alert('✓ Abwesenheit eingetragen!')
+      return true
     } catch (e) {
       alert('⚠ Abwesenheit NICHT gespeichert: ' + (e?.message || e))
+      return false
     } finally {
       setAbsentLoading(false)
     }
@@ -2846,75 +2724,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         </Collapsible>
 
-        {/* v3.98.0: Abwesenheit aus dem Schichten-Panel herausgelöst und in den
-            Organisation-Tab verschoben — das Schichten-Panel war zu voll. */}
-        <Collapsible helpId="absence" hidden={tab !== 'orga'} isCollapsed={collapsed.absence} onToggle={() => toggleCollapse('absence')} icon="🌴" title="Ich bin nicht verfügbar" badge={myAbsences.length || null} badgeColor="#ef4444">
-          <div>
-              {/* v3.49.0: Info-Hinweis zur Vorlauf-Orientierung (nur Erklärtext, keine Sperre) */}
-              <div style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.22)', borderRadius: 11, padding: '10px 12px', marginBottom: 12 }}>
-                <div style={{ fontWeight: 700, color: '#a78bfa', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>ℹ️</span> Kurz zur Orientierung
-                </div>
-                Plane deine freien Tage bitte mit etwas Vorlauf – je mehr du bei uns arbeitest, desto mehr zählen wir auf dich:
-                <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <span>• <b style={{ color: 'var(--text-primary)' }}>4+ Tage/Woche</b> → ca. 2 Wochen vorher eintragen</span>
-                  <span>• <b style={{ color: 'var(--text-primary)' }}>3 Tage/Woche</b> → ca. 10 Tage vorher</span>
-                  <span>• <b style={{ color: 'var(--text-primary)' }}>1–2 Tage/Woche</b> → ca. 1 Woche vorher reicht</span>
-                </div>
-                <div style={{ marginTop: 7 }}>Krank geworden? Kein Stress – das geht natürlich auch kurzfristig, trag es dann einfach direkt hier ein.</div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                {/* v4.47.0: Von–Bis statt nur ein Tag */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px', minWidth: 0 }}>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Von</span>
-                  <input type="date" value={newAbsenceDate}
-                    onChange={e => { const v = e.target.value; setNewAbsenceDate(v); if (newAbsenceDateTo && v && newAbsenceDateTo < v) setNewAbsenceDateTo(v) }}
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1, minWidth: 0 }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Bis</span>
-                  <input type="date" value={newAbsenceDateTo} min={newAbsenceDate || undefined}
-                    onChange={e => setNewAbsenceDateTo(e.target.value)}
-                    title="Leer lassen, wenn es nur ein Tag ist"
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: newAbsenceDateTo ? 'var(--text-primary)' : 'var(--text-muted)', padding: '6px 8px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1, minWidth: 0 }} />
-                </div>
-                <input value={newAbsenceReason} onChange={e => setNewAbsenceReason(e.target.value)}
-                  placeholder="Grund (optional)"
-                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', flex: 1 }} />
-                <button onClick={addAbsence} disabled={!newAbsenceDate || absentLoading}
-                  style={{ background: newAbsenceDate ? 'rgba(239,68,68,0.15)' : 'var(--border)', color: newAbsenceDate ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${newAbsenceDate ? 'rgba(239,68,68,0.3)' : 'var(--border)'}`, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                  + Eintragen
-                </button>
-              </div>
-              <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Weg an:</span>
-                <button type="button" onClick={() => setNewAbsenceShifts([])}
-                  style={{ padding: '5px 9px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                    background: newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.15)' : 'var(--bg-input)',
-                    color: newAbsenceShifts.length === 0 ? '#ef4444' : 'var(--text-muted)',
-                    border: `1px solid ${newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.4)' : '#2e2e5a'}` }}>Ganzer Tag</button>
-                {SHIFTS.map(s => {
-                  const on = newAbsenceShifts.includes(s)
-                  return (
-                    <button key={s} type="button"
-                      onClick={() => setNewAbsenceShifts(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                      style={{ padding: '5px 9px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                        background: on ? 'rgba(239,68,68,0.18)' : 'var(--bg-input)',
-                        color: on ? '#ef4444' : 'var(--text-muted)',
-                        border: `1px solid ${on ? 'rgba(239,68,68,0.45)' : '#2e2e5a'}` }}>{on ? '✕ ' : ''}{s}</button>
-                  )
-                })}
-              </div>
-              {myAbsences.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {myAbsences.map(a => (
-                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 8, border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
-                      <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}{(a.date_to && a.date_to !== a.date_from) ? ' – ' + new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''} · {a.reason}{(a.available_shifts && a.available_shifts.length) ? ` · ${SHIFTS.filter(s => !a.available_shifts.includes(s)).join('/')} weg` : ''}</span>
-                      <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-          </div>
-        </Collapsible>
+        {/* v4.82.0: Organisation im neuen Look — Wochenstreifen, „Ich kann nicht“,
+            „Schicht abgeben“ (ChatterOrga.jsx). Die Hilfe-Anker absence/swap sitzen dort. */}
+        <div style={{ display: tab === 'orga' ? 'block' : 'none' }}>
+          <ChatterOrga heuteIso={localTodayIso} schichten={myNext7Shifts} abwesenheiten={myAbsences}
+            onAbwesenheit={addAbsence} onAbwesenheitLoeschen={deleteAbsence}
+            displayName={displayName} SHIFTS={SHIFTS} farben={SHIFT_COLORS} />
+        </div>
 
         {/* v3.98.0: Die Liste "Nachrichten vom Team" ist raus — die Chat-Bubble unten
             rechts zeigt denselben Verlauf, nur vollständig und in beide Richtungen.
@@ -3284,82 +3100,22 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             Wünsche & Ideen für Content der demnächst gemacht werden sollte. Wird vom Admin reviewed und ggf. ans Model weitergeleitet.
           </div>
 
-          {!showNewIdeaForm ? (
-            <button onClick={() => setShowNewIdeaForm(true)} style={{
-              width: '100%', padding: '10px 14px', borderRadius: 11,
-              background: 'rgba(167,139,250,0.1)', border: '1px dashed rgba(167,139,250,0.3)',
-              color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit',
-              fontWeight: 600, fontSize: 13, marginBottom: 12
-            }}>+ Neue Content-Idee</button>
-          ) : (
-            <div style={{ background: 'var(--bg-card2)', borderRadius: 11, padding: 12, marginBottom: 12, border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Neue Idee</div>
-                <button onClick={() => setShowNewIdeaForm(false)} style={{
-                  background: 'transparent', border: 'none', color: 'var(--text-muted)',
-                  cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', padding: 0
-                }}>✕</button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Für Model *</label>
-                  <select value={newIdeaModel} onChange={e => setNewIdeaModel(e.target.value)}
-                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
-                    <option value="">— wählen —</option>
-                    {activeModels.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Kategorie</label>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {[['bilder','📸 Bilder'],['videos','🎬 Videos'],['audio','🎙 Audio'],['sonstiges','💭 Sonst']].map(([k,l]) => (
-                      <button key={k} type="button" onClick={() => setNewIdeaCategory(k)} style={{
-                        flex: 1, fontSize: 11, padding: '6px 4px', borderRadius: 8, cursor: 'pointer',
-                        background: newIdeaCategory === k ? 'rgba(167,139,250,0.2)' : 'var(--bg-input)',
-                        border: `1px solid ${newIdeaCategory === k ? '#a78bfa' : '#2e2e5a'}`,
-                        color: newIdeaCategory === k ? '#a78bfa' : 'var(--text-secondary)',
-                        fontFamily: 'inherit', fontWeight: 600
-                      }}>{l}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Was fehlt / Idee *</label>
-                <textarea value={newIdeaText} onChange={e => setNewIdeaText(e.target.value)} rows={3}
-                  placeholder="z.B. Brauchen neue Bikini-Bilder für Promo / Fehlt Heels-Content / Neue Talking-Videos zum Kennenlernen wären gut"
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>Priorität</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {[
-                    ['urgent','🔥 Dringend','#ef4444'],
-                    ['normal','📅 Normal','#f59e0b'],
-                    ['nice','💭 Wenn Zeit','#06b6d4']
-                  ].map(([k,l,c]) => (
-                    <button key={k} type="button" onClick={() => setNewIdeaPriority(k)} style={{
-                      flex: 1, fontSize: 11, padding: '7px 4px', borderRadius: 8, cursor: 'pointer',
-                      background: newIdeaPriority === k ? c + '22' : 'var(--bg-input)',
-                      border: `1px solid ${newIdeaPriority === k ? c : '#2e2e5a'}`,
-                      color: newIdeaPriority === k ? c : 'var(--text-secondary)',
-                      fontFamily: 'inherit', fontWeight: 600
-                    }}>{l}</button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={submitContentIdea} disabled={sendingIdea || !newIdeaModel || !newIdeaText.trim()} style={{
-                  flex: 1, fontSize: 13, padding: '8px 16px', borderRadius: 10,
-                  background: (newIdeaModel && newIdeaText.trim()) ? '#a78bfa' : 'var(--border)',
-                  color: (newIdeaModel && newIdeaText.trim()) ? '#fff' : 'var(--text-muted)',
-                  border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700
-                }}>{sendingIdea ? 'Speichern...' : '+ Idee einreichen'}</button>
-              </div>
-            </div>
+          {/* v4.82.0: Formular als Fenster von unten (ContentIdeeFenster.jsx) */}
+          <button onClick={() => setShowNewIdeaForm(true)} style={{
+            width: '100%', padding: '13px 14px', borderRadius: 14,
+            background: 'linear-gradient(135deg, rgba(167,139,250,0.22), rgba(167,139,250,0.08))', border: '1px solid rgba(167,139,250,0.45)',
+            color: '#ddd6fe', cursor: 'pointer', fontFamily: 'inherit',
+            fontWeight: 800, fontSize: 14, marginBottom: 12
+          }}>💡 Neue Content-Idee</button>
+          {showNewIdeaForm && (
+            <ContentIdeeFenster
+              model={newIdeaModel} setModel={setNewIdeaModel}
+              kategorie={newIdeaCategory} setKategorie={setNewIdeaCategory}
+              text={newIdeaText} setText={setNewIdeaText}
+              prio={newIdeaPriority} setPrio={setNewIdeaPriority}
+              meineModels={Object.keys(assignedModelBoards).filter(n => activeModels.some(m => m.name === n))}
+              alleModels={activeModels.map(m => m.name)}
+              sending={sendingIdea} onSenden={submitContentIdea} onZu={() => setShowNewIdeaForm(false)} />
           )}
 
           {/* Eigene Ideen Liste */}
@@ -3373,7 +3129,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 const prioIcon = idea.priority === 'urgent' ? '🔥' : idea.priority === 'nice' ? '💭' : '📅'
                 const catIcon = idea.category === 'videos' ? '🎬' : idea.category === 'audio' ? '🎙' : idea.category === 'sonstiges' ? '💭' : '📸'
                 return (
-                  <div key={idea.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 11, borderLeft: `3px solid ${statusColor}` }}>
+                  <div key={idea.id} style={{ padding: '11px 13px', background: 'var(--bg-card2)', borderRadius: 13, border: '1px solid var(--border)', borderLeft: `4px solid ${statusColor}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 13 }}>{catIcon}</span>
@@ -3410,6 +3166,73 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )}
         </Collapsible>
 
+        {/* v4.82.0: Mehr-Tab im neuen Look — Zahlen als Karte oben (immer offen),
+            Bot-Befehle als Kacheln, darunter Guidelines, Hilfe und Pinnwand. */}
+        {tab === 'mehr' && (() => {
+          const monat = new Date().toLocaleString('de-DE', { month: 'long' })
+          const ziele = [
+            { label: 'Nachrichten', wert: weekMessages, ziel: 200, text: weekMessages.toLocaleString('de-DE'), farbe: '#06b6d4' },
+            { label: 'PPVs gesendet', wert: weekSentPPVs, ziel: 50, text: String(weekSentPPVs), farbe: '#a78bfa' },
+            { label: 'Buy Rate', wert: weekBuyRate, ziel: 25, text: `${weekBuyRate.toFixed(1)}%`, farbe: '#ec4899' },
+            { label: 'Aktiv', wert: weekActiveMinutes / 60, ziel: 5, text: `${(weekActiveMinutes / 60).toFixed(1)} h`, farbe: '#f59e0b' },
+          ]
+          const imGruen = ziele.filter(z => z.wert >= z.ziel).length
+          return (
+            <>
+              <div data-help="stats" style={{ marginBottom: 12, borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(16,185,129,0.35)', background: 'linear-gradient(155deg, rgba(16,185,129,0.16), var(--bg-card) 60%)' }}>
+                <div style={{ padding: '15px 16px 6px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6ee7b7' }}>Revenue {monat}</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 30, fontWeight: 800, color: monthRevenue > 2000 ? '#10b981' : 'var(--text-primary)', lineHeight: 1.15, marginTop: 3 }}>{formatMoney(monthRevenue)}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>KW {kw}</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, marginTop: 3, padding: '4px 10px', borderRadius: 20, background: imGruen === 4 ? 'rgba(16,185,129,0.2)' : 'rgba(124,58,237,0.16)', color: imGruen === 4 ? '#6ee7b7' : '#c4b5fd' }}>{imGruen} von 4 im Grünen</div>
+                  </div>
+                </div>
+                <div className="kpi-mini-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, padding: '10px 12px 12px' }}>
+                  {ziele.map(z => {
+                    const gut = z.wert >= z.ziel
+                    const pct = Math.max(4, Math.min(100, (z.wert / z.ziel) * 100))
+                    return (
+                      <div key={z.label} style={{ padding: '10px 11px', borderRadius: 13, background: 'rgba(7,7,16,0.35)', border: `1px solid ${gut ? 'rgba(16,185,129,0.4)' : 'var(--border)'}` }}>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{z.label}</div>
+                        <div style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 800, color: gut ? '#10b981' : 'var(--text-primary)', margin: '2px 0 7px' }}>{z.text}</div>
+                        <div style={{ height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+                          <div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: gut ? '#10b981' : z.farbe }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: gut ? '#6ee7b7' : 'var(--text-muted)', marginTop: 4 }}>{gut ? '✓ im grünen Bereich' : `gut ab ${z.label === 'Buy Rate' ? z.ziel + '%' : z.label === 'Aktiv' ? z.ziel + ' h' : z.ziel}`}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ padding: '8px 16px 11px', borderTop: '1px solid rgba(16,185,129,0.18)', fontSize: 11, color: 'var(--text-muted)' }}>
+                  Woche ab Montag · {lastStatDate ? `Stand: Upload vom ${new Date(lastStatDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : 'noch keine Zahlen hochgeladen'}
+                </div>
+              </div>
+
+              <div data-help="bot" style={{ marginBottom: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 15px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)' }}>🤖 Telegram-Bot</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'monospace' }}>@thirteen87agency_bot</span>
+                </div>
+                <div className="raster-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7 }}>
+                  {[
+                    { cmd: '/on', desc: 'Schicht starten', color: '#10b981' },
+                    { cmd: '/off', desc: 'Schicht beenden', color: '#ef4444' },
+                    { cmd: '/start', desc: 'Telegram-ID', color: '#a78bfa' },
+                  ].map(b => (
+                    <div key={b.cmd} style={{ textAlign: 'center', padding: '11px 4px', borderRadius: 12, background: b.color + '14', border: `1px solid ${b.color}55` }}>
+                      <div style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 800, color: b.color }}>{b.cmd}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>{b.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )
+        })()}
+
         {/* v3.2.0: Guidelines (von Admin in Einstellungen gepflegt) */}
         <Collapsible helpId="guidelines" hidden={tab !== 'mehr'} isCollapsed={collapsed.guidelines} onToggle={() => toggleCollapse('guidelines')} icon={<BookOpen size={16} />} title="Guidelines" badge={guidelines.length || null} badgeColor="#06b6d4">
           {guidelines.length === 0 ? (
@@ -3430,45 +3253,6 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           )}
         </Collapsible>
 
-        {/* Schicht-Tausch */}
-        <Collapsible helpId="swap" hidden={tab !== 'orga'} isCollapsed={collapsed.swap} onToggle={() => toggleCollapse('swap')} icon="🔄" title="Schicht-Tausch anfragen" badgeColor="#f59e0b">
-          <SwapRequestForm displayName={displayName} myNext7Shifts={myNext7Shifts} />
-        </Collapsible>
-
-        {/* Week Stats */}
-        <Collapsible helpId="stats" hidden={tab !== 'mehr'} isCollapsed={collapsed.stats} onToggle={() => toggleCollapse('stats')} icon="📈" title={`Meine Stats – KW ${kw}`} badgeColor="#f59e0b">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
-            {[
-              { label: `Revenue ${new Date().toLocaleString('de-DE', { month: 'long' })}`, val: formatMoney(monthRevenue), good: monthRevenue > 2000 },
-              { label: 'Nachrichten KW', val: weekMessages.toString(), good: weekMessages > 200 },
-              { label: 'Sent PPVs KW', val: weekSentPPVs.toString(), good: weekSentPPVs > 50 },
-              { label: 'Buy Rate KW', val: `${weekBuyRate.toFixed(1)}%`, good: weekBuyRate >= 25 },
-              { label: 'Aktiv (Std) KW', val: (weekActiveMinutes / 60).toFixed(1) + 'h', good: weekActiveMinutes > 300 },
-            ].map(stat => (
-              <div key={stat.label} style={{ ...sR, flexDirection: 'column', borderBottom: 'none', padding: '10px 14px', background: 'var(--bg-card2)', borderRadius: 11, border: '1px solid #1e1e3a' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{stat.label}</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: stat.good ? '#10b981' : 'var(--text-primary)' }}>{stat.val}</div>
-              </div>
-            ))}
-          </div>
-        </Collapsible>
-
-        {/* Bot Commands */}
-        <Collapsible helpId="bot" hidden={tab !== 'mehr'} isCollapsed={collapsed.bot} onToggle={() => toggleCollapse('bot')} icon="🤖" title="Bot-Befehle · @thirteen87agency_bot" badgeColor="#a78bfa">
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {[
-              { cmd: '/on', desc: 'Schicht starten', color: '#10b981' },
-              { cmd: '/off', desc: 'Schicht beenden', color: '#ef4444' },
-              { cmd: '/start', desc: 'Telegram ID anzeigen', color: '#a78bfa' },
-            ].map(b => (
-              <div key={b.cmd} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'var(--bg-card2)', borderRadius: 10, border: '1px solid #1e1e3a' }}>
-                <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: b.color, background: b.color + '20', padding: '2px 7px', borderRadius: 4 }}>{b.cmd}</span>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.desc}</span>
-              </div>
-            ))}
-          </div>
-        </Collapsible>
-
         {/* v4.9.0: HILFE — alle Erklärungen an einem Ort, plus Neustart der Tour. */}
         {/* helpId={null}: die Hilfe selbst braucht kein ?-Symbol — der Prüfer
             (npm run check:help) erkennt daran, dass das Absicht ist. */}
@@ -3480,26 +3264,27 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           <button
             onClick={() => setTourOpen(true)}
             style={{
-              width: '100%', marginBottom: 14, padding: '10px', borderRadius: 11,
-              background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)',
-              color: '#a78bfa', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              width: '100%', marginBottom: 14, padding: '13px', borderRadius: 14,
+              background: 'linear-gradient(135deg, rgba(124,58,237,0.28), rgba(124,58,237,0.10))', border: '1px solid rgba(124,58,237,0.5)',
+              color: '#c4b5fd', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
             }}
           >▶ Einführung noch einmal ansehen</button>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="raster-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
             {HELP_TOPICS.map(t => (
               <button
                 key={t.id}
                 onClick={() => setHelpTopic(t.id)}
+                className="hilfe-kachel"
                 style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left',
-                  padding: '10px 12px', borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 5, textAlign: 'left',
+                  padding: '11px 12px', borderRadius: 13, cursor: 'pointer', fontFamily: 'inherit', minWidth: 0,
                   background: 'var(--bg-card2)', border: '1px solid var(--border)', width: '100%',
                 }}
               >
-                <span style={{ fontSize: 15, lineHeight: 1.3 }}>{t.icon}</span>
+                <span style={{ fontSize: 18, lineHeight: 1.1 }}>{t.icon}</span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{t.title}</span>
-                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 2 }}>{t.short}</span>
+                  <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.4, marginTop: 2 }}>{t.short}</span>
                 </span>
               </button>
             ))}
@@ -3508,18 +3293,21 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* PINNWAND VERLAUF - kollabierbar · v3.95.0: im Mehr-Tab */}
         {tab === 'mehr' && announcements.length > 0 && (
-          <div style={{ marginTop: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+          <div style={{ marginBottom: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
             <button
               onClick={() => setShowAnnArchive(!showAnnArchive)}
               style={{
-                width: '100%', padding: '12px 16px', background: 'transparent', border: 'none',
-                color: 'var(--text-secondary)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                width: '100%', padding: '14px 16px', background: 'transparent', border: 'none',
+                color: 'var(--text-primary)', fontSize: 14.5, fontWeight: 700, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '0.08em'
+                fontFamily: 'inherit', textAlign: 'left',
               }}
             >
-              <span>📋 Pinnwand-Verlauf ({announcements.length})</span>
-              <span style={{ fontSize: 14 }}>{showAnnArchive ? '▼' : '▶'}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 16 }}>📌</span><span style={{ fontSize: 14.5 }}>Pinnwand-Verlauf</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 13, background: 'rgba(124,58,237,0.15)', color: '#a78bfa' }}>{announcements.length}</span>
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{showAnnArchive ? '▼' : '▶'}</span>
             </button>
             {showAnnArchive && (
               <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -3529,9 +3317,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   const isExpired = ann.expires_at && new Date(ann.expires_at) < new Date()
                   return (
                     <div key={ann.id} style={{
-                      padding: '10px 14px',
+                      padding: '11px 13px',
                       background: 'var(--bg-card2)',
-                      borderRadius: 11,
+                      borderRadius: 13,
                       border: '1px solid var(--border)',
                       opacity: isExpired ? 0.5 : 1
                     }}>

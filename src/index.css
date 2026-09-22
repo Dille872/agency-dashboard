@@ -254,3 +254,12 @@ th { text-align: left; }
 @media (max-width: 768px) {
   .chatter-tabs-oben { display: none !important; }
 }
+
+/* v4.82.0: Chatter-Portal Orga/Mehr — Kacheln behalten am Handy ihre Größe
+   (die globale Mobil-Regel "button { padding … !important }" macht sie sonst klein) */
+@media (max-width: 768px) {
+  .orga-neu .tag-btn { padding: 8px 2px 9px !important; font-size: 12px !important; }
+  .orga-neu .aktion-btn { padding: 15px 14px !important; font-size: 14px !important; }
+  .hilfe-kachel { padding: 11px 12px !important; font-size: 13px !important; }
+  .steckbrief-fenster .raster-2 .chip-btn { padding: 12px !important; font-size: 14px !important; }
+}
