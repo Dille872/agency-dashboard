@@ -263,3 +263,15 @@ th { text-align: left; }
   .hilfe-kachel { padding: 11px 12px !important; font-size: 13px !important; }
   .steckbrief-fenster .raster-2 .chip-btn { padding: 12px !important; font-size: 14px !important; }
 }
+
+/* v4.83.0: Dienstplan — Kopfzeile, ⋯-Fenster und Schicht-Fenster behalten am
+   Handy ihre Größe (globale Mobil-Regel "button { padding … !important }") */
+@media (max-width: 768px) {
+  .dp-kopf .dp-knopf { padding: 0 11px !important; font-size: 13px !important; }
+  .dp-kopf .dp-chip { padding: 6px 10px !important; font-size: 11.5px !important; }
+  .steckbrief-fenster .dp-aktion { padding: 12px !important; font-size: 14px !important; }
+  .steckbrief-fenster .dp-seg { padding: 10px !important; font-size: 13px !important; }
+  .steckbrief-fenster .schicht-karte { padding: 9px 11px !important; font-size: 14px !important; }
+  .schalter-btn { padding: 0 !important; }
+}
+@media (max-width: 768px) { .dp-tag { padding: 7px 2px !important; } }

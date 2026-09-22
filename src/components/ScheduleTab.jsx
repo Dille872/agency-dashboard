@@ -3,6 +3,7 @@ import { Sunrise, Sunset, Moon, Clock } from 'lucide-react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import BlockOfferModal from './BlockOfferModal'
+import SchichtFenster from './SchichtFenster' // v4.83.0
 import { logActivity } from '../activity'
 import { ladeInaktiveNamen, ohneInaktive } from '../people'
 
@@ -308,6 +309,11 @@ export default function ScheduleTab({ session, userDisplayName }) {
   const [chatterSearch, setChatterSearch] = useState('')
   const [mobileDay, setMobileDay] = useState(() => todayBerlin())
   const [editSheet, setEditSheet] = useState(null) // { modelId, dayIso, shift } or null
+  // v4.83.0: neue Kopfzeile — „⋯ Mehr“-Fenster und Suche am Handy
+  const [mehrOffen, setMehrOffen] = useState(false)
+  const [sucheOffen, setSucheOffen] = useState(false)
+  const konfliktRef = useRef(null)
+  const abwesendRef = useRef(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1148,7 +1154,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
     })
 
     // Mark reminder as active in UI
-    setActiveReminders(prev => ({ ...prev, [`${chatterName}__${reminderCell.dayIso}__${shift}`]: true }))
+    setActiveReminders(prev => ({ ...prev, [`${chatterName}__${dayIso}__${shift}`]: true }))
 
     setSendingReminder(false)
     setReminderCell(null)
@@ -1406,6 +1412,48 @@ export default function ScheduleTab({ session, userDisplayName }) {
     setSendSelection(new Set(chatters.filter(empfangsbereit).map(c => c.id)))
   }, [sendModalOpen, chatters, schedule])
 
+  // ── v4.83.0: Zahlen für Kopfzeile und Wochenstreifen ──
+  const heuteIso = todayBerlin()
+  const morgenIso = (() => { const d = new Date(heuteIso + 'T12:00:00'); d.setDate(d.getDate() + 1); return isoDate(d) })()
+  const weekIsos = weekDays.map(d => isoDate(d))
+  const offenAm = (dayIso) => conflicts.filter(c => c.type === 'unbesetzt' && c.dayIso === dayIso).length
+  const offenAbHeute = conflicts.filter(c => c.type === 'unbesetzt' && c.dayIso >= heuteIso).length
+  const doppelOffen = conflicts.filter(c => c.type === 'doppel_schicht' && !c.acked).length
+  const abwesendWoche = absences.filter(a => a.date_from <= weekIsos[6] && a.date_to >= weekIsos[0]).length
+  const tauschWoche = openSwaps.filter(s => s.shift_date >= weekIsos[0] && s.shift_date <= weekIsos[6]).length
+  const zuKonflikt = (gruppe) => {
+    setOpenConflictGroups(prev => ({ ...prev, [gruppe]: true }))
+    setTimeout(() => konfliktRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+  const zuAbwesenheit = () => {
+    setShowAbsences(true)
+    setTimeout(() => abwesendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
+  // v4.83.0: Wer passt in diese Schicht? Für die Karten im Schicht-Fenster.
+  const personenFuer = (modelId, dayIso, shift) => {
+    const kennt = (name) => {
+      for (const d of weekIsos) for (const sh of ALL_SHIFTS) {
+        if (d === dayIso && sh === shift) continue
+        const c = getCell(modelId, d, sh)
+        if (c.chatter === name || c.trainee === name) return true
+      }
+      for (const [key, r] of Object.entries(recurring)) if (key.startsWith(`${modelId}__`) && r?.chatter === name) return true
+      return false
+    }
+    return chatters.map(c => {
+      const name = c.name
+      const abwesend = absences.find(a => a.chatter_name === name && dayIso >= a.date_from && dayIso <= a.date_to &&
+        (!a.available_shifts || a.available_shifts.length === 0 || !a.available_shifts.includes(shift))) || null
+      const andere = [...(chatterShiftsByDay[`${name}__${dayIso}`] || [])].filter(sh => sh !== shift)
+      const gleiche = models.filter(m => m.id !== modelId).filter(m => {
+        const c2 = getCell(m.id, dayIso, shift)
+        return c2.chatter === name || (c2.trainee === name && ['co', 'split'].includes(zellModus(c2)))
+      }).map(m => m.name)
+      return { name, abwesend, woche: zaehleSchichten(name), andere, gleiche, kennt: kennt(name) }
+    })
+  }
+
   const openSwapMap = {}
   for (const s of openSwaps) {
     const key = `${s.model_name}__${s.shift_date}__${s.shift}`
@@ -1414,7 +1462,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingRight: (!isMobile && editSheet) ? 404 : 0, transition: 'padding-right .15s' }}>
       {/* v3.27.0: Ausschreiben-/Block-Modal */}
       {blockOffer && (
         <BlockOfferModal
@@ -1425,58 +1473,126 @@ export default function ScheduleTab({ session, userDisplayName }) {
           onDone={() => { setBlockOffer(null); loadOpenSwaps() }}
         />
       )}
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={prevWeek} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', color: 'var(--text-secondary)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14 }}>‹</button>
-          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
-            KW {kw} · {formatDate(weekDays[0])} – {formatDate(weekDays[6])} {weekDays[0].getFullYear()}
-          </span>
-          <button onClick={nextWeek} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', color: 'var(--text-secondary)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14 }}>›</button>
-          {/* Status Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: scheduleStatus === 'live' ? 'rgba(16,185,129,0.12)' : 'rgba(100,100,120,0.12)', border: `1px solid ${scheduleStatus === 'live' ? 'rgba(16,185,129,0.3)' : 'rgba(100,100,120,0.3)'}` }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: scheduleStatus === 'live' ? '#10b981' : '#888', display: 'inline-block' }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: scheduleStatus === 'live' ? '#10b981' : 'var(--text-muted)' }}>
-              {scheduleStatus === 'live' ? 'Live' : 'Entwurf'}
-            </span>
+      {/* v4.83.0: Kopfzeile neu — eine Zeile statt sechs bunter Knöpfe.
+          Selten Gebrauchtes (Versenden, Auto-Plan, Vorlagen, Verlauf, Entwurf/Live)
+          liegt hinter „⋯“. Konflikte stehen oben als Chips statt nur ganz unten. */}
+      {(() => {
+        const knopf = { height: 36, minWidth: 36, padding: '0 11px', borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }
+        const pill = (farbe, hinter) => ({ fontSize: 11.5, fontWeight: 700, padding: '6px 10px', borderRadius: 20, background: hinter, color: farbe, border: 'none', fontFamily: 'inherit', whiteSpace: 'nowrap' })
+        const live = scheduleStatus === 'live'
+        const chips = (
+          <>
+            {offenAbHeute > 0
+              ? <button type="button" className="dp-chip" onClick={() => zuKonflikt('unbesetzt')} style={{ ...pill('#fca5a5', 'rgba(239,68,68,0.12)'), cursor: 'pointer' }}>{offenAbHeute} offen</button>
+              : <span style={pill('#6ee7b7', 'rgba(16,185,129,0.12)')}>✓ alles besetzt</span>}
+            {doppelOffen > 0 && <button type="button" className="dp-chip" onClick={() => zuKonflikt('doppel')} style={{ ...pill('#f9a8d4', 'rgba(236,72,153,0.12)'), cursor: 'pointer' }}>⚠ {doppelOffen} Doppel</button>}
+            {abwesendWoche > 0 && <button type="button" className="dp-chip" onClick={zuAbwesenheit} style={{ ...pill('#67e8f9', 'rgba(8,145,178,0.14)'), cursor: 'pointer' }}>🌴 {abwesendWoche} abwesend</button>}
+            {tauschWoche > 0 && <button type="button" className="dp-chip" onClick={() => zuKonflikt('ausgeschrieben')} style={{ ...pill('#fcd34d', 'rgba(245,158,11,0.12)'), cursor: 'pointer' }}>↔ {tauschWoche} Tausch</button>}
+          </>
+        )
+        const suchFeld = (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, height: 36, boxSizing: 'border-box', padding: '0 11px', borderRadius: 11, border: `1px solid ${chatterSearch ? '#f59e0b' : 'var(--border)'}`, background: chatterSearch ? 'rgba(245,158,11,0.08)' : 'transparent', width: isMobile ? '100%' : 230 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ color: 'var(--text-muted)', flexShrink: 0 }}><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            <input value={chatterSearch} onChange={e => setChatterSearch(e.target.value)} placeholder="Chatter markieren" aria-label="Chatter markieren" autoFocus={isMobile && sucheOffen}
+              style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'inherit' }} />
+            {chatterSearch && <button type="button" onClick={() => setChatterSearch('')} aria-label="Suche leeren" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 14 }}>×</button>}
+          </label>
+        )
+        const woche = (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: isMobile ? 1 : 'none' }}>
+            <button type="button" className="dp-knopf" onClick={prevWeek} aria-label="Woche zurück" style={knopf}>‹</button>
+            <div style={{ textAlign: 'center', flex: isMobile ? 1 : 'none', minWidth: 96 }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.15 }}>KW {kw}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{formatDate(weekDays[0])} – {formatDate(weekDays[6])} {weekDays[0].getFullYear()}</div>
+            </div>
+            <button type="button" className="dp-knopf" onClick={nextWeek} aria-label="Woche vor" style={knopf}>›</button>
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {/* v3.15.3: Verlauf-Button — passend zu anderen Buttons (kein Emoji, nur Text) */}
-          <button onClick={() => { setLogModalOpen(true); loadSendLog() }} title="Versand-Verlauf anzeigen" style={{
-            background: 'rgba(6,182,212,0.06)',
-            color: '#06b6d4',
-            border: '1px solid rgba(6,182,212,0.2)',
-            borderRadius: 7,
-            padding: '7px 14px',
-            fontSize: 12, fontWeight: 600,
-            cursor: 'pointer', fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-          }}>Verlauf</button>
-          <button onClick={async () => {
-              // v4.16.0: Liste frisch holen — wird jemand in den Einstellungen
-              // offboardet, während dieser Tab offen ist, stand er sonst weiter drin.
-              await loadChatters()
-              setSendModalOpen(true)
-            }} disabled={sending} style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {sending ? 'Sende...' : '✈ Plan versenden...'}
-          </button>
-          <button onClick={autoGeneratePlan} disabled={autoPlanning} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {autoPlanning ? '⏳ Plane...' : '⚡ Auto-Plan'}
-          </button>
-          <button onClick={togglePublish} disabled={publishing} style={{
-            background: scheduleStatus === 'live' ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
-            color: scheduleStatus === 'live' ? '#ef4444' : '#10b981',
-            border: `1px solid ${scheduleStatus === 'live' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
-            borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit'
+        )
+        const status = (
+          <>
+            <span style={pill(live ? '#6ee7b7' : 'var(--text-muted)', live ? 'rgba(16,185,129,0.14)' : 'rgba(136,136,170,0.14)')}>{live ? '● Live' : '○ Entwurf'}</span>
+            <span style={{ fontSize: 11.5, color: saving ? '#fcd34d' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>{saving ? 'speichert …' : '✓ gespeichert'}</span>
+          </>
+        )
+        const aktionen = (
+          <>
+            {isMobile && <button type="button" className="dp-knopf" onClick={() => setSucheOffen(v => !v)} aria-label="Chatter suchen" style={{ ...knopf, padding: 0, borderColor: chatterSearch ? '#f59e0b' : 'var(--border)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            </button>}
+            {!isMobile && suchFeld}
+            <button type="button" className="dp-knopf" onClick={() => setMehrOffen(true)} aria-label="Mehr Aktionen" style={knopf}>⋯{isMobile ? '' : ' Mehr'}</button>
+            <button type="button" className="dp-knopf" onClick={() => saveSchedule()} disabled={saving} style={{ ...knopf, background: '#7c3aed', borderColor: '#7c3aed', color: '#fff' }}>{saving ? '…' : 'Speichern'}</button>
+          </>
+        )
+        return (
+          <div className="dp-kopf" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {isMobile ? (
+              <>
+                {woche}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>{status}<span style={{ flex: 1 }} />{aktionen}</div>
+                {(sucheOffen || chatterSearch) && suchFeld}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{chips}</div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {woche}{status}<span style={{ width: 6 }} />{chips}<span style={{ flex: 1 }} />{aktionen}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* v4.83.0: „⋯ Mehr“ — Fenster von unten (am Rechner mittig) */}
+      {mehrOffen && (() => {
+        const zeile = (icon, farbe, titel, unter, onClick, disabled) => (
+          <button type="button" className="dp-aktion" disabled={disabled} onClick={() => { setMehrOffen(false); onClick() }} style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, background: 'var(--bg-card2)', border: '1px solid var(--border)',
+            cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%', opacity: disabled ? 0.5 : 1,
           }}>
-            {publishing ? '...' : scheduleStatus === 'live' ? '⏸ Entwurf' : '▶ Veröffentlichen'}
+            <span style={{ width: 38, height: 38, borderRadius: 11, background: farbe + '26', color: farbe, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>{icon}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{titel}</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 }}>{unter}</span>
+            </span>
+            <span style={{ color: 'var(--text-muted)' }}>›</span>
           </button>
-          <button onClick={() => saveSchedule()} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {saving ? '↻ Speichert...' : '✓ Speichern'}
-          </button>
-        </div>
-      </div>
+        )
+        const lblM = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 6 }
+        const live = scheduleStatus === 'live'
+        return (
+          <div className="steckbrief-huelle" onClick={() => setMehrOffen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div className="steckbrief-fenster" onClick={e => e.stopPropagation()} role="dialog" aria-label="Dienstplan-Aktionen" style={{
+              width: 'min(460px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--bg-card)',
+              border: '1px solid var(--border)', borderRadius: '22px 22px 0 0', padding: '16px 18px 20px', display: 'flex', flexDirection: 'column', gap: 9,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, fontSize: 19, fontWeight: 700, color: 'var(--text-primary)' }}>Dienstplan KW {kw}</div>
+                <button type="button" onClick={() => setMehrOffen(false)} aria-label="Schließen" style={{ width: 36, height: 36, borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 17, cursor: 'pointer' }}>×</button>
+              </div>
+              <div style={{ display: 'flex', padding: 4, borderRadius: 13, background: 'var(--bg-card2)', border: '1px solid var(--border)' }}>
+                {[['draft', '○ Entwurf'], ['live', '● Live für Chatter']].map(([k, t]) => {
+                  const an = (k === 'live') === live
+                  return (
+                    <button key={k} type="button" className="dp-seg" disabled={publishing} onClick={() => { if (!an) togglePublish() }} style={{
+                      flex: 1, padding: 10, borderRadius: 10, border: 'none', cursor: an ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: an ? 800 : 700,
+                      background: an ? (k === 'live' ? 'rgba(16,185,129,0.18)' : 'rgba(136,136,170,0.18)') : 'transparent',
+                      color: an ? (k === 'live' ? '#6ee7b7' : 'var(--text-primary)') : 'var(--text-muted)',
+                    }}>{publishing && !an ? '…' : t}</button>
+                  )
+                })}
+              </div>
+              <div style={lblM}>Verschicken &amp; planen</div>
+              {zeile('✈', '#06b6d4', sending ? 'Sende …' : 'Plan versenden', 'an die Chatter per Telegram — du wählst, an wen', async () => { await loadChatters(); setSendModalOpen(true) }, sending)}
+              {zeile('⚡', '#f59e0b', autoPlanning ? 'Plane …' : 'Auto-Plan', 'offene Schichten automatisch vorschlagen lassen', autoGeneratePlan, autoPlanning)}
+              <div style={lblM}>Nächste Woche</div>
+              {zeile('↻', '#a78bfa', 'Als Vorlage übernehmen', `KW ${kw + 1 > 53 ? 1 : kw + 1} startet mit diesem Plan (nur leere Zellen)`, () => alsVorlageUebertragen(false))}
+              {zeile('↻', '#f59e0b', 'Vorlage + alles auf Klärung', 'wie oben, aber jeder muss neu bestätigen', () => alsVorlageUebertragen(true))}
+              <div style={lblM}>Nachschauen</div>
+              {zeile('🕑', '#8888aa', 'Verlauf', 'wann der Plan an wen verschickt wurde', () => { setLogModalOpen(true); loadSendLog() })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* v4.50.0: Speicherfehler sichtbar — vorher still verschluckt */}
       {speicherFehler && (
@@ -1485,34 +1601,6 @@ export default function ScheduleTab({ session, userDisplayName }) {
           <button onClick={() => saveSchedule()} style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid rgba(239,68,68,0.45)', color: '#ef4444', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Erneut speichern</button>
         </div>
       )}
-
-      {/* Chatter-Suche */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <input
-          type="text"
-          value={chatterSearch}
-          onChange={e => setChatterSearch(e.target.value)}
-          placeholder="🔍 Chatter suchen — markiert alle Schichten gelb..."
-          style={{
-            fontSize: 12,
-            padding: '6px 12px',
-            borderRadius: 7,
-            background: chatterSearch ? 'rgba(245,158,11,0.1)' : 'var(--bg-input)',
-            border: `1px solid ${chatterSearch ? '#f59e0b' : '#1e1e3a'}`,
-            color: 'var(--text-primary)',
-            fontFamily: 'inherit',
-            outline: 'none',
-            flex: '1 1 220px',
-            minWidth: 0,
-          }}
-        />
-        {chatterSearch && (
-          <button onClick={() => setChatterSearch('')} style={{
-            fontSize: 11, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
-            background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'inherit'
-          }}>✕ Suche</button>
-        )}
-      </div>
 
       {/* ───────── MOBILE VIEW ───────── */}
       {isMobile ? (
@@ -1524,10 +1612,10 @@ export default function ScheduleTab({ session, userDisplayName }) {
               const isSelected = mobileDay === dayIso
               const today = isToday(day)
               return (
-                <button key={di} onClick={() => setMobileDay(dayIso)} style={{
-                  flexShrink: 0,
-                  padding: '8px 12px',
-                  borderRadius: 8,
+                <button key={di} onClick={() => setMobileDay(dayIso)} className="dp-tag" style={{
+                  flex: '1 0 44px', // v4.83.0: alle 7 Tage passen nebeneinander
+                  padding: '7px 2px',
+                  borderRadius: 11,
                   background: isSelected ? '#7c3aed' : today ? 'rgba(56,130,246,0.1)' : 'var(--bg-card)',
                   border: `1px solid ${isSelected ? '#7c3aed' : today ? 'rgba(56,130,246,0.4)' : 'var(--border)'}`,
                   color: isSelected ? '#fff' : today ? '#378add' : 'var(--text-secondary)',
@@ -1538,11 +1626,15 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  minWidth: 56,
+                  minWidth: 44,
                   gap: 2,
                 }}>
                   <span style={{ fontSize: 10, opacity: 0.85 }}>{DAYS[di]}</span>
                   <span style={{ fontSize: 14 }}>{day.getDate()}.{String(day.getMonth() + 1).padStart(2, '0')}</span>
+                  {/* v4.83.0: wie viel an dem Tag noch offen ist */}
+                  {(() => { const n = offenAm(dayIso); const alt = dayIso < heuteIso; return (
+                    <span style={{ fontSize: 9.5, fontWeight: 800, color: isSelected ? '#fff' : n === 0 ? '#6ee7b7' : alt ? 'var(--text-muted)' : dayIso <= morgenIso ? '#fca5a5' : '#fcd34d' }}>{n === 0 ? 'voll' : `${n} offen`}</span>
+                  ) })()}
                 </button>
               )
             })}
@@ -1693,37 +1785,31 @@ export default function ScheduleTab({ session, userDisplayName }) {
       <>
       {/* Schedule - Card Layout */}
       <div style={{ overflowX: 'auto' }}>
-        {/* Day headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, minmax(90px, 1fr))', gap: 4, marginBottom: 8 }}>
-          <div />
-          {weekDays.map((day, di) => (
-            <div key={di} style={{
-              textAlign: 'center', padding: '6px 4px', borderRadius: 7,
-              background: isToday(day) ? 'rgba(56,130,246,0.08)' : 'transparent',
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: isToday(day) ? '#378add' : 'var(--text-muted)' }}>{DAYS[di]}</div>
-              <div style={{ fontSize: 10, color: isToday(day) ? '#378add' : 'var(--text-muted)', opacity: .7 }}>{formatDate(day)}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Day notes row */}
+        {/* v4.83.0: Tageskopf mit „X offen“ und der Tages-Notiz (vorher eigene Zeile) */}
         <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, minmax(90px, 1fr))', gap: 4, marginBottom: 12 }}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', paddingLeft: 4 }}>Tages-Notiz</div>
+          <div />
           {weekDays.map((day, di) => {
             const dayIso = isoDate(day)
+            const n = offenAm(dayIso)
+            const alt = dayIso < heuteIso
+            const heute = isToday(day)
             return (
-              <div key={di} onClick={() => setEditingNote(editingNote === dayIso ? null : dayIso)}
-                style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 6, padding: '4px 6px', cursor: 'text', minHeight: 26 }}>
+              <div key={di} style={{ textAlign: 'center', padding: '7px 4px', borderRadius: 11, background: heute ? 'rgba(124,58,237,0.14)' : 'transparent', border: `1px solid ${heute ? 'rgba(124,58,237,0.4)' : 'transparent'}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: heute ? '#c4b5fd' : 'var(--text-secondary)' }}>{DAYS[di]} {formatDate(day)}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: n === 0 ? '#6ee7b7' : alt ? 'var(--text-muted)' : dayIso <= morgenIso ? '#fca5a5' : '#fcd34d' }}>{n === 0 ? 'voll' : `${n} offen`}</div>
                 {editingNote === dayIso ? (
                   <input autoFocus value={dayNotes[dayIso] || ''}
                     onChange={e => setDayNotes(prev => ({ ...prev, [dayIso]: e.target.value }))}
                     onBlur={() => setEditingNote(null)}
                     onKeyDown={e => e.key === 'Enter' && setEditingNote(null)}
-                    style={{ width: '100%', background: 'transparent', border: 'none', color: '#f59e0b', padding: 0, fontSize: 10, fontFamily: 'inherit', outline: 'none' }}
+                    placeholder="Tages-Notiz"
+                    style={{ marginTop: 4, width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #7c3aed', borderRadius: 6, color: '#f59e0b', padding: '3px 6px', fontSize: 10.5, fontFamily: 'inherit', outline: 'none' }}
                   />
                 ) : (
-                  <span style={{ color: dayNotes[dayIso] ? '#f59e0b' : '#2e2e5a', fontSize: 10 }}>{dayNotes[dayIso] || '+'}</span>
+                  <div onClick={() => setEditingNote(dayIso)} title="Tages-Notiz bearbeiten"
+                    style={{ marginTop: 3, fontSize: 10.5, color: dayNotes[dayIso] ? '#f59e0b' : 'var(--text-muted)', opacity: dayNotes[dayIso] ? 1 : 0.55, cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {dayNotes[dayIso] ? `📝 ${dayNotes[dayIso]}` : '+ Notiz'}
+                  </div>
                 )}
               </div>
             )
@@ -1893,10 +1979,20 @@ export default function ScheduleTab({ session, userDisplayName }) {
                         finalBorder = 'rgba(167,139,250,0.55)'
                         finalBorderStyle = 'solid'
                       }
-                      const finalBoxShadow = searchBoxShadow
+                      // v4.83.0: leere Zellen leise („+“), rot nur heute/morgen
+                      const dringend = !cell.chatter && hasConflict && (dayIso === heuteIso || dayIso === morgenIso)
+                      if (dringend && !showSwap) {
+                        finalBg = 'rgba(239,68,68,0.05)'
+                        finalBorder = 'rgba(239,68,68,0.45)'
+                        finalBorderStyle = 'dashed'
+                      } else if (!cell.chatter && !showSwap) {
+                        finalBorderStyle = 'dashed'
+                      }
+                      const istGewaehlt = !!editSheet && editSheet.modelId === model.id && editSheet.dayIso === dayIso && editSheet.shift === shift
+                      const finalBoxShadow = istGewaehlt ? '0 0 0 2px #7c3aed, 0 0 14px rgba(124,58,237,0.45)' : searchBoxShadow
 
                       return (
-                        <div key={di} onClick={() => setEditingCell(isEditing ? null : cellId)}
+                        <div key={di} onClick={() => setEditSheet({ modelId: model.id, dayIso, shift })}
                           style={{ position: 'relative', background: finalBg, border: `${finalBorderWidth}px ${finalBorderStyle} ${finalBorder}`, borderRadius: 8, padding: 7, minHeight: 70, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, boxShadow: finalBoxShadow, transition: 'box-shadow 0.2s, background 0.2s' }}>
                           {showSwap && (
                             <div title={swapHere.isAdminOffer ? 'Ausgeschrieben (Admin-Angebot)' : 'Tausch angefragt'} style={{ position: 'absolute', top: -8, left: isTrainee ? 'auto' : 6, right: isTrainee ? 6 : 'auto', fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#a78bfa', color: '#fff', letterSpacing: '0.04em', whiteSpace: 'nowrap', zIndex: 2 }}>
@@ -1921,134 +2017,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                               {MODE_META[zweitModus].icon} {MODE_META[zweitModus].label.toUpperCase()}
                             </div>
                           )}
-                          {isEditing ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onClick={e => e.stopPropagation()}>
-                              <select autoFocus value={cell.chatter || ''}
-                                onChange={e => setChatter(model.id, dayIso, shift, cell, e.target.value)}
-                                style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
-                                <option value="">— leer —</option>
-                                <option value="__FREI__">✓ Freischicht</option>
-                                {chatters.map(c => {
-                                  const absent = isAbsent(c.name, dayIso, shift)
-                                  return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
-                                })}
-                              </select>
-                              {cell.chatter && !isFrei && (() => {
-                                const mode = zellModus(cell)
-                                const farbe = MODE_META[mode].color
-                                return (
-                                <>
-                                  <div style={{ display: 'flex', gap: 3 }}>
-                                    {['anlernen', 'co', 'split'].map(val => {
-                                      const opt = MODE_META[val]
-                                      const active = mode === val
-                                      return (
-                                        <button key={val} type="button" title={opt.label}
-                                          onClick={ev => { ev.stopPropagation(); setModus(model.id, dayIso, shift, cell, val) }}
-                                          style={{
-                                            flex: 1, padding: '1px 3px', borderRadius: 3,
-                                            background: active ? `${opt.color}22` : 'transparent',
-                                            border: `1px solid ${active ? opt.color : '#2e2e5a'}`,
-                                            color: active ? opt.color : 'var(--text-muted)',
-                                            fontSize: 9, cursor: 'pointer', fontFamily: 'inherit',
-                                          }}>{opt.icon}</button>
-                                      )
-                                    })}
-                                  </div>
-                                  {mode === 'anlernen' ? (
-                                    <input value={cell.trainee || ''}
-                                      onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
-                                      placeholder="Name (auch externe)"
-                                      style={{
-                                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
-                                        padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
-                                      }}
-                                    />
-                                  ) : (
-                                    <select value={cell.trainee || ''}
-                                      onChange={e => setCell(model.id, dayIso, shift, { ...cell, trainee: e.target.value || null })}
-                                      style={{
-                                        background: 'var(--bg-input)', border: `1px solid ${farbe}`, color: farbe,
-                                        padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%',
-                                      }}>
-                                      <option value="">— wählen —</option>
-                                      {chatters.filter(c => c.name !== cell.chatter).map(c => {
-                                        const absent = isAbsent(c.name, dayIso, shift)
-                                        return <option key={`c-${c.id}`} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
-                                      })}
-                                      {admins.filter(a => a !== cell.chatter).map(a => (
-                                        <option key={`a-${a}`} value={a}>{a} (Admin)</option>
-                                      ))}
-                                    </select>
-                                  )}
-                                  {/* v4.34.0: Zeitabschnitte der geteilten Schicht — beide optional */}
-                                  {mode === 'split' && [
-                                    { seite: 'a', name: cell.chatter },
-                                    { seite: 'b', name: cell.trainee || '2. Person' },
-                                  ].map(({ seite, name }) => (
-                                    <div key={seite} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                      <span title={name} style={{ fontSize: 8, color: MODE_META.split.color, width: 34, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                                      <input type="time" value={cell[`split_${seite}_von`] || ''}
-                                        onChange={e => setCell(model.id, dayIso, shift, { ...cell, [`split_${seite}_von`]: e.target.value || null })}
-                                        style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }} />
-                                      <input type="time" value={cell[`split_${seite}_bis`] || ''}
-                                        onChange={e => setCell(model.id, dayIso, shift, { ...cell, [`split_${seite}_bis`]: e.target.value || null })}
-                                        style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '1px 2px', borderRadius: 3, fontSize: 9, fontFamily: 'monospace', outline: 'none' }} />
-                                    </div>
-                                  ))}
-                                </>
-                                )
-                              })()}
-                              {/* v2.9.7: Zeit überschreiben für diesen Tag */}
-                              {cell.chatter && !isFrei && (
-                                <input value={cell.time_override || ''}
-                                  onChange={e => setCell(model.id, dayIso, shift, { ...cell, time_override: e.target.value || null })}
-                                  placeholder={(shiftTimes[`${model.id}__${shift}`] || '').replace(/\s*\(DE\)/g, '') || 'Zeit'}
-                                  onKeyDown={e => e.key === 'Enter' && setEditingCell(null)}
-                                  style={{
-                                    background: 'var(--bg-input)',
-                                    border: `1px solid ${cell.time_override ? '#f97316' : '#2e2e5a'}`,
-                                    color: cell.time_override ? '#f97316' : 'var(--text-muted)',
-                                    padding: '2px 4px', borderRadius: 4, fontSize: 9, fontFamily: 'monospace', outline: 'none', width: '100%',
-                                  }}
-                                />
-                              )}
-                              <input value={cell.note || ''}
-                                onChange={e => setCell(model.id, dayIso, shift, { ...cell, note: e.target.value })}
-                                placeholder="Notiz (optional)"
-                                onKeyDown={e => e.key === 'Enter' && setEditingCell(null)}
-                                style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: '#f59e0b', padding: '2px 4px', borderRadius: 4, fontSize: 10, fontFamily: 'inherit', outline: 'none', width: '100%' }}
-                              />
-                              {cell.chatter && (
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10 }} onClick={e => e.stopPropagation()}>
-                                  <input type="checkbox" checked={cell.confirmed !== false}
-                                    onChange={e => setCell(model.id, dayIso, shift, { ...cell, confirmed: e.target.checked })}
-                                    style={{ accentColor: '#10b981' }} />
-                                  <span style={{ color: cell.confirmed !== false ? '#10b981' : '#f59e0b' }}>
-                                    {cell.confirmed !== false ? 'Bestatigt' : 'Klarung notig'}
-                                  </span>
-                                </label>
-                              )}
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10 }} onClick={e => e.stopPropagation()}>
-                                <input type="checkbox" checked={isRecurring}
-                                  onChange={async e => {
-                                    if (e.target.checked && cell.chatter) { await saveRecurring(model.id, dayOfWeek, shift, cell) }
-                                    else { await saveRecurring(model.id, dayOfWeek, shift, { chatter: '' }) }
-                                  }}
-                                  style={{ accentColor: '#7c3aed' }} />
-                                <span style={{ color: isRecurring ? '#a78bfa' : 'var(--text-muted)' }}>{isRecurring ? '↻ Wochentlich (aktiv)' : '↻ Wochentlich'}</span>
-                              </label>
-                              {/* v3.1.3: Ausschreiben — auch bei leerer Zelle erlaubt (nur __FREI__ ausnehmen) */}
-                              {!isFrei && (
-                                <button onClick={(e) => { e.stopPropagation(); setBlockOffer({ dayIso, shift, presetModelId: model.id }) }}
-                                  title="Schicht zum Tausch ausschreiben — einzeln oder als Block, an alle oder nur Freie"
-                                  style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                                  🔄 Ausschreiben
-                                </button>
-                              )}
-                              <button onClick={() => setEditingCell(null)} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '4px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Fertig</button>
-                            </div>
-                          ) : cell.chatter ? (
+                          {cell.chatter ? (
                             <div style={{ flex: 1 }}>
                               {isFrei ? (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2090,28 +2059,12 @@ export default function ScheduleTab({ session, userDisplayName }) {
                                 {activeReminders[`${cell.chatter}__${dayIso}__${shift}`] && <span style={{ fontSize: 8, color: '#06b6d4' }}>R</span>}
                               </div>
                               )}
-                              {!isFrei && (reminderCell?.cellId === cellId ? (
-                                <div onClick={e => e.stopPropagation()} style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                  {['1', '3', '12', '24'].map(h => (
-                                    <button key={h} onClick={() => sendReminder(reminderCell.modelId, reminderCell.dayIso, reminderCell.shift, reminderCell.chatterName, h)}
-                                      disabled={sendingReminder}
-                                      style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                                      {h}h
-                                    </button>
-                                  ))}
-                                  <button onClick={e => { e.stopPropagation(); setReminderCell(null) }}
-                                    style={{ fontSize: 9, padding: '2px', borderRadius: 3, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>X</button>
-                                </div>
-                              ) : (
-                                <button onClick={e => { e.stopPropagation(); setReminderCell({ cellId, modelId: model.id, dayIso, shift, chatterName: cell.chatter }) }}
-                                  style={{ marginTop: 3, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'transparent', color: activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a', border: `1px solid ${activeReminders[`${cell.chatter}__${dayIso}__${shift}`] ? '#06b6d4' : '#2e2e5a'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                  Erin
-                                </button>
-                              ))}
                             </div>
                           ) : (
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <span style={{ fontSize: 18, color: hasConflict ? 'rgba(239,68,68,0.4)' : '#2e2e5a' }}>{hasConflict ? '!' : '+'}</span>
+                              {(!cell.chatter && hasConflict && (dayIso === heuteIso || dayIso === morgenIso))
+                                ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#fca5a5' }}>offen</span>
+                                : <span style={{ fontSize: 18, color: dayIso < heuteIso ? '#1e1e3a' : '#3e3e6a' }}>+</span>}
                             </div>
                           )}
                         </div>
@@ -2127,232 +2080,48 @@ export default function ScheduleTab({ session, userDisplayName }) {
       </>
       )}
 
-      {/* Mobile Edit Bottom-Sheet */}
+      {/* v4.83.0: Schicht belegen — Handy: Fenster von unten, Desktop: Seitenleiste */}
       {editSheet && (() => {
-        const cell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
-        const day = new Date(editSheet.dayIso + 'T00:00:00')
+        const { modelId, dayIso, shift } = editSheet
+        const cell = getCell(modelId, dayIso, shift)
+        const day = new Date(dayIso + 'T00:00:00')
         const dayOfWeek = day.getDay() === 0 ? 6 : day.getDay() - 1
-        const recurringKey = getRecurringKey(editSheet.modelId, dayOfWeek, editSheet.shift)
-        const isRecurring = !!recurring[recurringKey]
-        const isFrei = cell.chatter === '__FREI__'
-        const model = models.find(m => m.id === editSheet.modelId)
-        const shiftLabel = editSheet.shift === 'Früh' ? 'Frühschicht' : editSheet.shift === 'Spät' ? 'Spätschicht' : editSheet.shift === 'Nacht' ? 'Nachtschicht' : editSheet.shift
-        const SheetIcon = SHIFT_ICON[editSheet.shift] || null
+        const isRecurring = !!recurring[getRecurringKey(modelId, dayOfWeek, shift)]
+        const model = models.find(m => m.id === modelId)
+        if (!model) return null
         return (
-          <div onClick={() => setEditSheet(null)} style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
-          }}>
-            <div onClick={e => e.stopPropagation()} style={{
-              width: '100%', maxWidth: 540, background: 'var(--bg-card)', borderRadius: '14px 14px 0 0',
-              padding: 18, maxHeight: '85vh', overflowY: 'auto',
-              border: '1px solid var(--border)', borderBottom: 'none'
-            }}>
-              {/* Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{model?.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {SheetIcon && <SheetIcon size={13} strokeWidth={2.4} color={SHIFT_COLORS[editSheet.shift]} style={{ verticalAlign: '-2px', marginRight: 4 }} />}{shiftLabel} · {new Date(editSheet.dayIso + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })}
-                  </div>
-                </div>
-                <button onClick={() => setEditSheet(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 22, cursor: 'pointer', padding: 4 }}>✕</button>
-              </div>
-
-              {/* Chatter-Auswahl */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Chatter</label>
-                <select value={cell.chatter || ''}
-                  onChange={e => setChatter(editSheet.modelId, editSheet.dayIso, editSheet.shift, cell, e.target.value)}
-                  style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', width: '100%' }}>
-                  <option value="">— leer —</option>
-                  <option value="__FREI__">✓ Freischicht</option>
-                  {chatters.map(c => {
-                    const absent = isAbsent(c.name, editSheet.dayIso, editSheet.shift)
-                    return <option key={c.id} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
-                  })}
-                </select>
-              </div>
-
-              {/* Trainee / Co-Schicht / v4.34.0: geteilte Schicht */}
-              {cell.chatter && !isFrei && (() => {
-                const mode = zellModus(cell)
-                const farbe = MODE_META[mode].color
-                return (
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Zweiter Chatter (optional)</label>
-                  {/* Modus-Toggle */}
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                    {['anlernen', 'co', 'split'].map(val => {
-                      const opt = MODE_META[val]
-                      const active = mode === val
-                      return (
-                        <button key={val} type="button"
-                          onClick={() => setModus(editSheet.modelId, editSheet.dayIso, editSheet.shift, cell, val)}
-                          style={{
-                            flex: 1, padding: '6px 4px', borderRadius: 6,
-                            background: active ? `${opt.color}22` : 'transparent',
-                            border: `1px solid ${active ? opt.color : '#2e2e5a'}`,
-                            color: active ? opt.color : 'var(--text-muted)',
-                            fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                          }}>{opt.icon} {opt.label}</button>
-                      )
-                    })}
-                  </div>
-                  {mode === 'anlernen' ? (
-                    <input value={cell.trainee || ''}
-                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
-                      placeholder="Name eintragen — auch externe ohne Account"
-                      style={{
-                        background: 'var(--bg-input)', border: '1px solid #06b6d4', color: '#06b6d4',
-                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
-                      }}
-                    />
-                  ) : (
-                    <select value={cell.trainee || ''}
-                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, trainee: e.target.value || null })}
-                      style={{
-                        background: 'var(--bg-input)', border: `1px solid ${farbe}`, color: farbe,
-                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
-                      }}>
-                      <option value="">— wählen —</option>
-                      {chatters.filter(c => c.name !== cell.chatter).map(c => {
-                        const absent = isAbsent(c.name, editSheet.dayIso, editSheet.shift)
-                        return <option key={`c-${c.id}`} value={c.name} disabled={absent}>{c.name}{absent ? ' (abw.)' : ''}</option>
-                      })}
-                      {admins.filter(a => a !== cell.chatter).map(a => (
-                        <option key={`a-${a}`} value={a}>{a} (Admin)</option>
-                      ))}
-                    </select>
-                  )}
-                  {/* v4.34.0: Zeitabschnitte der geteilten Schicht.
-                      Beide Spannen sind freiwillig — wer nichts einträgt, hält nur fest,
-                      DASS geteilt wurde. Ausgefüllt sind sie die Grundlage für die Löhne. */}
-                  {mode === 'split' && (
-                    <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: `${farbe}12`, border: `1px solid ${farbe}44` }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8 }}>
-                        Zeiten sind optional — leer lassen heißt nur: die Schicht wurde geteilt.
-                      </div>
-                      {[
-                        { seite: 'a', name: cell.chatter },
-                        { seite: 'b', name: cell.trainee || '2. Person' },
-                      ].map(({ seite, name }) => (
-                        <div key={seite} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: seite === 'a' ? 6 : 0 }}>
-                          <span style={{ fontSize: 11, color: farbe, fontWeight: 600, width: 78, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                          <input type="time" value={cell[`split_${seite}_von`] || ''}
-                            onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, [`split_${seite}_von`]: e.target.value || null })}
-                            style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 6px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>–</span>
-                          <input type="time" value={cell[`split_${seite}_bis`] || ''}
-                            onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, [`split_${seite}_bis`]: e.target.value || null })}
-                            style={{ flex: 1, minWidth: 0, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 6px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none' }} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                )
-              })()}
-
-              {/* v2.9.7: Zeit überschreiben für diesen Tag */}
-              {cell.chatter && !isFrei && (() => {
-                const stdTime = (shiftTimes[`${editSheet.modelId}__${editSheet.shift}`] || '').replace(/\s*\(DE\)/g, '')
-                const hasOverride = !!cell.time_override
-                return (
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      <span>Zeit für diesen Tag</span>
-                      {hasOverride && (
-                        <button type="button" onClick={() => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, time_override: null })}
-                          style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
-                          ✕ zurücksetzen
-                        </button>
-                      )}
-                    </label>
-                    <input value={cell.time_override || ''}
-                      onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, time_override: e.target.value || null })}
-                      placeholder={stdTime ? `Standard: ${stdTime}` : '08:00-14:00'}
-                      style={{
-                        background: 'var(--bg-input)',
-                        border: `1px solid ${hasOverride ? '#f97316' : '#2e2e5a'}`,
-                        color: hasOverride ? '#f97316' : 'var(--text-primary)',
-                        padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', outline: 'none', width: '100%', boxSizing: 'border-box',
-                      }}
-                    />
-                    {hasOverride && (
-                      <div style={{ fontSize: 10, color: '#f97316', marginTop: 4 }}>
-                        ⚠ Diese Zeit gilt nur für diesen Tag. Standard: {stdTime || '—'}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* Notiz */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Notiz</label>
-                <input value={cell.note || ''}
-                  onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, note: e.target.value })}
-                  placeholder="z.B. spezielle Anweisung..."
-                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: '#f59e0b', padding: '10px 12px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }}
-                />
-              </div>
-
-              {/* Bestätigt-Toggle */}
-              {cell.chatter && !isFrei && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={cell.confirmed !== false}
-                    onChange={e => setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { ...cell, confirmed: e.target.checked })}
-                    style={{ accentColor: '#10b981', width: 18, height: 18 }} />
-                  <span style={{ fontSize: 13, color: cell.confirmed !== false ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
-                    {cell.confirmed !== false ? '✓ Bestätigt' : '! Klärung nötig'}
-                  </span>
-                </label>
-              )}
-
-              {/* Wöchentlich-Toggle */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
-                <input type="checkbox" checked={isRecurring}
-                  onChange={async e => {
-                    if (e.target.checked && cell.chatter) { await saveRecurring(editSheet.modelId, dayOfWeek, editSheet.shift, cell) }
-                    else { await saveRecurring(editSheet.modelId, dayOfWeek, editSheet.shift, { chatter: '' }) }
-                  }}
-                  style={{ accentColor: '#7c3aed', width: 18, height: 18 }} />
-                <span style={{ fontSize: 13, color: isRecurring ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600 }}>
-                  ↻ Wöchentlich {isRecurring ? '(aktiv)' : ''}
-                </span>
-              </label>
-
-              {/* v3.1.3: Schicht ausschreiben (Mobile) — auch bei leerer Zelle, nur __FREI__ ausnehmen */}
-              {(() => {
-                const editCell = getCell(editSheet.modelId, editSheet.dayIso, editSheet.shift)
-                if (editCell.chatter === '__FREI__') return null
-                return (
-                  <button onClick={() => setBlockOffer({ dayIso: editSheet.dayIso, shift: editSheet.shift, presetModelId: editSheet.modelId })}
-                    style={{
-                      width: '100%', marginTop: 10,
-                      background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
-                      border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8,
-                      padding: '11px', fontSize: 13, fontWeight: 700,
-                      cursor: 'pointer', fontFamily: 'inherit',
-                    }}
-                  >🔄 Ausschreiben (Schicht zum Tausch anbieten)</button>
-                )
-              })()}
-
-              {/* Aktion */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button onClick={() => {
-                  setCell(editSheet.modelId, editSheet.dayIso, editSheet.shift, { chatter: '', note: '', confirmed: true })
-                  setEditSheet(null)
-                }} style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', borderRadius: 8, padding: '12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Leeren</button>
-                <button onClick={() => setEditSheet(null)} style={{ flex: 2, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '12px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Fertig</button>
-              </div>
-            </div>
-          </div>
+          <SchichtFenster
+            art={isMobile ? 'sheet' : 'panel'}
+            model={model} dayIso={dayIso} shift={shift} schichtFarbe={SHIFT_COLORS[shift]}
+            standardZeit={(shiftTimes[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')}
+            cell={cell}
+            personen={personenFuer(modelId, dayIso, shift)}
+            admins={admins}
+            MODE_META={MODE_META} zellModus={zellModus}
+            isRecurring={isRecurring}
+            onRecurring={async (an) => {
+              if (an && cell.chatter) await saveRecurring(modelId, dayOfWeek, shift, cell)
+              else await saveRecurring(modelId, dayOfWeek, shift, { chatter: '' })
+            }}
+            onChatter={(name) => setChatter(modelId, dayIso, shift, cell, name)}
+            onCell={(neu) => setCell(modelId, dayIso, shift, neu)}
+            onModus={(m) => setModus(modelId, dayIso, shift, cell, m)}
+            onLeeren={() => {
+              if (cell.trainee && !window.confirm(`In dieser Schicht steht „${cell.trainee}" als zweite Person — beide entfernen?`)) return
+              setCell(modelId, dayIso, shift, { chatter: '', note: '', confirmed: true })
+              setEditSheet(null)
+            }}
+            onAusschreiben={() => { setEditSheet(null); setBlockOffer({ dayIso, shift, presetModelId: modelId }) }}
+            reminderAktiv={!!activeReminders[`${cell.chatter}__${dayIso}__${shift}`]}
+            onReminder={(h) => sendReminder(modelId, dayIso, shift, cell.chatter, h)}
+            sendingReminder={sendingReminder}
+            swapHier={openSwapMap[`${model.name}__${dayIso}__${shift}`]}
+            onZu={() => setEditSheet(null)}
+          />
         )
       })()}
 
+      <div ref={konfliktRef} style={{ scrollMarginTop: 80 }} />
       {/* Conflicts below – v3.75.0: nach Typ gruppiert, jede Gruppe einzeln aufklappbar */}
       {hasSavedData && conflicts.length > 0 && (() => {
         // v3.76.0: unbesetzte Schichten, die bereits ausgeschrieben sind (Block-Angebot/Tausch),
@@ -2429,6 +2198,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
         </div>
       )}
 
+      <div ref={abwesendRef} style={{ scrollMarginTop: 80 }} />
       {/* Absence Panel */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
         <div onClick={() => setShowAbsences(!showAbsences)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', cursor: 'pointer', background: 'var(--bg-card2)' }}>
@@ -2591,17 +2361,9 @@ export default function ScheduleTab({ session, userDisplayName }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ color: '#a78bfa', fontSize: 12 }}>↻</span> Wiederkehrend
           </div>
-          <span style={{ color: 'var(--text-muted)' }}>· Klick auf Zelle zum Bearbeiten</span>
+          <span style={{ color: 'var(--text-muted)' }}>· Zelle antippen zum Belegen</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => alsVorlageUebertragen(false)} style={{ background: 'rgba(124,58,237,0.12)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-            ↻ Als Vorlage für nächste Woche
-          </button>
-          {/* v3.16.0: Vorlage übertragen + alle Schichten auf "Klärung nötig" setzen */}
-          <button onClick={() => alsVorlageUebertragen(true)} style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-            ↻ Vorlage + alles auf Klärung
-          </button>
-        </div>
+        {/* v4.83.0: „Als Vorlage …“ liegt jetzt unter ⋯ Mehr */}
       </div>
 
       {/* v3.1.0: Send-Modal mit Checkbox-Auswahl der Chatter */}
