@@ -101,7 +101,7 @@ export const HELP_TOPICS = [
     ],
     watch: [
       'Die Farben im Subs-Tracker richten sich immer nach dem besten Tag des gezeigten Monats. Zwei Monate lassen sich daran nicht vergleichen.',
-      'Bei „Anstehendes" löscht das ✕ einen Termin sofort und ohne Rückfrage.',
+      'Bei „Anstehendes" löscht das ✕ einen Termin nach einer Rückfrage.',
     ],
   },
 

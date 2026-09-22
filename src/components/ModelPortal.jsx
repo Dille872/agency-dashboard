@@ -82,7 +82,7 @@ function SocialModelView({ displayName, cardS, itemS }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Freigaben */}
       {pendingApproval.length > 0 && (
-        <div style={{ ...cardS, borderLeft: '3px solid #f59e0b', borderRadius: '0 10px 10px 0' }}>
+        <div style={{ ...cardS, borderLeft: '3px solid #f59e0b', borderRadius: '4px 16px 16px 4px' }}>
           <div style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 10 }}>
             Freigabe ausstehend · {pendingApproval.length}
           </div>
@@ -614,6 +614,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   // Videos
   const [videos, setVideos] = useState([])
   const [showAddVideo, setShowAddVideo] = useState(false)
+  const [videosAlleZeigen, setVideosAlleZeigen] = useState(false) // v4.79.0
   const [videoTitle, setVideoTitle] = useState('')
   const [videoDesc, setVideoDesc] = useState('')
   const [videoDate, setVideoDate] = useState('')
@@ -741,20 +742,29 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     }
   }
 
-  const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
-  const inputS = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: '100%' }
-  const itemS = { padding: '9px 11px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }
+  // v4.79.0: Karten, Felder und Zeilen im Look des neuen Steckbriefs (runder,
+  // ruhigere Ränder) — wirkt auf alle Bereiche, die diese Stile benutzen.
+  const cardS = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px' }
+  const inputS = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '10px 11px', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }
+  const itemS = { padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 11, border: '1px solid var(--border)', marginBottom: 6 }
   // v4.13.0: Kopfzeile je Bereich — gibt der Einführung einen Anker und dem
   // ?-Symbol einen festen Platz. Die Bereiche hatten vorher keine Überschrift,
   // weil die Navigation sie ersetzt hat; auf dem Handy scrollt die aber weg.
-  const SektionsKopf = ({ id, titel }) => (
-    <div data-help={id} style={{
-      display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 8,
-      borderBottom: '1px solid var(--border)', marginBottom: 4,
-    }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{titel}</span>
-      <HelpDot topic={id} />
+  // v4.79.0: größer, ohne Trennlinie, rechts Platz für „+ Neu".
+  const SektionsKopf = ({ id, titel, unter, aktion }) => (
+    <div data-help={id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {unter && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{unter}</div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 21, fontWeight: 700, color: 'var(--text-primary)' }}>{titel}</span>
+          <HelpDot topic={id} />
+        </div>
+      </div>
+      {aktion}
     </div>
+  )
+  const neuKnopf = (text, onClick) => (
+    <button type="button" onClick={onClick} style={{ background: '#f59e0b', color: '#1a1205', border: 'none', borderRadius: 12, padding: '9px 15px', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>{text}</button>
   )
   const labelS = { fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }
 
@@ -880,7 +890,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
         {/* v3.40.0: Meine Aufgaben (vom Team zugewiesen) */}
         {myTodos.length > 0 && (
-          <div data-help="todos" style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '0 10px 10px 0', padding: '14px 18px' }}>
+          <div data-help="todos" style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '4px 16px 16px 4px', padding: '14px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>📋 Meine Aufgaben</span>
               <HelpDot topic="todos" />
@@ -1127,7 +1137,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                         </div>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <span style={{ fontSize: 10, background: `${cat?.color}20`, color: cat?.color, padding: '1px 7px', borderRadius: 4, fontWeight: 600 }}>{cat?.label}</span>
-                          <button onClick={() => deleteCalItem(item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
+                          <button onClick={() => { if (window.confirm(`„${item.title}" löschen?`)) deleteCalItem(item.id) }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
                             onMouseEnter={e => e.target.style.color = '#ef4444'} onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
                         </div>
                       </div>
@@ -1218,7 +1228,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             </div>
 
             {/* Custom Content */}
-            <div style={{ ...cardS, borderLeft: '3px solid #7c3aed', borderRadius: '0 10px 10px 0' }}>
+            <div style={{ ...cardS, borderLeft: '3px solid #7c3aed', borderRadius: '4px 16px 16px 4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 3, height: 14, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
@@ -1454,63 +1464,84 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         )}
 
         {/* VIDEOS */}
-        {activeSection === 'videos' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <SektionsKopf id="videos" titel="Videos" />
-            {!showAddVideo ? (
-              <button onClick={() => setShowAddVideo(true)} style={{ padding: '10px', borderRadius: 8, background: 'var(--bg-card)', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                + Neues Video eintragen
-              </button>
-            ) : (
-              <div style={cardS}>
-                <div style={{ ...labelS, marginBottom: 14 }}><span style={{ width: 3, height: 11, background: '#ef4444', borderRadius: 2, display: 'inline-block', marginRight: 6 }} />Neues Video</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <input value={videoTitle} onChange={e => setVideoTitle(e.target.value)} style={inputS} placeholder="Titel *" autoFocus />
-                  <textarea value={videoDesc} onChange={e => setVideoDesc(e.target.value)} style={{ ...inputS, resize: 'vertical' }} rows={2} placeholder="Beschreibung (optional)" />
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Release Datum</label>
-                      <input type="date" value={videoDate} onChange={e => setVideoDate(e.target.value)} style={inputS} />
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Vorschaubild (JPG/PNG)</label>
-                    <input type="file" accept="image/*" onChange={e => {
-                      const f = e.target.files[0]
-                      if (f) { setVideoFile(f); setVideoPreview(URL.createObjectURL(f)) }
-                    }} style={{ ...inputS, padding: '4px' }} />
-                    {videoPreview && <img src={videoPreview} alt="Vorschau" style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 8, marginTop: 8, border: '1px solid #1e1e3a' }} />}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button onClick={addVideo} disabled={uploadingVideo || !videoTitle.trim()} style={{ flex: 1, padding: '9px', borderRadius: 7, background: videoTitle.trim() ? '#ef4444' : 'var(--border)', color: videoTitle.trim() ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {uploadingVideo ? '⏳ Wird hochgeladen...' : '+ Speichern'}
-                    </button>
-                    <button onClick={() => { setShowAddVideo(false); setVideoTitle(''); setVideoDesc(''); setVideoDate(''); setVideoFile(null); setVideoPreview(null) }} style={{ padding: '9px 16px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
-                  </div>
+        {activeSection === 'videos' && (() => {
+          // v4.79.0: neuer Look — „+ Neu" öffnet ein Fenster, Liste getrennt in
+          // Demnächst und Veröffentlicht, große Vorschaubilder. Gleiche Tabelle
+          // (model_videos) und derselbe Upload wie vorher.
+          const bald = videos.filter(v => !v.release_date || v.release_date >= today)
+            .sort((x, y) => String(x.release_date || '9999').localeCompare(String(y.release_date || '9999')))
+          const raus = videos.filter(v => v.release_date && v.release_date < today)
+            .sort((x, y) => y.release_date.localeCompare(x.release_date))
+          const schliessen = () => { setShowAddVideo(false); setVideoTitle(''); setVideoDesc(''); setVideoDate(''); setVideoFile(null); setVideoPreview(null) }
+          const karte = (video, alt) => (
+            <div key={video.id} style={{ ...cardS, padding: 12, display: 'flex', gap: 13, alignItems: 'center', opacity: alt ? 0.75 : 1 }}>
+              {video.thumbnail_url ? (
+                <img src={video.thumbnail_url} alt={video.title} style={{ width: 112, height: 63, objectFit: 'cover', borderRadius: 10, flexShrink: 0, border: '1px solid var(--border)' }} />
+              ) : (
+                <div style={{ width: 112, height: 63, borderRadius: 10, background: 'var(--bg-card2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🎬</div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{video.title}</div>
+                {video.description && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.4 }}>{video.description}</div>}
+                <div style={{ fontSize: 11.5, marginTop: 4, fontWeight: 700, color: !video.release_date ? 'var(--text-muted)' : video.release_date === today ? '#10b981' : alt ? 'var(--text-muted)' : '#f59e0b' }}>
+                  {!video.release_date ? 'Ohne Datum' : video.release_date === today ? '● Heute' : new Date(video.release_date + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}
                 </div>
               </div>
-            )}
+              <button type="button" onClick={() => { if (window.confirm(`Video „${video.title}" löschen?`)) deleteVideo(video.id) }} aria-label="Löschen"
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 15, padding: '0 2px', flexShrink: 0 }}>✕</button>
+            </div>
+          )
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <SektionsKopf id="videos" titel="Videos" unter={videos.length ? `${bald.length} geplant · ${raus.length} veröffentlicht` : null}
+                aktion={neuKnopf('+ Neu', () => setShowAddVideo(true))} />
+              {bald.length > 0 && <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.07em', margin: '6px 2px 0' }}>DEMNÄCHST</div>}
+              {bald.map(v => karte(v, false))}
+              {raus.length > 0 && <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.07em', margin: '10px 2px 0' }}>VERÖFFENTLICHT</div>}
+              {(videosAlleZeigen ? raus : raus.slice(0, 4)).map(v => karte(v, true))}
+              {raus.length > 4 && (
+                <button type="button" onClick={() => setVideosAlleZeigen(v => !v)} style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                  {videosAlleZeigen ? 'Weniger anzeigen' : `Alle ${raus.length} anzeigen`}
+                </button>
+              )}
+              {videos.length === 0 && (
+                <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 28 }}>
+                  Noch keine Videos. Trag ein, was bald rauskommt — deine Chatter sehen es und können es ankündigen.
+                </div>
+              )}
 
-            {videos.length === 0 ? (
-              <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>Noch keine Videos eingetragen</div>
-            ) : videos.map(video => (
-              <div key={video.id} style={{ ...cardS, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                {video.thumbnail_url ? (
-                  <img src={video.thumbnail_url} alt={video.title} style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 7, flexShrink: 0, border: '1px solid #1e1e3a' }} />
-                ) : (
-                  <div style={{ width: 80, height: 60, borderRadius: 7, background: 'var(--bg-card2)', border: '1px solid #1e1e3a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🎬</div>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>{video.title}</div>
-                  {video.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4, lineHeight: 1.4 }}>{video.description}</div>}
-                  {video.release_date && <div style={{ fontSize: 11, color: '#f59e0b', fontFamily: 'monospace' }}>📅 {new Date(video.release_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
+              {showAddVideo && (
+                <div className="steckbrief-huelle" onClick={schliessen} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <div className="steckbrief-fenster" onClick={e => e.stopPropagation()} role="dialog" aria-label="Neues Video" style={{ width: 'min(480px, 100%)', maxHeight: '92vh', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '22px 22px 0 0', padding: '14px 18px 22px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)' }}>🎬 Neues Video</span>
+                      <button type="button" onClick={schliessen} aria-label="Schließen" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
+                    </div>
+                    <input value={videoTitle} onChange={e => setVideoTitle(e.target.value)} style={inputS} placeholder="Titel *" autoFocus />
+                    <textarea value={videoDesc} onChange={e => setVideoDesc(e.target.value)} style={{ ...inputS, resize: 'vertical' }} rows={2} placeholder="Worum geht es? (optional)" />
+                    <label>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Kommt raus am</span>
+                      <input type="date" value={videoDate} onChange={e => setVideoDate(e.target.value)} style={inputS} />
+                    </label>
+                    <label style={{ display: 'block', cursor: 'pointer' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Vorschaubild (optional)</span>
+                      {videoPreview
+                        ? <img src={videoPreview} alt="Vorschau" style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 12, border: '1px solid var(--border)' }} />
+                        : <div style={{ padding: 18, borderRadius: 12, border: '1px dashed var(--border)', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>📷 Bild auswählen</div>}
+                      <input type="file" accept="image/*" onChange={e => {
+                        const f = e.target.files[0]
+                        if (f) { setVideoFile(f); setVideoPreview(URL.createObjectURL(f)) }
+                      }} style={{ display: 'none' }} />
+                    </label>
+                    <button type="button" className="gross-btn" onClick={addVideo} disabled={uploadingVideo || !videoTitle.trim()} style={{ background: '#f59e0b', color: '#1a1205', border: 'none', borderRadius: 14, padding: 14, fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', opacity: videoTitle.trim() && !uploadingVideo ? 1 : 0.5 }}>
+                      {uploadingVideo ? '⏳ Wird hochgeladen …' : 'Speichern'}
+                    </button>
+                  </div>
                 </div>
-                <button onClick={() => deleteVideo(video.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, padding: 0, flexShrink: 0 }}
-                  onMouseEnter={e => e.target.style.color = '#ef4444'} onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+            </div>
+          )
+        })()}
 
         {/* ANFRAGEN */}
         {activeSection === 'anfragen' && (() => {
@@ -1529,7 +1560,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             const overdue = !req.remainder_paid && req.remainder_due_at && new Date(req.remainder_due_at) < new Date(todayStr)
             const daysOverdue = overdue ? Math.floor((new Date(todayStr) - new Date(req.remainder_due_at)) / (86400 * 1000)) : 0
             return (
-              <div key={req.id} style={{ ...cardS, borderLeft: `4px solid ${statusColor}`, borderRadius: '0 10px 10px 0', padding: '14px 16px', opacity: req.status === 'erledigt' ? 0.7 : 1 }}>
+              <div key={req.id} style={{ ...cardS, borderLeft: `4px solid ${statusColor}`, borderRadius: '4px 16px 16px 4px', padding: '14px 16px', opacity: req.status === 'erledigt' ? 0.7 : 1 }}>
                 {/* Header: Kunde + Typ + Preis */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -1629,7 +1660,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 {/* Aktionen nur für aktive (bestätigte) Aufträge */}
                 {req.status === 'bestaetigt' && (
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button onClick={() => updateRequestStatus(req.id, 'erledigt')} style={{ fontSize: 12, padding: '5px 14px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Erledigt</button>
+                    <button onClick={() => updateRequestStatus(req.id, 'erledigt')} className="gross-btn" style={{ flex: 1, fontSize: 14, padding: '11px 14px', borderRadius: 12, background: 'rgba(16,185,129,0.14)', color: '#10b981', border: '1px solid rgba(16,185,129,0.4)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800 }}>✓ Fertig — als erledigt melden</button>
                   </div>
                 )}
               </div>
@@ -1637,12 +1668,33 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           }
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <SektionsKopf id="anfragen" titel="Anfragen" />
+              <SektionsKopf id="anfragen" titel="Anfragen" unter="Aufträge, die deine Chatter für Kunden bestellt haben" />
+              {/* v4.79.0: Überblick in drei Kacheln */}
+              {(() => {
+                const offenGeld = activeReqs.reduce((sm, r) => {
+                  const rest = (r.price || 0) - (r.deposit || 0)
+                  const bezahlt = (r.deposit_paid ? (r.deposit || 0) : 0) + (r.remainder_paid ? rest : 0)
+                  return sm + Math.max(0, (r.price || 0) - bezahlt)
+                }, 0)
+                const kachel = (zahl, text, farbe) => (
+                  <div style={{ ...cardS, padding: '12px 10px', textAlign: 'center' }}>
+                    <div style={{ fontFamily: 'monospace', fontSize: 22, fontWeight: 700, color: farbe }}>{zahl}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{text}</div>
+                  </div>
+                )
+                return (
+                  <div className="raster-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                    {kachel(activeReqs.length, 'zu machen', '#06b6d4')}
+                    {kachel(`$${Math.round(offenGeld)}`, 'noch nicht bezahlt', offenGeld > 0 ? '#f59e0b' : 'var(--text-secondary)')}
+                    {kachel(doneReqs.length, 'erledigt', '#10b981')}
+                  </div>
+                )
+              })()}
               {/* Aktive Aufträge */}
               {activeReqs.length > 0 && (
                 <>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, padding: '4px 0' }}>
-                    Aktive Aufträge ({activeReqs.length})
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.07em', margin: '8px 2px 0' }}>
+                    ZU MACHEN · {activeReqs.length}
                   </div>
                   {activeReqs.map(renderReq)}
                 </>
@@ -1651,8 +1703,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               {/* Erledigt */}
               {doneReqs.length > 0 && (
                 <>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, padding: '12px 0 4px' }}>
-                    Erledigt ({doneReqs.length})
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.07em', margin: '14px 2px 0' }}>
+                    ERLEDIGT · {doneReqs.length}
                   </div>
                   {doneReqs.map(renderReq)}
                 </>
@@ -1661,7 +1713,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               {/* Leer */}
               {activeReqs.length === 0 && doneReqs.length === 0 && (
                 <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>
-                  Keine Aufträge
+                  Gerade keine Aufträge. Wenn ein Chatter etwas für dich bestellt, steht es hier.
                 </div>
               )}
             </div>
@@ -1671,34 +1723,53 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* SOCIAL */}
         {activeSection === 'social' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <SektionsKopf id="social" titel="Social" />
+            <SektionsKopf id="social" titel="Social" unter="Beiträge freigeben, die das Team für dich vorbereitet" />
             <SocialModelView displayName={displayName} cardS={cardS} itemS={itemS} />
           </div>
         )}
 
-        {/* UMSATZ */}
+        {/* UMSATZ — v4.79.0 im neuen Look: große Zahl, Anteil je Account als Balken */}
         {activeSection === 'umsatz' && (
-          <div data-help="umsatz" style={cardS}>
-            <div style={{ ...labelS, marginBottom: 16 }}><span style={{ width: 3, height: 11, background: '#10b981', borderRadius: 2, display: 'inline-block' }} />Umsatz {monthName}<HelpDot topic="umsatz" /></div>
-            <div style={{ fontSize: 36, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)', marginBottom: 4 }}>{formatMoney(totalRevenue)}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 20 }}>Laufender Monat</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <SektionsKopf id="umsatz" titel="Umsatz" unter={monthName} />
+            <div style={{ ...cardS, background: 'linear-gradient(160deg, rgba(16,185,129,0.12), var(--bg-card) 60%)', borderColor: 'rgba(16,185,129,0.35)' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Laufender Monat</div>
+              <div style={{ fontSize: 38, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)', lineHeight: 1.15, marginTop: 2 }}>{formatMoney(totalRevenue)}</div>
+              {(() => {
+                const tag = Number(today.slice(8, 10))
+                return tag > 1 && totalRevenue > 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>Ø {formatMoney(totalRevenue / (tag - 1))} pro Tag (bis gestern)</div>
+                ) : null
+              })()}
+            </div>
             {multiAccount && (
-              <div style={{ borderTop: '1px solid #1e1e3a', paddingTop: 14 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Aufschlüsselung nach Account</div>
-                {csvNames.map(name => {
-                  const alias = aliases.find(a => a.csv_name === name)
-                  return (
-                    <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{name}</div>
-                        {alias?.alias_label && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{alias.alias_label}</div>}
+              <div style={cardS}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>Nach Account</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[...csvNames].sort((x, y) => (revenue[y] || 0) - (revenue[x] || 0)).map(name => {
+                    const alias = aliases.find(a => a.csv_name === name)
+                    const wert = revenue[name] || 0
+                    const anteil = totalRevenue > 0 ? wert / totalRevenue : 0
+                    return (
+                      <div key={name}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{name}</span>
+                            {alias?.alias_label && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>{alias.alias_label}</span>}
+                          </div>
+                          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{formatMoney(wert)}</span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-card2)', marginTop: 6, overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.round(anteil * 100)}%`, height: '100%', background: '#10b981', borderRadius: 3 }} />
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>{Math.round(anteil * 100)} %</div>
                       </div>
-                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)' }}>{formatMoney(revenue[name] || 0)}</div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             )}
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', padding: '0 4px' }}>Die Zahlen kommen aus den Tagesdateien, die das Team hochlädt — der gestrige Tag steht meist ab dem Vormittag drin.</div>
           </div>
         )}
 
