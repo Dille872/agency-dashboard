@@ -299,3 +299,15 @@ th { text-align: left; }
   --ton-rot: #b91c1c; --ton-rot2: #991b1b; --ton-cyan: #0e7490; --ton-pink: #be185d;
   --ton-dunkel: rgba(15,15,40,0.05);
 }
+
+/* v4.91.0: Login-Seite — Handy-Regel für Knöpfe/Felder überschreiben */
+@media (max-width: 768px) {
+  .login-seite .login-knopf { padding: 14px !important; font-size: 15px !important; }
+  .login-seite .login-tab { padding: 10px !important; font-size: 13.5px !important; }
+  .login-seite .login-auge { padding: 0 !important; font-size: 16px !important; }
+  .login-seite .login-link { padding: 0 !important; font-size: 12.5px !important; }
+  .login-seite input { font-size: 16px !important; }
+}
+@media (max-width: 768px) {
+  .app-kachel { padding: 13px 15px !important; font-size: 14.5px !important; }
+}

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import TelegramFehlerHinweis from './components/TelegramFehlerHinweis.jsx'
+import './components/AppInstallieren.jsx' // v4.91.0: fängt „beforeinstallprompt“ früh ab
 import './index.css'
 
 // v4.14.0: Der Inkognito-Schalter hing hier global und lag damit auch über

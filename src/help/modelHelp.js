@@ -328,6 +328,24 @@ export const HELP_TOPICS = [
     ],
   },
   {
+    id: 'app',
+    icon: '📲',
+    tab: null,
+    title: 'Als App aufs Handy',
+    short: 'Icon auf den Home-Bildschirm – öffnet im Vollbild wie eine App.',
+    body: [
+      'Das Model-Portal lässt sich wie eine App auf den Home-Bildschirm legen: eigenes Icon, keine Browserleiste, ein Tipp zum Öffnen. Unter „Mehr“ → „Als App aufs Handy“ steht die Anleitung für iPhone und Android.',
+    ],
+    steps: [
+      'iPhone: in Safari öffnen → Teilen → „Zum Home-Bildschirm“ → „Hinzufügen“.',
+      'Android: in Chrome öffnen → ⋮ → „App installieren“ (oder direkt „Jetzt installieren“ im Fenster).',
+    ],
+    watch: [
+      'Beim ersten Öffnen der App meldest du dich einmal neu an, danach bleibst du angemeldet.',
+      'Updates kommen automatisch – nichts neu installieren. Läuft es schon als App, verschwindet die Kachel.',
+    ],
+  },
+  {
     id: 'bot',
     icon: '🤖',
     tab: 'home',

@@ -29,6 +29,7 @@ import Logo from './Logo'
 import { HelpProvider, HelpDot, HelpSheet } from './Help'
 import HelpTour from './HelpTour'
 import HelpFab from './HelpFab'
+import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
 import { HELP_TOPICS, TOUR_IDS } from '../help/chatterHelp'
 
 const CHRIS_TG = '1538601588'
@@ -531,6 +532,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   // heute = laufende Schicht · models = womit gechattet wird · content = Produktion
   // mehr  = Nachschlagewerk. Zuletzt gewählter Tab wird gemerkt.
   const TAB_KEY = `chatterportal_tab_${displayName || 'default'}`
+  const [appOffen, setAppOffen] = useState(false) // v4.91.0: „Als App aufs Handy“
   const [tab, setTab] = useState(() => {
     try {
       const stored = localStorage.getItem(TAB_KEY)
@@ -3229,6 +3231,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   ))}
                 </div>
               </div>
+
+              <AppKachel onOeffnen={() => setAppOffen(true)} style={{ marginBottom: 12 }} />
+              {appOffen && <AppFenster onZu={() => setAppOffen(false)} />}
             </>
           )
         })()}

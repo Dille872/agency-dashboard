@@ -26,6 +26,7 @@ import { heuteBerlin } from '../utils' // v4.57.0
 import ModelSteckbrief from './ModelSteckbrief' // v4.77.0
 import ModelKalender from './ModelKalender' // v4.78.0
 import { reiseHeute } from '../modelLage' // v4.77.0
+import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -732,6 +733,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
   // v4.77.0: Bereich öffnen — gemeinsam für die Knöpfe oben und die Leiste unten
   const [mehrOffen, setMehrOffen] = useState(false)
+  const [appOffen, setAppOffen] = useState(false) // v4.91.0
   const oeffneBereich = async (key) => {
     setActiveSection(key)
     setMehrOffen(false)
@@ -1826,9 +1828,11 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 {m.zahl > 0 && <span style={{ fontSize: 11, fontWeight: 800, background: '#f59e0b', color: '#1a1205', borderRadius: 10, padding: '2px 8px' }}>{m.zahl}</span>}
               </button>
             ))}
+            <AppKachel farbe="#f59e0b" onOeffnen={() => { setMehrOffen(false); setAppOffen(true) }} style={{ marginTop: 4 }} />
           </div>
         </div>
       )}
+      {appOffen && <AppFenster farbe="#f59e0b" onZu={() => setAppOffen(false)} />}
 
       {/* v3.99.0: Glocke + Chat-Bubble — wie im Chatter-Portal */}
       {!isPreview && displayName && (
