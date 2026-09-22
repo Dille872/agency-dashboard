@@ -151,7 +151,7 @@ export const HELP_TOPICS = [
     title: 'Neue Subs',
     short: 'Wie viele neue Abos pro Tag reinkommen — mit Vergleich zum Vormonat.',
     body: [
-      'Oben die neuen Subs im gezeigten Monat, daneben der Vergleich zum Vormonat. Darunter der beste Tag, der Schnitt pro Tag und die Gesamtzahl.',
+      'Oben die neuen Subs im gezeigten Monat, daneben der Vergleich zum Vormonat. Im laufenden Monat wird fair verglichen: gleich viele Tage, also z. B. 1.–21.09. gegen 1.–21.08. Bei abgeschlossenen Monaten ganzer Monat gegen ganzen Monat. Darunter der beste Tag, der Schnitt pro Tag und die Gesamtzahl.',
       'Im Kalender leuchtet jeder Tag umso kräftiger, je mehr neue Subs er hatte. Mit ‹ › blätterst du durch die Monate; bei mehreren Accounts wechselst du oben zwischen ihnen.',
     ],
     watch: [

@@ -989,16 +989,32 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               const totalSubs = activeSubs.reduce((s, d) => s + d.subs, 0)
               const monthSubs = activeSubs.filter(d => d.date.startsWith(subsCalMonth)).reduce((s, d) => s + d.subs, 0)
               const maxMonth = Math.max(...activeSubs.filter(d => d.date.startsWith(subsCalMonth)).map(d => d.subs), 1)
-              // v4.77.0: Vergleich zum Vormonat, bester Tag mit Datum, Schnitt pro Tag
+              // v4.77.0: Vergleich zum Vormonat, bester Tag mit Datum, Schnitt pro Tag.
+              // v4.78.1: Im laufenden Monat wird der GLEICHE Zeitraum verglichen
+              // (1. bis letzter Tag mit Daten, z. B. 1.–21.09. gegen 1.–21.08.) —
+              // nicht der halbe Monat gegen den ganzen Vormonat. Sonst stand am
+              // Monatsanfang immer ein dickes Minus (Hinweis Christoph, Fall Sandra).
+              // Vergangene Monate: ganzer Monat gegen ganzen Vormonat.
               const [jj, mm] = subsCalMonth.split('-').map(Number)
               const vormonat = mm === 1 ? `${jj - 1}-12` : `${jj}-${String(mm - 1).padStart(2, '0')}`
-              const vorSubs = activeSubs.filter(d => d.date.startsWith(vormonat)).reduce((sm, d) => sm + d.subs, 0)
               const imMonat = activeSubs.filter(d => d.date.startsWith(subsCalMonth))
               const besterTag = imMonat.reduce((b, d) => (!b || d.subs > b.subs ? d : b), null)
               const heuteIso = heuteBerlin()
-              const tageBisher = heuteIso.startsWith(subsCalMonth) ? Number(heuteIso.slice(8, 10)) : new Date(jj, mm, 0).getDate()
-              const schnitt = tageBisher ? monthSubs / tageBisher : 0
-              const veraenderung = vorSubs > 0 ? Math.round((monthSubs - vorSubs) / vorSubs * 100) : null
+              const laufend = heuteIso.startsWith(subsCalMonth)
+              const tageImMonat = new Date(jj, mm, 0).getDate()
+              const tageImVormonat = new Date(jj, mm - 1, 0).getDate()
+              // Die Tagesdatei kommt meist erst am nächsten Morgen — deshalb bis zum
+              // letzten Tag, für den es schon Zahlen gibt, nicht bis heute.
+              const bisTag = laufend ? imMonat.reduce((m, d) => Math.max(m, Number(d.date.slice(8, 10))), 0) : tageImMonat
+              const vorBis = laufend ? Math.min(bisTag, tageImVormonat) : tageImVormonat
+              const vorSubs = activeSubs
+                .filter(d => d.date.startsWith(vormonat) && Number(d.date.slice(8, 10)) <= vorBis)
+                .reduce((sm, d) => sm + d.subs, 0)
+              const schnitt = bisTag ? monthSubs / bisTag : 0
+              const veraenderung = vorSubs > 0 && bisTag > 0 ? Math.round((monthSubs - vorSubs) / vorSubs * 100) : null
+              const vergleichText = laufend
+                ? `zum Vormonat (1.–${bisTag}.${String(mm).padStart(2, '0')}. gegen 1.–${vorBis}.${String(mm === 1 ? 12 : mm - 1).padStart(2, '0')}.)`
+                : 'zum Vormonat'
               const cells = []
               for (let i = 0; i < startDow; i++) cells.push(null)
               for (let d = 1; d <= lastDay.getDate(); d++) cells.push(d)
@@ -1020,7 +1036,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                     <span style={{ fontFamily: 'monospace', fontSize: 36, fontWeight: 700, color: '#f59e0b', lineHeight: 1 }}>{monthSubs}</span>
                     {veraenderung !== null && (
                       <span style={{ fontSize: 12.5, fontWeight: 700, color: veraenderung >= 0 ? '#10b981' : '#ef4444' }}>
-                        {veraenderung >= 0 ? '▲' : '▼'} {Math.abs(veraenderung)} % zum Vormonat
+                        {veraenderung >= 0 ? '▲' : '▼'} {Math.abs(veraenderung)} % {vergleichText}
                       </span>
                     )}
                   </div>
