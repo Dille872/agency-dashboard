@@ -46,6 +46,7 @@ export const HELP_TOPICS = [
     title: 'Die fünf Reiter',
     short: 'Heute · Models · Content · Organisation · Mehr — so ist alles sortiert.',
     body: [
+      'Am Handy stehen die Bereiche unten in einer Leiste (Heute, Models, Content, Orga, Mehr) — oben ist dann mehr Platz für den Inhalt.',
       '📅 Heute — deine Schicht: Aufgaben, Mein Kalender, Dienstplan der nächsten 7 Tage, Schichtnotiz.',
       '🎬 Models — womit du arbeitest: Nachrichten-Vorschläge und die Steckbriefe deiner Models.',
       '📥 Content — Produktion: Custom-Anfragen stellen, Kunden-Historie, Content-Ideen.',

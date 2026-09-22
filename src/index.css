@@ -249,3 +249,8 @@ th { text-align: left; }
   .steckbrief .chip-btn, .steckbrief-fenster .chip-btn { padding: 8px 12px !important; font-size: 13px !important; }
   .steckbrief-fenster .gross-btn { padding: 14px !important; font-size: 15px !important; }
 }
+
+/* v4.80.0: Chatter-Portal am Handy — Leiste unten statt Reiter oben */
+@media (max-width: 768px) {
+  .chatter-tabs-oben { display: none !important; }
+}

@@ -258,7 +258,7 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         <select value={swapShift} onChange={e => setSwapShift(e.target.value)}
-          style={{ flex: 1, minWidth: 160, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: swapShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+          style={{ flex: 1, minWidth: 160, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: swapShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
           <option value="">— Schicht wählen —</option>
           {myNext7Shifts.map((s, i) => {
             const dayLabel = s.day.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
@@ -271,9 +271,9 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
         </select>
         <input value={swapReason} onChange={e => setSwapReason(e.target.value)}
           placeholder="Grund (optional)"
-          style={{ flex: 1, minWidth: 120, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
+          style={{ flex: 1, minWidth: 120, background: 'var(--bg-input)', border: '1px solid var(--border-bright)', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
         <button onClick={submitSwap} disabled={!swapShift || sending}
-          style={{ background: swapShift ? 'rgba(245,158,11,0.15)' : 'var(--border)', color: swapShift ? '#f59e0b' : 'var(--text-muted)', border: `1px solid ${swapShift ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`, borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          style={{ background: swapShift ? 'rgba(245,158,11,0.15)' : 'var(--border)', color: swapShift ? '#f59e0b' : 'var(--text-muted)', border: `1px solid ${swapShift ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`, borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
           {sending ? '...' : '↔ Anfragen'}
         </button>
       </div>
@@ -305,7 +305,7 @@ function SwapRequestForm({ displayName, myNext7Shifts }) {
               : s.status === 'angenommen' ? '#10b981'
               : '#ef4444'
             return (
-              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, gap: 8 }}>
+              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, gap: 8 }}>
                 <span style={{ color: 'var(--text-secondary)', flex: 1, minWidth: 0 }}>
                   {new Date(s.shift_date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} · {s.shift} · {s.model_name}
                 </span>
@@ -342,7 +342,7 @@ function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = '
       marginBottom: 12,
       background: 'var(--bg-card)',
       border: '1px solid var(--border)',
-      borderRadius: 10,
+      borderRadius: 16,   // v4.80.0: neuer Look wie im Model-Portal
       overflow: 'hidden'
     }}>
       <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -350,7 +350,7 @@ function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = '
         onClick={onToggle}
         style={{
           flex: 1, minWidth: 0,
-          padding: '12px 16px',
+          padding: '14px 16px',
           background: 'transparent',
           border: 'none',
           cursor: 'pointer',
@@ -362,12 +362,12 @@ function Collapsible({ isCollapsed, onToggle, icon, title, badge, badgeColor = '
           textAlign: 'left', // v4.75.0: in der schmalen rechten Spalte bricht der Titel um
         }}
       >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 600 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, fontWeight: 700 }}>
           <span style={{ fontSize: 16 }}>{icon}</span>
           <span>{title}</span>
           {badge != null && badge !== 0 && badge !== '' && (
             <span style={{
-              fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+              fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 13,
               background: badgeColor === 'var(--text-muted)' ? 'rgba(124,58,237,0.15)' : badgeColor + '22',
               color: badgeColor === 'var(--text-muted)' ? '#a78bfa' : badgeColor,
             }}>{badge}</span>
@@ -455,12 +455,12 @@ function CustomerHistorySection({ history }) {
         Alle bisherigen Anfragen (offen, bestätigt, erledigt, abgelehnt, bezahlt) für deine zugeteilten Models – als Nachschlagewerk pro Kunde.
       </div>
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Kunde / Model / Text suchen…"
-        style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', marginBottom: 10, boxSizing: 'border-box' }} />
+        style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none', marginBottom: 10, boxSizing: 'border-box' }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {groups.map(g => {
           const open = openKeys.has(g.customer)
           return (
-            <div key={g.customer} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+            <div key={g.customer} style={{ border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden' }}>
               <div onClick={() => toggle(g.customer)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '9px 11px', cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▼' : '▶'}</span>
@@ -506,6 +506,11 @@ function CustomerHistorySection({ history }) {
 // bearbeiten, Abwesenheit eintragen) gehen weiter.
 // onSwitchToOwn / onSwitchToPreview: Umschalten zwischen Vorschau und dem
 // eigenen Chatter-Portal eines Admins.
+// v4.80.0: wie leisteMerken in App.jsx — <html class="mit-leiste"> solange die Leiste hängt
+const leisteMerkenChatter = (el) => {
+  try { document.documentElement.classList.toggle('mit-leiste', !!el) } catch { /* egal */ }
+}
+
 export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview, onSwitchToOwn, onSwitchToPreview }) {
   const [theme, setThemeState] = useState(() => getTheme())
   const [showSocialPortal, setShowSocialPortal] = useState(false)
@@ -2261,6 +2266,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       laeuft: !!s.window && s.window.start.getTime() <= jetztMs && s.window.end.getTime() > jetztMs,
     }))
 
+  // v4.80.0: Reiter einmal definiert — oben (Rechner) und unten in der Leiste (Handy)
+  const offeneTodos = myTodos.filter(t => !t.completed).length
+  const offeneContents = contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length
+  const CHATTER_TABS = [
+    { key: 'heute', icon: '📅', label: 'Heute', kurz: 'Heute', badge: offeneTodos, urgent: offeneTodos > 0 },
+    { key: 'models', icon: '🎬', label: 'Models', kurz: 'Models', badge: 0 },
+    { key: 'content', icon: '📥', label: 'Content', kurz: 'Content', badge: offeneContents },
+    { key: 'orga', icon: '🗂️', label: 'Organisation', kurz: 'Orga', badge: 0 },
+    { key: 'mehr', icon: '📚', label: 'Mehr', kurz: 'Mehr', badge: 0 },
+  ]
+
   return (
     <HelpProvider topics={HELP_TOPICS} tour={TOUR_IDS}>
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
@@ -2297,7 +2313,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{APP_VERSION}</span>
           {isPreview ? (
             <select value={previewChatter} onChange={e => setPreviewChatter(e.target.value)}
-              style={{ background: 'var(--bg-input)', border: '1px solid rgba(6,182,212,0.4)', color: '#06b6d4', padding: '4px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+              style={{ background: 'var(--bg-input)', border: '1px solid rgba(6,182,212,0.4)', color: '#06b6d4', padding: '4px 8px', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
               {allChatters.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
             </select>
           ) : (
@@ -2306,28 +2322,28 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           {/* v4.52.0: Admins wechseln zwischen Vorschau und eigenem Portal */}
           {isPreview && onSwitchToOwn && (
             <button onClick={onSwitchToOwn} title="Dein eigenes Chatter-Portal — deine Schichten, dein Check-in, deine Vorschläge"
-              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <UserRound size={12} /> Mein Portal
             </button>
           )}
           {!isPreview && onSwitchToPreview && (
             <button onClick={onSwitchToPreview} title="Einem Chatter über die Schulter schauen"
-              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.35)', color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.35)', color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <Eye size={12} /> Chatter ansehen
             </button>
           )}
           {isSocialMedia && (
-            <button onClick={() => setShowSocialPortal(!showSocialPortal)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: showSocialPortal ? '#ec4899' : 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.3)', color: showSocialPortal ? '#fff' : '#ec4899', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            <button onClick={() => setShowSocialPortal(!showSocialPortal)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: showSocialPortal ? '#ec4899' : 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.3)', color: showSocialPortal ? '#fff' : '#ec4899', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
               Social
             </button>
           )}
           {onSwitchToAdmin && (
-            <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
               ⚙ Admin
             </button>
           )}
-          <button onClick={() => supabase.auth.signOut()} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, background: 'transparent', border: '1px solid #1e1e3a', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>↩</button>
-          <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
+          <button onClick={() => supabase.auth.signOut()} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, background: 'transparent', border: '1px solid #1e1e3a', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>↩</button>
+          <button onClick={toggleTheme} style={{ fontSize: 14, padding: '5px 8px', borderRadius: 8, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}>
             {theme === 'dark' ? '☀' : '☾'}
           </button>
         </div>
@@ -2338,7 +2354,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {!isPreview && displayName && <ZeitzonenHinweis displayName={displayName} onZone={() => setZonenStand(n => n + 1)} />}
         {/* v4.52.0: klar machen, wessen Portal das gerade ist */}
         {isPreview && displayName && (
-          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', color: '#06b6d4', fontSize: 12, fontWeight: 600 }}>
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 11, background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', color: '#06b6d4', fontSize: 12, fontWeight: 600 }}>
             Vorschau: Du siehst das Portal von <b>{displayName}</b>. {displayName} wird dadurch nicht als online gemeldet und nichts gilt als gelesen. Was du bewusst änderst (Board, Abwesenheit …), wird gespeichert.
           </div>
         )}
@@ -2372,7 +2388,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 0 }}>
                     <div style={{
                       fontSize: 24, lineHeight: 1, flexShrink: 0,
-                      width: 38, height: 38, borderRadius: 10,
+                      width: 38, height: 38, borderRadius: 13,
                       background: 'rgba(124,58,237,0.2)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>{ann.emoji || '📌'}</div>
@@ -2388,7 +2404,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   </div>
                   {displayName && (
                     <button onClick={() => archiveAnnouncement(ann.id)} title="Archivieren - bleibt im Verlauf" style={{
-                      fontSize: 11, padding: '5px 10px', borderRadius: 6,
+                      fontSize: 11, padding: '5px 10px', borderRadius: 8,
                       background: 'transparent', border: '1px solid rgba(124,58,237,0.3)',
                       color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
                       flexShrink: 0
@@ -2413,7 +2429,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             (mehr) erkannt wird — z. B. manueller Check-in, nur Co-Chatter/Trainee, Fenster vorbei
             oder Plan nachträglich geändert. Sonst gäbe es keinen "Schicht beenden"-Button. */}
         {(todayShifts.length > 0 || isOnline) && (
-          <div data-help="schichtleiste" style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 12, padding: '11px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div data-help="schichtleiste" style={{ background: isOnline ? 'rgba(16,185,129,0.08)' : 'rgba(124,58,237,0.06)', border: `1px solid ${isOnline ? 'rgba(16,185,129,0.25)' : 'rgba(124,58,237,0.2)'}`, borderRadius: 16, padding: '12px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
               {/* v4.18.0: Vorher wurden ALLE Schichten des Tages in eine Zeile
                   geklebt ("Spät + Nacht + Früh + Spät") und die Models aller
@@ -2434,7 +2450,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   {heuteModelNamen.map(n => {
                     const z = zustand(modelLage.kontakte[n], reiseHeute(assignedModelBoards[n]?.reise))
                     return (
-                      <span key={n} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 8, background: z.farbe + '17', border: `1px solid ${z.farbe}55` }}>
+                      <span key={n} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 11, background: z.farbe + '17', border: `1px solid ${z.farbe}55` }}>
                         <b style={{ color: 'var(--text-primary)' }}>{n}</b>
                         <span style={{ color: z.farbe, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{z.art === 'reise' ? `✈ ${reiseHeute(assignedModelBoards[n]?.reise)?.title || 'Reise'}` : z.text}</span>
                       </span>
@@ -2482,13 +2498,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <>
                   {todayShifts.length > 1 && (
                     <select value={selectedShift} onChange={e => setSelectedShift(e.target.value)}
-                      style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}>
+                      style={{ background: 'var(--bg-input)', border: '1px solid #7c3aed', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}>
                       <option value="">Schicht wählen...</option>
                       {todayShifts.map(s => <option key={s.shift} value={s.shift}>{s.shift} · {s.models.map(m => m.modelName || m).join(', ')}</option>)}
                     </select>
                   )}
                   <button onClick={() => checkIn(todayShifts.length === 1 ? todayShifts[0].shift : selectedShift)} disabled={isCheckingIn || (todayShifts.length > 1 && !selectedShift)}
-                    style={{ background: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--border)' : '#10b981', color: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    style={{ background: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--border)' : '#10b981', color: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 11, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: (isCheckingIn || (todayShifts.length > 1 && !selectedShift)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                     {isCheckingIn ? '⏳ ...' : `✓ ${todayShifts.length === 1 ? `${todayShifts[0].shift} starten` : 'Schicht starten'}`}
                   </button>
                 </>
@@ -2504,7 +2520,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                    und danach bekam die Person beim Beenden nie wieder ein Fenster.
                    Lesen und Schreiben sind zwei Dinge; ein Schreibfehler wird im
                    Dialog selbst abgefangen. */
-                <button onClick={() => { setUebergabeText(''); setUebergabeDialog(true) }} disabled={isCheckingOut} style={{ background: isCheckingOut ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                <button onClick={() => { setUebergabeText(''); setUebergabeDialog(true) }} disabled={isCheckingOut} style={{ background: isCheckingOut ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 11, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                   {isCheckingOut ? '⏳ ...' : '✕ Schicht beenden'}
                 </button>
               )}
@@ -2527,7 +2543,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             { label: 'Ø Antw.', val: formatResponseTime(chatterStats?.avgResponseSeconds), good: (chatterStats?.avgResponseSeconds || 0) <= 120, accent: '#f59e0b' },
             { label: 'Msgs', val: (chatterStats?.sentMessages || 0).toString(), good: (chatterStats?.sentMessages || 0) > 50, accent: '#a78bfa' },
           ].map(kpi => (
-            <div key={kpi.label} style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
+            <div key={kpi.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 13, padding: '10px 12px', minWidth: 0 }}>
               <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>{kpi.label}</div>
               <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: kpi.good ? kpi.accent : 'var(--text-primary)', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{kpi.val}</div>
             </div>
@@ -2619,17 +2635,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {(() => {
           // v3.98.0: Team-Nachrichten zählen hier nicht mehr mit — dafür ist der
           // Zähler an der Chat-Bubble zuständig, sonst wird dieselbe Sache doppelt gemeldet.
-          const openTodos = myTodos.filter(t => !t.completed).length
-          const openContent = contentRequests.filter(r => r.status === 'angefragt' || r.status === 'bestaetigt').length
-          const TABS = [
-            { key: 'heute', icon: '📅', label: 'Heute', badge: openTodos, urgent: openTodos > 0 },
-            { key: 'models', icon: '🎬', label: 'Models', badge: 0 },
-            { key: 'content', icon: '📥', label: 'Content', badge: openContent },
-            { key: 'orga', icon: '🗂️', label: 'Organisation', badge: 0 },
-            { key: 'mehr', icon: '📚', label: 'Mehr', badge: 0 },
-          ]
+          const TABS = CHATTER_TABS
           return (
-            <div data-help="tabs" style={{
+            <div data-help="tabs" className="chatter-tabs-oben" style={{
               display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4,
               borderBottom: '1px solid var(--border)', marginBottom: 16,
               scrollbarWidth: 'none',
@@ -2707,11 +2715,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                         {noteEditing ? (
                           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <textarea value={draft} onChange={e => setTodoNoteDrafts(prev => ({ ...prev, [todo.id]: e.target.value }))} rows={2}
-                              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
+                              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }}
                               placeholder="Kurze Rückmeldung ans Team…" autoFocus />
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => saveTodoNote(todo)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Speichern</button>
-                              <button onClick={() => setTodoNoteDrafts(prev => { const n = { ...prev }; delete n[todo.id]; return n })} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                              <button onClick={() => saveTodoNote(todo)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 8, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Speichern</button>
+                              <button onClick={() => setTodoNoteDrafts(prev => { const n = { ...prev }; delete n[todo.id]; return n })} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
                             </div>
                           </div>
                         ) : todo.assignee_note ? (
@@ -2721,7 +2729,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                             <button onClick={() => setTodoNoteDrafts(prev => ({ ...prev, [todo.id]: todo.assignee_note || '' }))} style={{ marginTop: 5, fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>Bearbeiten</button>
                           </div>
                         ) : (
-                          <button onClick={() => setTodoNoteDrafts(prev => ({ ...prev, [todo.id]: '' }))} style={{ marginTop: 8, fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'transparent', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>+ Rückmeldung</button>
+                          <button onClick={() => setTodoNoteDrafts(prev => ({ ...prev, [todo.id]: '' }))} style={{ marginTop: 8, fontSize: 11, padding: '4px 10px', borderRadius: 8, background: 'transparent', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>+ Rückmeldung</button>
                         )}
                       </div>
                     </div>
@@ -2762,7 +2770,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       onClick={() => setOpenShiftIdx(isOpen ? -1 : i)}
                       style={{
                         padding: '10px 12px', background: today ? 'rgba(16,185,129,0.05)' : 'var(--bg-card2)',
-                        borderRadius: 8, border: `1px solid ${today ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
+                        borderRadius: 11, border: `1px solid ${today ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`,
                         cursor: 'pointer',
                       }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isOpen ? 8 : 0 }}>
@@ -2831,7 +2839,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         <Collapsible helpId="absence" hidden={tab !== 'orga'} isCollapsed={collapsed.absence} onToggle={() => toggleCollapse('absence')} icon="🌴" title="Ich bin nicht verfügbar" badge={myAbsences.length || null} badgeColor="#ef4444">
           <div>
               {/* v3.49.0: Info-Hinweis zur Vorlauf-Orientierung (nur Erklärtext, keine Sperre) */}
-              <div style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.22)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.22)', borderRadius: 11, padding: '10px 12px', marginBottom: 12 }}>
                 <div style={{ fontWeight: 700, color: '#a78bfa', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>ℹ️</span> Kurz zur Orientierung
                 </div>
@@ -2845,29 +2853,29 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 {/* v4.47.0: Von–Bis statt nur ein Tag */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 260 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 260px', minWidth: 0 }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Von</span>
                   <input type="date" value={newAbsenceDate}
                     onChange={e => { const v = e.target.value; setNewAbsenceDate(v); if (newAbsenceDateTo && v && newAbsenceDateTo < v) setNewAbsenceDateTo(v) }}
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1 }} />
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1, minWidth: 0 }} />
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Bis</span>
                   <input type="date" value={newAbsenceDateTo} min={newAbsenceDate || undefined}
                     onChange={e => setNewAbsenceDateTo(e.target.value)}
                     title="Leer lassen, wenn es nur ein Tag ist"
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: newAbsenceDateTo ? 'var(--text-primary)' : 'var(--text-muted)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1 }} />
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: newAbsenceDateTo ? 'var(--text-primary)' : 'var(--text-muted)', padding: '6px 8px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', outline: 'none', flex: 1, minWidth: 0 }} />
                 </div>
                 <input value={newAbsenceReason} onChange={e => setNewAbsenceReason(e.target.value)}
                   placeholder="Grund (optional)"
-                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', flex: 1 }} />
+                  style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', flex: 1 }} />
                 <button onClick={addAbsence} disabled={!newAbsenceDate || absentLoading}
-                  style={{ background: newAbsenceDate ? 'rgba(239,68,68,0.15)' : 'var(--border)', color: newAbsenceDate ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${newAbsenceDate ? 'rgba(239,68,68,0.3)' : 'var(--border)'}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                  style={{ background: newAbsenceDate ? 'rgba(239,68,68,0.15)' : 'var(--border)', color: newAbsenceDate ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${newAbsenceDate ? 'rgba(239,68,68,0.3)' : 'var(--border)'}`, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                   + Eintragen
                 </button>
               </div>
               <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Weg an:</span>
                 <button type="button" onClick={() => setNewAbsenceShifts([])}
-                  style={{ padding: '5px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                  style={{ padding: '5px 9px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                     background: newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.15)' : 'var(--bg-input)',
                     color: newAbsenceShifts.length === 0 ? '#ef4444' : 'var(--text-muted)',
                     border: `1px solid ${newAbsenceShifts.length === 0 ? 'rgba(239,68,68,0.4)' : '#2e2e5a'}` }}>Ganzer Tag</button>
@@ -2876,7 +2884,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   return (
                     <button key={s} type="button"
                       onClick={() => setNewAbsenceShifts(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                      style={{ padding: '5px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                      style={{ padding: '5px 9px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                         background: on ? 'rgba(239,68,68,0.18)' : 'var(--bg-input)',
                         color: on ? '#ef4444' : 'var(--text-muted)',
                         border: `1px solid ${on ? 'rgba(239,68,68,0.45)' : '#2e2e5a'}` }}>{on ? '✕ ' : ''}{s}</button>
@@ -2886,7 +2894,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               {myAbsences.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {myAbsences.map(a => (
-                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 8, border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
                       <span style={{ color: '#ef4444' }}>{new Date(a.date_from + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}{(a.date_to && a.date_to !== a.date_from) ? ' – ' + new Date(a.date_to + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''} · {a.reason}{(a.available_shifts && a.available_shifts.length) ? ` · ${SHIFTS.filter(s => !a.available_shifts.includes(s)).join('/')} weg` : ''}</span>
                       <button onClick={() => deleteAbsence(a.id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                     </div>
@@ -2908,7 +2916,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <select
                     value={noteModel}
                     onChange={e => setNoteModel(e.target.value)}
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteModel ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteModel ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   >
                     <option value="">— Model wählen —</option>
                     {myShifts.filter(s => s.dayIso === todayIso).flatMap(s => Object.values(s.models)).map((_, i) => null)}
@@ -2926,7 +2934,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <select
                     value={noteShift}
                     onChange={e => setNoteShift(e.target.value)}
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   >
                     <option value="">— Schicht —</option>
                     {['Vorschicht', 'Früh', 'Spät', 'Nacht'].map(s => <option key={s} value={s}>{s}</option>)}
@@ -2938,11 +2946,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 onChange={e => setNoteText(e.target.value)}
                 rows={2}
                 placeholder="z.B. Sehr aktiv heute, viele PPVs verkauft..."
-                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
+                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
               />
               <button onClick={sendNote} disabled={sendingNote || !noteText.trim()} style={{
                 background: noteText.trim() ? '#7c3aed' : 'var(--border)', color: noteText.trim() ? '#fff' : 'var(--text-muted)',
-                border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: noteText.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                border: 'none', borderRadius: 10, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: noteText.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
               }}>{sendingNote ? 'Senden...' : 'Notiz senden'}</button>
             </div>
           </div>
@@ -2979,7 +2987,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {Object.keys(assignedModelBoards).map(name => (
                 <button key={name} onClick={() => setSelectedModelInfo(selectedModelInfo === name ? null : name)}
-                  style={{ padding: '5px 14px', borderRadius: 7, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
+                  style={{ padding: '5px 14px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 12,
                     background: selectedModelInfo === name ? '#f59e0b' : 'var(--bg-card)',
                     color: selectedModelInfo === name ? '#000' : 'var(--text-secondary)',
                     border: `1px solid ${selectedModelInfo === name ? '#f59e0b' : '#2e2e5a'}` }}>
@@ -2999,7 +3007,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     <div key={cat} style={{ background: 'var(--bg-card)', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
                       <div style={{ fontSize: 9, color, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>{catLabels[cat] || cat}</div>
                       {items.map(item => (
-                        <div key={item.id} style={{ padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid #1e1e3a', marginBottom: 5 }}>
+                        <div key={item.id} style={{ padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a', marginBottom: 5 }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{item.title}</div>
                           {item.content && <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>{item.content}</div>}
                           {item.price && <div style={{ fontSize: 11, fontWeight: 700, color, marginTop: 2 }}>{item.price}</div>}
@@ -3021,7 +3029,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     {Object.entries(assignedServices[selectedModelInfo] || {}).map(([key, svc]) => {
                       const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren', custom: 'Custom', sexting: 'Sexting' }
                       return (
-                        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid #1e1e3a', marginBottom: 4 }}>
+                        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a', marginBottom: 4 }}>
                           <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{labels[key] || key}</span>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
                             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: svc.enabled ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: svc.enabled ? '#10b981' : '#ef4444' }}>
@@ -3045,7 +3053,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                       const isOverdue = cc.due_date && cc.due_date < todayBerlin()
                       const color = isOverdue ? '#ef4444' : '#f59e0b'
                       return (
-                        <div key={cc.id} style={{ padding: '6px 8px', background: isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)', borderRadius: 6, border: `1px solid ${color}33`, marginBottom: 5 }}>
+                        <div key={cc.id} style={{ padding: '6px 8px', background: isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)', borderRadius: 8, border: `1px solid ${color}33`, marginBottom: 5 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{cc.title}</span>
                             {cc.due_date && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: color + '22', color, flexShrink: 0 }}>
@@ -3064,7 +3072,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.3)', borderLeft: '3px solid #ef4444', borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
                     <div style={{ fontSize: 9, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Bevorstehende Videos</div>
                     {(assignedModelVideos[selectedModelInfo] || []).map(video => (
-                      <div key={video.id} style={{ display: 'flex', gap: 10, padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid #1e1e3a', marginBottom: 5, alignItems: 'flex-start' }}>
+                      <div key={video.id} style={{ display: 'flex', gap: 10, padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a', marginBottom: 5, alignItems: 'flex-start' }}>
                         {video.thumbnail_url ? (
                           <img src={video.thumbnail_url} alt={video.title} style={{ width: 50, height: 38, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
                         ) : (
@@ -3089,13 +3097,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         <div>
             {!showNewRequestForm ? (
               <button onClick={() => setShowNewRequestForm(true)} style={{
-                width: '100%', padding: '10px 14px', borderRadius: 8,
+                width: '100%', padding: '10px 14px', borderRadius: 11,
                 background: 'rgba(124,58,237,0.1)', border: '1px dashed rgba(124,58,237,0.3)',
                 color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit',
                 fontWeight: 600, fontSize: 13, marginBottom: 12
               }}>+ Neue Content-Anfrage erstellen</button>
             ) : (
-            <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
+            <div style={{ background: 'var(--bg-card2)', borderRadius: 11, padding: '12px', marginBottom: 12, border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Neue Anfrage</div>
               <button onClick={() => setShowNewRequestForm(false)} style={{
@@ -3109,7 +3117,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 {Object.entries(CONTENT_TYPE_META).map(([k, meta]) => (
                   <button key={k} onClick={() => setNewRequestType(k)} style={{
-                    flex: '1 1 28%', minWidth: 88, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
+                    flex: '1 1 28%', minWidth: 88, padding: '6px 4px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
                     background: newRequestType === k ? 'rgba(124,58,237,0.2)' : 'transparent',
                     color: newRequestType === k ? '#a78bfa' : 'var(--text-muted)',
                     border: `1px solid ${newRequestType === k ? '#7c3aed' : 'var(--border)'}`,
@@ -3127,7 +3135,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     setNewRequestProfile(pn)
                     setNewRequestModel(opt ? opt.modelName : '')
                   }}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
                   <option value="">— wählen —</option>
                   {Object.entries(profileOptionsByModel).map(([modelName, opts]) => (
                     (opts.length === 1 && opts[0].profileName === modelName)
@@ -3141,7 +3149,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <div>
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Kundennummer</label>
                 <input value={newRequestCustomerId} onChange={e => setNewRequestCustomerId(e.target.value)}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   placeholder="#FAN-xxxx" />
               </div>
             </div>
@@ -3152,7 +3160,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
                 {[['anfrage','Anfrage','#a78bfa'],['angezahlt','Angezahlt','#f59e0b'],['bezahlt','Bezahlt','#10b981']].map(([k,l,c]) => (
                   <button key={k} onClick={() => setNewRequestPayStatus(k)} style={{
-                    flex: 1, padding: '6px 4px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                    flex: 1, padding: '6px 4px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
                     background: newRequestPayStatus === k ? c + '22' : 'transparent',
                     color: newRequestPayStatus === k ? c : 'var(--text-muted)',
                     border: `1px solid ${newRequestPayStatus === k ? c : 'var(--border)'}`,
@@ -3163,14 +3171,14 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <div>
                   <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Gesamtpreis</label>
                   <input type="number" value={newRequestPrice} onChange={e => setNewRequestPrice(e.target.value)}
-                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                     placeholder="$0" />
                 </div>
                 {newRequestPayStatus === 'angezahlt' && (
                   <div>
                     <label style={{ fontSize: 10, color: '#f59e0b', display: 'block', marginBottom: 3 }}>Anzahlung erhalten</label>
                     <input type="number" value={newRequestDeposit} onChange={e => setNewRequestDeposit(e.target.value)}
-                      style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #f59e0b55', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                      style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #f59e0b55', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                       placeholder="$0" />
                   </div>
                 )}
@@ -3185,11 +3193,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{(CONTENT_TYPE_META[newRequestType] || {}).durLabel || 'Länge / Anzahl'}</label>
               <div style={{ display: 'flex', gap: 4 }}>
                 <input value={newRequestDuration} onChange={e => setNewRequestDuration(e.target.value)}
-                  style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                  style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                   placeholder={(CONTENT_TYPE_META[newRequestType] || {}).durPlaceholder || ''} />
                 {(CONTENT_TYPE_META[newRequestType] || {}).showQuantity && (
                   <input type="number" value={newRequestQuantity} onChange={e => setNewRequestQuantity(e.target.value)} min="1"
-                    style={{ width: 60, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+                    style={{ width: 60, background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
                     placeholder="1" />
                 )}
               </div>
@@ -3198,7 +3206,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Wunsch des Kunden *</label>
               <textarea value={newRequestText} onChange={e => setNewRequestText(e.target.value)} rows={2}
                 placeholder="Was möchte der Kunde genau?"
-                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
+                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
             </div>
 
             {/* v3.50.0: Outfit (nur bei sichtbaren/visuellen Typen) */}
@@ -3207,7 +3215,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Outfit</label>
                 <input value={newRequestOutfit} onChange={e => setNewRequestOutfit(e.target.value)}
                   placeholder="z.B. rotes Kleid, Dessous, casual …"
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }} />
               </div>
             )}
 
@@ -3216,7 +3224,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Besonderheiten</label>
               <textarea value={newRequestSpecial} onChange={e => setNewRequestSpecial(e.target.value)} rows={2}
                 placeholder="z.B. Name nennen, bestimmte Ansprache, No-Gos, Requisiten …"
-                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
+                style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, resize: 'none', fontFamily: 'inherit', outline: 'none' }} />
             </div>
 
             <div style={{ marginBottom: 8 }}>
@@ -3224,7 +3232,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 {[['asap','⚡ So schnell wie möglich','#ef4444'],['hours','⏰ In den nächsten Stunden','#f97316'],['days','📅 1-2 Tage','#f59e0b'],['week','🗓 Diese Woche','#10b981']].map(([k,l,c]) => (
                   <button key={k} onClick={() => setNewRequestDeadline(k)} style={{
-                    padding: '5px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
+                    padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
                     background: newRequestDeadline === k ? c + '22' : 'transparent',
                     color: newRequestDeadline === k ? c : 'var(--text-muted)',
                     border: `1px solid ${newRequestDeadline === k ? c : 'var(--border)'}`,
@@ -3237,7 +3245,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             {(CONTENT_TYPE_META[newRequestType] || {}).showImages && (
             <div style={{ marginBottom: 8 }}>
               <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Referenzbilder (optional · max. 5)</label>
-              <label style={{ display: 'block', border: '1.5px dashed #2e2e5a', borderRadius: 7, padding: '10px', textAlign: 'center', cursor: 'pointer', background: 'var(--bg-input)' }}>
+              <label style={{ display: 'block', border: '1.5px dashed #2e2e5a', borderRadius: 10, padding: '10px', textAlign: 'center', cursor: 'pointer', background: 'var(--bg-input)' }}>
                 <input type="file" accept="image/*" multiple style={{ display: 'none' }}
                   onChange={e => {
                     const files = Array.from(e.target.files).slice(0, 5)
@@ -3250,7 +3258,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                   {newRequestImages.map((file, i) => (
                     <div key={i} style={{ position: 'relative' }}>
-                      <img src={URL.createObjectURL(file)} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid #2e2e5a' }} />
+                      <img src={URL.createObjectURL(file)} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid #2e2e5a' }} />
                       <button onClick={() => setNewRequestImages(prev => prev.filter((_, j) => j !== i))}
                         style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#ef4444', border: 'none', color: '#fff', fontSize: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>✕</button>
                     </div>
@@ -3263,7 +3271,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             <button onClick={submitContentRequest} disabled={sendingRequest || !newRequestModel || !newRequestText.trim()} style={{
               width: '100%', background: (newRequestModel && newRequestText.trim()) ? '#06b6d4' : 'var(--border)',
               color: (newRequestModel && newRequestText.trim()) ? '#fff' : 'var(--text-muted)',
-              border: 'none', borderRadius: 7, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              border: 'none', borderRadius: 10, padding: '8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}>{sendingRequest ? 'Bilder werden hochgeladen...' : '+ Anfrage senden'}</button>
           </div>
           )}
@@ -3289,7 +3297,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 const paidPct = req.price > 0 ? Math.round((totalPaid / req.price) * 100) : 0
                 const barTrackColor = nothingPaid ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
                 return (
-                  <div key={req.id} style={{ padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
+                  <div key={req.id} style={{ padding: '12px 14px', background: 'var(--bg-card2)', borderRadius: 11, borderLeft: `3px solid ${statusColor}` }}>
                     {/* Header: Model groß + Kunde + Preis rechts */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -3399,13 +3407,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
           {!showNewIdeaForm ? (
             <button onClick={() => setShowNewIdeaForm(true)} style={{
-              width: '100%', padding: '10px 14px', borderRadius: 8,
+              width: '100%', padding: '10px 14px', borderRadius: 11,
               background: 'rgba(167,139,250,0.1)', border: '1px dashed rgba(167,139,250,0.3)',
               color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit',
               fontWeight: 600, fontSize: 13, marginBottom: 12
             }}>+ Neue Content-Idee</button>
           ) : (
-            <div style={{ background: 'var(--bg-card2)', borderRadius: 8, padding: 12, marginBottom: 12, border: '1px solid var(--border)' }}>
+            <div style={{ background: 'var(--bg-card2)', borderRadius: 11, padding: 12, marginBottom: 12, border: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Neue Idee</div>
                 <button onClick={() => setShowNewIdeaForm(false)} style={{
@@ -3417,7 +3425,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <div>
                   <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Für Model *</label>
                   <select value={newIdeaModel} onChange={e => setNewIdeaModel(e.target.value)}
-                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
+                    style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}>
                     <option value="">— wählen —</option>
                     {activeModels.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                   </select>
@@ -3427,7 +3435,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <div style={{ display: 'flex', gap: 4 }}>
                     {[['bilder','📸 Bilder'],['videos','🎬 Videos'],['audio','🎙 Audio'],['sonstiges','💭 Sonst']].map(([k,l]) => (
                       <button key={k} type="button" onClick={() => setNewIdeaCategory(k)} style={{
-                        flex: 1, fontSize: 11, padding: '6px 4px', borderRadius: 6, cursor: 'pointer',
+                        flex: 1, fontSize: 11, padding: '6px 4px', borderRadius: 8, cursor: 'pointer',
                         background: newIdeaCategory === k ? 'rgba(167,139,250,0.2)' : 'var(--bg-input)',
                         border: `1px solid ${newIdeaCategory === k ? '#a78bfa' : '#2e2e5a'}`,
                         color: newIdeaCategory === k ? '#a78bfa' : 'var(--text-secondary)',
@@ -3442,7 +3450,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>Was fehlt / Idee *</label>
                 <textarea value={newIdeaText} onChange={e => setNewIdeaText(e.target.value)} rows={3}
                   placeholder="z.B. Brauchen neue Bikini-Bilder für Promo / Fehlt Heels-Content / Neue Talking-Videos zum Kennenlernen wären gut"
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
               </div>
 
               <div style={{ marginBottom: 12 }}>
@@ -3454,7 +3462,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     ['nice','💭 Wenn Zeit','#06b6d4']
                   ].map(([k,l,c]) => (
                     <button key={k} type="button" onClick={() => setNewIdeaPriority(k)} style={{
-                      flex: 1, fontSize: 11, padding: '7px 4px', borderRadius: 6, cursor: 'pointer',
+                      flex: 1, fontSize: 11, padding: '7px 4px', borderRadius: 8, cursor: 'pointer',
                       background: newIdeaPriority === k ? c + '22' : 'var(--bg-input)',
                       border: `1px solid ${newIdeaPriority === k ? c : '#2e2e5a'}`,
                       color: newIdeaPriority === k ? c : 'var(--text-secondary)',
@@ -3466,7 +3474,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={submitContentIdea} disabled={sendingIdea || !newIdeaModel || !newIdeaText.trim()} style={{
-                  flex: 1, fontSize: 13, padding: '8px 16px', borderRadius: 7,
+                  flex: 1, fontSize: 13, padding: '8px 16px', borderRadius: 10,
                   background: (newIdeaModel && newIdeaText.trim()) ? '#a78bfa' : 'var(--border)',
                   color: (newIdeaModel && newIdeaText.trim()) ? '#fff' : 'var(--text-muted)',
                   border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700
@@ -3486,7 +3494,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 const prioIcon = idea.priority === 'urgent' ? '🔥' : idea.priority === 'nice' ? '💭' : '📅'
                 const catIcon = idea.category === 'videos' ? '🎬' : idea.category === 'audio' ? '🎙' : idea.category === 'sonstiges' ? '💭' : '📸'
                 return (
-                  <div key={idea.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
+                  <div key={idea.id} style={{ padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: 11, borderLeft: `3px solid ${statusColor}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 13 }}>{catIcon}</span>
@@ -3558,7 +3566,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               { label: 'Buy Rate KW', val: `${weekBuyRate.toFixed(1)}%`, good: weekBuyRate >= 25 },
               { label: 'Aktiv (Std) KW', val: (weekActiveMinutes / 60).toFixed(1) + 'h', good: weekActiveMinutes > 300 },
             ].map(stat => (
-              <div key={stat.label} style={{ ...sR, flexDirection: 'column', borderBottom: 'none', padding: '10px 14px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a' }}>
+              <div key={stat.label} style={{ ...sR, flexDirection: 'column', borderBottom: 'none', padding: '10px 14px', background: 'var(--bg-card2)', borderRadius: 11, border: '1px solid #1e1e3a' }}>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{stat.label}</div>
                 <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: stat.good ? '#10b981' : 'var(--text-primary)' }}>{stat.val}</div>
               </div>
@@ -3574,7 +3582,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               { cmd: '/off', desc: 'Schicht beenden', color: '#ef4444' },
               { cmd: '/start', desc: 'Telegram ID anzeigen', color: '#a78bfa' },
             ].map(b => (
-              <div key={b.cmd} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a' }}>
+              <div key={b.cmd} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'var(--bg-card2)', borderRadius: 10, border: '1px solid #1e1e3a' }}>
                 <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: b.color, background: b.color + '20', padding: '2px 7px', borderRadius: 4 }}>{b.cmd}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{b.desc}</span>
               </div>
@@ -3593,7 +3601,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           <button
             onClick={() => setTourOpen(true)}
             style={{
-              width: '100%', marginBottom: 14, padding: '10px', borderRadius: 8,
+              width: '100%', marginBottom: 14, padding: '10px', borderRadius: 11,
               background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.4)',
               color: '#a78bfa', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             }}
@@ -3605,7 +3613,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 onClick={() => setHelpTopic(t.id)}
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left',
-                  padding: '10px 12px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                  padding: '10px 12px', borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
                   background: 'var(--bg-card2)', border: '1px solid var(--border)', width: '100%',
                 }}
               >
@@ -3644,7 +3652,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     <div key={ann.id} style={{
                       padding: '10px 14px',
                       background: 'var(--bg-card2)',
-                      borderRadius: 8,
+                      borderRadius: 11,
                       border: '1px solid var(--border)',
                       opacity: isExpired ? 0.5 : 1
                     }}>
@@ -3670,6 +3678,26 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </div>
         )}
       </main>
+
+      {/* ── v4.80.0: Untere Leiste am Handy — wie im Model-Portal und im Admin.
+          Ab 769 px per CSS aus, dann gelten die Reiter oben. Hebt Glocke, Chat
+          und Hilfe über die Leiste (html.mit-leiste → --fab-lift). */}
+      {!showSocialPortal && (
+        <nav className="leiste-mobil chatter-leiste" ref={leisteMerkenChatter} aria-label="Bereiche">
+          {CHATTER_TABS.map(t => {
+            const aktiv = tab === t.key
+            return (
+              <button key={t.key} type="button" onClick={() => goTab(t.key)} className={aktiv ? 'aktiv' : undefined} aria-current={aktiv ? 'page' : undefined}>
+                <span className="leiste-icon" style={{ fontSize: 19, filter: aktiv ? 'none' : 'grayscale(0.6)', opacity: aktiv ? 1 : 0.75 }}>
+                  {t.icon}
+                  {t.badge > 0 && <span className="leiste-zahl" style={t.urgent ? { background: '#ef4444', color: '#fff' } : undefined}>{t.badge}</span>}
+                </span>
+                <span>{t.kurz}</span>
+              </button>
+            )
+          })}
+        </nav>
+      )}
       {/* v3.2.0: Guideline-Bild Lightbox */}
       {guidelineLightbox && (
         <div onClick={() => setGuidelineLightbox(null)} style={{
@@ -3680,7 +3708,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         }}>
           <img src={guidelineLightbox.url} alt="" style={{
             maxWidth: '95%', maxHeight: '95%', objectFit: 'contain',
-            borderRadius: 8, boxShadow: '0 0 40px rgba(0,0,0,0.5)',
+            borderRadius: 11, boxShadow: '0 0 40px rgba(0,0,0,0.5)',
           }} />
           <button onClick={(e) => { e.stopPropagation(); setGuidelineLightbox(null) }} style={{
             position: 'absolute', top: 16, right: 16, width: 40, height: 40, borderRadius: '50%',
@@ -3763,17 +3791,17 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 ? `${uebergabeModelWahl[0].name}: Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €.\n${uebergabeModelWahl[1].name}: nichts Besonderes.`
                 : 'z. B. Kunde XY will heute Abend nochmal schreiben, Preis steht bei 80 €.'}
               rows={uebergabeModelWahl.length > 1 ? 5 : 4}
-              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 8, padding: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
+              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', borderRadius: 11, padding: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
               <button onClick={() => checkOut(uebergabeText, uebergabeModels)} disabled={isCheckingOut || !uebergabeText.trim()}
-                style={{ flex: '1 1 190px', background: uebergabeText.trim() ? '#ec4899' : 'var(--border)', color: uebergabeText.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: (isCheckingOut || !uebergabeText.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: '1 1 190px', background: uebergabeText.trim() ? '#ec4899' : 'var(--border)', color: uebergabeText.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 11, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: (isCheckingOut || !uebergabeText.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                 {isCheckingOut ? '⏳ ...' : (nachreichenLog && !isOnline ? '🤝 Übergabe abschicken' : '🤝 Übergeben & beenden')}
               </button>
               {/* Nach dem automatischen Auschecken gibt es nichts mehr zu beenden —
                   dann nur noch abschicken oder verwerfen. */}
               {!(nachreichenLog && !isOnline) && (
                 <button onClick={() => checkOut(null)} disabled={isCheckingOut}
-                  style={{ flex: '1 1 160px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  style={{ flex: '1 1 160px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 11, padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: isCheckingOut ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                   Ohne Übergabe beenden
                 </button>
               )}
@@ -3801,7 +3829,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             {eingangUebergaben.map(log => {
               const wann = log.handover_at || log.checked_out_at
               return (
-                <div key={log.id} style={{ background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.3)', borderRadius: 10, padding: 14, marginBottom: 10 }}>
+                <div key={log.id} style={{ background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.3)', borderRadius: 13, padding: 14, marginBottom: 10 }}>
                   <div style={{ fontSize: 11, color: '#ec4899', fontWeight: 700, marginBottom: 6 }}>
                     {log.display_name}{log.shift ? ` · ${log.shift}` : ''}
                     {wann ? ` · ${new Date(wann).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
@@ -3817,7 +3845,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   )}
                   <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{meinUebergabeTeil(log)}</div>
                   <button onClick={() => bestaetigeUebergabe(log)} disabled={uebergabeLaedt}
-                    style={{ marginTop: 12, background: '#10b981', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: uebergabeLaedt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    style={{ marginTop: 12, background: '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: uebergabeLaedt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                     ✓ Gelesen & verstanden
                   </button>
                 </div>
@@ -3881,7 +3909,7 @@ function GuidelineView({ guideline, number, onImageClick }) {
 
   return (
     <div style={{
-      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
+      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 13, overflow: 'hidden',
     }}>
       <div onClick={() => setExpanded(!expanded)} style={{
         display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
@@ -3937,7 +3965,7 @@ function GuidelineView({ guideline, number, onImageClick }) {
         const InlineImg = ({ url }) => (
           <img src={url} alt="" onClick={() => onImageClick(url)}
             style={{
-              width: '100%', maxHeight: 520, objectFit: 'contain', borderRadius: 8,
+              width: '100%', maxHeight: 520, objectFit: 'contain', borderRadius: 11,
               cursor: 'pointer', border: '1px solid var(--border)',
               background: 'rgba(0,0,0,0.15)', display: 'block',
             }}
@@ -3965,7 +3993,7 @@ function GuidelineView({ guideline, number, onImageClick }) {
                   <img key={i} src={url} alt={`Beispiel ${i + 1}`}
                     onClick={() => onImageClick(url)}
                     style={{
-                      width: 110, height: 110, objectFit: 'cover', borderRadius: 6,
+                      width: 110, height: 110, objectFit: 'cover', borderRadius: 8,
                       cursor: 'pointer', border: '1px solid var(--border)',
                     }}
                   />
