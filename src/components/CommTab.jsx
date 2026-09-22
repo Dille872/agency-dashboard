@@ -657,6 +657,32 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
   const activeModels = models.filter(m => m.active !== false)
   const activeChatters = chatters.filter(c => c.active !== false)
 
+  // v4.88.0: Wer ist aktuell dabei? Für die Filter-Chips im Custom Content —
+  // Ehemalige verschwinden dort aus der Reihe (hinter „+ N ehemalige“), ihre
+  // Anfragen und Zahlen bleiben aber vollständig erhalten und zählen weiter.
+  const [rollenStatus, setRollenStatus] = useState({ aktiv: new Set(), inaktiv: new Set() })
+  const [zeigeEhemalige, setZeigeEhemalige] = useState({ Model: false, Chatter: false })
+  useEffect(() => {
+    supabase.from('user_roles').select('display_name, status').then(({ data }) => {
+      const aktiv = new Set(), inaktiv = new Set()
+      for (const u of data || []) {
+        const n = String(u.display_name || '').trim().toLowerCase()
+        if (!n) continue
+        if (u.status && u.status !== 'active') inaktiv.add(n); else aktiv.add(n)
+      }
+      setRollenStatus({ aktiv, inaktiv })
+    })
+  }, [])
+  const istAktuell = (name, art) => {
+    const n = String(name || '').trim().toLowerCase()
+    if (!n) return false
+    if (rollenStatus.inaktiv.has(n)) return false
+    const kontakte = art === 'Model' ? models : chatters
+    const k = kontakte.find(x => String(x.name || '').trim().toLowerCase() === n)
+    if (k) return k.active !== false
+    return rollenStatus.aktiv.has(n) // z. B. Admins, die selbst Anfragen stellen
+  }
+
 
   const sendModelMessage = async () => {
     if (!selectedModel || !modelMsgText.trim() || !selectedModel.telegram_id) return
@@ -3557,20 +3583,33 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             {[
               ['Model', contentModelFilter, setContentModelFilter, uniqueModels, '#ec4899'],
               ['Chatter', contentChatterFilter, setContentChatterFilter, uniqueChatters, '#06b6d4'],
-            ].map(([titel, wert, setWert, liste, farbe]) => (
-              <div key={titel} className="chip-reihe" style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', overflowX: 'auto', paddingBottom: 2 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, width: 54 }}>{titel}</span>
-                {['all', ...liste].map(v => {
-                  const an = wert === v
-                  return (
-                    <button key={v} type="button" className="filter-chip" onClick={() => setWert(v)} style={{
-                      flexShrink: 0, fontSize: 12, padding: '6px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
-                      background: an ? farbe + '26' : 'transparent', border: `1px solid ${an ? farbe : 'var(--border)'}`, color: an ? farbe : 'var(--text-secondary)',
-                    }}>{v === 'all' ? 'Alle' : v}</button>
-                  )
-                })}
-              </div>
-            ))}
+            ].map(([titel, wert, setWert, liste, farbe]) => {
+              // v4.88.0: nur aktuelle Leute in der Reihe; Ehemalige hinter einem Chip
+              const aktuell = liste.filter(n => istAktuell(n, titel))
+              const ehemalige = liste.filter(n => !istAktuell(n, titel))
+              const offen = zeigeEhemalige[titel] || ehemalige.includes(wert)
+              const chipSt = (an, alt) => ({
+                flexShrink: 0, fontSize: 12, padding: '6px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
+                background: an ? farbe + '26' : 'transparent', border: `1px ${alt && !an ? 'dashed' : 'solid'} ${an ? farbe : 'var(--border)'}`,
+                color: an ? farbe : alt ? 'var(--text-muted)' : 'var(--text-secondary)', fontStyle: alt ? 'italic' : 'normal',
+              })
+              return (
+                <div key={titel} className="chip-reihe" style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', overflowX: 'auto', paddingBottom: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, width: 54 }}>{titel}</span>
+                  {['all', ...aktuell].map(v => (
+                    <button key={v} type="button" className="filter-chip" onClick={() => setWert(v)} style={chipSt(wert === v, false)}>{v === 'all' ? 'Alle' : v}</button>
+                  ))}
+                  {ehemalige.length > 0 && (
+                    <button type="button" className="filter-chip" onClick={() => setZeigeEhemalige(z => ({ ...z, [titel]: !z[titel] }))}
+                      title="Nicht mehr bei uns — ihre Anfragen bleiben in „Alle“ und in den Zahlen"
+                      style={{ ...chipSt(false, true), fontStyle: 'normal' }}>{offen ? '− ehemalige' : `+ ${ehemalige.length} ehemalige`}</button>
+                  )}
+                  {offen && ehemalige.map(v => (
+                    <button key={v} type="button" className="filter-chip" onClick={() => setWert(v)} style={chipSt(wert === v, true)}>{v}</button>
+                  ))}
+                </div>
+              )
+            })}
 
             <input
               type="text"
