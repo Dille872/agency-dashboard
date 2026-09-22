@@ -311,3 +311,14 @@ th { text-align: left; }
 @media (max-width: 768px) {
   .app-kachel { padding: 13px 15px !important; font-size: 14.5px !important; }
 }
+
+/* v4.92.0: Platzhalter-Karten beim Laden */
+.skel {
+  background: linear-gradient(90deg, var(--bg-card2) 0%, var(--border) 45%, var(--bg-card2) 90%);
+  background-size: 220% 100%;
+  animation: skel-schimmer 1.4s ease-in-out infinite;
+}
+@keyframes skel-schimmer { 0% { background-position: 110% 0 } 100% { background-position: -110% 0 } }
+.skel-puls { animation: skel-puls 1.6s ease-in-out infinite; }
+@keyframes skel-puls { 0%, 100% { opacity: 1 } 50% { opacity: 0.45 } }
+@media (prefers-reduced-motion: reduce) { .skel, .skel-puls { animation: none; } }

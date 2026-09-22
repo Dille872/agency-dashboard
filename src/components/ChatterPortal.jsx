@@ -30,6 +30,7 @@ import { HelpProvider, HelpDot, HelpSheet } from './Help'
 import HelpTour from './HelpTour'
 import HelpFab from './HelpFab'
 import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
+import { SkelModels } from './Skeleton' // v4.92.0
 import { HELP_TOPICS, TOUR_IDS } from '../help/chatterHelp'
 
 const CHRIS_TG = '1538601588'
@@ -473,6 +474,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [myAbsences, setMyAbsences] = useState([])
   // v4.82.0: Formularwerte der Abwesenheit liegen jetzt in ChatterOrga.jsx
   const [next7Schedules, setNext7Schedules] = useState([])
+  const [plan7Geladen, setPlan7Geladen] = useState(false) // v4.92.0: bis dahin Platzhalter in „Heute“
+  // Sicherheitsnetz: hängt das Laden, nach 8 s trotzdem den echten Inhalt zeigen
+  useEffect(() => { const t = setTimeout(() => setPlan7Geladen(true), 8000); return () => clearTimeout(t) }, [])
   const [absentLoading, setAbsentLoading] = useState(false)
   // v3.98.0: In "Meine Schichten" ist nur die heutige Schicht offen. null = Standard
   // (heute offen, Rest zu); sonst der Index der manuell aufgeklappten Zeile.
@@ -1744,6 +1748,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     const weekStarts = [...weekStartsSet]
     const { data } = await supabase.from('schedule').select('*').in('week_start', weekStarts).eq('status', 'live')
     setNext7Schedules(data || [])
+    setPlan7Geladen(true)
     // Extract model names assigned to this chatter
     const todayIso = isoDate(new Date())
     const assignedNames = new Set()
@@ -2568,7 +2573,10 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             rechts der Rest wie bisher. In den anderen Tabs ist der Rahmen ein
             normaler Block (die Abwesenheit aus „Organisation" liegt mit drin). */}
         <div className={tab === 'heute' ? 'heute-raster' : undefined}>
-        {tab === 'heute' && (
+        {tab === 'heute' && !plan7Geladen && !isPreview && (
+          <div className="heute-links"><SkelModels anzahl={2} /></div>
+        )}
+        {tab === 'heute' && (plan7Geladen || isPreview) && (
           <div data-help="heutemodels" className="heute-links">
             <HeuteModels
               namen={kartenNamen}

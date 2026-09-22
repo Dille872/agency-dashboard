@@ -9,6 +9,7 @@ import {
   Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
+import { SkelSeite, SkelAdmin } from './components/Skeleton' // v4.92.0
 import CalendarTab from './components/CalendarTab' // v4.60.0
 import ModelsView from './components/ModelsView'
 import ChattersView from './components/ChattersView'
@@ -574,11 +575,8 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (authLoading || (session && userRole === null)) return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-sans)' }}>
-      Daten werden geladen...
-    </div>
-  )
+  // v4.92.0: Platzhalter-Seite statt „Daten werden geladen...“
+  if (authLoading || (session && userRole === null)) return <SkelSeite />
 
   if (!session) return <LoginPage />
 
@@ -996,7 +994,7 @@ export default function App() {
       {/* ── MAIN ── */}
       <main style={{ padding: '16px', maxWidth: 1600, margin: '0 auto' }}>
         {dataLoading ? (
-          <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '80px 0', fontSize: 14 }}>Daten werden geladen...</div>
+          <SkelAdmin />
         ) : SNAPSHOT_TABS.includes(activeTab) && modelSnapshots.length === 0 && chatterSnapshots.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 16, color: 'var(--text-muted)' }}>
             <div style={{ fontSize: 48, opacity: 0.3 }}>📊</div>

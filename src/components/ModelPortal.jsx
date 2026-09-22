@@ -27,6 +27,7 @@ import ModelSteckbrief from './ModelSteckbrief' // v4.77.0
 import ModelKalender from './ModelKalender' // v4.78.0
 import { reiseHeute } from '../modelLage' // v4.77.0
 import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
+import { Balken } from './Skeleton' // v4.92.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -177,6 +178,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [saving, setSaving] = useState(false)
 
   const [modelStatus, setModelStatus] = useState(null) // full models_contact row
+  // v4.92.0: Platzhalter, bis Status bzw. Subs-Zahlen da sind (8 s Sicherheitsnetz)
+  const [statusGeladen, setStatusGeladen] = useState(false)
+  const [subsGeladen, setSubsGeladen] = useState(false)
+  useEffect(() => { const t = setTimeout(() => { setStatusGeladen(true); setSubsGeladen(true) }, 8000); return () => clearTimeout(t) }, [])
   const [settingStatus, setSettingStatus] = useState(false)
   const [statusNote, setStatusNote] = useState('')
   const [statusUntil, setStatusUntil] = useState('')
@@ -228,6 +233,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const loadModelStatus = async () => {
     const { data } = await supabase.from('models_contact').select('*').eq('name', displayName).single()
     setModelStatus(data)
+    setStatusGeladen(true)
     // Auto-clear expired pause/unavailable
     if (data?.status_until && new Date(data.status_until) < new Date()) {
       await supabase.from('models_contact').update({ status: 'available', status_until: null, status_note: null }).eq('name', displayName)
@@ -313,7 +319,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   }, [displayName])
 
   const loadAll = async () => {
-    loadBoard(); loadCalendar(); loadContentRequests(); loadAliasesAndRevenue(); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
+    loadBoard(); loadCalendar(); loadContentRequests(); loadAliasesAndRevenue().finally(() => setSubsGeladen(true)); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
   }
 
   // v3.40.0: Meine Aufgaben (vom Team zugewiesen)
@@ -848,8 +854,14 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               )
             })()}
 
-            {/* Status Banner */}
-        {(() => {
+            {/* Status Banner · v4.92.0: Platzhalter bis der Status geladen ist */}
+        {!statusGeladen && !isPreview && (
+          <div aria-hidden="true" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Balken w={12} h={12} r={6} /><Balken w="45%" h={14} /></div>
+            <div style={{ display: 'flex', gap: 8 }}><Balken w={70} h={32} r={10} /><Balken w={120} h={32} r={10} /></div>
+          </div>
+        )}
+        {(statusGeladen || isPreview) && (() => {
           const s = modelStatus?.status || 'unknown'
           const until = modelStatus?.status_until ? new Date(modelStatus.status_until) : null
           const untilStr = until ? until.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : null
@@ -988,7 +1000,17 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               </div>
             )}
 
-            {/* Subs Kalender */}
+            {/* Subs Kalender · v4.92.0: Platzhalter bis die Zahlen da sind */}
+            {!subsGeladen && !isPreview && (
+              <div aria-hidden="true" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Balken w="30%" h={14} />
+                <Balken w={90} h={30} r={8} />
+                <Balken w="70%" h={10} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 5, marginTop: 6 }} className="raster-7">
+                  {Array.from({ length: 28 }).map((_, i) => <Balken key={i} h={34} r={8} />)}
+                </div>
+              </div>
+            )}
             {dailySubs.combined.length > 0 && (() => {
               const activeSubs = subsAccount === 'alle' ? dailySubs.combined : (dailySubs.perAccount[subsAccount] || [])
               const subsMap = {}

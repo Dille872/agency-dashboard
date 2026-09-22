@@ -5,6 +5,7 @@ import { formatMoneyShort } from '../utils'
 import { ladeInaktiveNamen, ohneInaktive } from '../people'
 import { datumInZone, meineZone, BERLIN, ortAus } from '../zeit'
 import { montagVon, plusTage, planSchichten, checkinStand, unterZiel } from '../jetzt'
+import { SkelZeilen } from './Skeleton' // v4.92.0
 
 // ── Jetzt-Screen ────────────────────────────────────────────────────────────
 //
@@ -184,7 +185,7 @@ export default function JetztView({ modelSnapshots = [], zaehler = {}, canAccess
               <button onClick={laden} style={{ ...zeileBtn, width: 'auto', minHeight: 0, borderTop: 'none', padding: '6px 10px', border: '1px solid var(--border-bright)', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>Neu laden</button>
             </div>
           ) : !plan ? (
-            <div style={{ padding: 12, fontSize: 12.5, color: 'var(--text-muted)' }}>Lädt…</div>
+            <SkelZeilen anzahl={3} />
           ) : laufend.length === 0 ? (
             <div style={{ padding: 12, fontSize: 12.5, color: 'var(--text-secondary)' }}>Gerade ist laut Dienstplan niemand eingeteilt.</div>
           ) : laufend.map((s, i) => {
