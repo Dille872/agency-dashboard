@@ -291,7 +291,9 @@ export default function HeuteModels({ namen, titel, lage, boards, services, cust
       </div>
 
       {schmal && namen.length > 1 && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10, overflowX: 'auto', scrollbarWidth: 'none' }}>
+        // v4.94.1: Innenabstand oben/rechts — die Zahl-Plakette ragt über den Rand
+        // der Knöpfe hinaus und wurde vom Scroll-Container abgeschnitten.
+        <div style={{ display: 'flex', gap: 8, marginBottom: 6, overflowX: 'auto', scrollbarWidth: 'none', padding: '8px 6px 4px 0' }}>
           {namen.map(n => {
             const z = zustand(lage.kontakte[n], reiseHeute(boards[n]?.reise))
             const an = n === aktiv
@@ -303,7 +305,7 @@ export default function HeuteModels({ namen, titel, lage, boards, services, cust
               }}>
                 <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{n}</div>
                 <div style={{ fontSize: 10.5, color: z.farbe, marginTop: 1, whiteSpace: 'nowrap' }}>{z.text}</div>
-                {neu > 0 && <span style={{ position: 'absolute', top: -5, right: -3, minWidth: 16, height: 16, borderRadius: 8, background: '#f59e0b', color: '#1a1205', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{neu}</span>}
+                {neu > 0 && <span style={{ position: 'absolute', top: -7, right: -5, minWidth: 18, height: 18, borderRadius: 9, background: '#f59e0b', color: '#1a1205', fontSize: 10.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', boxSizing: 'border-box', lineHeight: 1, boxShadow: '0 0 0 2px var(--bg-base)' }}>{neu > 99 ? '99+' : neu}</span>}
               </button>
             )
           })}
