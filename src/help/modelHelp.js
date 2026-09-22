@@ -40,6 +40,7 @@ export const HELP_TOPICS = [
       'Anfragen — Aufträge, die Chatter für Kunden bei dir bestellen.',
       'Social — Beiträge freigeben, die das Team für dich vorbereitet hat.',
       'Umsatz — was im laufenden Monat zusammengekommen ist.',
+      'Am Handy stehen die Bereiche unten in einer Leiste: Start, Board, Kalender, Videos — Anfragen, Social und Umsatz findest du unter „Mehr".',
     ],
     watch: [
       'Die Zahlen an den Knöpfen zeigen, wo etwas Neues oder Offenes liegt.',
@@ -95,7 +96,7 @@ export const HELP_TOPICS = [
     title: 'Die Übersicht',
     short: 'Alles Wichtige auf einen Blick — Anfragen, Termine, Subs, Umsatz.',
     body: [
-      'Unter dem Status stehen: offene Content-Anfragen, dein Subs-Tracker als Monatskalender, die nächsten Termine, eine Kurzfassung deines Boards und der Umsatz des laufenden Monats.',
+      'Oben die Begrüßung — läuft gerade eine Reise, steht sie daneben. Unter dem Status stehen: offene Content-Anfragen, dein Subs-Tracker, die nächsten Termine, eine Kurzfassung deines Boards und der Umsatz des laufenden Monats. Am Handy wechselst du unten über die Leiste zwischen Start, Board, Kalender, Videos und Mehr (Anfragen, Social, Umsatz).',
       'Der Subs-Tracker färbt die Tage nach neuen Abos ein — je dunkler, desto mehr. Du kannst monatsweise blättern und, wenn du mehrere Accounts hast, zwischen ihnen wechseln.',
     ],
     watch: [
@@ -110,39 +111,55 @@ export const HELP_TOPICS = [
     icon: '📌',
     tab: 'board',
     title: 'Mein Board',
-    short: 'Deine Regeln und Preise — die Arbeitsgrundlage der Chatter.',
+    short: 'Reisen, Angebot, Preise, No Gos — die Arbeitsgrundlage der Chatter.',
     body: [
-      'Sieben Kategorien: Preisstruktur, No Gos, Content Regeln, Services / Pakete, Einschränkungen, Reiseplan und Termine. Jeder Eintrag hat einen Titel, optional eine Beschreibung und einen Preis.',
-      'Das ist der wichtigste Bereich für dich. Die Chatter schlagen hier nach, bevor sie einem Kunden etwas zusagen. Was hier nicht steht, wissen sie nicht.',
-      'Besonders die No Gos: Alles, was du auf keinen Fall willst, gehört dort hinein — lieber einmal zu viel aufgeschrieben.',
+      'Oben steht dein Steckbrief in vier Karten: Urlaub & Reisen, Was ich anbiete, Preise und No Gos. Das ist das, was deine Chatter am meisten brauchen — sie sehen es direkt auf ihrer Startseite.',
+      'Der Balken ganz oben zeigt, was noch fehlt (Angebot beantwortet, mindestens ein Preis, No Gos, einmal im Monat bestätigt). Einmal im Monat fragt das Board „Stimmt noch alles?" — ein Tipp auf „Ja, passt" reicht.',
+      'Darunter unter „Weitere Angaben" stehen wie bisher Content Regeln, Services / Pakete, Einschränkungen und Termine, und ganz unten deine Social-Media-Kanäle.',
     ],
     steps: [
-      'Bei der passenden Kategorie auf „+ Hinzufügen".',
-      'Titel eintragen (Pflicht), dazu Beschreibung und Preis, wenn es passt.',
-      'Beim Reiseplan gibt es zusätzlich „Von" und „Bis" — und drei Felder für deine Chatter: was während der Reise geht, was nicht geht (jeweils mit Komma trennen) und optional einen Satz, den sie Fans sagen können. Das sehen die Chatter groß auf ihrer Startseite, solange die Reise läuft.',
-      'Mit ✎ änderst du einen Eintrag später, mit ✕ löschst du ihn.',
+      'Reise: auf „+ Reise", Ziel und Von/Bis eintragen, dann die Chips antippen — einmal = geht (grün), zweimal = geht nicht (rot), dreimal = weg. Optional ein Satz, den die Chatter Fans sagen können.',
+      'Preise: auf „+ Preis", Leistung und ab-Preis eintragen, z. B. „Video" und „$40". Eine Zeile antippen zum Ändern oder Löschen.',
+      'No Gos: Vorschläge (gestrichelt) antippen, um sie zu übernehmen. Rot = gilt für dich. Nochmal antippen entfernt es (mit Rückfrage). „+ eigenes" für alles andere.',
     ],
     watch: [
-      'Löschen geht sofort und ohne Rückfrage.',
-      'Jede Änderung sieht das Team im Aktivitäts-Feed — das ist gewollt, damit niemand mit veralteten Regeln arbeitet.',
-      'Reise-Einträge, deren „Bis"-Datum vorbei ist, werden ausgegraut und als abgelaufen markiert, bleiben aber stehen. Ab und zu aufräumen lohnt sich.',
-      'Der Preis ist ein Textfeld — du kannst also auch „ab 50" oder „auf Anfrage" schreiben.',
+      'Jede Änderung sieht das Team — die Chatter bekommen sie beim nächsten Login als „Neu" angezeigt.',
+      'Deine bisherigen Einträge bleiben alle stehen. Lange Sätze bei den Preisen kannst du antippen und in „Leistung" und „ab-Preis" aufteilen.',
+      'Vergangene Reisen verschwinden aus der Karte, bleiben aber gespeichert („… vergangene anzeigen").',
     ],
   },
+
   {
     id: 'services',
     icon: '✅',
     tab: 'board',
-    title: 'Services',
-    short: 'Vier Ja/Nein-Fragen: Bewertungen, Audios, Video Chat, Telefonieren.',
+    title: 'Was ich anbiete',
+    short: 'Kacheln antippen: Audios, Video-Call, Telefon, Custom, Sexting, Bewertungen.',
     body: [
-      'Hier legst du mit einem Klick fest, was du grundsätzlich anbietest. Bei „Ja" erscheint ein Feld für Preis, Dauer oder Details — das lesen die Chatter mit.',
+      'Jede Kachel einmal antippen = biete ich an (grün). Nochmal antippen = biete ich nicht an (durchgestrichen). „noch offen" heißt: noch nicht beantwortet.',
+      'Unter „Details zu deinem Angebot" kannst du bei allem, was an ist, Preis oder Dauer dazuschreiben — das lesen die Chatter mit.',
     ],
     watch: [
       'Das Detailfeld wird gespeichert, sobald du woanders hin tippst — es gibt keinen Speichern-Knopf.',
-      'Stellst du von „Ja" auf „Nein", verschwindet das Feld, der Text bleibt aber gespeichert. Bei erneutem „Ja" steht er wieder da.',
+      'Läuft gerade eine Reise, gilt für die Chatter zusätzlich, was du dort bei „geht nicht" angetippt hast.',
     ],
   },
+  {
+    id: 'substracker',
+    icon: '📈',
+    tab: 'home',
+    title: 'Neue Subs',
+    short: 'Wie viele neue Abos pro Tag reinkommen — mit Vergleich zum Vormonat.',
+    body: [
+      'Oben die neuen Subs im gezeigten Monat, daneben der Vergleich zum Vormonat. Darunter der beste Tag, der Schnitt pro Tag und die Gesamtzahl.',
+      'Im Kalender leuchtet jeder Tag umso kräftiger, je mehr neue Subs er hatte. Mit ‹ › blätterst du durch die Monate; bei mehreren Accounts wechselst du oben zwischen ihnen.',
+    ],
+    watch: [
+      'Die Zahlen kommen aus den Tagesdateien, die das Team hochlädt. Der heutige Tag steht meist erst am nächsten Morgen drin.',
+      'Die Farben richten sich nach dem besten Tag des gezeigten Monats — vergleichen lassen sich Monate über die Zahl oben, nicht über die Farben.',
+    ],
+  },
+
   {
     id: 'customcontent',
     icon: '🎬',

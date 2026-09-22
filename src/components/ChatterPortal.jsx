@@ -3007,7 +3007,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(249,115,22,0.3)', borderLeft: '3px solid #f97316', borderRadius: '0 9px 9px 0', padding: '10px 12px' }}>
                     <div style={{ fontSize: 9, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Services</div>
                     {Object.entries(assignedServices[selectedModelInfo] || {}).map(([key, svc]) => {
-                      const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren' }
+                      const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren', custom: 'Custom', sexting: 'Sexting' }
                       return (
                         <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', background: 'var(--bg-card2)', borderRadius: 6, border: '1px solid #1e1e3a', marginBottom: 4 }}>
                           <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{labels[key] || key}</span>

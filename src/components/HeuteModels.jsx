@@ -20,7 +20,7 @@ const KATEGORIE = {
   einschraenkungen: 'Einschränkungen', reise: 'Reiseplan', termine: 'Termine',
   videos: 'Videos', service_flags: 'Services', social_links: 'Social',
 }
-const SERVICE = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video-Call', telefonieren: 'Telefon' }
+const SERVICE = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video-Call', telefonieren: 'Telefon', custom: 'Custom', sexting: 'Sexting' }
 const AVATAR = ['#0891b2', '#db2777', '#7c3aed', '#059669', '#d97706', '#4f46e5', '#be123c']
 
 const lc = (s) => String(s || '').trim().toLowerCase()

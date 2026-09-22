@@ -5287,7 +5287,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                   <div style={{ fontSize: 10, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Services</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {Object.entries(modelServices[selectedBoardModel]).map(([key, svc]) => {
-                      const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren' }
+                      const labels = { bewertungen: 'Bewertungen', audios: 'Audios', video_chat: 'Video Chat (VC)', telefonieren: 'Telefonieren', custom: 'Custom', sexting: 'Sexting' }
                       return (
                         <div key={key} style={{ padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

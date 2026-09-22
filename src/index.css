@@ -222,3 +222,30 @@ th { text-align: left; }
   .model-neu-huelle { align-items: center !important; }
   .model-neu-fenster { border-radius: 18px !important; }
 }
+
+/* v4.77.0: Model-Portal am Handy — Leiste unten statt Knopfreihe oben.
+   Aktiv in Orange wie die Knöpfe oben im Model-Portal. */
+@media (max-width: 768px) {
+  .model-nav-oben { display: none !important; }
+  .leiste-mobil.model-leiste button.aktiv { color: #f59e0b; }
+  .steckbrief-huelle { align-items: flex-end !important; }
+}
+@media (min-width: 769px) {
+  .steckbrief-huelle { align-items: center !important; }
+  .steckbrief-fenster { border-radius: 22px !important; }
+}
+
+/* v4.77.0: Raster, die am Handy NICHT gestapelt werden dürfen. Die globale
+   Mobil-Regel oben ([style*="grid-template-columns"] → 1fr) würde sonst den
+   Subs-Kalender auf eine Spalte drücken und die Angebots-Kacheln untereinander
+   stellen. Mehr Klassen = spezifischer als die Attribut-Regel. */
+@media (max-width: 768px) {
+  .raster-7[style*="grid-template-columns"] { grid-template-columns: repeat(7, 1fr) !important; }
+  .raster-3[style*="grid-template-columns"] { grid-template-columns: repeat(3, 1fr) !important; }
+  .raster-2[style*="grid-template-columns"] { grid-template-columns: 1fr 1fr !important; }
+  .raster-preis[style*="grid-template-columns"] { grid-template-columns: 1fr 96px !important; }
+  /* Knöpfe im Steckbrief: Daumengröße behalten (globale Regel macht sie klein) */
+  .steckbrief .kachel { padding: 11px 4px !important; font-size: 12px !important; }
+  .steckbrief .chip-btn, .steckbrief-fenster .chip-btn { padding: 8px 12px !important; font-size: 13px !important; }
+  .steckbrief-fenster .gross-btn { padding: 14px !important; font-size: 15px !important; }
+}

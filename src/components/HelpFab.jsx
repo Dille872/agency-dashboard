@@ -23,7 +23,7 @@ export default function HelpFab({ isOpen, onToggle, onStartTour }) {
     <>
       {open && (
         <div style={{
-          position: 'fixed', right: 20, bottom: 216, zIndex: 99998,
+          position: 'fixed', right: 20, bottom: 'calc(216px + var(--fab-lift, 0px))', zIndex: 99998,
           width: 'min(400px, calc(100vw - 40px))',
           maxHeight: 'min(560px, calc(100vh - 256px))',
           background: 'var(--bg-base)', border: '1px solid var(--border-bright)',
@@ -86,7 +86,7 @@ export default function HelpFab({ isOpen, onToggle, onStartTour }) {
         title="Hilfe"
         aria-label="Hilfe"
         style={{
-          position: 'fixed', right: 20, bottom: 152, zIndex: 99999,
+          position: 'fixed', right: 20, bottom: 'calc(152px + var(--fab-lift, 0px))', zIndex: 99999,
           width: 54, height: 54, borderRadius: '50%',
           background: open ? 'rgba(167,139,250,0.18)' : 'rgba(255,255,255,0.06)',
           color: ACCENT,

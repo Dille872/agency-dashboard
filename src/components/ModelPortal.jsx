@@ -23,6 +23,8 @@ import HelpTour from './HelpTour'
 import HelpFab from './HelpFab'
 import { HELP_TOPICS as MODEL_HELP, TOUR_IDS as MODEL_TOUR } from '../help/modelHelp'
 import { heuteBerlin } from '../utils' // v4.57.0
+import ModelSteckbrief from './ModelSteckbrief' // v4.77.0
+import { reiseHeute } from '../modelLage' // v4.77.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -34,12 +36,7 @@ const CATEGORIES = [
   { key: 'termine', label: 'Termine', color: '#7c3aed' },
 ]
 
-const SERVICE_ITEMS = [
-  { key: 'bewertungen', label: 'Bewertungen' },
-  { key: 'audios', label: 'Audios' },
-  { key: 'video_chat', label: 'Video Chat (VC)' },
-  { key: 'telefonieren', label: 'Telefonieren' },
-]
+// v4.77.0: Die Ja/Nein-Services pflegt jetzt ModelSteckbrief.jsx (ANGEBOT).
 
 const CAL_CATEGORIES = [
   { key: 'aufgabe', label: 'Aufgabe', color: '#a78bfa' },
@@ -142,6 +139,11 @@ function SocialModelView({ displayName, cardS, itemS }) {
       )}
     </div>
   )
+}
+
+// v4.77.0: wie leisteMerken in App.jsx — <html class="mit-leiste"> solange die Leiste hängt
+const leisteMerkenModel = (el) => {
+  try { document.documentElement.classList.toggle('mit-leiste', !!el) } catch { /* egal */ }
 }
 
 export default function ModelPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isPreview, unreadCustomContent, onMarkCustomContentRead }) {
@@ -645,15 +647,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     setServices(map)
   }
 
-  const saveService = async (key, enabled, note) => {
-    const existing = await supabase.from('model_board').select('id').eq('model_name', displayName).eq('category', 'service_flags').eq('title', key).single()
-    if (existing.data) {
-      await supabase.from('model_board').update({ yes_no: enabled, content: note || null }).eq('id', existing.data.id)
-    } else {
-      await supabase.from('model_board').insert({ model_name: displayName, category: 'service_flags', title: key, yes_no: enabled, content: note || null, sort_order: 0 })
-    }
-    loadServices()
-  }
+
 
   const addCustomContent = async () => {
     if (!newCustomContent.title.trim()) return
@@ -734,6 +728,18 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const today = heuteBerlin()
   const upcomingCal = calItems.filter(c => c.due_date >= today).slice(0, 5)
 
+  // v4.77.0: Bereich öffnen — gemeinsam für die Knöpfe oben und die Leiste unten
+  const [mehrOffen, setMehrOffen] = useState(false)
+  const oeffneBereich = async (key) => {
+    setActiveSection(key)
+    setMehrOffen(false)
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 })
+    if (key === 'board' && unreadCustomContent > 0) {
+      await supabase.from('custom_content').update({ read_by_model: true }).eq('model_name', displayName).eq('read_by_model', false)
+      if (onMarkCustomContentRead) onMarkCustomContentRead()
+    }
+  }
+
   const cardS = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }
   const inputS = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '7px 9px', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: '100%' }
   const itemS = { padding: '9px 11px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }
@@ -789,7 +795,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       <main style={{ padding: '20px', maxWidth: 1100, margin: '0 auto' }}>
 
         {/* Nav */}
-        <div data-help="navigation" style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div data-help="navigation" className="model-nav-oben" style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
             { key: 'home', label: <><Icon name="home" /> Übersicht</> },
             { key: 'board', label: <><Icon name="clipboard" /> Mein Board{unreadCustomContent > 0 ? ` (${unreadCustomContent})` : ''}</> },
@@ -799,13 +805,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             { key: 'social', label: 'Social' },
             { key: 'umsatz', label: <><Icon name="dollar" /> Umsatz</> },
           ].map(t => (
-            <button key={t.key} onClick={async () => {
-                setActiveSection(t.key)
-                if (t.key === 'board' && unreadCustomContent > 0) {
-                  await supabase.from('custom_content').update({ read_by_model: true }).eq('model_name', displayName).eq('read_by_model', false)
-                  if (onMarkCustomContentRead) onMarkCustomContentRead()
-                }
-              }} style={{
+            <button key={t.key} onClick={() => oeffneBereich(t.key)} style={{
               padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13,
               background: activeSection === t.key ? '#f59e0b' : 'var(--bg-card)',
               color: activeSection === t.key ? '#000' : 'var(--text-secondary)',
@@ -817,6 +817,23 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* HOME */}
         {activeSection === 'home' && (
           <div data-help="home" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* v4.77.0: Begrüßung + laufende Reise */}
+            {(() => {
+              const r = reiseHeute(board.reise || [])
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{new Date().toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })}</div>
+                    <div style={{ fontSize: 21, fontWeight: 700, color: 'var(--text-primary)' }}>Hi {displayName || 'du'} ☀️</div>
+                  </div>
+                  {r && (
+                    <button type="button" onClick={() => oeffneBereich('board')} title="Reise im Board ansehen" style={{ fontSize: 12.5, fontWeight: 700, padding: '7px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', background: 'rgba(8,145,178,0.14)', border: '1px solid rgba(8,145,178,0.45)', color: '#0891b2' }}>
+                      ✈ {r.title}{r.date_to ? ` bis ${new Date(r.date_to + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* Status Banner */}
         {(() => {
@@ -971,24 +988,46 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               const totalSubs = activeSubs.reduce((s, d) => s + d.subs, 0)
               const monthSubs = activeSubs.filter(d => d.date.startsWith(subsCalMonth)).reduce((s, d) => s + d.subs, 0)
               const maxMonth = Math.max(...activeSubs.filter(d => d.date.startsWith(subsCalMonth)).map(d => d.subs), 1)
+              // v4.77.0: Vergleich zum Vormonat, bester Tag mit Datum, Schnitt pro Tag
+              const [jj, mm] = subsCalMonth.split('-').map(Number)
+              const vormonat = mm === 1 ? `${jj - 1}-12` : `${jj}-${String(mm - 1).padStart(2, '0')}`
+              const vorSubs = activeSubs.filter(d => d.date.startsWith(vormonat)).reduce((sm, d) => sm + d.subs, 0)
+              const imMonat = activeSubs.filter(d => d.date.startsWith(subsCalMonth))
+              const besterTag = imMonat.reduce((b, d) => (!b || d.subs > b.subs ? d : b), null)
+              const heuteIso = heuteBerlin()
+              const tageBisher = heuteIso.startsWith(subsCalMonth) ? Number(heuteIso.slice(8, 10)) : new Date(jj, mm, 0).getDate()
+              const schnitt = tageBisher ? monthSubs / tageBisher : 0
+              const veraenderung = vorSubs > 0 ? Math.round((monthSubs - vorSubs) / vorSubs * 100) : null
               const cells = []
               for (let i = 0; i < startDow; i++) cells.push(null)
               for (let d = 1; d <= lastDay.getDate(); d++) cells.push(d)
               const monthLabel2 = firstDay.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+              // v4.77.0: kräftigere Stufen — starke und schwache Tage sofort erkennbar
               const getColor = (subs) => {
                 if (!subs) return 'var(--bg-card2)'
-                const intensity = subs / maxMonth
-                if (intensity >= 0.8) return 'rgba(245,158,11,0.9)'
-                if (intensity >= 0.6) return 'rgba(245,158,11,0.65)'
-                if (intensity >= 0.4) return 'rgba(245,158,11,0.4)'
-                if (intensity >= 0.2) return 'rgba(245,158,11,0.2)'
-                return 'rgba(245,158,11,0.08)'
+                return `rgba(245,158,11,${(0.14 + 0.8 * (subs / maxMonth)).toFixed(2)})`
               }
               const alias = aliases.find(a => a.csv_name === subsAccount)
               const accountLabel = subsAccount === 'alle' ? 'Alle Accounts' : (alias ? alias.alias_label || subsAccount : subsAccount)
               return (
-                <div style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 10, padding: '16px 18px' }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>Neue Subs Tracker</div>
+                <div data-help="substracker" style={{ background: 'linear-gradient(160deg, rgba(245,158,11,0.10), var(--bg-card) 55%)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 16, padding: '16px 18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Neue Subs</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{accountLabel}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: 36, fontWeight: 700, color: '#f59e0b', lineHeight: 1 }}>{monthSubs}</span>
+                    {veraenderung !== null && (
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: veraenderung >= 0 ? '#10b981' : '#ef4444' }}>
+                        {veraenderung >= 0 ? '▲' : '▼'} {Math.abs(veraenderung)} % zum Vormonat
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '6px 0 12px' }}>
+                    {besterTag ? `Bester Tag: ${new Date(besterTag.date + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} mit ${besterTag.subs}` : 'Noch keine Subs in diesem Monat'}
+                    {monthSubs > 0 && ` · Ø ${schnitt.toLocaleString('de-DE', { maximumFractionDigits: 1 })} pro Tag`}
+                    {` · gesamt ${totalSubs}`}
+                  </div>
 
                   {/* Account Tabs */}
                   {dailySubs.accounts.length > 1 && (
@@ -1009,12 +1048,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      <div><div style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b', fontFamily: 'monospace' }}>{monthSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Diesen Monat</div></div>
-                      <div><div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{totalSubs}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Gesamt</div></div>
-                      <div><div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{maxMonth}</div><div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Bester Tag</div></div>
-                    </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <button onClick={() => {
                         const [y, m] = subsCalMonth.split('-').map(Number)
@@ -1030,7 +1064,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+                  <div className="raster-7" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
                     {['Mo','Di','Mi','Do','Fr','Sa','So'].map(d => (
                       <div key={d} style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', paddingBottom: 4, fontWeight: 700 }}>{d}</div>
                     ))}
@@ -1040,9 +1074,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       const subs = subsMap[dateStr] || 0
                       const isToday2 = dateStr === heuteBerlin()
                       return (
-                        <div key={day} style={{ borderRadius: 5, padding: '4px 2px', textAlign: 'center', background: getColor(subs), border: isToday2 ? '1px solid #f59e0b' : '1px solid transparent' }}>
+                        <div key={day} style={{ borderRadius: 8, padding: '5px 2px', textAlign: 'center', background: getColor(subs), border: isToday2 ? '1.5px solid #f59e0b' : '1px solid transparent' }}>
                           <div style={{ fontSize: 8, color: subs > 0 ? '#000' : 'var(--text-muted)', fontWeight: subs > 0 ? 700 : 400, opacity: subs > 0 ? 0.6 : 0.4 }}>{day}</div>
-                          {subs > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: subs / maxMonth >= 0.6 ? '#000' : '#f59e0b', lineHeight: 1 }}>{subs}</div>}
+                          {subs > 0 && <div style={{ fontSize: 12, fontWeight: 800, color: subs / maxMonth >= 0.55 ? '#1a1205' : '#f59e0b', lineHeight: 1.1 }}>{subs}</div>}
                         </div>
                       )
                     })}
@@ -1158,41 +1192,12 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {activeSection === 'board' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <SektionsKopf id="board" titel="Mein Board" />
-            {/* Social Media Kanäle */}
-            <div data-help="sociallinks"><SocialLinksEditor modelName={displayName} /></div>
-
-            {/* Services Ja/Nein */}
-            <div style={{ ...cardS, borderLeft: '3px solid #f97316', borderRadius: '0 10px 10px 0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <span style={{ width: 3, height: 14, background: '#f97316', borderRadius: 2, display: 'inline-block' }} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Services</span>
-                <HelpDot topic="services" />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
-                {SERVICE_ITEMS.map(svc => {
-                  const s = services[svc.key] || {}
-                  const enabled = s.enabled
-                  return (
-                    <div key={svc.key} style={{ ...itemS, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{svc.label}</span>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => saveService(svc.key, true, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === true ? 'rgba(16,185,129,0.2)' : 'transparent', color: enabled === true ? '#10b981' : 'var(--text-muted)', border: `1px solid ${enabled === true ? '#10b981' : 'var(--border)'}` }}>Ja</button>
-                          <button onClick={() => saveService(svc.key, false, s.note)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, background: enabled === false ? 'rgba(239,68,68,0.2)' : 'transparent', color: enabled === false ? '#ef4444' : 'var(--text-muted)', border: `1px solid ${enabled === false ? '#ef4444' : 'var(--border)'}` }}>Nein</button>
-                        </div>
-                      </div>
-                      {enabled === true && (
-                        <input
-                          defaultValue={s.note || ''}
-                          onBlur={e => saveService(svc.key, true, e.target.value)}
-                          placeholder="Preis / Dauer / Details..."
-                          style={{ ...inputS, fontSize: 11, padding: '4px 8px' }}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+            {/* v4.77.0: Neuer Steckbrief — Reise, Angebot, Preise, No Gos (ModelSteckbrief.jsx).
+                Ersetzt die Ja/Nein-Karte „Services" und die Listen Preise / No Gos / Reiseplan.
+                Dieselben Daten wie vorher, nur einfacher zu pflegen. */}
+            <div data-help="services">
+              <ModelSteckbrief displayName={displayName} board={board} services={services} isPreview={isPreview}
+                logActivity={logActivity} onGeaendert={() => { loadBoard(); loadServices() }} />
             </div>
 
             {/* Custom Content */}
@@ -1290,7 +1295,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               })}
             </div>
 
-            {CATEGORIES.map(cat => (
+            {/* v4.77.0: Was nicht im Steckbrief steht, bleibt wie gehabt */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', margin: '10px 0 0' }}>Weitere Angaben (optional)</div>
+            {CATEGORIES.filter(c => !['preise', 'nogos', 'reise'].includes(c.key)).map(cat => (
               <div key={cat.key} style={cardS}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1414,6 +1421,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 )}
               </div>
             ))}
+
+            {/* Social Media Kanäle — v4.77.0 ans Ende gerückt */}
+            <div data-help="sociallinks"><SocialLinksEditor modelName={displayName} /></div>
           </div>
         )}
 
@@ -1742,6 +1752,65 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         )}
 
       </main>
+
+      {/* ── v4.77.0: Untere Leiste am Handy ──
+          Dieselbe Technik wie im Admin (App.jsx, .leiste-mobil): ab 769 px per
+          CSS ausgeblendet, dann gelten die Knöpfe oben. Solange die Leiste im
+          DOM hängt, trägt <html> die Klasse mit-leiste — das hebt Glocke, Chat
+          und Hilfe über die Leiste. */}
+      <nav className="leiste-mobil model-leiste" ref={leisteMerkenModel} aria-label="Bereiche">
+        {[
+          { key: 'home', icon: '🏠', label: 'Start' },
+          { key: 'board', icon: '📋', label: 'Board', zahl: unreadCustomContent || 0 },
+          { key: 'kalender', icon: '🗓', label: 'Kalender' },
+          { key: 'videos', icon: '🎬', label: 'Videos' },
+        ].map(l => {
+          const aktiv = activeSection === l.key
+          return (
+            <button key={l.key} type="button" onClick={() => oeffneBereich(l.key)} className={aktiv ? 'aktiv' : undefined} aria-current={aktiv ? 'page' : undefined}>
+              <span className="leiste-icon" style={{ fontSize: 19, filter: aktiv ? 'none' : 'grayscale(0.6)', opacity: aktiv ? 1 : 0.75 }}>
+                {l.icon}
+                {l.zahl > 0 && <span className="leiste-zahl">{l.zahl}</span>}
+              </span>
+              <span>{l.label}</span>
+            </button>
+          )
+        })}
+        {(() => {
+          const aktiv = ['anfragen', 'social', 'umsatz'].includes(activeSection)
+          return (
+            <button type="button" onClick={() => setMehrOffen(true)} className={aktiv ? 'aktiv' : undefined} aria-label={openRequests.length ? `Mehr, ${openRequests.length} Anfragen offen` : 'Mehr'}>
+              <span className="leiste-icon" style={{ fontSize: 17, letterSpacing: 1 }}>
+                •••
+                {openRequests.length > 0 && <span className="leiste-zahl">{openRequests.length}</span>}
+              </span>
+              <span>Mehr</span>
+            </button>
+          )
+        })()}
+      </nav>
+      {mehrOffen && (
+        <div onClick={() => setMehrOffen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100000, display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Mehr" style={{ width: '100%', background: 'var(--bg-card)', borderTop: '1px solid var(--border)', borderRadius: '20px 20px 0 0', padding: '12px 14px calc(18px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', alignSelf: 'center', marginBottom: 4 }} />
+            {[
+              { key: 'anfragen', icon: '✉️', label: 'Anfragen', zahl: openRequests.length },
+              { key: 'social', icon: '📱', label: 'Social' },
+              { key: 'umsatz', icon: '💰', label: 'Umsatz' },
+            ].map(m => (
+              <button key={m.key} type="button" onClick={() => oeffneBereich(m.key)} style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '14px 14px', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                background: activeSection === m.key ? 'rgba(245,158,11,0.12)' : 'var(--bg-card2)', border: `1px solid ${activeSection === m.key ? '#f59e0b' : 'var(--border)'}`,
+                color: 'var(--text-primary)', fontSize: 15, fontWeight: 600,
+              }}>
+                <span style={{ fontSize: 20 }}>{m.icon}</span>
+                <span style={{ flex: 1 }}>{m.label}</span>
+                {m.zahl > 0 && <span style={{ fontSize: 11, fontWeight: 800, background: '#f59e0b', color: '#1a1205', borderRadius: 10, padding: '2px 8px' }}>{m.zahl}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* v3.99.0: Glocke + Chat-Bubble — wie im Chatter-Portal */}
       {!isPreview && displayName && (

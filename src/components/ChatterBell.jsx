@@ -332,7 +332,7 @@ export default function ChatterBell({
     <>
       {open && (
         <div style={{
-          position: 'fixed', right: 20, bottom: 150, zIndex: 99998,
+          position: 'fixed', right: 20, bottom: 'calc(150px + var(--fab-lift, 0px))', zIndex: 99998,
           width: 'min(400px, calc(100vw - 40px))',
           maxHeight: 'min(620px, calc(100vh - 190px))',
           background: 'var(--bg-base)', border: '1px solid var(--border-bright)',
@@ -450,7 +450,7 @@ export default function ChatterBell({
         title="Benachrichtigungen"
         className="fab-btn"
         style={{
-          position: 'fixed', right: 20, bottom: 86, zIndex: 99999,
+          position: 'fixed', right: 20, bottom: 'calc(86px + var(--fab-lift, 0px))', zIndex: 99999,
           width: 54, height: 54, borderRadius: '50%',
           background: open ? 'rgba(245,158,11,0.18)' : 'rgba(255,255,255,0.06)',
           color: '#f59e0b',
