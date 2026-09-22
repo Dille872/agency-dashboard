@@ -250,6 +250,26 @@ export default function ModelSteckbrief({ displayName, board, services, isPrevie
 
   const fertigMelden = async (aktion, kategorie, text) => { await logActivity(aktion, kategorie, text); onGeaendert() }
 
+  // ── Board-Zeilen ──
+  // v4.93.1: waren in v4.89.0 versehentlich mit weggefallen → Speichern/Löschen
+  // von Preisen, No Gos und Reisen ging nicht mehr (ReferenceError).
+  const anlegen = async (kategorie, felder) => {
+    const ok = await schreiben({ zeile: { model_name: displayName, category: kategorie, sort_order: (board[kategorie] || []).length, ...felder } })
+    if (ok) await fertigMelden('hinzugefügt', kategorie, felder.title)
+    return ok
+  }
+  const aendern = async (item, felder) => {
+    const ok = await schreiben({ id: item.id, zeile: felder })
+    if (ok) await fertigMelden('bearbeitet', item.category, felder.title || item.title)
+    return ok
+  }
+  const loeschen = async (item) => {
+    const { error } = await supabase.from('model_board').delete().eq('id', item.id)
+    if (error) { alert('Nicht gelöscht: ' + error.message); return false }
+    await fertigMelden('gelöscht', item.category, item.title)
+    return true
+  }
+
   // ── Preise sortieren (Ziehen am Griff ⋮⋮, Maus und Touch) ──
   // Bewegung und Loslassen hören auf window — beim Umsortieren verschiebt React
   // die Zeilen im DOM, ein Pointer-Capture am Griff ginge dabei verloren.
