@@ -465,7 +465,11 @@ function extractMedia(m: any): { fileId: string; kind: string } | null {
 // ── Helper: Telegram-Datei herunterladen + dauerhaft in Supabase Storage ablegen (v3.25.0) ──
 // Gibt eine permanente Public-URL zurück (oder null bei Fehler).
 // Achtung: Telegram Bot-API kann nur Dateien bis ~20 MB herunterladen.
-async function downloadTelegramFile(fileId: string): Promise<string | null> {
+// v4.82.1: Gibt jetzt den GRUND zurück, wenn es scheitert. Vorher hieß jeder
+// Fehler „größer als 20 MB“ — tatsächlich lehnte der Speicher-Ordner alles ab,
+// was kein Bild war (allowed_mime_types). Sprachnachrichten sind winzig.
+type DlErgebnis = { url: string; grund?: undefined } | { url: null; grund: 'zu_gross' | 'speicher' | 'download'; detail?: string }
+async function downloadTelegramFile(fileId: string): Promise<DlErgebnis> {
   try {
     const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile`, {
       method: 'POST',
@@ -474,10 +478,14 @@ async function downloadTelegramFile(fileId: string): Promise<string | null> {
     })
     const fileJson = await fileRes.json()
     const filePath = fileJson?.result?.file_path
-    if (!filePath) { console.error('getFile ohne file_path (evtl. >20MB):', JSON.stringify(fileJson)); return null }
+    if (!filePath) {
+      console.error('getFile ohne file_path:', JSON.stringify(fileJson))
+      const zuGross = /too big/i.test(String(fileJson?.description || ''))
+      return { url: null, grund: zuGross ? 'zu_gross' : 'download', detail: String(fileJson?.description || '') }
+    }
 
     const dl = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`)
-    if (!dl.ok) { console.error('Telegram-Download fehlgeschlagen:', dl.status); return null }
+    if (!dl.ok) { console.error('Telegram-Download fehlgeschlagen:', dl.status); return { url: null, grund: 'download', detail: `HTTP ${dl.status}` } }
     const bytes = new Uint8Array(await dl.arrayBuffer())
 
     const ext = (filePath.split('.').pop() || 'bin').toLowerCase()
@@ -500,12 +508,16 @@ async function downloadTelegramFile(fileId: string): Promise<string | null> {
       },
       body: bytes,
     })
-    if (!up.ok) { console.error('Storage-Upload fehlgeschlagen:', up.status, await up.text()); return null }
+    if (!up.ok) {
+      const t = await up.text()
+      console.error('Storage-Upload fehlgeschlagen:', up.status, contentType, bytes.length, t)
+      return { url: null, grund: 'speicher', detail: `${up.status} ${contentType} ${(bytes.length / 1048576).toFixed(1)} MB: ${t.slice(0, 160)}` }
+    }
 
-    return `${SUPABASE_URL}/storage/v1/object/public/chat-attachments/${storagePath}`
+    return { url: `${SUPABASE_URL}/storage/v1/object/public/chat-attachments/${storagePath}` }
   } catch (e) {
     console.error('downloadTelegramFile error:', e)
-    return null
+    return { url: null, grund: 'download', detail: String(e) }
   }
 }
 
@@ -605,7 +617,8 @@ serve(async (req) => {
         voice: '🎤 Sprachnachricht', audio: '🎵 Audio', document: '📎 Datei',
       }
       const label = kindLabel[media.kind] || '📎 Anhang'
-      const url = await downloadTelegramFile(media.fileId)
+      const dl = await downloadTelegramFile(media.fileId)
+      const url = dl.url
 
       if (!url) {
         // Download fehlgeschlagen (z.B. Datei >20 MB) → Platzhalter speichern statt lautlos verwerfen
@@ -618,8 +631,14 @@ serve(async (req) => {
           status: 'received',
           read: false,
         })
-        for (const adminId of ADMIN_IDS) await tg(adminId, `⚠️ ${label} von <b>${sender.name}</b> konnte nicht geladen werden (evtl. größer als 20 MB).`)
-        await tg(fromId, '⚠️ Dein Anhang konnte leider nicht verarbeitet werden (max. 20 MB pro Datei). Bitte kleiner senden.')
+        // v4.82.1: echten Grund nennen statt immer „20 MB“
+        const grundText = dl.grund === 'zu_gross' ? 'größer als 20 MB (Telegram-Grenze für Bots)'
+          : dl.grund === 'speicher' ? `vom Speicher abgelehnt — ${escHtml(dl.detail || '')}`
+          : `Download bei Telegram fehlgeschlagen — ${escHtml(dl.detail || '')}`
+        for (const adminId of ADMIN_IDS) await tg(adminId, `⚠️ ${label} von <b>${escHtml(sender.name)}</b> konnte nicht geladen werden: ${grundText}`)
+        await tg(fromId, dl.grund === 'zu_gross'
+          ? '⚠️ Die Datei ist zu groß (max. 20 MB pro Datei über Telegram). Bitte kleiner senden oder als Link (z. B. Google Drive).'
+          : '⚠️ Dein Anhang konnte gerade nicht verarbeitet werden — das Team ist informiert. Bitte schick ihn später nochmal oder schreib kurz, worum es geht.')
         return new Response('ok')
       }
 

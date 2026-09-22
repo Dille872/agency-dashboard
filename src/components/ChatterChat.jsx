@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import Anhang from './Anhang' // v4.82.1
 import { MessageCircle, ChevronDown, Send } from 'lucide-react'
 import { supabase } from '../supabase'
 import { notifyAdmins } from '../telegram'
@@ -185,11 +186,8 @@ export default function ChatterChat({ displayName, onUnreadChange, contactType =
                 }}>
                   {Array.isArray(m.image_urls) && m.image_urls.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: m.text ? 7 : 0 }}>
-                      {m.image_urls.map((u, i) => (
-                        <a key={i} href={u} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
-                          <img src={u} alt="" style={{ width: '100%', borderRadius: 8, display: 'block', border: '1px solid var(--border)' }} />
-                        </a>
-                      ))}
+                      {/* v4.82.1: Audio/Video bekommen einen Abspieler statt <img> */}
+                      {m.image_urls.map((u, i) => <Anhang key={i} url={u} />)}
                     </div>
                   )}
                   {m.text}

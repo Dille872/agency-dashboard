@@ -2852,9 +2852,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                   }
                                   if (isAudio) {
                                     return (
-                                      <audio key={ii} src={url} controls
-                                        style={{ width: isMobileChat ? '100%' : 220, display: 'block' }}
-                                      />
+                                      <div key={ii} style={{ display: 'flex', flexDirection: 'column', gap: 3, width: isMobileChat ? '100%' : 220 }}>
+                                        <audio src={url} controls preload="metadata"
+                                          style={{ width: '100%', display: 'block' }}
+                                        />
+                                        {/* v4.82.1: Safari spielt .oga teils nicht ab → Download als Ausweg */}
+                                        <a href={url} target="_blank" rel="noreferrer" download style={{ fontSize: 11, color: '#a78bfa', textDecoration: 'none', fontWeight: 600 }}>↓ Herunterladen</a>
+                                      </div>
                                     )
                                   }
                                   if (isImage) {
