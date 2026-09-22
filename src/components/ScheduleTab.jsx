@@ -1573,11 +1573,11 @@ export default function ScheduleTab({ session, userDisplayName }) {
         const chips = (
           <>
             {offenAbHeute > 0
-              ? <button type="button" className="dp-chip" onClick={() => zuKonflikt('unbesetzt')} style={{ ...pill('#fca5a5', 'rgba(239,68,68,0.12)'), cursor: 'pointer' }}>{offenAbHeute} offen</button>
-              : <span style={pill('#6ee7b7', 'rgba(16,185,129,0.12)')}>✓ alles besetzt</span>}
-            {doppelOffen > 0 && <button type="button" className="dp-chip" onClick={() => zuKonflikt('doppel')} style={{ ...pill('#f9a8d4', 'rgba(236,72,153,0.12)'), cursor: 'pointer' }}>⚠ {doppelOffen} Doppel</button>}
-            {abwesendWoche > 0 && <button type="button" className="dp-chip" onClick={zuAbwesenheit} style={{ ...pill('#67e8f9', 'rgba(8,145,178,0.14)'), cursor: 'pointer' }}>🌴 {abwesendWoche} abwesend</button>}
-            {tauschWoche > 0 && <button type="button" className="dp-chip" onClick={() => zuKonflikt('ausgeschrieben')} style={{ ...pill('#fcd34d', 'rgba(245,158,11,0.12)'), cursor: 'pointer' }}>↔ {tauschWoche} Tausch</button>}
+              ? <button type="button" className="dp-chip" onClick={() => zuKonflikt('unbesetzt')} style={{ ...pill('var(--ton-rot)', 'rgba(239,68,68,0.12)'), cursor: 'pointer' }}>{offenAbHeute} offen</button>
+              : <span style={pill('var(--ton-gruen)', 'rgba(16,185,129,0.12)')}>✓ alles besetzt</span>}
+            {doppelOffen > 0 && <button type="button" className="dp-chip" onClick={() => zuKonflikt('doppel')} style={{ ...pill('var(--ton-pink)', 'rgba(236,72,153,0.12)'), cursor: 'pointer' }}>⚠ {doppelOffen} Doppel</button>}
+            {abwesendWoche > 0 && <button type="button" className="dp-chip" onClick={zuAbwesenheit} style={{ ...pill('var(--ton-cyan)', 'rgba(8,145,178,0.14)'), cursor: 'pointer' }}>🌴 {abwesendWoche} abwesend</button>}
+            {tauschWoche > 0 && <button type="button" className="dp-chip" onClick={() => zuKonflikt('ausgeschrieben')} style={{ ...pill('var(--ton-gelb)', 'rgba(245,158,11,0.12)'), cursor: 'pointer' }}>↔ {tauschWoche} Tausch</button>}
           </>
         )
         const suchFeld = (
@@ -1600,8 +1600,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
         )
         const status = (
           <>
-            <span style={pill(live ? '#6ee7b7' : 'var(--text-muted)', live ? 'rgba(16,185,129,0.14)' : 'rgba(136,136,170,0.14)')}>{live ? '● Live' : '○ Entwurf'}</span>
-            <span style={{ fontSize: 11.5, color: saving ? '#fcd34d' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>{saving ? 'speichert …' : '✓ gespeichert'}</span>
+            <span style={pill(live ? 'var(--ton-gruen)' : 'var(--text-muted)', live ? 'rgba(16,185,129,0.14)' : 'rgba(136,136,170,0.14)')}>{live ? '● Live' : '○ Entwurf'}</span>
+            <span style={{ fontSize: 11.5, color: saving ? 'var(--ton-gelb)' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>{saving ? 'speichert …' : '✓ gespeichert'}</span>
           </>
         )
         const aktionen = (
@@ -1666,7 +1666,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                     <button key={k} type="button" className="dp-seg" disabled={publishing} onClick={() => { if (!an) togglePublish() }} style={{
                       flex: 1, padding: 10, borderRadius: 10, border: 'none', cursor: an ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: an ? 800 : 700,
                       background: an ? (k === 'live' ? 'rgba(16,185,129,0.18)' : 'rgba(136,136,170,0.18)') : 'transparent',
-                      color: an ? (k === 'live' ? '#6ee7b7' : 'var(--text-primary)') : 'var(--text-muted)',
+                      color: an ? (k === 'live' ? 'var(--ton-gruen)' : 'var(--text-primary)') : 'var(--text-muted)',
                     }}>{publishing && !an ? '…' : t}</button>
                   )
                 })}
@@ -1723,7 +1723,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                   <span style={{ fontSize: 14 }}>{day.getDate()}.{String(day.getMonth() + 1).padStart(2, '0')}</span>
                   {/* v4.83.0: wie viel an dem Tag noch offen ist */}
                   {(() => { const n = offenAm(dayIso); const alt = dayIso < heuteIso; return (
-                    <span style={{ fontSize: 9.5, fontWeight: 800, color: isSelected ? '#fff' : n === 0 ? '#6ee7b7' : alt ? 'var(--text-muted)' : dayIso <= morgenIso ? '#fca5a5' : '#fcd34d' }}>{n === 0 ? 'voll' : `${n} offen`}</span>
+                    <span style={{ fontSize: 9.5, fontWeight: 800, color: isSelected ? '#fff' : n === 0 ? 'var(--ton-gruen)' : alt ? 'var(--text-muted)' : dayIso <= morgenIso ? 'var(--ton-rot)' : 'var(--ton-gelb)' }}>{n === 0 ? 'voll' : `${n} offen`}</span>
                   ) })()}
                 </button>
               )
@@ -1885,8 +1885,8 @@ export default function ScheduleTab({ session, userDisplayName }) {
             const heute = isToday(day)
             return (
               <div key={di} style={{ textAlign: 'center', padding: '7px 4px', borderRadius: 11, background: heute ? 'rgba(124,58,237,0.14)' : 'transparent', border: `1px solid ${heute ? 'rgba(124,58,237,0.4)' : 'transparent'}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: heute ? '#c4b5fd' : 'var(--text-secondary)' }}>{DAYS[di]} {formatDate(day)}</div>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: n === 0 ? '#6ee7b7' : alt ? 'var(--text-muted)' : dayIso <= morgenIso ? '#fca5a5' : '#fcd34d' }}>{n === 0 ? 'voll' : `${n} offen`}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: heute ? 'var(--ton-lila)' : 'var(--text-secondary)' }}>{DAYS[di]} {formatDate(day)}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: n === 0 ? 'var(--ton-gruen)' : alt ? 'var(--text-muted)' : dayIso <= morgenIso ? 'var(--ton-rot)' : 'var(--ton-gelb)' }}>{n === 0 ? 'voll' : `${n} offen`}</div>
                 {editingNote === dayIso ? (
                   <input autoFocus value={dayNotes[dayIso] || ''}
                     onChange={e => setDayNotes(prev => ({ ...prev, [dayIso]: e.target.value }))}
@@ -2153,7 +2153,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
                           ) : (
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {(!cell.chatter && hasConflict && (dayIso === heuteIso || dayIso === morgenIso))
-                                ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#fca5a5' }}>offen</span>
+                                ? <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ton-rot)' }}>offen</span>
                                 : <span style={{ fontSize: 18, color: dayIso < heuteIso ? '#1e1e3a' : '#3e3e6a' }}>+</span>}
                             </div>
                           )}

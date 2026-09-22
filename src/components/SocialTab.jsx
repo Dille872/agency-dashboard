@@ -202,7 +202,7 @@ export default function SocialTab({ session, userDisplayName, userRole }) {
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           {activeModels.map(m => <button key={m.name} type="button" className="chip-btn" onClick={() => setNewAccount(p => ({ ...p, model_name: m.name }))} style={chip(newAccount.model_name === m.name, '#ec4899')}>{m.name}</button>)}
                         </div>
-                        {activeModels.length === 0 && <div style={{ fontSize: 12.5, color: '#fcd34d' }}>Noch kein Model mit aktivem Tracking — erst unter ⚙ Tracking eins einschalten.</div>}
+                        {activeModels.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--ton-gelb)' }}>Noch kein Model mit aktivem Tracking — erst unter ⚙ Tracking eins einschalten.</div>}
                       </div>
                       <div>
                         <span style={lbl}>Plattform</span>

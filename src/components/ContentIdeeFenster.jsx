@@ -52,7 +52,7 @@ export default function ContentIdeeFenster({ model, setModel, kategorie, setKate
                 return (
                   <button key={k} type="button" className="chip-btn" onClick={() => setKategorie(k)} style={{
                     display: 'flex', alignItems: 'center', gap: 9, padding: '12px', borderRadius: 13, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 700,
-                    background: an ? 'rgba(167,139,250,0.16)' : 'var(--bg-card2)', border: `1px solid ${an ? LILA : 'var(--border)'}`, color: an ? '#ddd6fe' : 'var(--text-secondary)',
+                    background: an ? 'rgba(167,139,250,0.16)' : 'var(--bg-card2)', border: `1px solid ${an ? LILA : 'var(--border)'}`, color: an ? 'var(--ton-lila2)' : 'var(--text-secondary)',
                   }}><span style={{ fontSize: 19 }}>{i}</span>{l}</button>
                 )
               })}

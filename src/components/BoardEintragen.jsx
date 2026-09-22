@@ -102,12 +102,12 @@ export default function BoardEintragen({ vorschlag = {}, team, ich, start = 'kal
             Für wen
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', maxHeight: 110, overflowY: 'auto' }}>
               <button type="button" className="board-text-knopf" onClick={() => setAlle(a => !a)} aria-pressed={alle}
-                style={{ padding: '4px 9px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${alle ? '#7c3aed' : 'var(--border)'}`, background: alle ? 'rgba(124,58,237,0.18)' : 'transparent', color: alle ? '#c4b5fd' : 'var(--text-secondary)' }}>
+                style={{ padding: '4px 9px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${alle ? '#7c3aed' : 'var(--border)'}`, background: alle ? 'rgba(124,58,237,0.18)' : 'transparent', color: alle ? 'var(--ton-lila)' : 'var(--text-secondary)' }}>
                 Ganzes Team
               </button>
               {!alle && alleNamen.map(n => (
                 <button key={n} type="button" className="board-text-knopf" onClick={() => umschalten(n)} aria-pressed={personen.includes(n)}
-                  style={{ padding: '4px 9px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${personen.includes(n) ? '#0891b2' : 'var(--border)'}`, background: personen.includes(n) ? 'rgba(8,145,178,0.18)' : 'transparent', color: personen.includes(n) ? '#67e8f9' : 'var(--text-secondary)' }}>
+                  style={{ padding: '4px 9px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${personen.includes(n) ? '#0891b2' : 'var(--border)'}`, background: personen.includes(n) ? 'rgba(8,145,178,0.18)' : 'transparent', color: personen.includes(n) ? 'var(--ton-cyan)' : 'var(--text-secondary)' }}>
                   {n}
                 </button>
               ))}
@@ -137,7 +137,7 @@ export default function BoardEintragen({ vorschlag = {}, team, ich, start = 'kal
           Per Telegram Bescheid geben
         </label>
 
-        {fehler && <div style={{ fontSize: 12, color: '#fca5a5' }}>{fehler}</div>}
+        {fehler && <div style={{ fontSize: 12, color: 'var(--ton-rot)' }}>{fehler}</div>}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" className="board-text-knopf" onClick={onAbbrechen} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 14px', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Abbrechen</button>

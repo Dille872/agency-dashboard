@@ -39,10 +39,10 @@ export default function TelegramFehlerHinweis() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, color: '#f87171' }}>Telegram-Nachricht nicht angekommen</div>
             <div>{FREUNDLICH(f.description)}</div>
-            {f.vorschau && <div style={{ marginTop: 3, color: '#fca5a5', opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>„{f.vorschau}"</div>}
+            {f.vorschau && <div style={{ marginTop: 3, color: 'var(--ton-rot)', opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>„{f.vorschau}"</div>}
           </div>
           <button onClick={() => setListe(prev => prev.filter(x => x.id !== f.id))}
-            style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 14, padding: 0 }}>✕</button>
+            style={{ background: 'transparent', border: 'none', color: 'var(--ton-rot)', cursor: 'pointer', fontSize: 14, padding: 0 }}>✕</button>
         </div>
       ))}
     </div>

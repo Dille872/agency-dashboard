@@ -206,10 +206,10 @@ export const HELP_TOPICS = [
       'Solange du eingecheckt bist und noch keine geschrieben hast, steht oben der orange Hinweis „Schichtnotiz fehlt".',
     ],
     steps: [
-      'Model auswählen, Schicht auswählen, Text schreiben, „Notiz senden".',
+      'Model und Schicht antippen, Text schreiben, „Notiz senden".',
     ],
     watch: [
-      'Im Model-Auswahlfeld stehen oben auch deine Schichtnamen — nimm den echten Model-Namen weiter unten.',
+      'Die Models deiner heutigen Schichten stehen als Chips vorne, alle anderen unter „Anderes …“. Bist du eingecheckt, ist deine Schicht schon ausgewählt.',
       'Eine abgeschickte Notiz kannst du im Portal weder ändern noch löschen. Lieber einmal kurz gegenlesen.',
       'Es geht keine Telegram-Nachricht raus — die Notiz wird gelesen, aber nicht angekündigt.',
     ],

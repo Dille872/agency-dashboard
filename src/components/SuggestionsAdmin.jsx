@@ -43,7 +43,7 @@ function Tags({ items, onAdd, onRemove, color }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
       {items.map((t, i) => (
-        <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, background: color || 'rgba(167,139,250,0.1)', border: '1px solid #2e2e5a', color: color ? '#fca5a5' : ACC2, padding: '5px 10px', borderRadius: 8, fontWeight: 600 }}>
+        <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, background: color || 'rgba(167,139,250,0.1)', border: '1px solid #2e2e5a', color: color ? 'var(--ton-rot)' : ACC2, padding: '5px 10px', borderRadius: 8, fontWeight: 600 }}>
           {t} <span style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => onRemove(i)}>✕</span>
         </span>
       ))}

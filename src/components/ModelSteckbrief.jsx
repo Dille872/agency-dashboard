@@ -180,7 +180,7 @@ function PreisZeile({ item, onSpeichern, onLoeschen, onAbbrechen, neu, griff, zi
       {/* v4.89.0: Griff zum Verschieben — gedrückt halten und hoch/runter ziehen */}
       {griff && (
         <span {...griff} role="button" aria-label="Zum Verschieben ziehen" title="Gedrückt halten und ziehen, um die Reihenfolge zu ändern"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, flexShrink: 0, cursor: zieht ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none', color: zieht ? '#c4b5fd' : 'var(--text-muted)', fontSize: 15, letterSpacing: -2 }}>⋮⋮</span>
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, flexShrink: 0, cursor: zieht ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none', color: zieht ? 'var(--ton-lila)' : 'var(--text-muted)', fontSize: 15, letterSpacing: -2 }}>⋮⋮</span>
       )}
       <button type="button" onClick={() => setOffen(true)} title="Antippen zum Bearbeiten" style={{
         display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, textAlign: 'left', padding: griff ? '10px 12px 10px 2px' : '10px 12px', borderRadius: 11,

@@ -85,7 +85,7 @@ export default function BoardsTab({ userDisplayName, chatterSnapshots = [] }) {
         </div>
       </div>
 
-      {fehler && <div style={{ ...karte, borderColor: '#7f1d1d', color: '#fca5a5', padding: '10px 14px', fontSize: 13 }}>{fehler}</div>}
+      {fehler && <div style={{ ...karte, borderColor: '#7f1d1d', color: 'var(--ton-rot)', padding: '10px 14px', fontSize: 13 }}>{fehler}</div>}
 
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 9 }}>Neues Board</div>

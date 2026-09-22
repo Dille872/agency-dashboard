@@ -753,13 +753,13 @@ export default function BoardEditor({ board, ich, team, onZurueck }) {
 
           {laden && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Board wird geladen …</div>}
           {meldung && !fehler && (
-            <div role="status" style={{ position: 'absolute', right: 12, bottom: 12, maxWidth: 380, display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card)', border: `1px solid ${meldung.warn ? '#92400e' : '#14532d'}`, borderRadius: 10, padding: '9px 11px', fontSize: 12, color: meldung.warn ? '#fcd34d' : '#86efac', whiteSpace: 'pre-line', zIndex: 7 }}>
+            <div role="status" style={{ position: 'absolute', right: 12, bottom: 12, maxWidth: 380, display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card)', border: `1px solid ${meldung.warn ? '#92400e' : '#14532d'}`, borderRadius: 10, padding: '9px 11px', fontSize: 12, color: meldung.warn ? 'var(--ton-gelb)' : 'var(--ton-gruen)', whiteSpace: 'pre-line', zIndex: 7 }}>
               <span style={{ flex: 1 }}>{meldung.text}</span>
               <button type="button" className="board-knopf" onClick={() => setMeldung(null)} aria-label="Meldung schließen" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}><X size={14} /></button>
             </div>
           )}
           {fehler && (
-            <div style={{ position: 'absolute', right: 12, bottom: 12, maxWidth: 360, display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card)', border: '1px solid #7f1d1d', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#fca5a5' }}>
+            <div style={{ position: 'absolute', right: 12, bottom: 12, maxWidth: 360, display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card)', border: '1px solid #7f1d1d', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: 'var(--ton-rot)' }}>
               <span style={{ flex: 1 }}>{fehler}</span>
               <button type="button" className="board-knopf" onClick={() => setFehler(null)} aria-label="Meldung schließen" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}><X size={14} /></button>
             </div>

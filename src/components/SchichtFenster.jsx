@@ -42,10 +42,10 @@ function Schalter({ an, onClick, farbe = '#10b981', label }) {
 function PersonKarte({ p, gewaehlt, onClick }) {
   const gesperrt = !!p.abwesend
   const info = []
-  if (p.abwesend) info.push(<span key="a" style={{ color: '#fca5a5' }}>🌴 abwesend{p.abwesend.reason ? ` · ${p.abwesend.reason}` : ''}</span>)
-  else if (p.andere.length) info.push(<span key="d" style={{ color: '#fcd34d' }}>hat an dem Tag schon {p.andere.join(' + ')}</span>)
-  else if (p.pause) info.push(<span key="p" style={{ color: '#fcd34d' }}>⏱ nur {String(p.pause.std).replace('.', ',')} Std Pause {p.pause.vorher ? 'nach' : 'vor'} {p.pause.zu}</span>)
-  else info.push(<span key="f" style={{ color: '#6ee7b7' }}>frei</span>)
+  if (p.abwesend) info.push(<span key="a" style={{ color: 'var(--ton-rot)' }}>🌴 abwesend{p.abwesend.reason ? ` · ${p.abwesend.reason}` : ''}</span>)
+  else if (p.andere.length) info.push(<span key="d" style={{ color: 'var(--ton-gelb)' }}>hat an dem Tag schon {p.andere.join(' + ')}</span>)
+  else if (p.pause) info.push(<span key="p" style={{ color: 'var(--ton-gelb)' }}>⏱ nur {String(p.pause.std).replace('.', ',')} Std Pause {p.pause.vorher ? 'nach' : 'vor'} {p.pause.zu}</span>)
+  else info.push(<span key="f" style={{ color: 'var(--ton-gruen)' }}>frei</span>)
   info.push(<span key="w"> · {p.woche} {p.woche === 1 ? 'Schicht' : 'Schichten'} diese Woche</span>)
   if (p.gleiche.length) info.push(<span key="g"> · betreut dann auch {p.gleiche.join(', ')}</span>)
   else if (p.kennt) info.push(<span key="k"> · kennt das Model</span>)
@@ -60,7 +60,7 @@ function PersonKarte({ p, gewaehlt, onClick }) {
         <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{p.name}{p.admin ? <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}> · Admin</span> : null}</span>
         <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.35, marginTop: 1 }}>{info}</span>
       </span>
-      {gewaehlt && <span style={{ color: '#c4b5fd', fontWeight: 800 }}>✓</span>}
+      {gewaehlt && <span style={{ color: 'var(--ton-lila)', fontWeight: 800 }}>✓</span>}
     </button>
   )
 }
@@ -164,17 +164,17 @@ export default function SchichtFenster({
       {hatChatter && !waehlen && (
         <>
           {ichSelbst?.abwesend && (
-            <div style={{ fontSize: 12.5, color: '#fecaca', padding: '9px 12px', borderRadius: 12, background: 'rgba(239,68,68,0.09)', border: '1px solid rgba(239,68,68,0.4)' }}>
+            <div style={{ fontSize: 12.5, color: 'var(--ton-rot2)', padding: '9px 12px', borderRadius: 12, background: 'rgba(239,68,68,0.09)', border: '1px solid rgba(239,68,68,0.4)' }}>
               🌴 {chatter} ist an dem Tag als abwesend eingetragen{ichSelbst.abwesend.reason ? ` (${ichSelbst.abwesend.reason})` : ''}.
             </div>
           )}
           {ichSelbst?.pause && !ichSelbst?.andere?.length && (
-            <div style={{ fontSize: 12, color: '#fde68a', lineHeight: 1.45, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
+            <div style={{ fontSize: 12, color: 'var(--ton-gelb2)', lineHeight: 1.45, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
               ⏱ {chatter} hätte nur {String(ichSelbst.pause.std).replace('.', ',')} Std Pause {ichSelbst.pause.vorher ? 'nach' : 'vor'} der Schicht {ichSelbst.pause.zu}.
             </div>
           )}
           {ichSelbst?.andere?.length > 0 && (
-            <div style={{ fontSize: 12, color: '#fde68a', lineHeight: 1.45, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
+            <div style={{ fontSize: 12, color: 'var(--ton-gelb2)', lineHeight: 1.45, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
               {chatter} hat an dem Tag auch {ichSelbst.andere.join(' + ')} — das wäre eine Doppelschicht.
             </div>
           )}
@@ -242,13 +242,13 @@ export default function SchichtFenster({
 
           <div>
             <span style={lbl}>Notiz für den Chatter</span>
-            <input value={cell.note || ''} onChange={e => onCell({ ...cell, note: e.target.value })} placeholder="z. B. spezielle Anweisung" style={{ ...feld, color: cell.note ? '#fbbf24' : undefined }} />
+            <input value={cell.note || ''} onChange={e => onCell({ ...cell, note: e.target.value })} placeholder="z. B. spezielle Anweisung" style={{ ...feld, color: cell.note ? 'var(--ton-amber)' : undefined }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderTop: '1px solid var(--border)' }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: cell.confirmed !== false ? 'var(--text-primary)' : '#fbbf24' }}>{cell.confirmed !== false ? 'Bestätigt' : '! Klärung nötig'}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: cell.confirmed !== false ? 'var(--text-primary)' : 'var(--ton-amber)' }}>{cell.confirmed !== false ? 'Bestätigt' : '! Klärung nötig'}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>aus = „Klärung nötig“, erscheint gelb im Plan</div>
               </div>
               <Schalter label="Bestätigt" an={cell.confirmed !== false} onClick={() => onCell({ ...cell, confirmed: cell.confirmed === false })} />
@@ -281,7 +281,7 @@ export default function SchichtFenster({
                 </div>
                 {!kopieOffen && <button type="button" className="chip-btn" onClick={() => { setKopieOffen(true); setKopieFertig('') }} style={chipSt(false)}>+ Model</button>}
               </div>
-              {kopieFertig && <div style={{ fontSize: 12, color: '#6ee7b7', marginTop: 8 }}>✓ Übernommen für {kopieFertig}</div>}
+              {kopieFertig && <div style={{ fontSize: 12, color: 'var(--ton-gruen)', marginTop: 8 }}>✓ Übernommen für {kopieFertig}</div>}
               {kopieOffen && (() => {
                 const frei = andereModels.filter(m => !m.belegt)
                 const ziele = andereModels.filter(m => kopieZiele.includes(m.id))
@@ -297,7 +297,7 @@ export default function SchichtFenster({
                             onClick={() => setKopieZiele(z => z.includes(m.id) ? z.filter(x => x !== m.id) : [...z, m.id])}
                             style={{ ...chipSt(an, fremd ? '#f59e0b' : LILA), opacity: gleich ? 0.55 : 1, cursor: gleich ? 'default' : 'pointer' }}>
                             {an ? '✓ ' : '+ '}{m.name}
-                            <span style={{ fontWeight: 500, fontSize: 11.5, color: gleich ? '#6ee7b7' : fremd ? '#fcd34d' : 'var(--text-muted)' }}> · {gleich ? 'schon ' + chatter : m.belegt === '__FREI__' ? 'Freischicht' : m.belegt || 'frei'}</span>
+                            <span style={{ fontWeight: 500, fontSize: 11.5, color: gleich ? 'var(--ton-gruen)' : fremd ? 'var(--ton-gelb)' : 'var(--text-muted)' }}> · {gleich ? 'schon ' + chatter : m.belegt === '__FREI__' ? 'Freischicht' : m.belegt || 'frei'}</span>
                           </button>
                         )
                       })}
@@ -307,7 +307,7 @@ export default function SchichtFenster({
                       <button type="button" className="chip-btn" onClick={() => { setKopieOffen(false); setKopieZiele([]) }} style={chipSt(false)}>Abbrechen</button>
                     </div>
                     {ziele.some(m => m.belegt && m.belegt !== chatter) && (
-                      <div style={{ fontSize: 11.5, color: '#fde68a' }}>⚠ Bei {ziele.filter(m => m.belegt && m.belegt !== chatter).map(m => m.name).join(', ')} steht schon jemand — du wirst vorm Überschreiben gefragt.</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ton-gelb2)' }}>⚠ Bei {ziele.filter(m => m.belegt && m.belegt !== chatter).map(m => m.name).join(', ')} steht schon jemand — du wirst vorm Überschreiben gefragt.</div>
                     )}
                     <button type="button" className="gross-btn" disabled={ziele.length === 0}
                       onClick={() => {
@@ -340,7 +340,7 @@ export default function SchichtFenster({
   const fuss = (
     <div style={{ padding: '10px 18px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexShrink: 0 }}>
       {chatter && (
-        <button type="button" className="gross-btn" onClick={onLeeren} style={{ flex: 1, padding: 13, borderRadius: 14, background: 'transparent', border: '1px solid rgba(239,68,68,0.45)', color: '#fca5a5', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Leeren</button>
+        <button type="button" className="gross-btn" onClick={onLeeren} style={{ flex: 1, padding: 13, borderRadius: 14, background: 'transparent', border: '1px solid rgba(239,68,68,0.45)', color: 'var(--ton-rot)', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Leeren</button>
       )}
       <button type="button" className="gross-btn" onClick={onZu} style={{ flex: 2, padding: 13, borderRadius: 14, background: LILA, border: 'none', color: '#fff', fontWeight: 800, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Fertig</button>
     </div>

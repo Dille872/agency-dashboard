@@ -284,3 +284,18 @@ th { text-align: left; }
   .klapp-kopf { padding: 14px 16px !important; font-size: 14.5px !important; }
   .steckbrief-fenster .raster-3 .chip-btn { padding: 11px 4px !important; font-size: 12.5px !important; }
 }
+
+/* v4.90.0: helle Akzent-Töne für Text/Chips. Im dunklen Modus hell, im hellen
+   Modus kräftig — sonst wären hellgelbe/-grüne Schriften auf Weiß kaum lesbar. */
+:root {
+  --ton-gelb: #fcd34d; --ton-gelb2: #fde68a; --ton-amber: #fbbf24;
+  --ton-lila: #c4b5fd; --ton-lila2: #ddd6fe; --ton-gruen: #6ee7b7;
+  --ton-rot: #fca5a5; --ton-rot2: #fecaca; --ton-cyan: #67e8f9; --ton-pink: #f9a8d4;
+  --ton-dunkel: rgba(7,7,16,0.35);
+}
+[data-theme="light"] {
+  --ton-gelb: #b45309; --ton-gelb2: #92400e; --ton-amber: #b45309;
+  --ton-lila: #6d28d9; --ton-lila2: #5b21b6; --ton-gruen: #047857;
+  --ton-rot: #b91c1c; --ton-rot2: #991b1b; --ton-cyan: #0e7490; --ton-pink: #be185d;
+  --ton-dunkel: rgba(15,15,40,0.05);
+}

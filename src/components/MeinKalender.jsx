@@ -119,7 +119,7 @@ export default function MeinKalender({ displayName, isPreview }) {
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: binFertig ? 'line-through' : 'none' }}>{e.titel}</div>
-                  {e.folge_titel && <div style={{ fontSize: 11, color: '#c4b5fd' }}>↳ Folgeaufgabe zu „{e.folge_titel}"</div>}
+                  {e.folge_titel && <div style={{ fontSize: 11, color: 'var(--ton-lila)' }}>↳ Folgeaufgabe zu „{e.folge_titel}"</div>}
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.serie_id ? `🔁 ${wdhLabel(e.wiederholung)} · ` : ''}{a.label}{e.ende ? ` · bis ${zeitIn(e.ende, zone)}` : ''}{e.erstellt_von ? ` · von ${e.erstellt_von}` : ''}</div>
                   {e.notiz && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3, whiteSpace: 'pre-wrap' }}>{e.notiz}</div>}
                   {(meineRm[e.id] || []).map((r, i) => (

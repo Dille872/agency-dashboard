@@ -82,8 +82,8 @@ function SocialModelView({ displayName, cardS, itemS }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Freigaben */}
       {pendingApproval.length > 0 && (
-        <div style={{ ...cardS, borderLeft: '3px solid #f59e0b', borderRadius: '4px 16px 16px 4px' }}>
-          <div style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 10 }}>
+        <div style={{ ...cardS, borderColor: 'rgba(245,158,11,0.45)', background: 'linear-gradient(155deg, rgba(245,158,11,0.12), var(--bg-card) 60%)' }}>
+          <div style={{ fontSize: 14.5, color: 'var(--ton-amber)', fontWeight: 700, marginBottom: 10 }}>
             Freigabe ausstehend · {pendingApproval.length}
           </div>
           {pendingApproval.map(post => (
@@ -890,7 +890,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
 
         {/* v3.40.0: Meine Aufgaben (vom Team zugewiesen) */}
         {myTodos.length > 0 && (
-          <div data-help="todos" style={{ background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderLeft: '3px solid #ef4444', borderRadius: '4px 16px 16px 4px', padding: '14px 18px' }}>
+          <div data-help="todos" style={{ background: 'linear-gradient(155deg, rgba(239,68,68,0.12), var(--bg-card) 60%)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 16, padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>📋 Meine Aufgaben</span>
               <HelpDot topic="todos" />
@@ -1228,44 +1228,37 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             </div>
 
             {/* Custom Content */}
-            <div style={{ ...cardS, borderLeft: '3px solid #7c3aed', borderRadius: '4px 16px 16px 4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            {/* v4.90.0: im Stil der Steckbrief-Karten darüber */}
+            <div style={{ ...cardS, padding: '14px 15px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 3, height: 14, background: '#7c3aed', borderRadius: 2, display: 'inline-block' }} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Custom Content</span>
+                  <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)' }}>Custom Content</span>
                   <HelpDot topic="customcontent" />
-                  <span style={{ fontSize: 10, background: 'var(--bg-card2)', color: 'var(--text-muted)', padding: '1px 7px', borderRadius: 10, border: '1px solid var(--border)' }}>{customContent.filter(c => !c.completed).length} offen</span>
+                  {customContent.filter(c => !c.completed).length > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: 'var(--ton-amber)' }}>{customContent.filter(c => !c.completed).length} offen</span>}
                 </div>
-                <button onClick={() => setShowAddContent(!showAddContent)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, background: 'rgba(124,58,237,0.15)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>+ Neu</button>
+                {!showAddContent && <button onClick={() => setShowAddContent(true)} style={{ background: 'transparent', border: 'none', padding: 0, color: '#a78bfa', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Neu</button>}
               </div>
 
               {/* Add form */}
               {showAddContent && (
-                <div style={{ ...itemS, border: '1px solid #7c3aed', marginBottom: 10 }}>
+                <div style={{ ...itemS, border: '1px solid rgba(124,58,237,0.5)', marginBottom: 10, padding: 12 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <input value={newCustomContent.title} onChange={e => setNewCustomContent(p => ({ ...p, title: e.target.value }))} style={inputS} placeholder="Titel *" autoFocus />
                     <textarea value={newCustomContent.description} onChange={e => setNewCustomContent(p => ({ ...p, description: e.target.value }))} style={{ ...inputS, resize: 'vertical' }} rows={2} placeholder="Beschreibung (optional)" />
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <div>
-                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Fällig bis</label>
-                        <input type="date" value={newCustomContent.due_date} onChange={e => setNewCustomContent(p => ({ ...p, due_date: e.target.value }))} style={inputS} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Erinnerung (Tage vorher)</label>
-                        <select value={newCustomContent.reminder_days} onChange={e => setNewCustomContent(p => ({ ...p, reminder_days: e.target.value }))} style={inputS}>
-                          <option value="">Keine</option>
-                          <option value="1">1 Tag</option>
-                          <option value="2">2 Tage</option>
-                          <option value="3">3 Tage</option>
-                          <option value="7">1 Woche</option>
-                        </select>
-                      </div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Fällig bis</label>
+                    <input type="date" value={newCustomContent.due_date} onChange={e => setNewCustomContent(p => ({ ...p, due_date: e.target.value }))} style={{ ...inputS, fontFamily: 'monospace' }} />
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 2 }}>Erinnerung per Telegram</label>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[['', 'Keine'], ['1', '1 Tag vorher'], ['2', '2 Tage'], ['3', '3 Tage'], ['7', '1 Woche']].map(([v, t]) => {
+                        const an = String(newCustomContent.reminder_days || '') === v
+                        return <button key={v} type="button" className="chip-btn" onClick={() => setNewCustomContent(p => ({ ...p, reminder_days: v }))} style={{ fontSize: 13, padding: '7px 12px', borderRadius: 20, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: an ? 'rgba(6,182,212,0.16)' : 'transparent', border: `1px solid ${an ? '#06b6d4' : 'var(--border)'}`, color: an ? '#06b6d4' : 'var(--text-secondary)' }}>{t}</button>
+                      })}
                     </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={addCustomContent} disabled={savingContent || !newCustomContent.title.trim()} style={{ flex: 1, padding: '7px', borderRadius: 7, background: newCustomContent.title ? '#7c3aed' : 'var(--border)', color: newCustomContent.title ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <button onClick={addCustomContent} disabled={savingContent || !newCustomContent.title.trim()} style={{ flex: 1, padding: '10px', borderRadius: 11, background: newCustomContent.title ? '#7c3aed' : 'var(--border)', color: newCustomContent.title ? '#fff' : 'var(--text-muted)', border: 'none', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
                         {savingContent ? '...' : '+ Speichern'}
                       </button>
-                      <button onClick={() => setShowAddContent(false)} style={{ padding: '7px 12px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+                      <button onClick={() => setShowAddContent(false)} style={{ padding: '10px 14px', borderRadius: 11, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
                     </div>
                   </div>
                 </div>
@@ -1281,12 +1274,12 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 const borderColor = cc.completed ? '#10b981' : isOverdue ? '#ef4444' : '#f59e0b'
                 const bgColor = cc.completed ? 'rgba(16,185,129,0.03)' : isOverdue ? 'rgba(239,68,68,0.05)' : 'rgba(245,158,11,0.04)'
                 return (
-                  <div key={cc.id} style={{ background: bgColor, border: `1px solid ${borderColor}44`, borderRadius: 8, marginBottom: 6, overflow: 'hidden', opacity: cc.completed ? 0.6 : 1 }}>
+                  <div key={cc.id} style={{ background: bgColor, border: `1px solid ${borderColor}44`, borderRadius: 11, marginBottom: 6, overflow: 'hidden', opacity: cc.completed ? 0.6 : 1 }}>
                     <div onClick={() => setExpandedContent(isExpanded ? null : cc.id)}
                       style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', gap: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                        <div style={{ width: 14, height: 14, borderRadius: 3, background: cc.completed ? '#10b981' : 'transparent', border: `1px solid ${cc.completed ? '#10b981' : '#2e2e5a'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {cc.completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>v</span>}
+                        <div style={{ width: 18, height: 18, borderRadius: 6, background: cc.completed ? '#10b981' : 'transparent', border: `1.5px solid ${cc.completed ? '#10b981' : borderColor + '99'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {cc.completed && <span style={{ color: '#fff', fontSize: 11, fontWeight: 800 }}>✓</span>}
                         </div>
                         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textDecoration: cc.completed ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cc.title}</span>
                         {cc.due_date && !cc.completed && (
@@ -1308,10 +1301,10 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                         {cc.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'var(--bg-card2)', padding: '8px 10px', borderRadius: 6, lineHeight: 1.5, marginBottom: 10 }}>{cc.description}</div>}
                         {!cc.completed && (
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => completeContent(cc.id)} style={{ flex: 1, padding: '7px', borderRadius: 7, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              Als erledigt markieren
+                            <button onClick={() => completeContent(cc.id)} style={{ flex: 1, padding: '10px', borderRadius: 11, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.35)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              ✓ Als erledigt markieren
                             </button>
-                            <button onClick={() => deleteContent(cc.id)} style={{ padding: '7px 12px', borderRadius: 7, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                            <button onClick={() => deleteContent(cc.id)} aria-label="Löschen" style={{ padding: '10px 14px', borderRadius: 11, background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: 'rgba(239,68,68,0.75)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
                           </div>
                         )}
                         {cc.completed && <div style={{ fontSize: 11, color: '#10b981' }}>Erledigt am {new Date(cc.completed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>}
@@ -1323,14 +1316,17 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             </div>
 
             {/* v4.77.0: Was nicht im Steckbrief steht, bleibt wie gehabt */}
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', margin: '10px 0 0' }}>Weitere Angaben (optional)</div>
+            <div style={{ margin: '10px 2px 0' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Weitere Angaben</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>optional — was sonst noch für die Chatter wichtig ist</div>
+            </div>
             {CATEGORIES.filter(c => !['preise', 'nogos', 'reise'].includes(c.key)).map(cat => (
-              <div key={cat.key} style={cardS}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div key={cat.key} style={{ ...cardS, padding: '14px 15px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 3, height: 14, background: cat.color, borderRadius: 2, display: 'inline-block' }} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{cat.label}</span>
-                    <span style={{ fontSize: 10, background: 'var(--bg-card2)', color: 'var(--text-muted)', padding: '1px 7px', borderRadius: 10, border: '1px solid var(--border)' }}>{(board[cat.key] || []).length}</span>
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: cat.color, display: 'inline-block' }} />
+                    <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)' }}>{cat.label}</span>
+                    {(board[cat.key] || []).length > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{(board[cat.key] || []).length}</span>}
                   </div>
                 </div>
                 {(board[cat.key] || []).map(item => (
@@ -1364,7 +1360,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={saveBoardEdit} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
+                          <button onClick={saveBoardEdit} disabled={saving} style={{ background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Speichern</button>
                           <button onClick={() => setEditingItem(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
                         </div>
                       </div>
@@ -1436,13 +1432,13 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => addBoardItem(cat.key)} disabled={saving || !newTitle.trim()} style={{ background: newTitle.trim() ? '#7c3aed' : 'var(--border)', color: newTitle.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Hinzufügen</button>
+                      <button onClick={() => addBoardItem(cat.key)} disabled={saving || !newTitle.trim()} style={{ background: newTitle.trim() ? '#7c3aed' : 'var(--border)', color: newTitle.trim() ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>+ Hinzufügen</button>
                       <button onClick={() => { setAddingCat(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo(''); setNewGeht(''); setNewGehtNicht(''); setNewFans('') }} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
                     </div>
                   </div>
                 ) : (
                   <button onClick={() => { setAddingCat(cat.key); setEditingItem(null); setNewTitle(''); setNewContent(''); setNewPrice(''); setNewDate(''); setNewDateFrom(''); setNewDateTo(''); setNewGeht(''); setNewGehtNicht(''); setNewFans('') }}
-                    style={{ width: '100%', background: 'transparent', border: '1px dashed #2e2e5a', color: 'var(--text-muted)', borderRadius: 8, padding: '7px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
+                    style={{ width: '100%', background: 'transparent', border: '1px dashed var(--border)', color: '#a78bfa', borderRadius: 11, padding: '10px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
                     + Hinzufügen
                   </button>
                 )}

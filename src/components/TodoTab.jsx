@@ -314,7 +314,7 @@ export default function TodoTab({ session, userDisplayName }) {
                     </div>
                   ))}
                   {newAssignedTo && !adminNames.includes(newAssignedTo) && (
-                    <div style={{ fontSize: 11.5, color: assigneeTelegramMap[newAssignedTo] ? '#6ee7b7' : '#fcd34d', marginTop: 8 }}>
+                    <div style={{ fontSize: 11.5, color: assigneeTelegramMap[newAssignedTo] ? 'var(--ton-gruen)' : 'var(--ton-gelb)', marginTop: 8 }}>
                       {assigneeTelegramMap[newAssignedTo] ? `${newAssignedTo} bekommt die Aufgabe per Telegram.` : `${newAssignedTo} hat kein Telegram hinterlegt — sieht es nur im Portal.`}
                     </div>
                   )}

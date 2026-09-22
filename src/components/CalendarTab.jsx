@@ -891,13 +891,13 @@ export default function CalendarTab({ userDisplayName }) {
       <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: a.farbe, background: a.farbe + '22', padding: '3px 8px', borderRadius: 5 }}>{a.label}</span>
-          {e.model_name && <span style={{ fontSize: 10, fontWeight: 700, color: '#6ee7b7', background: 'rgba(16,185,129,0.14)', padding: '3px 8px', borderRadius: 5 }}>{e.model_name}</span>}
+          {e.model_name && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--ton-gruen)', background: 'rgba(16,185,129,0.14)', padding: '3px 8px', borderRadius: 5 }}>{e.model_name}</span>}
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>angelegt von {e.erstellt_von || '—'}</span>
         </div>
         <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.25 }}>{e.titel}</div>
         {hauptEvent ? <button onClick={() => setAuswahl({ typ: 'eintrag', daten: hauptEvent })} style={{ ...btn(false), alignSelf: 'flex-start', fontSize: 11 }}>↩ Folgeaufgabe zu „{hauptEvent.titel}"</button>
           : e.folge_titel ? <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>↳ Folgeaufgabe zu „{e.folge_titel}"</div> : null}
-        {e.serie_id && <div style={{ fontSize: 12, color: '#c4b5fd' }}>🔁 Wiederholt sich {wdhLabel(e.wiederholung)}</div>}
+        {e.serie_id && <div style={{ fontSize: 12, color: 'var(--ton-lila)' }}>🔁 Wiederholt sich {wdhLabel(e.wiederholung)}</div>}
         {abhakbar && (
           <button onClick={() => abhaken(e, !ichFertig)} style={{ ...btn(false), alignSelf: 'flex-start', background: ichFertig ? 'transparent' : 'rgba(16,185,129,0.15)', color: ichFertig ? 'var(--text-muted)' : '#10b981', borderColor: ichFertig ? 'var(--border)' : 'rgba(16,185,129,0.4)' }}>{ichFertig ? '↺ doch nicht erledigt' : '✓ Ich hab\'s erledigt'}</button>
         )}
@@ -912,7 +912,7 @@ export default function CalendarTab({ userDisplayName }) {
             {e.fuer_alle ? <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 999, background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)' }}>Ganzes Team</span>
               : (e.fuer || []).map(n => {
                 const fertig = (e.erledigt_von || []).some(x => normName(x) === normName(n))
-                return <span key={n} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 999, background: fertig ? 'rgba(16,185,129,0.15)' : 'rgba(124,58,237,0.15)', color: fertig ? '#6ee7b7' : '#ddd6fe' }}>{fertig ? '✓ ' : ''}{n}</span>
+                return <span key={n} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 999, background: fertig ? 'rgba(16,185,129,0.15)' : 'rgba(124,58,237,0.15)', color: fertig ? 'var(--ton-gruen)' : 'var(--ton-lila2)' }}>{fertig ? '✓ ' : ''}{n}</span>
               })}
           </div>
           {e.fuer_alle && (e.erledigt_von || []).length > 0 && <div style={{ fontSize: 12, color: '#10b981' }}>✓ erledigt von {(e.erledigt_von || []).join(', ')}</div>}
@@ -969,11 +969,11 @@ export default function CalendarTab({ userDisplayName }) {
           return (
             <div key={t} style={{ padding: '8px 8px 6px', borderLeft: '1px solid var(--border)', minWidth: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: istHeute ? '#c4b5fd' : 'var(--text-secondary)' }}>{TAGE[wochentag(t)]} {kurzTag(t)}{istHeute ? ' · heute' : ''}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: istHeute ? 'var(--ton-lila)' : 'var(--text-secondary)' }}>{TAGE[wochentag(t)]} {kurzTag(t)}{istHeute ? ' · heute' : ''}</span>
                 <button onClick={() => oeffneNeu(t)} title="Eintrag an diesem Tag" aria-label={`Eintrag am ${kurzTag(t)}`} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 15, padding: '0 2px' }}>+</button>
               </div>
               {modelProTag[t].map(s => (
-                <div key={s.key + t} title={`${s.model} · ${s.art}: ${s.titel}`} style={{ marginTop: 4, fontSize: 10.5, padding: '2px 6px', borderRadius: 5, background: 'rgba(16,185,129,0.14)', color: '#6ee7b7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div key={s.key + t} title={`${s.model} · ${s.art}: ${s.titel}`} style={{ marginTop: 4, fontSize: 10.5, padding: '2px 6px', borderRadius: 5, background: 'rgba(16,185,129,0.14)', color: 'var(--ton-gruen)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {s.model} · {s.art}: {s.titel}
                 </div>
               ))}
@@ -1031,7 +1031,7 @@ export default function CalendarTab({ userDisplayName }) {
                           <div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.25, color: 'var(--text-primary)', whiteSpace: hoehe < 30 ? 'nowrap' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {ueberfaellig ? '⏳ ' : ''}{e.folge_von ? '↳ ' : ''}{e.serie_id ? '🔁 ' : ''}{e.titel}
                           </div>
-                          {gezogen && <div style={{ fontSize: 10, fontWeight: 700, color: '#fde68a' }}>→ {(() => { const n = verschobenUm(e, ziehen.tage, ziehen.minuten); return `${TAGE[wochentag(datumInZone(n.beginn, anzeigeZone).tag)]} ${zeitIn(n.beginn, anzeigeZone)}` })()}</div>}
+                          {gezogen && <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ton-gelb2)' }}>→ {(() => { const n = verschobenUm(e, ziehen.tage, ziehen.minuten); return `${TAGE[wochentag(datumInZone(n.beginn, anzeigeZone).tag)]} ${zeitIn(n.beginn, anzeigeZone)}` })()}</div>}
                           {hoehe > 30 && !gezogen && <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>{e.model_name && !normName(e.titel).includes(normName(e.model_name)) ? `${e.model_name} · ` : ''}{zeitIn(e.beginn, anzeigeZone)}{e.ende ? '–' + zeitIn(e.ende, anzeigeZone) : ''} · {e.fuer_alle ? 'Team' : (e.fuer || []).join(', ')}{(e.erledigt_von || []).length ? ` · ✓${e.erledigt_von.length}` : ''}</div>}
                         </>
                       )}
@@ -1057,7 +1057,7 @@ export default function CalendarTab({ userDisplayName }) {
       <div style={{ marginTop: 6, maxHeight: 220, overflowY: 'auto' }}>
         {zonenListe.map(z => (
           <div key={z.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11, padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ color: z.team ? '#c4b5fd' : 'var(--text-primary)' }}>{z.name}</span>
+            <span style={{ color: z.team ? 'var(--ton-lila)' : 'var(--text-primary)' }}>{z.name}</span>
             <span style={{ color: z.zone ? (z.bestaetigt ? '#10b981' : 'var(--text-secondary)') : 'var(--text-muted)', textAlign: 'right' }}>
               {z.zone ? `${ortAus(z.zone)} ${utcLabel(z.zone)}${z.bestaetigt ? ' ✓' : ''}` : 'unbekannt'}
             </span>
@@ -1133,14 +1133,14 @@ export default function CalendarTab({ userDisplayName }) {
   }
   const tagKopf = (t, extra) => (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 0 4px', borderBottom: '1px solid var(--border)', marginBottom: 2 }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: t === heute ? '#c4b5fd' : 'var(--text-primary)' }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: t === heute ? 'var(--ton-lila)' : 'var(--text-primary)' }}>
         {t === heute ? 'Heute · ' : t === plusTage(heute, 1) ? 'Morgen · ' : ''}{new Date(t + 'T12:00:00Z').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' })}
       </span>
       {extra}
     </div>
   )
   const modelZeilen = (t) => modelAmTag(t).map(m => (
-    <div key={m.key + t} style={{ display: 'flex', gap: 10, padding: '4px 0', fontSize: 11.5, color: '#6ee7b7' }}>
+    <div key={m.key + t} style={{ display: 'flex', gap: 10, padding: '4px 0', fontSize: 11.5, color: 'var(--ton-gruen)' }}>
       <span style={{ width: 44, flexShrink: 0, fontSize: 10.5, color: 'var(--text-muted)' }}>ganztags</span>
       <span style={{ width: 3, borderRadius: 2, background: MODEL_FARBE, flexShrink: 0 }} />
       <span>{m.model} · {m.art}: {m.titel}</span>
@@ -1206,7 +1206,7 @@ export default function CalendarTab({ userDisplayName }) {
             return (
               <div key={t} onClick={() => { if (mobil) { setListeVon(t); setListeTage(21); setAnsicht('liste') } else { setWoche(montagVon(t)); setAnsicht('woche') } }}
                 style={{ minHeight: mobil ? 58 : 104, borderRight: (i % 7) < 6 ? '1px solid var(--border)' : 'none', borderBottom: '1px solid var(--border)', padding: mobil ? '4px 3px' : '5px 6px', cursor: 'pointer', background: istHeute ? 'rgba(124,58,237,0.08)' : 'transparent', opacity: imMonat ? 1 : 0.45, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: istHeute ? 800 : 600, color: istHeute ? '#c4b5fd' : 'var(--text-secondary)', textAlign: mobil ? 'center' : 'left' }}>{Number(t.slice(8))}</div>
+                <div style={{ fontSize: 12, fontWeight: istHeute ? 800 : 600, color: istHeute ? 'var(--ton-lila)' : 'var(--text-secondary)', textAlign: mobil ? 'center' : 'left' }}>{Number(t.slice(8))}</div>
                 {mobil ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center', marginTop: 4 }}>
                     {ms.length > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: MODEL_FARBE }} />}
@@ -1215,7 +1215,7 @@ export default function CalendarTab({ userDisplayName }) {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 3 }}>
-                    {ms.slice(0, 1).map(m => <div key={m.key} style={{ fontSize: 10, color: '#6ee7b7', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}: {m.titel}</div>)}
+                    {ms.slice(0, 1).map(m => <div key={m.key} style={{ fontSize: 10, color: 'var(--ton-gruen)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}: {m.titel}</div>)}
                     {eintr.slice(0, 3).map(x => {
                       const e = x.daten
                       return (
@@ -1326,7 +1326,7 @@ export default function CalendarTab({ userDisplayName }) {
           </div>
           {(sucheOffen || suche) && suchfeld}
           {modelFilter && (
-            <button onClick={() => setModelFilter('')} style={{ ...btn(false), alignSelf: 'flex-start', fontSize: 11, color: '#6ee7b7', borderColor: 'rgba(16,185,129,0.4)' }}>Nur {modelFilter} ✕</button>
+            <button onClick={() => setModelFilter('')} style={{ ...btn(false), alignSelf: 'flex-start', fontSize: 11, color: 'var(--ton-gruen)', borderColor: 'rgba(16,185,129,0.4)' }}>Nur {modelFilter} ✕</button>
           )}
           {offeneGefiltert.length > 0 && !treffer && (
             <button onClick={() => setOffenBlatt(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 9, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit', color: '#fbbf24', fontSize: 12.5, fontWeight: 600 }}>
@@ -1339,7 +1339,7 @@ export default function CalendarTab({ userDisplayName }) {
                 const an = t === mobilTag, istHeute = t === heute
                 const anzahl = (bloeckeProTag[t] || []).length + (modelProTag[t] || []).length
                 return (
-                  <button key={t} onClick={() => setMobilTag(t)} style={{ padding: '6px 0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', background: an ? '#7c3aed' : 'var(--bg-card)', color: an ? '#fff' : istHeute ? '#c4b5fd' : 'var(--text-secondary)', border: `1px solid ${an ? '#7c3aed' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                  <button key={t} onClick={() => setMobilTag(t)} style={{ padding: '6px 0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', background: an ? '#7c3aed' : 'var(--bg-card)', color: an ? '#fff' : istHeute ? 'var(--ton-lila)' : 'var(--text-secondary)', border: `1px solid ${an ? '#7c3aed' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                     <span style={{ fontSize: 11, fontWeight: 700 }}>{TAGE[wochentag(t)]}</span>
                     <span style={{ fontSize: 10 }}>{kurzTag(t).slice(0, 2)}</span>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: anzahl ? (an ? '#fff' : '#a78bfa') : 'transparent' }} />
@@ -1476,7 +1476,7 @@ export default function CalendarTab({ userDisplayName }) {
               {/* v4.65.0: Wiederholung */}
               {form.serie_id ? (
                 <div style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 9, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: '#ddd6fe' }}>🔁 Teil einer Serie ({wdhLabel(form.wiederholung)}). Änderung gilt für:</div>
+                  <div style={{ fontSize: 12, color: 'var(--ton-lila2)' }}>🔁 Teil einer Serie ({wdhLabel(form.wiederholung)}). Änderung gilt für:</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <button type="button" onClick={() => setForm({ ...form, umfang: 'diesen' })} style={btn(form.umfang === 'diesen')}>nur diesen Termin</button>
                     <button type="button" onClick={() => setForm({ ...form, umfang: 'folgende' })} style={btn(form.umfang === 'folgende')}>diesen + alle folgenden</button>
@@ -1548,7 +1548,7 @@ export default function CalendarTab({ userDisplayName }) {
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>z. B. „Massennachricht an Chiara-Fans" direkt nach Stream-Ende — für dich, Rey oder die betreuenden Chatter. Verschiebst du das Event, wandert die Aufgabe mit.</div>
                   )}
                   {form.folgen.length > 0 && (serienVorschau?.length > 1 || (form.serie_id && form.umfang === 'folgende')) && (
-                    <div style={{ fontSize: 11, color: '#c4b5fd' }}>🔁 Neue Folgeaufgaben werden bei jedem Termin der Serie angelegt.</div>
+                    <div style={{ fontSize: 11, color: 'var(--ton-lila)' }}>🔁 Neue Folgeaufgaben werden bei jedem Termin der Serie angelegt.</div>
                   )}
                   {form.folgen.map((f, i) => {
                     const setF = (patch) => setForm({ ...form, folgen: form.folgen.map((x, j) => j === i ? { ...x, ...patch } : x) })
@@ -1606,9 +1606,9 @@ export default function CalendarTab({ userDisplayName }) {
             <div onClick={ev => ev.stopPropagation()} style={{ ...card, width: 'min(420px, 100%)', padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Verschieben?</div>
               <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>„{v.e.titel}"</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{wann(alt)} → <b style={{ color: '#c4b5fd' }}>{wann(neu)}</b> (DE)</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{wann(alt)} → <b style={{ color: 'var(--ton-lila)' }}>{wann(neu)}</b> (DE)</div>
               {anzeigeZone !== BERLIN && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>bei dir: {zeitIn(v.beginn, anzeigeZone)} Uhr</div>}
-              {v.e.serie_id && <div style={{ fontSize: 12, color: '#c4b5fd' }}>🔁 Nur dieser Termin der Serie wird verschoben.</div>}
+              {v.e.serie_id && <div style={{ fontSize: 12, color: 'var(--ton-lila)' }}>🔁 Nur dieser Termin der Serie wird verschoben.</div>}
               {nFolgen > 0 && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>↳ {nFolgen} Folgeaufgabe(n) wandern mit.</div>}
               {v.e.folge_von && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>↳ Der neue Abstand zum Event wird gemerkt.</div>}
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-primary)' }}>
@@ -1635,7 +1635,7 @@ function PersonenChips({ personen, team, gewaehlt, onChange, klein }) {
       {sortiert.map(p => {
         const an = gewaehlt.includes(p)
         return <button key={p} type="button" onClick={() => onChange(an ? gewaehlt.filter(x => x !== p) : [...gewaehlt, p])}
-          style={{ padding: klein ? '3px 8px' : '4px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: an ? 'rgba(124,58,237,0.2)' : 'transparent', color: an ? '#ddd6fe' : teamSet.has(p) ? '#c4b5fd' : 'var(--text-secondary)', border: `1px solid ${an ? '#7c3aed' : 'var(--border)'}` }}>{an ? '✓ ' : ''}{p}</button>
+          style={{ padding: klein ? '3px 8px' : '4px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: an ? 'rgba(124,58,237,0.2)' : 'transparent', color: an ? 'var(--ton-lila2)' : teamSet.has(p) ? 'var(--ton-lila)' : 'var(--text-secondary)', border: `1px solid ${an ? '#7c3aed' : 'var(--border)'}` }}>{an ? '✓ ' : ''}{p}</button>
       })}
     </div>
   )
@@ -1657,7 +1657,7 @@ export function ZonenTabelle({ beginn }) {
               <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>{z.ort}</div>
               <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{utcLabel(z.zone, new Date(beginn))}{andererTag ? ' · ' + new Date(beginn).toLocaleDateString('de-DE', { timeZone: z.zone, weekday: 'short', day: '2-digit', month: '2-digit' }) : ''}</div>
             </div>
-            <div style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700, color: z.zone === eigene ? '#c4b5fd' : 'var(--text-primary)' }}>{d.zeit}</div>
+            <div style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 700, color: z.zone === eigene ? 'var(--ton-lila)' : 'var(--text-primary)' }}>{d.zeit}</div>
           </div>
         )
       })}

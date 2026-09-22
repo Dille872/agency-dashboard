@@ -458,6 +458,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [noteText, setNoteText] = useState('')
   const [noteModel, setNoteModel] = useState('')
   const [noteShift, setNoteShift] = useState('')
+  // v4.90.0: eingecheckte Schicht in der Schichtnotiz vorauswählen
+  useEffect(() => { if (currentShift) setNoteShift(prev => prev || currentShift) }, [currentShift])
   const [hasShiftNote, setHasShiftNote] = useState(false)
   const noteRef = React.useRef(null)
   const [sendingNote, setSendingNote] = useState(false)
@@ -2738,37 +2740,35 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         <Collapsible helpId="messages" hidden={tab !== 'heute'} isCollapsed={collapsed.messages} onToggle={() => toggleCollapse('messages')} icon="📝" title="Schichtnotiz" badge={isOnline && !hasShiftNote ? 'offen' : null} badgeColor="#f59e0b">
           <div>
             <div ref={noteRef}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 120 }}>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Model</label>
-                  <select
-                    value={noteModel}
-                    onChange={e => setNoteModel(e.target.value)}
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteModel ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                  >
-                    <option value="">— Model wählen —</option>
-                    {myShifts.filter(s => s.dayIso === todayIso).flatMap(s => Object.values(s.models)).map((_, i) => null)}
-                    {[...new Set(myShifts.map(s => s.dayIso === todayIso ? s.shift : null).filter(Boolean))].length > 0
-                      ? myShifts.filter(s => s.dayIso === todayIso).map((s, i) => (
-                          <option key={i} value={s.shift}>{s.shift}</option>
-                        ))
-                      : null
-                    }
-                    {activeModels.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Schicht</label>
-                  <select
-                    value={noteShift}
-                    onChange={e => setNoteShift(e.target.value)}
-                    style={{ background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: noteShift ? 'var(--text-primary)' : 'var(--text-muted)', padding: '7px 9px', borderRadius: 10, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
-                  >
-                    <option value="">— Schicht —</option>
-                    {['Vorschicht', 'Früh', 'Spät', 'Nacht'].map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
+              {/* v4.90.0: Model und Schicht als Chips — die Models der heutigen
+                  Schichten stehen vorne, alle anderen hinter „Anderes …“. */}
+              {(() => {
+                const heuteModels = [...new Set(todayShifts.flatMap(s => (s.models || []).map(m => m.modelName)).filter(Boolean))]
+                const andere = activeModels.map(m => m.name).filter(n => !heuteModels.includes(n))
+                const chip = (an, farbe = '#7c3aed') => ({ fontSize: 12.5, padding: '6px 11px', borderRadius: 20, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: an ? farbe + '2a' : 'transparent', border: `1px solid ${an ? farbe : 'var(--border)'}`, color: an ? farbe : 'var(--text-secondary)' })
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 9 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', width: 50 }}>Model</span>
+                      {heuteModels.map(n => <button key={n} type="button" className="filter-chip" onClick={() => setNoteModel(noteModel === n ? '' : n)} style={chip(noteModel === n)}>{n}</button>)}
+                      {andere.length > 0 && (
+                        <select value={andere.includes(noteModel) ? noteModel : ''} onChange={e => setNoteModel(e.target.value)}
+                          style={{ ...chip(andere.includes(noteModel)), padding: '6px 10px', background: andere.includes(noteModel) ? 'rgba(124,58,237,0.16)' : 'var(--bg-input)', outline: 'none' }}>
+                          <option value="">{heuteModels.length ? 'Anderes …' : 'Model wählen …'}</option>
+                          {andere.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', width: 50 }}>Schicht</span>
+                      {['Vorschicht', 'Früh', 'Spät', 'Nacht'].map(sh => {
+                        const an = (noteShift || '') === sh
+                        return <button key={sh} type="button" className="filter-chip" onClick={() => setNoteShift(an ? '' : sh)} style={chip(an, SHIFT_COLORS[sh] || '#7c3aed')}>{sh}</button>
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
               <textarea
                 value={noteText}
                 onChange={e => setNoteText(e.target.value)}
@@ -2966,7 +2966,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   <button key={k} type="button" className="chip-btn" onClick={() => setAnfrageFilter(k)} style={{
                     fontSize: 12.5, padding: '6px 12px', borderRadius: 20, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                     background: aktiv === k ? 'rgba(124,58,237,0.2)' : 'transparent', border: `1px solid ${aktiv === k ? '#7c3aed' : 'var(--border)'}`,
-                    color: aktiv === k ? '#c4b5fd' : 'var(--text-secondary)',
+                    color: aktiv === k ? 'var(--ton-lila)' : 'var(--text-secondary)',
                   }}>{l}{k !== 'alle' && zahl(k) > 0 ? ` ${zahl(k)}` : ''}</button>
                 ))}
               </div>
@@ -3104,7 +3104,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           <button onClick={() => setShowNewIdeaForm(true)} style={{
             width: '100%', padding: '13px 14px', borderRadius: 14,
             background: 'linear-gradient(135deg, rgba(167,139,250,0.22), rgba(167,139,250,0.08))', border: '1px solid rgba(167,139,250,0.45)',
-            color: '#ddd6fe', cursor: 'pointer', fontFamily: 'inherit',
+            color: 'var(--ton-lila2)', cursor: 'pointer', fontFamily: 'inherit',
             fontWeight: 800, fontSize: 14, marginBottom: 12
           }}>💡 Neue Content-Idee</button>
           {showNewIdeaForm && (
@@ -3182,12 +3182,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               <div data-help="stats" style={{ marginBottom: 12, borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(16,185,129,0.35)', background: 'linear-gradient(155deg, rgba(16,185,129,0.16), var(--bg-card) 60%)' }}>
                 <div style={{ padding: '15px 16px 6px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6ee7b7' }}>Revenue {monat}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ton-gruen)' }}>Revenue {monat}</div>
                     <div style={{ fontFamily: 'monospace', fontSize: 30, fontWeight: 800, color: monthRevenue > 2000 ? '#10b981' : 'var(--text-primary)', lineHeight: 1.15, marginTop: 3 }}>{formatMoney(monthRevenue)}</div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>KW {kw}</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, marginTop: 3, padding: '4px 10px', borderRadius: 20, background: imGruen === 4 ? 'rgba(16,185,129,0.2)' : 'rgba(124,58,237,0.16)', color: imGruen === 4 ? '#6ee7b7' : '#c4b5fd' }}>{imGruen} von 4 im Grünen</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, marginTop: 3, padding: '4px 10px', borderRadius: 20, background: imGruen === 4 ? 'rgba(16,185,129,0.2)' : 'rgba(124,58,237,0.16)', color: imGruen === 4 ? 'var(--ton-gruen)' : 'var(--ton-lila)' }}>{imGruen} von 4 im Grünen</div>
                   </div>
                 </div>
                 <div className="kpi-mini-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, padding: '10px 12px 12px' }}>
@@ -3195,13 +3195,13 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     const gut = z.wert >= z.ziel
                     const pct = Math.max(4, Math.min(100, (z.wert / z.ziel) * 100))
                     return (
-                      <div key={z.label} style={{ padding: '10px 11px', borderRadius: 13, background: 'rgba(7,7,16,0.35)', border: `1px solid ${gut ? 'rgba(16,185,129,0.4)' : 'var(--border)'}` }}>
+                      <div key={z.label} style={{ padding: '10px 11px', borderRadius: 13, background: 'var(--ton-dunkel)', border: `1px solid ${gut ? 'rgba(16,185,129,0.4)' : 'var(--border)'}` }}>
                         <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{z.label}</div>
                         <div style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 800, color: gut ? '#10b981' : 'var(--text-primary)', margin: '2px 0 7px' }}>{z.text}</div>
                         <div style={{ height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
                           <div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: gut ? '#10b981' : z.farbe }} />
                         </div>
-                        <div style={{ fontSize: 10, color: gut ? '#6ee7b7' : 'var(--text-muted)', marginTop: 4 }}>{gut ? '✓ im grünen Bereich' : `gut ab ${z.label === 'Buy Rate' ? z.ziel + '%' : z.label === 'Aktiv' ? z.ziel + ' h' : z.ziel}`}</div>
+                        <div style={{ fontSize: 10, color: gut ? 'var(--ton-gruen)' : 'var(--text-muted)', marginTop: 4 }}>{gut ? '✓ im grünen Bereich' : `gut ab ${z.label === 'Buy Rate' ? z.ziel + '%' : z.label === 'Aktiv' ? z.ziel + ' h' : z.ziel}`}</div>
                       </div>
                     )
                   })}
@@ -3266,7 +3266,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             style={{
               width: '100%', marginBottom: 14, padding: '13px', borderRadius: 14,
               background: 'linear-gradient(135deg, rgba(124,58,237,0.28), rgba(124,58,237,0.10))', border: '1px solid rgba(124,58,237,0.5)',
-              color: '#c4b5fd', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+              color: 'var(--ton-lila)', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
             }}
           >▶ Einführung noch einmal ansehen</button>
           <div className="raster-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>

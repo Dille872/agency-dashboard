@@ -233,11 +233,11 @@ export default function ChatterOrga({ heuteIso, schichten = [], abwesenheiten = 
                   {zeitVon(naechste) && <span style={{ fontFamily: 'monospace' }}>{zeitVon(naechste)} · </span>}{modelNamen(naechste)}
                 </div>
                 {wegAm(naechste.berlinDate || naechste.dayIso) && (
-                  <div style={{ fontSize: 11.5, color: '#fca5a5', marginTop: 3 }}>🌴 Du bist an dem Tag eingetragen — die Schicht steht aber noch auf dir.</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ton-rot)', marginTop: 3 }}>🌴 Du bist an dem Tag eingetragen — die Schicht steht aber noch auf dir.</div>
                 )}
               </div>
               {bisStart(naechste) && (
-                <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, padding: '6px 11px', borderRadius: 20, background: 'rgba(124,58,237,0.22)', color: '#c4b5fd' }}>{bisStart(naechste)}</span>
+                <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, padding: '6px 11px', borderRadius: 20, background: 'rgba(124,58,237,0.22)', color: 'var(--ton-lila)' }}>{bisStart(naechste)}</span>
               )}
             </div>
           ) : (
@@ -254,10 +254,10 @@ export default function ChatterOrga({ heuteIso, schichten = [], abwesenheiten = 
             return (
               <button key={iso} type="button" className="tag-btn" onClick={() => setFenster({ tag: iso })} aria-label={`${wtag(iso, true)} ${datum(iso)}`} style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 2px 9px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', minWidth: 0,
-                background: weg ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.16) 0 6px, rgba(239,68,68,0.06) 6px 12px)' : heute ? 'rgba(124,58,237,0.22)' : 'rgba(7,7,16,0.35)',
+                background: weg ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.16) 0 6px, rgba(239,68,68,0.06) 6px 12px)' : heute ? 'rgba(124,58,237,0.22)' : 'var(--ton-dunkel)',
                 border: `1px solid ${weg ? 'rgba(239,68,68,0.45)' : heute ? '#7c3aed' : 'var(--border)'}`,
               }}>
-                <span style={{ fontSize: 10, color: heute ? '#c4b5fd' : 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>{heute ? 'Heute' : wtag(iso)}</span>
+                <span style={{ fontSize: 10, color: heute ? 'var(--ton-lila)' : 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>{heute ? 'Heute' : wtag(iso)}</span>
                 <span style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{Number(iso.slice(8, 10))}</span>
                 <span style={{ display: 'flex', gap: 2, minHeight: 16, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                   {weg && <span style={{ fontSize: 12 }}>🌴</span>}
@@ -274,8 +274,8 @@ export default function ChatterOrga({ heuteIso, schichten = [], abwesenheiten = 
 
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', padding: '9px 16px 12px', borderTop: '1px solid rgba(124,58,237,0.2)', fontSize: 11.5, color: 'var(--text-muted)' }}>
           <span><b style={{ color: 'var(--text-primary)' }}>{schichten.length}</b> {schichten.length === 1 ? 'Schicht' : 'Schichten'}</span>
-          {wegTage > 0 && <span>🌴 <b style={{ color: '#fca5a5' }}>{wegTage}</b> {wegTage === 1 ? 'Tag' : 'Tage'} weg</span>}
-          {offeneTausche > 0 && <span>↔ <b style={{ color: '#fcd34d' }}>{offeneTausche}</b> Tausch offen</span>}
+          {wegTage > 0 && <span>🌴 <b style={{ color: 'var(--ton-rot)' }}>{wegTage}</b> {wegTage === 1 ? 'Tag' : 'Tage'} weg</span>}
+          {offeneTausche > 0 && <span>↔ <b style={{ color: 'var(--ton-gelb)' }}>{offeneTausche}</b> Tausch offen</span>}
           <span style={{ marginLeft: 'auto' }}>Tag antippen für Details</span>
         </div>
       </div>
@@ -331,9 +331,9 @@ export default function ChatterOrga({ heuteIso, schichten = [], abwesenheiten = 
               const laeuft = imZeitraum(heuteIso, a)
               return (
                 <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 11px', borderRadius: 13, background: laeuft ? 'rgba(239,68,68,0.09)' : 'var(--bg-card2)', border: `1px solid ${laeuft ? 'rgba(239,68,68,0.4)' : 'var(--border)'}` }}>
-                  <div style={{ textAlign: 'center', minWidth: 50, padding: '4px 0', borderRadius: 9, background: 'rgba(7,7,16,0.35)' }}>
+                  <div style={{ textAlign: 'center', minWidth: 50, padding: '4px 0', borderRadius: 9, background: 'var(--ton-dunkel)' }}>
                     <div style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{Number(a.date_from.slice(8, 10))}.{mehr ? `–${Number(bisA.slice(8, 10))}.` : ''}</div>
-                    <div style={{ fontSize: 10, color: '#fca5a5' }}>{new Date(a.date_from + 'T12:00:00').toLocaleDateString('de-DE', { month: 'short' })}</div>
+                    <div style={{ fontSize: 10, color: 'var(--ton-rot)' }}>{new Date(a.date_from + 'T12:00:00').toLocaleDateString('de-DE', { month: 'short' })}</div>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.reason || 'Nicht verfügbar'}</div>
@@ -384,12 +384,12 @@ export default function ChatterOrga({ heuteIso, schichten = [], abwesenheiten = 
         return (
           <Fenster titel={`${wtag(iso, true)}, ${datum(iso)}`} unter={iso === heuteIso ? 'Heute' : iso === isoPlus(heuteIso, 1) ? 'Morgen' : 'Dein Tag'} onZu={() => setFenster(null)}>
             {weg && (
-              <div style={{ padding: '11px 13px', borderRadius: 13, background: 'rgba(239,68,68,0.09)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 13, color: '#fecaca' }}>
+              <div style={{ padding: '11px 13px', borderRadius: 13, background: 'rgba(239,68,68,0.09)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 13, color: 'var(--ton-rot2)' }}>
                 🌴 Eingetragen: <b>{weg.reason || 'Nicht verfügbar'}</b>{(weg.available_shifts && weg.available_shifts.length) ? ` · nur ${SHIFTS.filter(s => !weg.available_shifts.includes(s)).join('/')}` : ' · ganzer Tag'}
               </div>
             )}
             {weg && ss.length > 0 && (
-              <div style={{ fontSize: 12, color: '#fde68a', lineHeight: 1.5, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
+              <div style={{ fontSize: 12, color: 'var(--ton-gelb2)', lineHeight: 1.5, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
                 Du bist eingetragen, hast aber trotzdem eine Schicht. Das Team plant noch um — bis dahin gehört sie dir. Im Zweifel: „↔ abgeben“ oder kurz schreiben.
               </div>
             )}
@@ -463,7 +463,7 @@ export default function ChatterOrga({ heuteIso, schichten = [], abwesenheiten = 
 
           {von && (
             <div style={{ padding: '11px 13px', borderRadius: 13, background: betroffen.length ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.07)', border: `1px solid ${betroffen.length ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.3)'}` }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: betroffen.length ? '#fcd34d' : '#6ee7b7', marginBottom: betroffen.length ? 7 : 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: betroffen.length ? 'var(--ton-gelb)' : 'var(--ton-gruen)', marginBottom: betroffen.length ? 7 : 0 }}>
                 {betroffen.length ? `Betrifft ${betroffen.length} eingeteilte ${betroffen.length === 1 ? 'Schicht' : 'Schichten'}` : '✓ Keine eingeteilte Schicht betroffen'}
               </div>
               {betroffen.map(s => (
@@ -478,7 +478,7 @@ export default function ChatterOrga({ heuteIso, schichten = [], abwesenheiten = 
             </div>
           )}
           {kurzfristig && (
-            <div style={{ fontSize: 12, color: '#fde68a', lineHeight: 1.5, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
+            <div style={{ fontSize: 12, color: 'var(--ton-gelb2)', lineHeight: 1.5, padding: '9px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.07)', border: '1px dashed rgba(245,158,11,0.4)' }}>
               ⏰ Ziemlich kurzfristig ({vorlaufTage === 0 ? 'heute' : vorlaufTage === 1 ? 'morgen' : `in ${vorlaufTage} Tagen`}). Geht trotzdem — schreib dem Team am besten zusätzlich kurz im Chat.
             </div>
           )}

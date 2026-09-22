@@ -77,7 +77,7 @@ export default function ZeitzonenHinweis({ displayName, onZone }) {
   // 1) Noch nie bestätigt → Vorschlag
   if (!gespeichert.bestaetigt) {
     return (
-      <div style={{ ...box, background: 'rgba(124,58,237,0.10)', border: '1px solid rgba(124,58,237,0.35)', color: '#ddd6fe' }}>
+      <div style={{ ...box, background: 'rgba(124,58,237,0.10)', border: '1px solid rgba(124,58,237,0.35)', color: 'var(--ton-lila2)' }}>
         <span>🕒 Deine Zeitzone: <b>{name(geraet)}</b> — laut deinem Gerät. Stimmt das? Danach richten sich Kalender und Telegram-Erinnerungen.</span>
         {!waehlen && <><button onClick={() => festlegen(geraet)} style={knopf(true)}>Ja, stimmt</button><button onClick={() => setWaehlen(true)} style={knopf(false)}>Andere wählen</button></>}
         {auswahlFeld}
@@ -88,7 +88,7 @@ export default function ZeitzonenHinweis({ displayName, onZone }) {
   // 2) Bestätigt, aber Gerät steht woanders → nachfragen
   if (gespeichert.zone !== geraet && !ignoriert) {
     return (
-      <div style={{ ...box, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)', color: '#fde68a' }}>
+      <div style={{ ...box, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)', color: 'var(--ton-gelb2)' }}>
         <span>⚠ Dein Gerät steht auf <b>{name(geraet)}</b>, eingestellt ist <b>{name(gespeichert.zone)}</b>. Kalender und Erinnerungen laufen gerade in {ortAus(gespeichert.zone)}-Zeit.</span>
         {!waehlen && <>
           <button onClick={() => festlegen(geraet)} style={knopf(true)}>Auf {ortAus(geraet)} umstellen</button>
