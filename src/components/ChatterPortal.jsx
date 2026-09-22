@@ -20,6 +20,7 @@ import { useModelLage, zustand, reiseHeute } from '../modelLage' // v4.75.0
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
 import { useTodoMeldung } from '../todoMeldung'
+import { todoAnsicht } from '../todoListe' // v4.96.0
 import MeldeHinweis from './MeldeHinweis'
 import { APP_VERSION } from '../version'
 import { SocialLinksView, SOCIAL_CATEGORY } from './SocialLinks'
@@ -1466,6 +1467,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     patchLokal: patchMyTodo,
     sende: (todo) => notifyAdmins(`✅ <b>${displayName}</b> hat erledigt:\n\n${todo.title}`),
   })
+  // v4.96.0: erledigte Aufgaben wegklappen (src/todoListe.js)
+  const [todoArchivOffen, setTodoArchivOffen] = useState(false)
+  const [frischErledigt, setFrischErledigt] = useState(() => new Set())
+  const abhakenMerken = (todo) => { if (!todo.completed) setFrischErledigt(s => new Set(s).add(todo.id)); toggleMyTodo(todo) }
+  const todoSicht = todoAnsicht(myTodos, frischErledigt, todoArchivOffen)
 
   const saveTodoNote = async (todo) => {
     const note = (todoNoteDrafts[todo.id] ?? '').trim()
@@ -2596,19 +2602,19 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         )}
         <div className={tab === 'heute' ? 'heute-rechts' : undefined}>
-        <Collapsible helpId="todos" hidden={tab !== 'heute' || myTodos.length === 0} isCollapsed={collapsed.todos} onToggle={() => toggleCollapse('todos')} icon="📋" title="Meine Aufgaben" badge={myTodos.filter(t => !t.completed).length || null} badgeColor="#ef4444">
-          {myTodos.length === 0 ? (
+        <Collapsible helpId="todos" hidden={tab !== 'heute' || todoSicht.leer} isCollapsed={collapsed.todos} onToggle={() => toggleCollapse('todos')} icon="📋" title="Meine Aufgaben" badge={todoSicht.offenZahl || null} badgeColor="#ef4444">
+          {todoSicht.sichtbar.length === 0 && !todoSicht.erledigtZahl ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px 2px' }}>Aktuell keine Aufgaben für dich.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[...myTodos].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map(todo => {
+              {todoSicht.sichtbar.map(todo => {
                 const prio = TODO_PRIORITY[todo.priority] || TODO_PRIORITY.normal
                 const draft = todoNoteDrafts[todo.id]
                 const noteEditing = draft !== undefined
                 return (
                   <div key={todo.id} style={{ padding: '11px 13px', borderRadius: 9, background: todo.completed ? 'var(--bg-card2)' : prio.color + '0d', border: `1px solid ${todo.completed ? 'var(--border)' : prio.color + '40'}`, opacity: todo.completed ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <div onClick={() => toggleMyTodo(todo)} title={todo.completed ? 'Wieder öffnen' : 'Abhaken'} style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: todo.completed ? '#10b981' : 'transparent', border: `1.5px solid ${todo.completed ? '#10b981' : prio.color}` }}>
+                      <div onClick={() => abhakenMerken(todo)} title={todo.completed ? 'Wieder öffnen' : 'Abhaken'} style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: todo.completed ? '#10b981' : 'transparent', border: `1.5px solid ${todo.completed ? '#10b981' : prio.color}` }}>
                         {todo.completed && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2643,6 +2649,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                   </div>
                 )
               })}
+              {/* v4.96.0: erledigte der letzten 7 Tage eingeklappt, ältere ausgeblendet */}
+              {todoSicht.erledigtZahl > 0 && (
+                <button type="button" onClick={() => setTodoArchivOffen(v => !v)} style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', padding: '4px 2px', color: 'var(--text-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {todoArchivOffen ? '▾ Erledigte ausblenden' : `▸ Erledigt · ${todoSicht.erledigtZahl} (letzte 7 Tage)`}
+                </button>
+              )}
             </div>
           )}
         </Collapsible>

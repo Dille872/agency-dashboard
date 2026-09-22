@@ -15,6 +15,7 @@ const TODO_PRIORITY = {
 }
 import { sendTelegramMessage, notifyAdmins } from '../telegram'
 import { useTodoMeldung } from '../todoMeldung'
+import { todoAnsicht } from '../todoListe' // v4.96.0
 import MeldeHinweis from './MeldeHinweis'
 import { useFabPanels } from '../fabPanel'
 import Logo from './Logo'
@@ -355,6 +356,11 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     patchLokal: patchMyTodo,
     sende: (todo) => notifyAdmins(`✅ <b>${displayName}</b> hat erledigt:\n\n${todo.title}`),
   })
+  // v4.96.0: erledigte Aufgaben wegklappen (src/todoListe.js)
+  const [todoArchivOffen, setTodoArchivOffen] = useState(false)
+  const [frischErledigt, setFrischErledigt] = useState(() => new Set())
+  const abhakenMerken = (todo) => { if (!todo.completed) setFrischErledigt(s => new Set(s).add(todo.id)); toggleMyTodo(todo) }
+  const todoSicht = todoAnsicht(myTodos, frischErledigt, todoArchivOffen)
 
   const saveTodoNote = async (todo) => {
     const note = (todoNoteDrafts[todo.id] ?? '').trim()
@@ -919,7 +925,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         })()}
 
         {/* v3.40.0: Meine Aufgaben (vom Team zugewiesen) */}
-        {myTodos.length > 0 && (
+        {!todoSicht.leer && (
           <div data-help="todos" style={{ background: 'linear-gradient(155deg, rgba(239,68,68,0.12), var(--bg-card) 60%)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 16, padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>📋 Meine Aufgaben</span>
@@ -929,14 +935,14 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
               )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[...myTodos].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map(todo => {
+              {todoSicht.sichtbar.map(todo => {
                 const prio = TODO_PRIORITY[todo.priority] || TODO_PRIORITY.normal
                 const draft = todoNoteDrafts[todo.id]
                 const noteEditing = draft !== undefined
                 return (
                   <div key={todo.id} style={{ padding: '11px 13px', borderRadius: 9, background: todo.completed ? 'var(--bg-card2)' : prio.color + '0d', border: `1px solid ${todo.completed ? 'var(--border)' : prio.color + '40'}`, opacity: todo.completed ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <div onClick={() => toggleMyTodo(todo)} title={todo.completed ? 'Wieder öffnen' : 'Abhaken'} style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: todo.completed ? '#10b981' : 'transparent', border: `1.5px solid ${todo.completed ? '#10b981' : prio.color}` }}>
+                      <div onClick={() => abhakenMerken(todo)} title={todo.completed ? 'Wieder öffnen' : 'Abhaken'} style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: todo.completed ? '#10b981' : 'transparent', border: `1.5px solid ${todo.completed ? '#10b981' : prio.color}` }}>
                         {todo.completed && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -971,6 +977,12 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                   </div>
                 )
               })}
+              {/* v4.96.0: erledigte der letzten 7 Tage eingeklappt, ältere ausgeblendet */}
+              {todoSicht.erledigtZahl > 0 && (
+                <button type="button" onClick={() => setTodoArchivOffen(v => !v)} style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', padding: '4px 2px', color: 'var(--text-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {todoArchivOffen ? '▾ Erledigte ausblenden' : `▸ Erledigt · ${todoSicht.erledigtZahl} (letzte 7 Tage)`}
+                </button>
+              )}
             </div>
           </div>
         )}
