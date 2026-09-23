@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './supabase'
-import { datumInZone, BERLIN } from './zeit'
+import { datumInZone, BERLIN, meineZone, zeitIn, wandzeitZuDatum } from './zeit'
 import { plusTage } from './jetzt'
 
 // ── Wie steht es um meine Models? (v4.75.0) ─────────────────────────────────
@@ -53,11 +53,67 @@ export function reiseBald(items = [], heute = heuteBerlin()) {
   })
 }
 
+// ── Termine mit „nicht erreichbar" (v4.97.0) ────────────────────────────────
+//
+// Christoph, 23.09.: Trägt ein Model einen Termin von 15 bis 18 Uhr ein und
+// hakt „nicht erreichbar" an, sollen die Chatter das sehen — sonst wird in dem
+// Fenster ein Custom zugesagt, das keiner erfüllen kann.
+//
+// Die Zeiten in model_calendar sind deutsche Zeit (wie überall im Dashboard,
+// siehe auch send-reminders). Hier werden sie zu echten Zeitpunkten gerechnet,
+// damit sie jedem Chatter in SEINER Zeit angezeigt werden können.
+
+export const TERMIN_OHNE_ENDE_MIN = 120   // kein „bis" eingetragen → 2 Stunden
+
+const zeitpunkt = (tag, uhr, standard) => wandzeitZuDatum(tag, String(uhr || standard).slice(0, 5), BERLIN).getTime()
+
+/** Anfang und Ende eines Kalender-Eintrags als Zeitstempel (null = kein Datum). */
+export function terminZeitraum(e) {
+  if (!e?.due_date) return null
+  const ganzerTag = !e.due_time
+  const von = zeitpunkt(e.due_date, e.due_time, '00:00')
+  let bis
+  if (ganzerTag && !e.end_time) bis = zeitpunkt(plusTage(e.due_date, 1), '00:00', '00:00')
+  else if (e.end_time) {
+    bis = zeitpunkt(e.due_date, e.end_time, '00:00')
+    // 22:00–01:00 heißt: bis morgen früh.
+    if (bis <= von) bis = zeitpunkt(plusTage(e.due_date, 1), e.end_time, '00:00')
+  } else bis = von + TERMIN_OHNE_ENDE_MIN * 60000
+  return { von, bis, ganzerTag }
+}
+
+/**
+ * Läuft gerade ein Termin, in dem das Model nicht erreichbar ist?
+ * → { eintrag, von, bis, ganzerTag } oder null.
+ */
+export function terminJetzt(eintraege = [], jetzt = Date.now()) {
+  const t = jetzt instanceof Date ? jetzt.getTime() : jetzt
+  let treffer = null
+  for (const e of eintraege || []) {
+    if (!e?.nicht_erreichbar) continue
+    const z = terminZeitraum(e)
+    if (!z || t < z.von || t >= z.bis) continue
+    // Mehrere gleichzeitig: der, der am spätesten endet.
+    if (!treffer || z.bis > treffer.bis) treffer = { eintrag: e, ...z }
+  }
+  return treffer
+}
+
+/** „bis 18:00" in der Zeit des Betrachters — ganztägig ohne Uhrzeit. */
+export function terminText(termin, zone = meineZone()) {
+  if (!termin) return ''
+  if (termin.ganzerTag && !termin.eintrag.end_time) return '⛔ Heute verplant'
+  return `⛔ Termin bis ${zeitIn(new Date(termin.bis), zone)}`
+}
+
 /**
  * Zustand eines Models als Anzeige: { art, text, farbe, zeile }.
- * art: 'reise' | 'online' | 'pause' | 'weg' | 'offline' | 'unbekannt'
+ * art: 'termin' | 'reise' | 'online' | 'pause' | 'weg' | 'offline' | 'unbekannt'
+ *
+ * `termin` (v4.97.0) kommt aus terminJetzt() und geht allem anderen vor: dass
+ * sie in zehn Minuten wieder da ist, ist wichtiger als der Online-Punkt.
  */
-export function zustand(kontakt, reise, jetzt = Date.now()) {
+export function zustand(kontakt, reise, jetzt = Date.now(), termin = null) {
   const zuletzt = kontakt?.last_seen ? new Date(kontakt.last_seen) : null
   const online = !!zuletzt && jetzt - zuletzt.getTime() < ONLINE_MS
   const bis = kontakt?.status_until ? new Date(kontakt.status_until) : null
@@ -73,6 +129,10 @@ export function zustand(kontakt, reise, jetzt = Date.now()) {
   }
   const zeile = online ? 'gerade im Dashboard' : zuletzt ? `zuletzt aktiv ${wann(zuletzt)}` : null
 
+  // v4.97.0: laufender Termin mit „nicht erreichbar". Steht sie trotzdem im
+  // Dashboard, sagt das die Zeile darunter („gerade im Dashboard") — der
+  // Chatter sieht beides und kann es selbst einschätzen.
+  if (termin) return { art: 'termin', text: terminText(termin), farbe: '#ef4444', zeile, titel: termin.eintrag.title || null }
   if (reise) return { art: 'reise', text: '✈ Auf Reise', farbe: '#0891b2', zeile }
   if (status === 'pause') return { art: 'pause', text: `Pause${bis ? ` bis ${uhr(bis)}` : ''}`, farbe: '#f59e0b', zeile }
   if (status === 'unavailable') return { art: 'weg', text: `Nicht da${bis ? ` bis ${uhr(bis)}` : ''}`, farbe: '#ef4444', zeile }
@@ -84,6 +144,24 @@ export function zustand(kontakt, reise, jetzt = Date.now()) {
 // v4.76.0: models_contact.zeitzone (sql/model-reise-und-zeitzone.sql). Solange
 // das SQL nicht gelaufen ist, gibt es die Spalte nicht — dann ohne sie laden,
 // sonst fiele der ganze Zustand weg.
+// v4.97.0: dasselbe Spiel für end_time / nicht_erreichbar (sql/model-termin-
+// erreichbar.sql). Ist das SQL noch nicht gelaufen, fehlen die Spalten — dann
+// ohne sie laden, sonst stünde bei jedem Model „Kein Status".
+let ohneErreichbar = false
+async function kalenderLaden(liste, heute) {
+  const basis = 'id, model_name, title, due_date, due_time, category'
+  const abfrage = (spalten) => supabase.from('model_calendar').select(spalten)
+    .in('model_name', liste).in('category', ['termin', 'reise'])
+    .gte('due_date', plusTage(heute, -1)).lte('due_date', plusTage(heute, 7)).order('due_date')
+  if (!ohneErreichbar) {
+    const r = await abfrage(basis + ', end_time, nicht_erreichbar')
+    if (!r.error) return r
+    if (!/end_time|nicht_erreichbar/.test(r.error.message || '')) return r
+    ohneErreichbar = true
+  }
+  return abfrage(basis)
+}
+
 let ohneZone = false
 async function kontakteLaden(liste) {
   const basis = 'name, status, status_until, status_note, last_seen'
@@ -116,9 +194,7 @@ export function useModelLage(namen, ich) {
     try {
       const [k, mc, log] = await Promise.all([
         kontakteLaden(liste),
-        supabase.from('model_calendar').select('id, model_name, title, due_date, due_time, category')
-          .in('model_name', liste).in('category', ['termin', 'reise'])
-          .gte('due_date', heute).lte('due_date', plusTage(heute, 7)).order('due_date'),
+        kalenderLaden(liste, heute),
         ich
           ? supabase.from('shift_logs').select('checked_out_at').eq('display_name', ich)
               .not('checked_out_at', 'is', null).order('checked_out_at', { ascending: false }).limit(1)

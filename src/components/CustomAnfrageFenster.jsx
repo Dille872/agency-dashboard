@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { reiseHeute, zustand, listeAus } from '../modelLage'
+import { reiseHeute, zustand, listeAus, terminJetzt } from '../modelLage'
 
 // ── Chatter-Portal: Custom-Anfrage in 4 Schritten (v4.81.0) ─────────────────
 //
@@ -44,7 +44,7 @@ const gross = (ok) => ({ background: LILA, color: '#fff', border: 'none', border
 
 export default function CustomAnfrageFenster({
   f, set, typMeta, meineModels, profileOptionsByModel, boards = {}, services = {}, models = [], kundenHistorie = [],
-  sending, onSenden, onZu,
+  kalender = {}, sending, onSenden, onZu,
 }) {
   const [schritt, setSchritt] = useState(1)
   const [andereZeigen, setAndereZeigen] = useState(false)
@@ -147,7 +147,10 @@ export default function CustomAnfrageFenster({
                   <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(3, meineModels.length)}, 1fr)`, gap: 8 }} className={meineModels.length >= 3 ? 'raster-3' : 'raster-2'}>
                     {meineModels.map(m => {
                       const r = reiseHeute(boards[m]?.reise || [])
-                      const z = zustand(models.find(x => x.name === m), r)
+                      // v4.97.0: läuft ein Termin mit „nicht erreichbar", steht
+                      // das hier — genau hier wird ja ein Custom zugesagt.
+                      const t = terminJetzt(kalender[m])
+                      const z = zustand(models.find(x => x.name === m), r, Date.now(), t)
                       const an = model === m
                       return (
                         <button key={m} type="button" className="kachel" onClick={() => modelWaehlen(m)} style={{
@@ -156,7 +159,7 @@ export default function CustomAnfrageFenster({
                         }}>
                           <div style={{ width: 34, height: 34, borderRadius: 17, background: farbeVon(m), color: '#fff', margin: '0 auto 5px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{String(m).charAt(0).toUpperCase()}</div>
                           <div style={{ fontSize: 13.5, fontWeight: 700 }}>{m}</div>
-                          <div style={{ fontSize: 10.5, color: z.farbe, fontWeight: 600 }}>{r ? `✈ ${r.title}` : z.text}</div>
+                          <div style={{ fontSize: 10.5, color: z.farbe, fontWeight: 600 }}>{z.art === 'termin' ? z.text : r ? `✈ ${r.title}` : z.text}</div>
                         </button>
                       )
                     })}

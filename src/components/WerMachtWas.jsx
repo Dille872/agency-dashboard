@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { reiseHeute, zustand, listeAus } from '../modelLage'
+import { reiseHeute, zustand, listeAus, terminJetzt } from '../modelLage'
 
 // ── Chatter-Portal, Tab „Models": Wer macht was (v4.78.0) ───────────────────
 //
@@ -21,7 +21,7 @@ const ANGEBOT = [
 ]
 const lc = (s) => String(s || '').trim().toLowerCase()
 
-export default function WerMachtWas({ namen, boards, services, models, aenderungen = {}, onBoard }) {
+export default function WerMachtWas({ namen, boards, services, models, aenderungen = {}, kalender = {}, onBoard }) {
   const [suche, setSuche] = useState('')
   if (namen.length < 2) return null   // bei einem Model reicht das Board darunter
 
@@ -82,12 +82,13 @@ export default function WerMachtWas({ namen, boards, services, models, aenderung
               <th style={{ ...th, textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg-card)', minWidth: 110 }} />
               {namen.map(n => {
                 const r = reise[n]
-                const z = zustand(kontakt(n), r)
+                // v4.97.0: laufender Termin mit „nicht erreichbar" geht vor
+                const z = zustand(kontakt(n), r, Date.now(), terminJetzt(kalender[n]))
                 return (
                   <th key={n} style={{ ...th, ...reiseSp(n) }}>
                     <button type="button" onClick={() => onBoard(n)} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', fontSize: 13.5, fontWeight: 700 }}>{n}</button>
                     <div style={{ fontSize: 10.5, fontWeight: 600, color: z.farbe, marginTop: 2 }}>
-                      {r ? `✈ ${r.title}${r.date_to ? ` bis ${new Date(r.date_to + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}` : z.text}
+                      {z.art === 'termin' ? z.text : r ? `✈ ${r.title}${r.date_to ? ` bis ${new Date(r.date_to + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}` : z.text}
                     </div>
                   </th>
                 )

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { datumInZone, BERLIN, meineZone, versatzMinuten, zeitIn } from '../zeit'
 import { plusTage } from '../jetzt'
-import { reiseHeute, reiseBald, zustand, listeAus } from '../modelLage'
+import { reiseHeute, reiseBald, zustand, listeAus, terminJetzt } from '../modelLage'
 import SteckbriefAnsicht from './SteckbriefAnsicht' // v4.95.0
 import { hatWert } from '../steckbrief'
 
@@ -70,7 +70,9 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
   const [ueberOffen, setUeberOffen] = useState(false) // v4.95.0
   const heute = heuteBerlin()
   const reise = reiseHeute(board.reise, heute)
-  const z = zustand(kontakt, reise)
+  // v4.97.0: läuft gerade ein Termin, in dem sie nicht erreichbar ist?
+  const termin = terminJetzt(kalender)
+  const z = zustand(kontakt, reise, Date.now(), termin)
   const oz = ortszeit(kontakt?.zeitzone)
   const geht = listeAus(reise?.reise_geht)
   const gehtNicht = listeAus(reise?.reise_geht_nicht)
@@ -80,7 +82,12 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
   // Was diese Woche ansteht — Kalender des Models, Board-Termine, Videos, Reisen
   const bis = plusTage(heute, 7)
   const woche = [
-    ...kalender.map(c => ({ key: 'c' + c.id, tag: c.due_date, zeit: c.due_time ? String(c.due_time).slice(0, 5) : null, text: c.title, reise: c.category === 'reise' })),
+    // due_date ab gestern geladen (Termine über Mitternacht) — hier nur ab heute.
+    ...kalender.filter(c => c.due_date >= heute).map(c => ({
+      key: 'c' + c.id, tag: c.due_date, text: c.title, reise: c.category === 'reise',
+      zeit: c.due_time ? String(c.due_time).slice(0, 5) + (c.end_time ? '–' + String(c.end_time).slice(0, 5) : '') : null,
+      wegDa: !!c.nicht_erreichbar,
+    })),
     ...(board.termine || []).filter(t => t.date && t.date >= heute && t.date <= bis).map(t => ({ key: 't' + t.id, tag: t.date, text: t.title, neu: istNeu(t.title) })),
     ...videos.filter(v => v.release_date && v.release_date >= heute && v.release_date <= bis).map(v => ({ key: 'v' + v.id, tag: v.release_date, text: `Video: ${v.title}` })),
     ...reiseBald(board.reise, heute).map(r => ({ key: 'r' + r.id, tag: r.date_from || r.date_to, text: r.title, reise: true, bis: r.date_to })),
@@ -109,7 +116,7 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
   return (
     <div style={{
       background: 'var(--bg-card)', borderRadius: 14, overflow: 'hidden', minWidth: 0,
-      border: `1px solid ${reise ? 'rgba(8,145,178,0.45)' : 'var(--border)'}`,
+      border: `1px solid ${termin ? 'rgba(239,68,68,0.45)' : reise ? 'rgba(8,145,178,0.45)' : 'var(--border)'}`,
     }}>
       {/* Kopf */}
       <div style={{
@@ -130,6 +137,21 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
         </div>
         {kontakt?.status_note && z.art !== 'online' && z.art !== 'offline' && (
           <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 8 }}>„{kontakt.status_note}“</div>
+        )}
+
+        {/* v4.97.0: laufender Termin mit „nicht erreichbar" — steht über der
+            Reise, weil er gerade jetzt zählt. */}
+        {termin && (
+          <div style={{ marginTop: 11, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, padding: '9px 11px' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#ef4444' }}>
+              ⛔ {termin.eintrag.title || 'Termin'}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+              {termin.ganzerTag && !termin.eintrag.end_time
+                ? 'Heute verplant — sie hat „nicht erreichbar“ eingetragen.'
+                : `Nicht erreichbar bis ${zeitIn(new Date(termin.bis), meineZone())} — Customs erst danach zusagen.`}
+            </div>
+          </div>
         )}
 
         {reise && (
@@ -192,11 +214,13 @@ function ModelKarte({ name, board = {}, services = {}, custom = [], videos = [],
                 const heuteIst = w.tag === heute
                 return (
                   <div key={w.key} style={{ display: 'flex', gap: 9, alignItems: 'baseline', fontSize: 12, padding: '5px 8px', borderRadius: 7, background: heuteIst ? 'rgba(236,72,153,0.10)' : 'var(--bg-card2)', border: `1px solid ${heuteIst ? 'rgba(236,72,153,0.35)' : 'transparent'}` }}>
-                    <span style={{ fontFamily: 'monospace', fontSize: 11, color: heuteIst ? '#ec4899' : 'var(--text-muted)', fontWeight: heuteIst ? 700 : 400, minWidth: 64, flexShrink: 0 }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: 11, color: heuteIst ? '#ec4899' : 'var(--text-muted)', fontWeight: heuteIst ? 700 : 400, minWidth: w.zeit && w.zeit.length > 5 ? 90 : 64, flexShrink: 0 }}>
                       {tagName(w.tag, heute)}{w.zeit ? ` ${w.zeit}` : ''}
                     </span>
                     <span style={{ color: w.reise ? '#0891b2' : 'var(--text-primary)', minWidth: 0 }}>
                       {w.reise ? '✈ ' : ''}{w.text}{w.bis ? ` (bis ${tagKurz(w.bis)})` : ''}{w.neu && <Neu />}
+                      {/* v4.97.0: das Model hat „nicht erreichbar" angehakt */}
+                      {w.wegDa && <span style={{ color: '#ef4444', fontWeight: 700, whiteSpace: 'nowrap' }}> · ⛔ nicht erreichbar</span>}
                     </span>
                   </div>
                 )
@@ -307,7 +331,7 @@ export default function HeuteModels({ namen, titel, lage, boards, services, cust
         // der Knöpfe hinaus und wurde vom Scroll-Container abgeschnitten.
         <div style={{ display: 'flex', gap: 8, marginBottom: 6, overflowX: 'auto', scrollbarWidth: 'none', padding: '8px 6px 4px 0' }}>
           {namen.map(n => {
-            const z = zustand(lage.kontakte[n], reiseHeute(boards[n]?.reise))
+            const z = zustand(lage.kontakte[n], reiseHeute(boards[n]?.reise), Date.now(), terminJetzt(lage.kalender[n]))
             const an = n === aktiv
             const neu = lage.aenderungen[n]?.length || 0
             return (

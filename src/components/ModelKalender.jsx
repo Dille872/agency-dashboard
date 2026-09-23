@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { supabase } from '../supabase'
 import { heuteBerlin } from '../utils'
 import { plusTage, montagVon } from '../jetzt'
+import { BERLIN, zeitIn, wandzeitZuDatum, ortAus } from '../zeit'
 
 // ── Model-Portal: Kalender im neuen Look (v4.78.0) ──────────────────────────
 //
@@ -13,6 +14,13 @@ import { plusTage, montagVon } from '../jetzt'
 // Dieselbe Tabelle wie vorher (model_calendar), dieselben Felder, dieselbe
 // Telegram-Erinnerung (reminder_hours / reminder_sent). Urlaub gehört ins Board
 // (Reiseplan) — alte Reise-Einträge im Kalender werden weiter angezeigt.
+//
+// v4.97.0: Bei der Art „Termin" gibt es zusätzlich eine Bis-Uhrzeit und das
+// Häkchen „In der Zeit bin ich nicht erreichbar" (sql/model-termin-
+// erreichbar.sql). Ist es gesetzt, steht bei den Chattern auf der Model-Karte
+// „⛔ Termin bis 18:00", solange der Termin läuft — damit in dem Fenster kein
+// Custom zugesagt wird. Eintragen kann das nur das Model selbst (Wunsch
+// Christoph), im Admin gibt es dafür bewusst keinen Knopf.
 
 export const KAL_ARTEN = [
   { key: 'aufgabe', label: 'Aufgabe', color: '#a78bfa' },
@@ -32,15 +40,29 @@ const lbl = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterS
 const gruppe = { fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.07em', margin: '6px 2px 0' }
 const tagLang = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
 
-function NeuFenster({ vorTag, displayName, onZu, onGespeichert }) {
+function NeuFenster({ vorTag, displayName, zeitzone, onZu, onGespeichert }) {
   const [titel, setTitel] = useState('')
   const [art, setArt] = useState('aufgabe')
   const [tag, setTag] = useState(vorTag || heuteBerlin())
   const [zeit, setZeit] = useState('')
+  const [bis, setBis] = useState('')
+  const [nichtDa, setNichtDa] = useState(false)
   const [erinnern, setErinnern] = useState('')
   const [notiz, setNotiz] = useState('')
   const [speichert, setSpeichert] = useState(false)
   const ok = titel.trim() && tag
+  const istTermin = art === 'termin'
+
+  // Zeiten sind deutsche Zeit (wie im ganzen Dashboard). Sitzt sie gerade
+  // woanders, steht darunter, was das in ihrer Zeit heißt — sonst trägt sie
+  // „15:00" ein und meint ihre eigene Uhr.
+  const andereZone = zeitzone && zeitzone !== BERLIN
+  const inIhrerZeit = (() => {
+    if (!andereZone || !zeit) return null
+    const a = zeitIn(wandzeitZuDatum(tag, zeit, BERLIN), zeitzone)
+    const b = bis ? zeitIn(wandzeitZuDatum(tag, bis, BERLIN), zeitzone) : null
+    return `${a}${b ? `–${b}` : ''} bei dir in ${ortAus(zeitzone)}`
+  })()
 
   const speichern = async () => {
     if (!ok || speichert) return
@@ -48,10 +70,24 @@ function NeuFenster({ vorTag, displayName, onZu, onGespeichert }) {
     const { error } = await supabase.from('model_calendar').insert({
       model_name: displayName, title: titel.trim(), description: notiz.trim() || null,
       due_date: tag, due_time: zeit || null, category: art,
+      end_time: istTermin && zeit && bis ? bis : null,
+      nicht_erreichbar: istTermin && nichtDa,
       reminder_hours: erinnern ? parseInt(erinnern) : null, reminder_sent: false,
     })
     setSpeichert(false)
-    if (error) { alert('Nicht gespeichert: ' + error.message); return }
+    if (error) {
+      // Solange sql/model-termin-erreichbar.sql nicht gelaufen ist, fehlen die
+      // beiden Spalten. Dann wenigstens den Termin selbst speichern.
+      if (/end_time|nicht_erreichbar/.test(error.message || '')) {
+        const { error: e2 } = await supabase.from('model_calendar').insert({
+          model_name: displayName, title: titel.trim(), description: notiz.trim() || null,
+          due_date: tag, due_time: zeit || null, category: art,
+          reminder_hours: erinnern ? parseInt(erinnern) : null, reminder_sent: false,
+        })
+        if (!e2) { onGespeichert(); onZu(); return }
+      }
+      alert('Nicht gespeichert: ' + error.message); return
+    }
     onGespeichert(); onZu()
   }
 
@@ -75,10 +111,34 @@ function NeuFenster({ vorTag, displayName, onZu, onGespeichert }) {
             }}>{a.label}</button>
           ))}
         </div>
-        <div className="raster-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+        <div className="raster-2" style={{ display: 'grid', gridTemplateColumns: istTermin ? '1.2fr 1fr 1fr' : '1fr 1fr', gap: 9 }}>
           <label><span style={lbl}>Tag</span><input type="date" value={tag} onChange={e => setTag(e.target.value)} style={feld} /></label>
-          <label><span style={lbl}>Uhrzeit</span><input type="time" value={zeit} onChange={e => setZeit(e.target.value)} style={feld} /></label>
+          <label><span style={lbl}>{istTermin ? 'Von' : 'Uhrzeit'}</span><input type="time" value={zeit} onChange={e => setZeit(e.target.value)} style={feld} /></label>
+          {istTermin && <label><span style={lbl}>Bis</span><input type="time" value={bis} onChange={e => setBis(e.target.value)} style={feld} /></label>}
         </div>
+        {inIhrerZeit && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -6 }}>Zeiten in deutscher Zeit · {inIhrerZeit}</div>}
+
+        {/* v4.97.0: Das Häkchen, das die Chatter sehen. Nur bei „Termin" — bei
+            einer Aufgabe wäre „nicht erreichbar" sinnlos. */}
+        {istTermin && (
+          <button type="button" className="chip-btn" onClick={() => setNichtDa(v => !v)} aria-pressed={nichtDa} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left', width: '100%', padding: '12px 13px', borderRadius: 14,
+            cursor: 'pointer', fontFamily: 'inherit', background: nichtDa ? 'rgba(239,68,68,0.12)' : 'var(--bg-card2)',
+            border: `1px solid ${nichtDa ? '#ef4444' : 'var(--border)'}`,
+          }}>
+            <span style={{
+              width: 21, height: 21, borderRadius: 6, flexShrink: 0, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 13, fontWeight: 800, background: nichtDa ? '#ef4444' : 'transparent', color: '#fff',
+              border: `1.5px solid ${nichtDa ? '#ef4444' : 'var(--border)'}`,
+            }}>{nichtDa ? '✓' : ''}</span>
+            <span>
+              <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>In der Zeit bin ich nicht erreichbar</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, fontWeight: 400 }}>
+                Deine Chatter sehen dann „⛔ Termin bis {bis ? bis.slice(0, 5) : '…'}" und sagen in der Zeit keine Customs zu.
+              </span>
+            </span>
+          </button>
+        )}
         <label><span style={lbl}>Erinnerung per Telegram</span>
           <select value={erinnern} onChange={e => setErinnern(e.target.value)} style={feld}>
             {ERINNERUNG.map(r => <option key={r.v} value={r.v}>{r.l}</option>)}
@@ -112,9 +172,16 @@ function Karte({ item, heute, onLoeschen }) {
         {item.description && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{item.description}</div>}
         <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
           <span style={{ color: art.color, fontWeight: 600 }}>{art.label}</span>
+          {item.due_time && item.end_time && <span> · {String(item.due_time).slice(0, 5)}–{String(item.end_time).slice(0, 5)}</span>}
           {drueber && <span style={{ color: '#ef4444' }}> · überfällig</span>}
           {item.reminder_hours && <span> · 🔔 {item.reminder_hours} h vorher</span>}
         </div>
+        {/* v4.97.0: was die Chatter sehen */}
+        {item.nicht_erreichbar && (
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ef4444', marginTop: 4 }}>
+            ⛔ Deine Chatter sehen: nicht erreichbar{item.end_time ? ` bis ${String(item.end_time).slice(0, 5)}` : ''}
+          </div>
+        )}
       </div>
       <button type="button" onClick={() => { if (window.confirm(`„${item.title}" löschen?`)) onLoeschen(item) }} aria-label="Löschen"
         style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 15, padding: '0 2px' }}>✕</button>
@@ -122,7 +189,7 @@ function Karte({ item, heute, onLoeschen }) {
   )
 }
 
-export default function ModelKalender({ displayName, items, onGeaendert }) {
+export default function ModelKalender({ displayName, items, onGeaendert, zeitzone }) {
   const heute = heuteBerlin()
   const [montag, setMontag] = useState(() => montagVon(heute))
   const [tagWahl, setTagWahl] = useState(null)
@@ -216,7 +283,7 @@ export default function ModelKalender({ displayName, items, onGeaendert }) {
         Urlaub trägst du im Board ein — dann sehen es auch deine Chatter.
       </div>
 
-      {neu && <NeuFenster vorTag={tagWahl} displayName={displayName} onZu={() => setNeu(false)} onGespeichert={onGeaendert} />}
+      {neu && <NeuFenster vorTag={tagWahl} displayName={displayName} zeitzone={zeitzone} onZu={() => setNeu(false)} onGespeichert={onGeaendert} />}
     </div>
   )
 }

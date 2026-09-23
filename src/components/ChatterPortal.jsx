@@ -16,7 +16,7 @@ import CustomAnfrageFenster from './CustomAnfrageFenster' // v4.81.0
 import ChatterOrga from './ChatterOrga' // v4.82.0
 import ContentIdeeFenster from './ContentIdeeFenster' // v4.82.0
 import { useGelesen } from '../gelesen' // v4.76.0
-import { useModelLage, zustand, reiseHeute } from '../modelLage' // v4.75.0
+import { useModelLage, zustand, reiseHeute, terminJetzt } from '../modelLage' // v4.75.0
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
 import { useTodoMeldung } from '../todoMeldung'
@@ -2357,7 +2357,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               {heuteModelNamen.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, margin: '4px 0 5px' }}>
                   {heuteModelNamen.map(n => {
-                    const z = zustand(modelLage.kontakte[n], reiseHeute(assignedModelBoards[n]?.reise))
+                    const z = zustand(modelLage.kontakte[n], reiseHeute(assignedModelBoards[n]?.reise), Date.now(), terminJetzt(modelLage.kalender[n]))
                     return (
                       <span key={n} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 11, background: z.farbe + '17', border: `1px solid ${z.farbe}55` }}>
                         <b style={{ color: 'var(--text-primary)' }}>{n}</b>
@@ -2819,7 +2819,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {tab === 'models' && (
           <div data-help="wermachtwas">
             <WerMachtWas namen={Object.keys(assignedModelBoards)} boards={assignedModelBoards} services={assignedServices}
-              models={models} aenderungen={modelLage.aenderungen}
+              models={models} aenderungen={modelLage.aenderungen} kalender={modelLage.kalender}
               onBoard={(n) => {
                 setSelectedModelInfo(n); openPanel('models')
                 setTimeout(() => document.querySelector('[data-help="models"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
@@ -2982,6 +2982,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                 meineModels={Object.keys(assignedModelBoards).filter(n => profileOptionsByModel[n])}
                 profileOptionsByModel={profileOptionsByModel}
                 boards={assignedModelBoards} services={assignedServices} models={models}
+                kalender={modelLage.kalender}
                 kundenHistorie={customerHistory}
                 sending={sendingRequest}
                 onSenden={async () => { if (await submitContentRequest()) setShowNewRequestForm(false) }}

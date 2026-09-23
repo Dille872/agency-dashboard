@@ -1528,7 +1528,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <SektionsKopf id="kalender" titel="Kalender" />
             {/* v4.78.0: neuer Look — Wochenstreifen, Karten, „+ Neu" (ModelKalender.jsx) */}
-            <ModelKalender displayName={displayName} items={calItems} onGeaendert={loadCalendar} />
+            <ModelKalender displayName={displayName} items={calItems} onGeaendert={loadCalendar} zeitzone={modelStatus?.zeitzone} />
           </div>
         )}
 
