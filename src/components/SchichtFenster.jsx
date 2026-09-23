@@ -39,6 +39,29 @@ function Schalter({ an, onClick, farbe = '#10b981', label }) {
   )
 }
 
+// v4.98.0: Häkchen im Block „Auch bei anderen Models". Eigene Klasse, weil die
+// globale Mobil-Regel für <button> Schriftgröße und Abstände überschreibt.
+function Haken({ an, onAn, titel, unter }) {
+  return (
+    <button type="button" className="chip-btn" onClick={onAn} aria-pressed={an} style={{
+      display: 'flex', alignItems: 'flex-start', gap: 9, textAlign: 'left', width: '100%', padding: '9px 11px',
+      borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
+      background: an ? 'rgba(124,58,237,0.13)' : 'transparent',
+      border: `1px solid ${an ? LILA : 'var(--border)'}`,
+    }}>
+      <span style={{
+        width: 19, height: 19, borderRadius: 6, flexShrink: 0, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 12, fontWeight: 800, background: an ? LILA : 'transparent', color: '#fff',
+        border: `1.5px solid ${an ? LILA : 'var(--border)'}`,
+      }}>{an ? '✓' : ''}</span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{titel}</span>
+        <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 1, fontWeight: 400, lineHeight: 1.35 }}>{unter}</span>
+      </span>
+    </button>
+  )
+}
+
 function PersonKarte({ p, gewaehlt, onClick }) {
   const gesperrt = !!p.abwesend
   const info = []
@@ -67,7 +90,7 @@ function PersonKarte({ p, gewaehlt, onClick }) {
 
 export default function SchichtFenster({
   art = 'sheet', model, dayIso, shift, schichtFarbe, standardZeit = '', cell, personen = [], admins = [],
-  MODE_META, zellModus, isRecurring, onRecurring, onChatter, onCell, onModus, onLeeren, onAusschreiben,
+  MODE_META, zellModus, isRecurring, onRecurring, wdhStand = null, onChatter, onCell, onModus, onLeeren, onAusschreiben,
   reminderAktiv, onReminder, sendingReminder, swapHier, onZu,
   andereModels = [], onUebernehmen,
 }) {
@@ -82,12 +105,19 @@ export default function SchichtFenster({
   const [kopieOffen, setKopieOffen] = useState(false)
   const [kopieZiele, setKopieZiele] = useState([])
   const [kopieFertig, setKopieFertig] = useState('')
+  const [kopieMit, setKopieMit] = useState('')
+  // v4.98.0: Zeit und „Jede Woche so" mit übernehmen — beides vorausgewählt,
+  // weil „gleiche Schicht bei mehreren Models" fast immer gleiche Zeit meint.
+  const [mitZeit, setMitZeit] = useState(true)
+  const [mitWdh, setMitWdh] = useState(true)
+  const [kopieLaeuft, setKopieLaeuft] = useState(false)
 
   // Neue Zelle angeklickt (Desktop-Leiste bleibt offen) → Zustand zurücksetzen
   const zellKey = `${model?.id}__${dayIso}__${shift}`
   useEffect(() => {
     setWaehlen(!cell.chatter); setSuche(''); setZweiteOffen(!!cell.trainee); setAndereZeit(!!cell.time_override)
-    setKopieOffen(false); setKopieZiele([]); setKopieFertig('')
+    setKopieOffen(false); setKopieZiele([]); setKopieFertig(''); setKopieMit('')
+    setMitZeit(true); setMitWdh(true); setKopieLaeuft(false)
   }, [zellKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = suche.trim().toLowerCase()
@@ -102,6 +132,22 @@ export default function SchichtFenster({
 
   const modus = zellModus(cell)
   const zweiteAktiv = !!cell.trainee || zweiteOffen
+  // v4.98.0: die Zeit, zu der hier tatsächlich gearbeitet wird
+  const zeitJetzt = String(cell.time_override || standardZeit || '').replace(/\s*\(DE\)/g, '').trim()
+
+  // v4.98.0: Weicht diese Woche von dem ab, was als „Jede Woche so" gespeichert
+  // ist? Nachgezogen wird NICHT von allein — eine Vertretung für genau diese
+  // Woche darf die Vorlage nicht überschreiben. Stattdessen ein Hinweis mit Knopf.
+  const wdhAbweichung = (() => {
+    if (!isRecurring || !wdhStand || !chatter) return null
+    const unterschiede = []
+    if ((wdhStand.chatter || '') !== chatter) unterschiede.push(`Person: jede Woche ${wdhStand.chatter || '—'}`)
+    const wdhZeit = String(wdhStand.time_override || '').replace(/\s*\(DE\)/g, '').trim()
+    const zellZeit = String(cell.time_override || '').replace(/\s*\(DE\)/g, '').trim()
+    if (wdhZeit !== zellZeit) unterschiede.push(`Zeit: jede Woche ${wdhZeit || standardZeit || 'Standard'}`)
+    if ((wdhStand.trainee || '') !== (cell.trainee || '')) unterschiede.push(`zweite Person: jede Woche ${wdhStand.trainee || '—'}`)
+    return unterschiede.length ? unterschiede : null
+  })()
   const ichSelbst = personen.find(p => p.name === chatter)
   const waehle = (name) => { onChatter(name); if (name && name !== '__FREI__') setWaehlen(false) }
 
@@ -260,6 +306,17 @@ export default function SchichtFenster({
               </div>
               <Schalter label="Jede Woche" an={isRecurring} farbe={LILA} onClick={() => onRecurring(!isRecurring)} />
             </div>
+            {/* v4.98.0: gespeicherte Wiederholung weicht von dieser Woche ab */}
+            {wdhAbweichung && (
+              <div style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                  <b style={{ color: 'var(--ton-gelb)' }}>Diese Woche weicht ab.</b> Gespeichert ist — {wdhAbweichung.join(' · ')}. Nächste Woche käme das Gespeicherte zurück.
+                </div>
+                <button type="button" className="chip-btn" onClick={() => onRecurring(true)} style={{ ...chipSt(false, '#f59e0b'), alignSelf: 'flex-start' }}>
+                  ↻ Wiederholung auf diese Woche setzen
+                </button>
+              </div>
+            )}
             <div style={{ padding: '11px 0', borderTop: '1px solid var(--border)' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 7 }}>
                 Telegram-Erinnerung an {chatter}{reminderAktiv ? <span style={{ fontSize: 11.5, color: '#06b6d4', fontWeight: 600 }}> · eingestellt</span> : null}
@@ -277,11 +334,16 @@ export default function SchichtFenster({
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Auch bei anderen Models</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{chatter}{zweiteAktiv && cell.trainee ? ` + ${cell.trainee}` : ''} · {shift} · gleiche Einstellungen</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{chatter}{zweiteAktiv && cell.trainee ? ` + ${cell.trainee}` : ''} · {shift} · gleicher Tag</div>
                 </div>
-                {!kopieOffen && <button type="button" className="chip-btn" onClick={() => { setKopieOffen(true); setKopieFertig('') }} style={chipSt(false)}>+ Model</button>}
+                {!kopieOffen && <button type="button" className="chip-btn" onClick={() => { setKopieOffen(true); setKopieFertig(''); setKopieMit('') }} style={chipSt(false)}>+ Model</button>}
               </div>
-              {kopieFertig && <div style={{ fontSize: 12, color: 'var(--ton-gruen)', marginTop: 8 }}>✓ Übernommen für {kopieFertig}</div>}
+              {kopieFertig && (
+                <div style={{ fontSize: 12, color: 'var(--ton-gruen)', marginTop: 8 }}>
+                  ✓ Übernommen für {kopieFertig}
+                  {kopieMit && <span style={{ color: 'var(--text-muted)' }}> · inklusive {kopieMit}</span>}
+                </div>
+              )}
               {kopieOffen && (() => {
                 const frei = andereModels.filter(m => !m.belegt)
                 const ziele = andereModels.filter(m => kopieZiele.includes(m.id))
@@ -309,13 +371,35 @@ export default function SchichtFenster({
                     {ziele.some(m => m.belegt && m.belegt !== chatter) && (
                       <div style={{ fontSize: 11.5, color: 'var(--ton-gelb2)' }}>⚠ Bei {ziele.filter(m => m.belegt && m.belegt !== chatter).map(m => m.name).join(', ')} steht schon jemand — du wirst vorm Überschreiben gefragt.</div>
                     )}
-                    <button type="button" className="gross-btn" disabled={ziele.length === 0}
-                      onClick={() => {
-                        const erledigt = onUebernehmen(ziele.map(m => m.id))
-                        if (erledigt && erledigt.length) { setKopieFertig(erledigt.join(', ')); setKopieOffen(false); setKopieZiele([]) }
+                    {/* v4.98.0: Was außer der Belegung noch mitgeht. Erscheint
+                        nur, wenn es tatsächlich etwas zu übernehmen gibt. */}
+                    {(zeitJetzt || isRecurring) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {zeitJetzt && (
+                          <Haken an={mitZeit} onAn={() => setMitZeit(v => !v)}
+                            titel={<>Auch die Zeit <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{zeitJetzt}</span></>}
+                            unter="Wo das Model schon dieselbe Zeit hat, ändert sich nichts." />
+                        )}
+                        {isRecurring && (
+                          <Haken an={mitWdh} onAn={() => setMitWdh(v => !v)}
+                            titel={<>Auch „Jede Woche so“</>}
+                            unter="Die Wiederholung wird bei den anderen Models gleich mit angelegt." />
+                        )}
+                      </div>
+                    )}
+                    <button type="button" className="gross-btn" disabled={ziele.length === 0 || kopieLaeuft}
+                      onClick={async () => {
+                        setKopieLaeuft(true)
+                        try {
+                          const erledigt = await onUebernehmen(ziele.map(m => m.id), { mitZeit: mitZeit && !!zeitJetzt, mitWdh: mitWdh && !!isRecurring })
+                          if (erledigt && erledigt.length) {
+                            const mit = [mitZeit && zeitJetzt ? `Zeit ${zeitJetzt}` : '', mitWdh && isRecurring ? '„Jede Woche so“' : ''].filter(Boolean).join(' und ')
+                            setKopieFertig(erledigt.join(', ')); setKopieMit(mit); setKopieOffen(false); setKopieZiele([])
+                          }
+                        } finally { setKopieLaeuft(false) }
                       }}
-                      style={{ padding: 12, borderRadius: 12, border: 'none', background: LILA, color: '#fff', fontWeight: 800, fontSize: 14, fontFamily: 'inherit', cursor: ziele.length ? 'pointer' : 'default', opacity: ziele.length ? 1 : 0.45 }}>
-                      {ziele.length ? `Für ${ziele.length} ${ziele.length === 1 ? 'Model' : 'Models'} übernehmen` : 'Models antippen'}
+                      style={{ padding: 12, borderRadius: 12, border: 'none', background: LILA, color: '#fff', fontWeight: 800, fontSize: 14, fontFamily: 'inherit', cursor: ziele.length ? 'pointer' : 'default', opacity: ziele.length && !kopieLaeuft ? 1 : 0.45 }}>
+                      {kopieLaeuft ? 'Übernimmt …' : ziele.length ? `Für ${ziele.length} ${ziele.length === 1 ? 'Model' : 'Models'} übernehmen` : 'Models antippen'}
                     </button>
                   </div>
                 )

@@ -592,10 +592,19 @@ export default function ScheduleTab({ session, userDisplayName }) {
     const { data } = await supabase.from('user_roles').select('display_name').eq('role', 'admin')
     setAdmins((data || []).map(r => r.display_name).filter(Boolean))
   }
+  // v4.98.0: Die Wiederholung merkt sich jetzt auch die abweichende Zeit und
+  // die zweite Person (sql/wiederholung-mit-zeit.sql). Fehlen die Spalten noch,
+  // stehen sie schlicht nicht in der Zeile — dann bleibt es beim Namen, alles
+  // andere läuft wie vorher.
+  const WDH_FELDER = ['time_override', 'trainee', 'trainee_mode', 'split_a_von', 'split_a_bis', 'split_b_von', 'split_b_bis']
   const loadRecurring = async () => {
     const { data } = await supabase.from('recurring_shifts').select('*')
     const map = {}
-    for (const r of data || []) map[r.shift_key] = { chatter: r.chatter, note: r.note }
+    for (const r of data || []) {
+      const eintrag = { chatter: r.chatter, note: r.note }
+      for (const f of WDH_FELDER) if (r[f] != null && r[f] !== '') eintrag[f] = r[f]
+      map[r.shift_key] = eintrag
+    }
     recurringRef.current = map
     setRecurring(map)
     return map
@@ -1107,16 +1116,36 @@ export default function ScheduleTab({ session, userDisplayName }) {
     }
   }
 
+  // v4.98.0: recurringRef wurde bisher nur beim Laden gefüllt. Eine neue Woche
+  // wird aber aus der REF vorbelegt — ohne das hier käme eine gerade geänderte
+  // Wiederholung erst nach einem Neuladen in der Folgewoche an.
+  const merkeWdh = (key, wert) => {
+    const ref = { ...(recurringRef.current || {}) }
+    if (wert) ref[key] = wert; else delete ref[key]
+    recurringRef.current = ref
+    setRecurring(prev => { const n = { ...prev }; if (wert) n[key] = wert; else delete n[key]; return n })
+  }
   const saveRecurring = async (modelId, dayOfWeek, shift, value) => {
     const key = getRecurringKey(modelId, dayOfWeek, shift)
     if (!value.chatter) {
       // Delete recurring
       await supabase.from('recurring_shifts').delete().eq('shift_key', key)
-      setRecurring(prev => { const n = { ...prev }; delete n[key]; return n })
-    } else {
-      await supabase.from('recurring_shifts').upsert({ shift_key: key, model_id: modelId, day_of_week: dayOfWeek, shift, chatter: value.chatter, note: value.note || '' }, { onConflict: 'shift_key' })
-      setRecurring(prev => ({ ...prev, [key]: { chatter: value.chatter, note: value.note || '' } }))
+      merkeWdh(key, null)
+      return
     }
+    const basis = { shift_key: key, model_id: modelId, day_of_week: dayOfWeek, shift, chatter: value.chatter, note: value.note || '' }
+    // v4.98.0: Zeit und zweite Person mit festhalten
+    const extra = {}
+    for (const f of WDH_FELDER) if (value[f]) extra[f] = value[f]
+    const { error } = await supabase.from('recurring_shifts').upsert({ ...basis, ...extra }, { onConflict: 'shift_key' })
+    if (error && WDH_FELDER.some(f => (error.message || '').includes(f))) {
+      // sql/wiederholung-mit-zeit.sql noch nicht gelaufen → nur den Namen merken
+      await supabase.from('recurring_shifts').upsert(basis, { onConflict: 'shift_key' })
+      merkeWdh(key, { chatter: basis.chatter, note: basis.note })
+      return
+    }
+    if (error) { console.error('Wiederholung nicht gespeichert:', error.message); return }
+    merkeWdh(key, { chatter: basis.chatter, note: basis.note, ...extra })
   }
 
   // v3.27.0: Ausschreiben läuft jetzt über BlockOfferModal (Einzel- oder Block-Angebot
@@ -1517,11 +1546,20 @@ export default function ScheduleTab({ session, userDisplayName }) {
   }
 
   // v4.85.0: Belegung einer Zelle für weitere Models derselben Schicht übernehmen.
-  // Kopiert Chatter, Modus, zweite Person, Split-Zeiten, Notiz und „Bestätigt“ —
-  // NICHT die abweichende Zeit (time_override), weil jedes Model eigene
-  // Schichtzeiten hat. Belegte Zellen werden nur nach Rückfrage überschrieben.
-  // Gibt die Namen der tatsächlich geänderten Models zurück.
-  const uebernehmeBelegung = (vonModelId, dayIso, shift, zielIds) => {
+  // Kopiert Chatter, Modus, zweite Person, Split-Zeiten, Notiz und „Bestätigt“.
+  // Belegte Zellen werden nur nach Rückfrage überschrieben. Gibt die Namen der
+  // tatsächlich geänderten Models zurück.
+  //
+  // v4.98.0 (Wunsch Christoph): auf Wunsch auch die Uhrzeit und „Jede Woche so“.
+  //   mitZeit — die Zeit, zu der bei der Quelle gearbeitet wird, gilt auch bei
+  //     den anderen Models. Ein Ausnahme-Eintrag entsteht nur, wo die
+  //     Standardzeit des Ziel-Models wirklich abweicht; stimmt sie ohnehin
+  //     überein, wird eine alte Ausnahme dort entfernt statt eine neue gesetzt.
+  //   mitWdh — dieselbe Wiederholung bei den Ziel-Models anlegen. Steht dort
+  //     schon eine andere, wird vorher gefragt.
+  const zeitAus = (txt) => String(txt || '').replace(/\s*\(DE\)/g, '').trim()
+  const uebernehmeBelegung = async (vonModelId, dayIso, shift, zielIds, optionen = {}) => {
+    const { mitZeit = false, mitWdh = false } = optionen
     const quelle = getCell(vonModelId, dayIso, shift)
     if (!quelle.chatter) return []
     const ziele = models.filter(m => zielIds.includes(m.id))
@@ -1536,6 +1574,22 @@ export default function ScheduleTab({ session, userDisplayName }) {
         if (!window.confirm(`Dann nur bei den freien übernehmen (${erlaubt.map(m => m.name).join(', ')})?`)) return []
       }
     }
+
+    const dayOfWeek = (() => { const d = new Date(dayIso + 'T12:00:00').getDay(); return d === 0 ? 6 : d - 1 })()
+    // Wiederholungen, die bei den Zielen anders lauten würden — einmal fragen.
+    let wdhAn = mitWdh
+    if (wdhAn) {
+      const anders = erlaubt.filter(m => {
+        const r = recurring[getRecurringKey(m.id, dayOfWeek, shift)]
+        return r && r.chatter && r.chatter !== quelle.chatter
+      })
+      if (anders.length) {
+        const liste = anders.map(m => `• ${m.name}: jede Woche ${recurring[getRecurringKey(m.id, dayOfWeek, shift)].chatter}`).join('\n')
+        wdhAn = window.confirm(`Bei ${anders.length === 1 ? 'diesem Model' : 'diesen Models'} ist schon eine andere Wiederholung hinterlegt:\n\n${liste}\n\nAuch die auf ${quelle.chatter} ändern?\n\n(Abbrechen: Belegung wird übernommen, die Wiederholungen bleiben wie sie sind.)`)
+      }
+    }
+    const quellZeit = mitZeit ? zeitAus(quelle.time_override || shiftTimes[`${vonModelId}__${shift}`]) : ''
+
     for (const m of erlaubt) {
       const alt = getCell(m.id, dayIso, shift)
       const neu = {
@@ -1548,7 +1602,13 @@ export default function ScheduleTab({ session, userDisplayName }) {
         split_a_von: quelle.split_a_von || null, split_a_bis: quelle.split_a_bis || null,
         split_b_von: quelle.split_b_von || null, split_b_bis: quelle.split_b_bis || null,
       }
+      if (mitZeit) {
+        const standardZiel = zeitAus(shiftTimes[`${m.id}__${shift}`])
+        // Gleiche Zeit wie der Standard des Models → keine Ausnahme nötig.
+        neu.time_override = quellZeit && quellZeit !== standardZiel ? quellZeit : null
+      }
       setCell(m.id, dayIso, shift, neu)
+      if (wdhAn) await saveRecurring(m.id, dayOfWeek, shift, neu)
     }
     return erlaubt.map(m => m.name)
   }
@@ -2402,6 +2462,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
             admins={admins}
             MODE_META={MODE_META} zellModus={zellModus}
             isRecurring={isRecurring}
+            wdhStand={recurring[getRecurringKey(modelId, dayOfWeek, shift)] || null}
             onRecurring={async (an) => {
               if (an && cell.chatter) await saveRecurring(modelId, dayOfWeek, shift, cell)
               else await saveRecurring(modelId, dayOfWeek, shift, { chatter: '' })
@@ -2421,7 +2482,7 @@ export default function ScheduleTab({ session, userDisplayName }) {
             swapHier={openSwapMap[`${model.name}__${dayIso}__${shift}`]}
             onZu={() => setEditSheet(null)}
             andereModels={models.filter(m => m.id !== modelId).map(m => ({ id: m.id, name: m.name, belegt: getCell(m.id, dayIso, shift).chatter || '' }))}
-            onUebernehmen={(ids) => uebernehmeBelegung(modelId, dayIso, shift, ids)}
+            onUebernehmen={(ids, opt) => uebernehmeBelegung(modelId, dayIso, shift, ids, opt)}
           />
         )
       })()}
