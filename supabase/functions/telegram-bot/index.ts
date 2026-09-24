@@ -149,6 +149,18 @@ function modelWortTrifft(wort: string, name: string): boolean {
   return kurz >= 4 && (nm.startsWith(w) || w.startsWith(nm))
 }
 
+// v4.99.0: Model-IDs → Namen für die Ausgabe. Findet sich eine ID nicht
+// (gelöschtes Model), bleibt sie stehen — lieber eine Nummer als eine Lücke.
+async function idsZuNamen(ids: string[]): Promise<string[]> {
+  const sauber = (ids || []).map(x => String(x).trim()).filter(Boolean)
+  if (sauber.length === 0) return []
+  const liste = await q('models_contact', '?select=id,name')
+  if (!Array.isArray(liste)) return sauber
+  const namen: Record<string, string> = {}
+  for (const m of liste as any[]) namen[String(m.id)] = String(m.name || '')
+  return sauber.map(id => namen[id] || id)
+}
+
 async function modelBezugAusText(log: any, text: string): Promise<{ ids: string[]; namen: string[] }> {
   const leer = { ids: [] as string[], namen: [] as string[] }
   if (!text) return leer
@@ -956,10 +968,27 @@ serve(async (req) => {
               shiftName = key.split('__')[2] || 'Schicht'; modelNames.push(key.split('__')[0])
             }
           }
-          await ins('shift_logs', { display_name: chatterData.name, checked_in_at: new Date().toISOString(), shift: shiftName, model_names: modelNames })
+          // v4.99.0: Rückgabewert prüfen. Bei `/off` steht diese Prüfung seit
+          // v4.37.0, beim Check-in fehlte sie — schlug der Schreibvorgang fehl
+          // (Spalte, Constraint, Netz), meldete der Bot trotzdem „Schicht
+          // gestartet", und beim späteren /off hieß es „Keine aktive Schicht".
+          // Aus Sicht des Chatters ist der Bot dann einfach kaputt.
+          const angelegt = await ins('shift_logs', {
+            display_name: chatterData.name, checked_in_at: new Date().toISOString(),
+            shift: shiftName, model_names: modelNames,
+          })
+          if (!angelegt) {
+            await tg(fromId, '⚠ Dein Check-in konnte nicht gespeichert werden — bitte gleich nochmal /on schicken.\n\nWenn es wieder nicht klappt, sag Chris oder Rey Bescheid.')
+            for (const adminId of ADMIN_IDS) await tg(adminId, `⚠ Check-in von <b>${chatterData.name}</b> konnte nicht gespeichert werden.`)
+            return new Response('ok')
+          }
           await ups('online_status', { display_name: chatterData.name, last_seen: new Date().toISOString(), shift_online: true }, 'display_name')
-          await tg(fromId, `✅ Schicht gestartet!\n${shiftName}${modelNames.length > 0 ? ` · ${modelNames.join(', ')}` : ''}\n\nSende /off wenn fertig.`)
-          for (const adminId of ADMIN_IDS) await tg(adminId, `✅ <b>${chatterData.name}</b> hat Schicht gestartet`)
+          // v4.99.0: In `model_names` stehen Model-IDs (so gewollt). In der
+          // Nachricht standen sie bisher unaufgelöst — „Nacht · 3, 4" statt
+          // „Nacht · Chiara, Sandra". Für die Chatter sah das aus wie ein Fehler.
+          const modelTexte = await idsZuNamen(modelNames)
+          await tg(fromId, `✅ Schicht gestartet!\n${shiftName}${modelTexte.length > 0 ? ` · ${modelTexte.join(', ')}` : ''}\n\nSende /off wenn fertig.`)
+          for (const adminId of ADMIN_IDS) await tg(adminId, `✅ <b>${chatterData.name}</b> hat Schicht gestartet${modelTexte.length > 0 ? ` · ${escHtml(modelTexte.join(', '))}` : ''}`)
 
           // v4.35.0: Was hat die Vorschicht hinterlassen? Kommt direkt hinter der
           // Startbestätigung — das ist der Moment, in dem es gelesen wird.

@@ -17,6 +17,7 @@ import ChatterOrga from './ChatterOrga' // v4.82.0
 import ContentIdeeFenster from './ContentIdeeFenster' // v4.82.0
 import { useGelesen } from '../gelesen' // v4.76.0
 import { useModelLage, zustand, reiseHeute, terminJetzt } from '../modelLage' // v4.75.0
+import { zellZeitraum, schichtVorbei, plantage } from '../schichtZeit' // v4.99.0
 import { getTheme, setTheme } from '../theme'
 import { sendTelegramMessage, notifyAdmins, sendeSchichtuebergabe } from '../telegram'
 import { useTodoMeldung } from '../todoMeldung'
@@ -1523,12 +1524,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       const myShift = currentShiftRef.current
       if (!myShift || myShift === 'Manuell') return
       const now = new Date()
-      const berlinStr = now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
-      const todayIsoStr = berlinStr
-      const nowMins = parseInt(now.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' }).replace(':', ''))
-      const nowH = Math.floor(nowMins / 100)
-      const nowM = nowMins % 100
-      const nowTotal = nowH * 60 + nowM
+      const todayIsoStr = now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 
       // v4.34.0: Erst ALLE Zellen der eingecheckten Schicht ansehen und das
       // SPÄTESTE Ende bestimmen — dann entscheiden.
@@ -1536,14 +1532,20 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       // Mit Zeiten pro Zelle (geteilte Schicht, time_override) ist das der Regelfall:
       // wer bei Model A bis 12:00 und bei Model B bis 16:00 eingeteilt ist, flog
       // um 12:01 raus, obwohl er noch vier Stunden Schicht hatte.
-      let spaetestesEnde = null
-      let nowAdjMax = nowTotal
+      //
+      // v4.99.0: Gerechnet wird mit echten Zeitpunkten (src/schichtZeit.js).
+      // Die alte Minuten-Arithmetik warf jeden SOFORT wieder raus, der vor
+      // Beginn einer Schicht über Mitternacht eincheckte — die Begründung steht
+      // ausführlich in schichtZeit.js. Dazu zählt bei „Nacht" auch der gestrige
+      // Plantag, weil eine Nachtschicht auf ihren Starttag geschlüsselt ist.
+      const tageIso = plantage(todayIsoStr, myShift)
+      const zeitraeume = []
       for (const sched of next7SchedulesRef.current) {
         const times = sched.shift_times || {}
         const assignments = sched.assignments || {}
         for (const [key, val] of Object.entries(assignments)) {
           const parts = key.split('__')
-          if (parts[1] !== todayIsoStr) continue
+          if (!tageIso.includes(parts[1])) continue
           // Auch die zweite Hälfte einer geteilten Schicht wird automatisch
           // ausgecheckt — vorher lief deren Log bis zum nächsten manuellen Klick weiter.
           // Namen normalisiert vergleichen, wie beim Check-in und in der 7-Tage-Liste.
@@ -1557,24 +1559,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           if (shift !== myShift) continue // v3.77.1: nur die eingecheckte Schicht kann auschecken
           // v2.9.7: Cell-Override hat Vorrang vor Standard-Zeit
           const standardZeit = (val.time_override || times[`${modelId}__${shift}`] || '').replace(/\s*\(DE\)/g, '')
-          const timeStr = meineSpanne(val, standardZeit, binZweit)
-          if (!timeStr) continue
-          const endStr = timeStr.split('-')[1]?.trim()
-          if (!endStr) continue
-          const [endH, endM] = endStr.split(':').map(Number)
-          if (isNaN(endH)) continue
-          const startStr = timeStr.split('-')[0]?.trim()
-          const [startH] = startStr ? startStr.split(':').map(Number) : [0]
-          let endTotal = endH * 60 + endM
-          const nowAdj = (endH < startH && nowTotal < startH * 60) ? nowTotal + 1440 : nowTotal
-          if (endH < startH) endTotal += 1440
-          if (spaetestesEnde == null || endTotal > spaetestesEnde) {
-            spaetestesEnde = endTotal
-            nowAdjMax = nowAdj
-          }
+          const raum = zellZeitraum(parts[1], meineSpanne(val, standardZeit, binZweit))
+          if (raum) zeitraeume.push(raum)
         }
       }
-      if (spaetestesEnde != null && nowAdjMax >= spaetestesEnde + 1) {
+      if (schichtVorbei(zeitraeume, now.getTime())) {
         // v4.39.0: Nicht auschecken, solange jemand gerade eine Übergabe tippt.
         // Sonst zog der Automatismus mitten im Schreiben das Log weg, und beim
         // Absenden hieß es „zu dieser Schicht gibt es keinen Check-in-Eintrag" —
@@ -1582,6 +1571,11 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         // die Leute an ihrer Übergabe.
         if (uebergabeDialogOffenRef.current) return
         await supabase.from('shift_logs').update({ checked_out_at: new Date().toISOString() }).eq('id', currentLogIdRef.current)
+        // v4.99.0: `auto_checkout` wurde bisher nirgends gesetzt und stand im
+        // Export immer auf false. Jetzt ist zu sehen, welche Schicht von selbst
+        // endete. Eigener Aufruf: fehlte die Spalte, lehnte PostgREST sonst den
+        // ganzen PATCH ab und die Schicht bliebe offen stehen.
+        await supabase.from('shift_logs').update({ auto_checkout: true }).eq('id', currentLogIdRef.current)
         // Merken, woran eine nachgereichte Übergabe hängen kann — und den Chip
         // dafür einblenden. Ohne ihn wäre nach dem automatischen Auschecken gar
         // kein Weg mehr da: der Knopf „Schicht beenden" verschwindet mit dem
