@@ -1,0 +1,43 @@
+# ── Supabase-Projektkonfiguration ──────────────────────────────────────────
+#
+# Angelegt am 25.09.2026, nachdem der Telegram-Bot einen halben Tag stumm war.
+#
+# Was passiert war: Der Deploy von v4.99.0 lief ohne `--no-verify-jwt`. Damit
+# verlangt Supabase bei jedem Aufruf der Function einen Login-Token. Telegram
+# schickt keinen — jeder Webhook prallte mit 401 ab. Kein Fehler im Log, keine
+# Meldung, der Bot war einfach still: /on, /off und /gelesen kamen nie an.
+#
+# Der Haken am Flag: Es gilt pro Deploy, nicht pro Function. Wer es einmal
+# vergisst, schaltet die Prüfung wieder ein. Diese Datei schreibt die
+# Einstellung dauerhaft fest — ab jetzt ist der Deploy-Befehl egal:
+#
+#     supabase functions deploy telegram-bot
+#
+# Achtung: Ein mitgegebenes `--no-verify-jwt` überschreibt diese Datei weiterhin
+# (schadet aber nicht). Umgekehrt gilt: Alle Functions, die hier NICHT stehen,
+# bleiben bei der Token-Prüfung — das ist der sichere Standard und für alles
+# richtig, was aus der App oder vom Cron kommt (send-telegram, generate-messages,
+# handover-notify, send-reminders, shift-alert, status-auto-clear, account-sperre).
+
+project_id = "xdchyruasjxvrjduchoc"
+
+# ── Ohne Token erreichbar, weil der Aufrufer keinen hat ────────────────────
+
+# Telegram-Webhook. Telegram kennt keine Supabase-Anmeldung.
+# Abgesichert wird stattdessen über TELEGRAM_WEBHOOK_SECRET: ist das Secret
+# gesetzt, prüft der Bot den Header X-Telegram-Bot-Api-Secret-Token selbst.
+[functions.telegram-bot]
+verify_jwt = false
+
+# Kalender-Abo (.ics). Kalender-Apps auf Handy und Rechner senden keinen Login.
+# Abgesichert über den 64-stelligen Token in der URL (kalender_abos.token).
+[functions.kalender-ics]
+verify_jwt = false
+
+# Registrierung über die Anmeldeseite — wer sich anmeldet, hat noch kein Konto.
+[functions.self-signup]
+verify_jwt = false
+
+# „Passwort vergessen?" — dito, die Person kommt ja gerade nicht rein.
+[functions.password-reset]
+verify_jwt = false
