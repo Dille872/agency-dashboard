@@ -37,7 +37,7 @@ export default function SocialSteuerung({ userDisplayName }) {
   const [offenZeile, setOffenZeile] = useState(null)       // Skripte aufgeklappt
   const [alleSkripte, setAlleSkripte] = useState(false)
   const [upload, setUpload] = useState(null)               // null | { model, account }
-  const [neuAccount, setNeuAccount] = useState(false)      // v4.104.0
+  const [neuAccount, setNeuAccount] = useState(null)       // v4.104.0: null | '' | Model-Name (vorbelegt)
   const [hinweis, setHinweis] = useState('')
 
   const laden = useCallback(async () => {
@@ -102,7 +102,7 @@ export default function SocialSteuerung({ userDisplayName }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, fontSize: 13, color: 'var(--text-muted)' }}>Alle Accounts, alle Poster, alles Gepostete. Nur für Admins sichtbar.</div>
-        <button type="button" onClick={() => setNeuAccount(true)} style={{ ...knopf(P, false), padding: '9px 14px' }}>+ Account</button>
+        <button type="button" onClick={() => setNeuAccount('')} style={{ ...knopf(P, false), padding: '9px 14px' }}>+ Account</button>
         <button type="button" onClick={() => setUpload({ model: '', account: '' })} style={{ ...knopf(C, true), color: '#04212a', padding: '9px 14px' }}>📄 Drehzettel hochladen</button>
       </div>
       {hinweis && <div style={{ fontSize: 12.5, color: hinweis.startsWith('✓') ? G : ROT }}>{hinweis}</div>}
@@ -120,7 +120,15 @@ export default function SocialSteuerung({ userDisplayName }) {
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>Accounts & Poster</div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Die Accounts kommen aus den Instagram-Links im Board der Models im Service. Kurzbeschreibung und „Im Service“ pflegst du unter Kommunikation → Creator → Model → „Social Media“.</div>
-        {!zeilen.length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch kein Model im Service oder keine Instagram-Links im Board.</div>}
+        {!Object.keys(models).length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch kein Model im Service. Beim Model unter Kommunikation → Creator → „Social Media“ das Häkchen „Im Social-Media-Service“ setzen und speichern.</div>}
+        {/* v4.104.1: Models im Service ohne Instagram-Link waren vorher unsichtbar */}
+        {Object.values(models).filter(m => !m.accounts.length).map(m => (
+          <div key={'ohne:' + m.model_name} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+            <span style={{ minWidth: 80, color: 'var(--text-primary)' }}>{m.model_name}</span>
+            <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>⚠ im Service, aber noch kein Instagram-Account im Board. Deshalb gibt es hier noch keine Zeile zum Zuteilen.</span>
+            <button type="button" onClick={() => setNeuAccount(m.model_name)} style={{ ...knopf(P, false), padding: '5px 10px', fontSize: 12 }}>+ Account für {m.model_name}</button>
+          </div>
+        ))}
         {zeilen.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
@@ -265,7 +273,7 @@ export default function SocialSteuerung({ userDisplayName }) {
         <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 10, padding: '8px 10px', color: 'var(--text-muted)', fontSize: 12 }}>Später: Aufrufe, Likes und Follower-Zuwachs pro Reel, sobald Lyra misst.</div>
       </div>
 
-      {neuAccount && <AccountFenster models={models} wer={userDisplayName} onZu={(neu) => { setNeuAccount(false); if (neu) { setHinweis(`✓ ${neu} angelegt. Jetzt einen Poster zuteilen.`); laden() } }} />}
+      {neuAccount !== null && <AccountFenster models={models} startModel={neuAccount} wer={userDisplayName} onZu={(neu) => { setNeuAccount(null); if (neu) { setHinweis(`✓ ${neu} angelegt. Jetzt einen Poster zuteilen.`); laden() } }} />}
       {upload && <UploadFenster start={upload} models={models} wer={userDisplayName} onZu={(neu) => { setUpload(null); if (neu) { setHinweis(`✓ ${neu} Drehzettel angelegt.`); laden() } }} />}
     </div>
   )
@@ -374,9 +382,9 @@ function UploadFenster({ start, models, wer, onZu }) {
 // ── v4.104.0: eigenen Instagram-Account anlegen (z. B. US) ─────────────────
 // Landet im Board des Models (markiert „Agentur“, nur Staff darf ändern),
 // optional gleich mit Kurzbeschreibung.
-function AccountFenster({ models, wer, onZu }) {
+function AccountFenster({ models, startModel = '', wer, onZu }) {
   const namen = Object.keys(models)
-  const [model, setModel] = useState(namen.length === 1 ? namen[0] : '')
+  const [model, setModel] = useState(startModel || (namen.length === 1 ? namen[0] : ''))
   const [handle, setHandle] = useState('')
   const [notiz, setNotiz] = useState('')
   const [fehler, setFehler] = useState('')
