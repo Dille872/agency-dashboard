@@ -56,3 +56,59 @@ export async function drehzettelHochladen(name, file) {
 }
 
 export const tagKurz = (iso) => iso ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''
+
+// ── v4.103.0: Anlegen an einer Stelle (Steuerung + Mehrfach-Upload) ────────
+// Lädt die PDF hoch, legt das Skript an (Nummer vergibt die Datenbank) und
+// schickt auf Wunsch dem Model einen Telegram-Hinweis.
+// Rückgabe: { nr } oder { fehler: 'Text' }, dazu ggf. info (Telegram-Hinweis).
+const TG_NEU = 'Neuer Drehzettel {nr} 🎬 „{titel}“{fuer}. Du findest ihn in deinem Portal unter „Social“. Wenn das Video fertig ist, dort einfach den Link (z. B. Dropbox) einfügen. Danke! 💛'
+
+export async function skriptAnlegen({ model, titel, datei, ziel, wer, telegram }) {
+  const t = String(titel || '').trim().slice(0, 120)
+  if (!model) return { fehler: 'Kein Model gewählt.' }
+  if (!t) return { fehler: 'Kein Titel.' }
+  if (!datei) return { fehler: 'Keine PDF.' }
+  const up = await drehzettelHochladen(model, datei)
+  if (up.fehler) return { fehler: 'PDF ging nicht hoch: ' + up.fehler.message }
+  const { data, error } = await supabase.from('reel_skripte')
+    .insert({ model_name: model, titel: t, drehzettel_url: up.url, ziel_account: ziel || null, erstellt_von: wer || null })
+    .select('nr').single()
+  if (error) return { fehler: 'Nicht gespeichert: ' + error.message }
+  const { logActivity } = await import('./activity')
+  logActivity('reel.skript', { entity: `${model} ${data.nr}`, detail: `Drehzettel „${t}“${ziel ? ` für ${ziel}` : ''}` })
+  let info = ''
+  if (telegram) {
+    const { sendTelegramMessage, zugestellt } = await import('./telegram')
+    const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', model).maybeSingle()
+    if (!m?.telegram_id) info = 'keine Telegram-ID'
+    else {
+      const text = TG_NEU.replace('{nr}', data.nr).replace('{titel}', t).replace('{fuer}', ziel ? ` für ${ziel}` : '')
+      try {
+        const r = await sendTelegramMessage(m.telegram_id, text)
+        const ok = zugestellt(r)
+        await supabase.from('messages').insert({ model_name: model, model_telegram_id: m.telegram_id, direction: 'out', contact_type: 'model', message_type: 'announcement', text, status: ok ? 'sent' : 'failed', sent_by: wer })
+        if (!ok) info = 'Telegram nicht angekommen'
+      } catch { info = 'Telegram nicht angekommen' }
+    }
+  }
+  return { nr: data.nr, info }
+}
+
+// Dateiname → Vorschlag für Model, Account, Titel.
+// Versteht z. B. „Sandra_@sandra.wayneee_Gym-Transition.pdf“ und
+// „Sandra – Küche Outfit-Wechsel.pdf“. Was nicht erkannt wird, bleibt leer.
+export function dateinameLesen(name, modelNamen = []) {
+  const basis = String(name || '').replace(/\.pdf$/i, '').trim()
+  const teile = basis.split(/\s*[_–—]\s*|\s+-\s+/).map(x => x.trim()).filter(Boolean)
+  let model = '', account = ''
+  const rest = []
+  for (const p of teile) {
+    if (!account && p.startsWith('@')) { account = p; continue }
+    const m = !model && modelNamen.find(n => n.toLowerCase() === p.toLowerCase())
+    if (m) { model = m; continue }
+    rest.push(p)
+  }
+  // „Gym-Transition“ (ohne Leerzeichen) → „Gym Transition“; „Outfit-Wechsel“ in einem Satz bleibt
+  const titel = rest.map(p => p.includes(' ') ? p : p.replace(/-/g, ' ')).join(' ').replace(/\s+/g, ' ').trim()
+  return { model, account, titel }
+}

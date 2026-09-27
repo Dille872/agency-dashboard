@@ -293,3 +293,6 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
     </div>
   )
 }
+
+// v4.103.0: dieselbe Karte in der Social-Steuerung
+export { Karte as SkriptKarte }

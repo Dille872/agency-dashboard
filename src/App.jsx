@@ -1056,7 +1056,7 @@ export default function App() {
         ) : activeTab === 'todos' ? (
           <TodoTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'social' ? (
-          <SocialManager userDisplayName={userDisplayName} kannErinnern={isManager} />
+          <SocialManager userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (

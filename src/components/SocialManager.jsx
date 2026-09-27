@@ -5,6 +5,7 @@ import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
 import { statusVon, linkOk, mitHttps, instaHandle } from '../reelSkripte'
 import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialManager'
+import SocialSteuerung from './SocialSteuerung' // v4.103.0: nur Admins
 
 // ── Social Media Manager (v4.102.0) ────────────────────────────────────────
 // Arbeitsplatz für die Leute, die Reels posten (Rolle social_media), und für
@@ -39,14 +40,14 @@ const heuteISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europ
 const tageSeit = (iso) => iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : null
 const wertListe = (v) => Array.isArray(v) ? v.filter(x => String(x ?? '').trim()) : (String(v ?? '').trim() ? [String(v).trim()] : [])
 
-export default function SocialManager({ userDisplayName, kannErinnern = false }) {
+export default function SocialManager({ userDisplayName, kannErinnern = false, istAdmin = false }) {
   const [sprache, setSprache] = useState(spracheLaden)
   const t = useMemo(() => macheT(sprache), [sprache])
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const datum = (iso) => iso ? new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString(loc, { day: '2-digit', month: '2-digit' }) : ''
   const seitText = (n) => n === null ? '' : n === 0 ? t('heute') : n === 1 ? t('gestern') : t('tage', { n })
 
-  const [reiter, setReiter] = useState('posten')
+  const [reiter, setReiter] = useState(istAdmin ? 'steuerung' : 'posten')
   const [daten, setDaten] = useState(null)
   const [uebers, setUebers] = useState({})
   const [uebersFehler, setUebersFehler] = useState(false)
@@ -161,6 +162,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false })
       {/* Reiter */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[
+          ...(istAdmin ? [{ k: 'steuerung', l: '🧭 ' + t('tab_steuerung') }] : []),
           { k: 'posten', l: '🎬 ' + t('tab_posten'), z: zuPosten.length },
           { k: 'ueberblick', l: '📋 ' + t('tab_ueberblick') },
           { k: 'models', l: '👤 ' + t('tab_models') },
@@ -171,6 +173,8 @@ export default function SocialManager({ userDisplayName, kannErinnern = false })
           </button>
         ))}
       </div>
+
+      {reiter === 'steuerung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} />}
 
       {reiter === 'posten' && (
         <>
