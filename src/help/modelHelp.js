@@ -151,6 +151,27 @@ export const HELP_TOPICS = [
     ],
   },
   {
+    id: 'socialfragebogen',
+    icon: '📱',
+    tab: 'board',
+    title: 'Social Media (Fragebogen)',
+    short: 'Kurzer Fragebogen, damit wir Reels schreiben können, die zu dir passen.',
+    body: [
+      'Wenn du bei unserem Social-Media-Service dabei bist, schreiben wir dir Reel-Ideen und Drehzettel. Damit die zu dir passen, brauchen wir ein paar Infos: wo du drehen kannst, was du gut kannst, was dich ausmacht.',
+      'Die Antworten sieht nur das Team, nicht die Chatter und nicht die Fans.',
+    ],
+    steps: [
+      'Im Board bei „Social Media“ auf „Ausfüllen“ oder „Bearbeiten“ tippen.',
+      'Oben siehst du deine No Gos und Instagram-Links aus dem Board. Stimmen sie nicht mehr, ändere sie danach im Board.',
+      'Fragen beantworten, Chips antippen, optional 3–4 Fotos deiner Lieblingsecken hochladen. Dann „Fertig“.',
+    ],
+    watch: [
+      'Es wird automatisch gespeichert. „Später weitermachen“ geht jederzeit.',
+      'Du kannst deine Antworten später jederzeit ändern, das Team sieht dann, wann du etwas geändert hast.',
+      'Die Karte erscheint erst, wenn das Team dich um den Fragebogen bittet.',
+    ],
+  },
+  {
     id: 'services',
     icon: '✅',
     tab: 'board',

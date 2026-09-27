@@ -12,6 +12,7 @@ import { convertHeicIfNeeded } from '../imageUtils'
 import { heuteBerlin } from '../utils' // v4.57.0
 import ReiseListe from './ReiseListe' // v4.94.0: alte Reisen ins Archiv
 import SteckbriefAdmin from './SteckbriefAdmin' // v4.95.0
+import SocialFragebogenAdmin from './SocialFragebogenAdmin' // v4.100.0
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 
@@ -2083,6 +2084,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           <div style={{ gridColumn: '1 / -1' }}>
             <SteckbriefAdmin models={activeModels} gewaehlt={selectedModel?.name || null} userName={userName}
               board={(selectedModel && modelBoards[selectedModel.name]) || {}} services={(selectedModel && modelServices[selectedModel.name]) || {}} />
+            {/* v4.100.0: Social-Media-Fragebogen + Service-Felder für die Reels-Pipeline */}
+            {selectedModel && (
+              <div style={{ marginTop: 10 }}>
+                <SocialFragebogenAdmin key={selectedModel.name} models={activeModels} gewaehlt={selectedModel.name} userName={userName} />
+              </div>
+            )}
           </div>
           <Card title="Models">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>

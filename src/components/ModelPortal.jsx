@@ -31,6 +31,8 @@ import { AppKachel, AppFenster } from './AppInstallieren' // v4.91.0
 import { Balken } from './Skeleton' // v4.92.0
 import ModelEinfuehrung, { themenStand } from './ModelEinfuehrung' // v4.95.0
 import { steckbriefLaden } from '../steckbrief' // v4.95.0
+import SocialFragebogen from './SocialFragebogen' // v4.100.0
+import { socialLaden, stand as socialStand } from '../socialProfil' // v4.100.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -326,8 +328,15 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     setSteckbrief(await steckbriefLaden(displayName))
   }
 
+  // v4.100.0: Social-Media-Fragebogen
+  const loadSocial = async () => {
+    if (!displayName) return
+    setSocial(await socialLaden(displayName))
+  }
+
   const loadAll = async () => {
     loadSteckbrief()
+    loadSocial()
     loadBoard(); loadCalendar(); loadContentRequests(); loadAliasesAndRevenue().finally(() => setSubsGeladen(true)); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
   }
 
@@ -762,6 +771,16 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   useEffect(() => {
     if (!isPreview && !einfWeg && !einfuehrung && (einfStatus === 'offen' || einfStatus === 'laeuft')) setEinfuehrung('einfuehrung')
   }, [einfStatus, isPreview, einfWeg, einfuehrung])
+  // v4.100.0: Social-Media-Fragebogen — startet von selbst, wenn angefordert,
+  // aber erst NACH einer offenen Steckbrief-Einführung (nie zwei auf einmal).
+  const [social, setSocial] = useState({ fehlt: true, service: null, antworten: {} })
+  const [socialOffen, setSocialOffen] = useState(false)
+  const [socialWeg, setSocialWeg] = useState(false)
+  const socialStatus = social.service?.fragebogen_status
+  const einfAusstehend = !einfWeg && (einfStatus === 'offen' || einfStatus === 'laeuft')
+  useEffect(() => {
+    if (!isPreview && !socialWeg && !socialOffen && !einfuehrung && !einfAusstehend && (socialStatus === 'offen' || socialStatus === 'laeuft')) setSocialOffen(true)
+  }, [socialStatus, isPreview, socialWeg, socialOffen, einfuehrung, einfAusstehend])
   const oeffneBereich = async (key) => {
     setActiveSection(key)
     setMehrOffen(false)
@@ -1290,6 +1309,27 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                   {!isPreview && (
                     <button type="button" onClick={() => { setEinfWeg(false); setEinfuehrung(laeuft ? 'einfuehrung' : 'bearbeiten') }} style={{ padding: '9px 13px', borderRadius: 11, border: 'none', background: '#f59e0b', color: '#1a1205', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                       {laeuft ? 'Weitermachen' : st.voll ? 'Bearbeiten' : 'Ausfüllen'}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
+            {/* v4.100.0: Social-Media-Fragebogen — nur sichtbar, wenn angefordert oder schon begonnen */}
+            {!social.fehlt && (socialStatus || socialStand(social.antworten).voll > 0) && (() => {
+              const st = socialStand(social.antworten)
+              const laeuft = socialStatus === 'offen' || socialStatus === 'laeuft'
+              return (
+                <div data-help="socialfragebogen" style={{ ...cardS, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 12, border: `1px solid ${laeuft ? 'rgba(236,72,153,0.5)' : 'var(--border)'}`, background: laeuft ? 'linear-gradient(135deg, rgba(236,72,153,0.12), var(--bg-card) 70%)' : undefined }}>
+                  <span style={{ fontSize: 24 }}>📱</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7 }}>Social Media <HelpDot topic="socialfragebogen" /></div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {laeuft ? 'Das Team bittet dich um den Fragebogen für deine Reels.' : `${st.voll} von ${st.gesamt} Fragen beantwortet · nur fürs Team`}
+                    </div>
+                  </div>
+                  {!isPreview && (
+                    <button type="button" onClick={() => { setSocialWeg(false); setSocialOffen(true) }} style={{ padding: '9px 13px', borderRadius: 11, border: 'none', background: '#ec4899', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                      {laeuft ? (st.voll ? 'Weitermachen' : 'Ausfüllen') : 'Bearbeiten'}
                     </button>
                   )}
                 </div>
@@ -1910,6 +1950,11 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           onBoardGeaendert={() => Promise.all([loadBoard(), loadServices()])}
           onGespeichert={loadSteckbrief}
           onZu={(fertig) => { setEinfuehrung(null); if (!fertig) setEinfWeg(true); loadSteckbrief() }} />
+      )}
+      {socialOffen && !einfuehrung && !isPreview && (
+        <SocialFragebogen name={displayName} daten={social} art="model" wer={displayName} logActivity={logActivity}
+          onGespeichert={loadSocial}
+          onZu={() => { setSocialOffen(false); setSocialWeg(true); loadSocial() }} />
       )}
 
       {/* v3.99.0: Glocke + Chat-Bubble — wie im Chatter-Portal */}
