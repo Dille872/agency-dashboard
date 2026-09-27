@@ -86,7 +86,7 @@ export default function SteckbriefAdmin({ models = [], gewaehlt, board = {}, ser
     neuLaden()
     const ok = liste.length - fehler.length
     alert([
-      `✓ Einführung an ${ok} ${ok === 1 ? 'Model' : 'Models'} geschickt. Sie startet beim nächsten Öffnen des Portals.`,
+      `✓ Model-Infos an ${ok} ${ok === 1 ? 'Model' : 'Models'} geschickt. Sie startet beim nächsten Öffnen des Portals.`,
       fehler.length ? `⚠ Nicht gespeichert: ${fehler.join('; ')}` : '',
       ohneTg.length ? `ℹ Ohne Telegram-ID (kein Hinweis verschickt): ${ohneTg.join(', ')}` : '',
       tgFehler.length ? `⚠ Telegram nicht angekommen: ${tgFehler.join(', ')}` : '',
@@ -94,7 +94,7 @@ export default function SteckbriefAdmin({ models = [], gewaehlt, board = {}, ser
   }
 
   const zuruecknehmen = async () => {
-    if (!window.confirm(`Einführung für ${gewaehlt} zurücknehmen? Bereits eingetragene Antworten bleiben erhalten.`)) return
+    if (!window.confirm(`Model-Infos für ${gewaehlt} zurücknehmen? Bereits eingetragene Antworten bleiben erhalten.`)) return
     const err = await steckbriefSpeichern(gewaehlt, { einfuehrung_status: null, einfuehrung_schritt: null }, userName)
     if (err) alert('Nicht gespeichert: ' + err.message)
     neuLaden()
@@ -110,7 +110,7 @@ export default function SteckbriefAdmin({ models = [], gewaehlt, board = {}, ser
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Mehrere auswählen */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Steckbrief-Einführung:</span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 Model-Infos (Steckbrief):</span>
         <button type="button" onClick={() => { setMehrere(v => !v); setAuswahl(new Set()) }} style={knopf('#7c3aed', mehrere)}>{mehrere ? 'Auswahl beenden' : '☑ Mehrere auswählen'}</button>
       </div>
       {mehrere && (
@@ -128,7 +128,7 @@ export default function SteckbriefAdmin({ models = [], gewaehlt, board = {}, ser
             })}
           </div>
           <button type="button" disabled={!auswahl.size} onClick={() => setSchicken([...auswahl])} style={{ ...knopf('#f59e0b', true), color: '#1a1205', alignSelf: 'flex-start', opacity: auswahl.size ? 1 : 0.5 }}>
-            📝 Einführung an {auswahl.size || '…'} {auswahl.size === 1 ? 'Model' : 'Models'} schicken
+            👤 Model-Infos an {auswahl.size || '…'} {auswahl.size === 1 ? 'Model' : 'Models'} schicken
           </button>
         </div>
       )}
@@ -140,7 +140,7 @@ export default function SteckbriefAdmin({ models = [], gewaehlt, board = {}, ser
             <StatusPill zeile={zeile} />
             {laeuft
               ? <button type="button" onClick={zuruecknehmen} style={knopf('#ef4444', false)}>Zurücknehmen</button>
-              : <button type="button" onClick={() => setSchicken([gewaehlt])} style={knopf('#f59e0b', false)}>📝 Einführung schicken</button>}
+              : <button type="button" onClick={() => setSchicken([gewaehlt])} style={knopf('#f59e0b', false)}>👤 Model-Infos schicken</button>}
             <button type="button" onClick={() => setBearbeiten(true)} style={knopf('var(--text-secondary)', false)}>✏️ Bearbeiten</button>
             <button type="button" onClick={kopieren} style={knopf('#7c3aed', true)}>{kopiert ? '✓ Kopiert' : '📋 Für CreatorHero kopieren'}</button>
           </span>
@@ -150,11 +150,11 @@ export default function SteckbriefAdmin({ models = [], gewaehlt, board = {}, ser
       {/* Schicken-Fenster */}
       {schicken && (
         <div onClick={() => !arbeitet && setSchicken(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Einführung schicken" style={{ width: 'min(460px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>Einführung schicken</div>
+          <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Model-Infos schicken" style={{ width: 'min(460px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>Model-Infos schicken</div>
             <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               An: <b style={{ color: 'var(--text-primary)' }}>{schicken.join(', ')}</b><br />
-              Beim nächsten Öffnen des Portals startet die Einführung. Was schon ausgefüllt ist, steht dann schon drin.
+              Beim nächsten Öffnen des Portals startet die Einführung mit dem Steckbrief. Was schon ausgefüllt ist, steht dann schon drin.
               {schicken.some(n => map[n]?.einfuehrung_status === 'fertig') && <><br /><span style={{ color: 'var(--ton-amber)' }}>Hinweis: {schicken.filter(n => map[n]?.einfuehrung_status === 'fertig').join(', ')} {schicken.filter(n => map[n]?.einfuehrung_status === 'fertig').length === 1 ? 'hat' : 'haben'} schon einmal abgeschlossen. Die Antworten bleiben, es geht nur nochmal durch.</span></>}
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--text-primary)', cursor: 'pointer' }}>
@@ -166,7 +166,7 @@ export default function SteckbriefAdmin({ models = [], gewaehlt, board = {}, ser
             {mitTelegram && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -6 }}>{'{name}'} wird durch den Namen ersetzt.</div>}
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" disabled={arbeitet} onClick={() => setSchicken(null)} style={{ ...knopf('var(--text-muted)', false), flex: 1, padding: 12 }}>Abbrechen</button>
-              <button type="button" disabled={arbeitet} onClick={abschicken} style={{ ...knopf('#f59e0b', true), color: '#1a1205', flex: 2, padding: 12, fontSize: 14 }}>{arbeitet ? 'Schickt …' : `📝 An ${schicken.length} schicken`}</button>
+              <button type="button" disabled={arbeitet} onClick={abschicken} style={{ ...knopf('#f59e0b', true), color: '#1a1205', flex: 2, padding: 12, fontSize: 14 }}>{arbeitet ? 'Schickt …' : `👤 An ${schicken.length} schicken`}</button>
             </div>
           </div>
         </div>

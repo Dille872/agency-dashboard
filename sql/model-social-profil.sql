@@ -12,8 +12,10 @@
 -- 2) public.model_social_service — eine Zeile je Model
 --    fragebogen_status  null | 'offen' (angefordert) | 'laeuft' | 'fertig'
 --    service_aktiv, posting_ab: NUR die Agentur.
---    Die Accounts selbst stehen NICHT hier, sondern wie bisher im Social-Tab
---    (public.social_accounts) — nichts doppelt pflegen.
+--    Die Accounts selbst stehen NICHT hier: Es gelten die Instagram-Links,
+--    die das Model im Board einträgt (model_board, category social_media).
+--    Der Social-Tab (public.social_accounts) ist für eigene Mitarbeiter-
+--    Accounts und wird hier NICHT benutzt.
 --    Ein Trigger hält diese Felder fest, wenn ein Model seine Zeile
 --    speichert (RLS kann keine einzelnen Spalten sperren).
 --
@@ -26,8 +28,8 @@
 -- 3) Lyra (Rolle lyra_readonly) bekommt ZWEI schmale Ansichten im Schema lyra:
 --    lyra.model_social_profil  Antworten + Agentur-Felder als zusätzliche
 --                              Schlüssel: service_aktiv, posting_ab und
---                              service_accounts (= Instagram-Accounts aus
---                              dem Social-Tab, public.social_accounts)
+--                              service_accounts (= Instagram-Links aus dem
+--                              Board, als @handle)
 --    lyra.model_grenzen        model_board, nur nogos + einschraenkungen
 --    Eigentümer postgres, OHNE security_invoker — sonst greift RLS und Lyra
 --    sieht leere Ergebnisse.
@@ -142,9 +144,9 @@ create trigger social_service_agenturfelder
 -- antwort_text = lesbar (Listen mit Komma). Die Agentur-Felder erscheinen als
 -- eigene Schlüssel: service_aktiv ('ja'/'nein'), posting_ab (Datum) —
 -- geaendert_am ist dort der letzte Speicherzeitpunkt — und service_accounts
--- (Liste der Instagram-Accounts aus dem Social-Tab, ohne Datum).
--- Nur Models mit Zeile in model_social_service, damit Social-Tab-Accounts
--- anderer Models nicht auftauchen.
+-- (Instagram-Links aus dem Board als @handle, ohne Datum). Nur für Models mit
+-- Zeile in model_social_service. Die vollen Links hat Lyra ohnehin über
+-- lyra.model_social_media.
 create or replace view lyra.model_social_profil as
 select p.model_name,
        p.schluessel,
@@ -164,15 +166,20 @@ select s.model_name, 'service_aktiv',
        s.aktualisiert_am
 from public.model_social_service s
 union all
-select a.model_name, 'service_accounts',
-       jsonb_agg(a.account_name order by a.account_name),
-       string_agg(a.account_name, ', ' order by a.account_name),
+select b.model_name, 'service_accounts',
+       jsonb_agg(distinct b.handle),
+       string_agg(distinct b.handle, ', '),
        null::timestamptz
-from public.social_accounts a
-where lower(a.platform) = 'instagram'
-  and nullif(trim(a.account_name), '') is not null
-  and exists (select 1 from public.model_social_service s where s.model_name = a.model_name)
-group by a.model_name
+from (
+  select model_name,
+         coalesce('@' || substring(content from '(?i)instagram\.com/([^/?#]+)'), trim(content)) as handle
+  from public.model_board
+  where category = 'social_media'
+    and lower(trim(title)) = 'instagram'
+    and nullif(trim(content), '') is not null
+) b
+where exists (select 1 from public.model_social_service s where s.model_name = b.model_name)
+group by b.model_name
 union all
 select s.model_name, 'posting_ab',
        to_jsonb(s.posting_ab::text),

@@ -13,9 +13,10 @@ import { supabase } from './supabase'
 //   model_social_service  eine Zeile je Model: fragebogen_status
 //                         (null | 'offen' | 'laeuft' | 'fertig') und die
 //                         Agentur-Felder service_aktiv, posting_ab
-//   social_accounts       (bestehend, Social-Tab) — die Accounts, auf denen
-//                         unsere Skripte laufen. Lyra liest die Instagram-
-//                         Accounts von dort als Schlüssel service_accounts.
+//   Die Accounts selbst: Instagram-Links, die das Model im Board einträgt
+//   (model_board, category social_media). Lyra bekommt sie als Schlüssel
+//   service_accounts. NICHT der Social-Tab (social_accounts) — der ist für
+//   eigene Mitarbeiter-Accounts.
 //
 // Nicht doppelt fragen: No Gos, Einschränkungen und Social-Links stehen im
 // Board (model_board). Der Fragebogen zeigt sie nur zum Bestätigen an.
