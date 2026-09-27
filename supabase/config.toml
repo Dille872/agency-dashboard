@@ -41,3 +41,9 @@ verify_jwt = false
 # „Passwort vergessen?" — dito, die Person kommt ja gerade nicht rein.
 [functions.password-reset]
 verify_jwt = false
+
+# Reel-Messwerte vom Sammel-Skript auf dem Mac mini (v4.107.0). Das Skript hat
+# keinen Supabase-Login. Abgesichert über das eigene Secret MESSWERTE_SECRET
+# (Header x-messwerte-secret); die Function darf nur messwerte_eintragen() aufrufen.
+[functions.messwerte-eintragen]
+verify_jwt = false

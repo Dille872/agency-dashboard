@@ -74,14 +74,22 @@ export default function SocialSteuerung({ userDisplayName }) {
     const cutter = aktivNutzer.filter(x => (x.roles || []).includes('cutter')).map(x => x.display_name).sort((a, b) => a.localeCompare(b))
     ;(cutterZ || []).forEach(x => nachtragen(x.model_name, x.account))
     for (const m of Object.values(models)) for (const a of m.accounts) if (a.betreut === undefined) a.betreut = !(m.nicht_betreut || []).includes(a.handle)
-    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error })
+    // v4.107.0: Messwerte vom Sammel-Skript — je Reel der letzte Stand
+    const mw = await supabase.from('reel_messwerte').select('shortcode, account, art, skript_nr, gepostet_am, gemessen_am, alter_std, plays, likes, comments, faktor').order('gemessen_am', { ascending: false }).limit(3000)
+    const messwerte = {}
+    for (const x of (mw.error ? [] : (mw.data || []))) if (!messwerte[x.shortcode]) messwerte[x.shortcode] = x
+    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error, messwerte, messFehlt: !!mw.error })
   }, [])
   useEffect(() => { laden() }, [laden])
 
   if (!d) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Lädt …</div>
   if (d.fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Steuerung: Datenbank noch nicht eingerichtet. Einmal <code>sql/social-steuerung.sql</code> ausführen.</div>
 
-  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt } = d
+  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt, messwerte, messFehlt } = d
+  const shortcodeVon = (url) => String(url || '').match(/instagram\.com\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/i)?.[1] || null
+  const zahl = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('de-DE')
+  const faktorFarbe = (f) => f === null || f === undefined ? 'var(--text-muted)' : f >= 1.5 ? G : f < 0.7 ? ROT : 'var(--text-primary)'
+  const median = (arr) => { const a = arr.filter(x => x !== null && x !== undefined).map(Number).sort((x, y) => x - y); if (!a.length) return null; const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2 }
   const aktiv = skripte.filter(s => !s.verworfen && models[s.model_name])
   const posterVon = (m, a) => zuteilung.filter(z => z.model_name === m && z.account === a).map(z => z.poster_name)
   const cutterVon = (m, a) => cutterZ.filter(z => z.model_name === m && z.account === a).map(z => z.cutter_name)
@@ -372,7 +380,7 @@ export default function SocialSteuerung({ userDisplayName }) {
           return (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Datum', 'Nr', 'Titel', 'Model', 'Account', 'Poster', 'Reel'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Datum', 'Nr', 'Titel', 'Model', 'Account', 'Poster', 'Aufrufe', 'Faktor', 'Reel'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {liste.map(s => (
                     <tr key={s.id}>
@@ -382,6 +390,18 @@ export default function SocialSteuerung({ userDisplayName }) {
                       <td style={td}>{s.model_name}</td>
                       <td style={td}><span style={{ color: P, fontWeight: 700 }}>{s.account}</span>{s.ziel_account && s.account !== s.ziel_account && <span style={{ ...pill(A), marginLeft: 6 }}>Ziel war {s.ziel_account}</span>}</td>
                       <td style={td}>{s.gepostet_von || '—'}</td>
+                      {(() => {
+                        const m = messwerte[shortcodeVon(s.reel_url)]
+                        return (
+                          <>
+                            <td style={td} title={m ? `gemessen ${datum(m.gemessen_am)}${m.alter_std !== null ? `, nach ${Math.round(m.alter_std)} h` : ''} · ${zahl(m.likes)} Likes · ${zahl(m.comments)} Kommentare` : 'noch nicht gemessen'}>
+                              {m ? <b>{zahl(m.plays)}</b> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                              {m?.alter_std !== null && m?.alter_std !== undefined && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}> · {Math.round(m.alter_std)} h</span>}
+                            </td>
+                            <td style={{ ...td, fontWeight: 800, color: faktorFarbe(m?.faktor) }}>{m?.faktor !== null && m?.faktor !== undefined ? `${Number(m.faktor).toFixed(1)}×` : '—'}</td>
+                          </>
+                        )
+                      })()}
                       <td style={td}><a href={s.reel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700 }}>ansehen</a></td>
                     </tr>
                   ))}
@@ -390,7 +410,40 @@ export default function SocialSteuerung({ userDisplayName }) {
             </div>
           )
         })()}
-        <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 10, padding: '8px 10px', color: 'var(--text-muted)', fontSize: 12 }}>Später: Aufrufe, Likes und Follower-Zuwachs pro Reel, sobald Lyra misst.</div>
+        {/* v4.107.0: Wirkung je Account — unsere Reels gegen die eigenen des Models, letzte 30 Tage */}
+        {(() => {
+          const alle = Object.values(messwerte).filter(x => x.gepostet_am && tageSeit(x.gepostet_am) <= 30)
+          const accs = [...new Set(alle.map(x => x.account))].sort()
+          if (messFehlt) return <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 10, padding: '8px 10px', color: 'var(--text-muted)', fontSize: 12 }}>Messwerte: Datenbank noch nicht eingerichtet (<code>sql/reel-messwerte.sql</code>).</div>
+          if (!accs.length) return <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 10, padding: '8px 10px', color: 'var(--text-muted)', fontSize: 12 }}>Noch keine Messwerte. Das Sammel-Skript auf dem Mac mini trägt sie jede Nacht ein, sobald gepostet wurde.</div>
+          return (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>Wirkung, letzte 30 Tage</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6 }}>Faktor = Aufrufe geteilt durch den Median der früheren Reels desselben Accounts. 1,0× = normal, über 1,5× = deutlich besser. Letzter Messstand je Reel.</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+                  <thead><tr>{['Account', 'Unsere Reels', 'Median-Faktor', 'Eigene Reels', 'Median-Faktor'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {accs.map(a => {
+                      const u = alle.filter(x => x.account === a && x.art === 'skript')
+                      const e = alle.filter(x => x.account === a && x.art === 'vergleich')
+                      const mu = median(u.map(x => x.faktor)), me = median(e.map(x => x.faktor))
+                      return (
+                        <tr key={a}>
+                          <td style={{ ...td, color: P, fontWeight: 700 }}>{a}</td>
+                          <td style={td}>{u.length}</td>
+                          <td style={{ ...td, fontWeight: 800, color: faktorFarbe(mu) }}>{mu !== null ? `${mu.toFixed(1)}×` : '—'}</td>
+                          <td style={td}>{e.length}</td>
+                          <td style={{ ...td, fontWeight: 800, color: faktorFarbe(me) }}>{me !== null ? `${me.toFixed(1)}×` : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {neuAccount !== null && <AccountFenster models={models} startModel={neuAccount} wer={userDisplayName} onZu={(neu) => { setNeuAccount(null); if (neu) { setHinweis(`✓ ${neu} angelegt. Jetzt einen Poster zuteilen.`); laden() } }} />}
