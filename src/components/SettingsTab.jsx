@@ -26,7 +26,9 @@ const ROLES = [
   { key: 'creator_manager', label: 'Creator Mgr', color: '#f59e0b', desc: 'Nur Creator Tab' },
   { key: 'chatter', label: 'Chatter', color: '#a78bfa', desc: 'Nur Chatter Portal' },
   { key: 'model', label: 'Model', color: '#ef4444', desc: 'Nur Model Portal' },
-  { key: 'social_media', label: 'Social Media', color: '#ec4899', desc: 'Social Portal (Zusatzrolle)' },
+  { key: 'social_media', label: 'Social Media', color: '#ec4899', desc: 'Social Portal: postet (Zusatzrolle)' },
+  { key: 'cutter', label: 'Cutter', color: '#a855f7', desc: 'Social Portal: schneidet Reels (Zusatzrolle)' },
+  { key: 'social_freigabe', label: 'Social-Freigabe', color: '#f97316', desc: 'Social Portal: gibt geschnittene Reels frei (Zusatzrolle)' },
 ]
 
 const DEFAULT_BOT_MESSAGES = {

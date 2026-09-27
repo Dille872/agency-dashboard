@@ -45,13 +45,19 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 13.5, fontWeight: 700, color: R, padding: '8px 12px', borderRadius: 11, border: `1px solid ${R}`, textDecoration: 'none' }}>📄 Drehzettel öffnen</a>}
-        {s.video_link && !edit && (
+        {s.video_link && !edit && status !== 'freigegeben' && (
           <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
             ✓ Video-Link hinterlegt {tagKurz(s.video_am)}
             {status !== 'gepostet' && !isPreview && <> · <button type="button" onClick={() => setEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>ändern</button></>}
           </span>
         )}
       </div>
+      {/* v4.106.0: vom Team zurückgegeben → nochmal drehen */}
+      {status === 'freigegeben' && s.zurueck_an === 'model' && s.zurueck_notiz && (
+        <div style={{ fontSize: 13, color: 'var(--text-primary)', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.45)', borderRadius: 11, padding: '8px 10px', lineHeight: 1.45 }}>
+          ↩ <b style={{ color: '#f97316' }}>Bitte nochmal drehen:</b> {s.zurueck_notiz}
+        </div>
+      )}
       {!isPreview && status === 'freigegeben' && !edit && (
         <button type="button" onClick={() => setEdit(true)} style={{ padding: '10px 12px', borderRadius: 11, border: 'none', background: R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>🎬 Video fertig? Link einfügen</button>
       )}

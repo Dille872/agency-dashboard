@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
 import { SkriptKarte } from './ReelSkripteAdmin'
-import { statusVon, instaHandle, skriptAnlegen, dateinameLesen, agenturAccountAnlegen } from '../reelSkripte'
+import { statusVon, instaHandle, skriptAnlegen, dateinameLesen, agenturAccountAnlegen, cutterSetzen, seitVon } from '../reelSkripte'
 import { serviceSpeichern } from '../socialProfil'
 
 // ── Social-Steuerung (v4.103.0) — nur für Admins/Manager ──────────────────
@@ -49,8 +49,11 @@ export default function SocialSteuerung({ userDisplayName }) {
     const [b, sk, r] = await Promise.all([
       namen.length ? supabase.from('model_board').select('model_name, title, content, sort_order, von_agentur').in('model_name', namen).eq('category', SOCIAL_CATEGORY).order('sort_order') : Promise.resolve({ data: [] }),
       supabase.from('reel_skripte').select('*').order('erstellt_am', { ascending: false }).limit(1000),
-      supabase.from('user_roles').select('display_name, roles, status').contains('roles', ['social_media']),
+      supabase.from('user_roles').select('display_name, roles, status').overlaps('roles', ['social_media', 'cutter']),
     ])
+    const cu = await supabase.from('social_account_cutter').select('*') // v4.106.0
+    const cutterZ = cu.error ? [] : (cu.data || [])
+    cutterSetzen(cutterZ)
     const models = {}
     for (const m of s.data || []) models[m.model_name] = { ...m, accounts: [] }
     for (const x of b.data || []) {
@@ -66,22 +69,29 @@ export default function SocialSteuerung({ userDisplayName }) {
     ;(z.data || []).forEach(x => nachtragen(x.model_name, x.account))
     // v4.105.0: nicht betreute Accounts markieren
     for (const m of Object.values(models)) for (const a of m.accounts) a.betreut = !(m.nicht_betreut || []).includes(a.handle)
-    const poster = (r.data || []).filter(x => !['suspended', 'offboarded'].includes(x.status) && x.display_name).map(x => x.display_name).sort((a, b) => a.localeCompare(b))
-    setD({ fehlt: false, models, zuteilung: z.data || [], skripte, poster })
+    const aktivNutzer = (r.data || []).filter(x => !['suspended', 'offboarded'].includes(x.status) && x.display_name)
+    const poster = aktivNutzer.filter(x => (x.roles || []).includes('social_media')).map(x => x.display_name).sort((a, b) => a.localeCompare(b))
+    const cutter = aktivNutzer.filter(x => (x.roles || []).includes('cutter')).map(x => x.display_name).sort((a, b) => a.localeCompare(b))
+    ;(cutterZ || []).forEach(x => nachtragen(x.model_name, x.account))
+    for (const m of Object.values(models)) for (const a of m.accounts) if (a.betreut === undefined) a.betreut = !(m.nicht_betreut || []).includes(a.handle)
+    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error })
   }, [])
   useEffect(() => { laden() }, [laden])
 
   if (!d) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Lädt …</div>
   if (d.fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Steuerung: Datenbank noch nicht eingerichtet. Einmal <code>sql/social-steuerung.sql</code> ausführen.</div>
 
-  const { models, zuteilung, skripte, poster } = d
+  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt } = d
   const aktiv = skripte.filter(s => !s.verworfen && models[s.model_name])
   const posterVon = (m, a) => zuteilung.filter(z => z.model_name === m && z.account === a).map(z => z.poster_name)
+  const cutterVon = (m, a) => cutterZ.filter(z => z.model_name === m && z.account === a).map(z => z.cutter_name)
   const zeilen = Object.values(models).flatMap(m => m.accounts.filter(a => a.betreut).map(a => ({ model: m, acc: a })))
   const zeilenAus = Object.values(models).flatMap(m => m.accounts.filter(a => !a.betreut).map(a => ({ model: m, acc: a })))
   const ohneZiel = aktiv.filter(s => !s.ziel_account && statusVon(s) !== 'gepostet')
 
-  const zuPosten = aktiv.filter(s => statusVon(s) === 'gedreht')
+  const zuPosten = aktiv.filter(s => statusVon(s) === 'bereit')
+  const imSchnitt = aktiv.filter(s => statusVon(s) === 'schnitt')
+  const zurFreigabe = aktiv.filter(s => statusVon(s) === 'pruefung')
   const fehlt = aktiv.filter(s => statusVon(s) === 'freigegeben')
   const gepostet7 = aktiv.filter(s => statusVon(s) === 'gepostet' && tageSeit(s.gepostet_am) <= 7)
   const ohnePoster = zeilen.filter(z => !posterVon(z.model.model_name, z.acc.handle).length)
@@ -98,7 +108,7 @@ export default function SocialSteuerung({ userDisplayName }) {
   const betreuen = async (m, account, ja) => {
     setHinweis('')
     const ps = posterVon(m.model_name, account)
-    const offen = aktiv.filter(s => s.model_name === m.model_name && s.ziel_account === account && ['freigegeben', 'gedreht'].includes(statusVon(s)))
+    const offen = aktiv.filter(s => s.model_name === m.model_name && s.ziel_account === account && ['freigegeben', 'schnitt', 'pruefung', 'bereit'].includes(statusVon(s)))
     if (!ja) {
       const teile = [`${account} (${m.model_name}) als „nicht betreut“ markieren?`, 'Er verschwindet aus der Liste, zählt nicht mehr als „ohne Poster“, steht beim Hochladen nicht mehr zur Auswahl und geht nicht mehr an Lyra. Im Board bleibt er.']
       if (ps.length) teile.push(`Zugeteilte Poster (${ps.join(', ')}) werden dabei entfernt.`)
@@ -110,7 +120,25 @@ export default function SocialSteuerung({ userDisplayName }) {
     const err = await serviceSpeichern(m.model_name, { nicht_betreut: [...liste] }, userDisplayName)
     if (err) { setHinweis('Nicht gespeichert: ' + err.message); return }
     if (!ja && ps.length) await supabase.from('social_account_poster').delete().eq('model_name', m.model_name).eq('account', account)
+    if (!ja && cutterVon(m.model_name, account).length) await supabase.from('social_account_cutter').delete().eq('model_name', m.model_name).eq('account', account)
     logActivity('social.account', { entity: `${m.model_name} ${account}`, detail: ja ? 'wieder betreut' : 'nicht betreut' })
+    laden()
+  }
+
+  // v4.106.0: Cutter pro Account
+  const cutterZuteilen = async (model, account, name) => {
+    if (!name) return
+    setHinweis('')
+    const { error } = await supabase.from('social_account_cutter').insert({ model_name: model, account, cutter_name: name, erstellt_von: userDisplayName || null })
+    if (error) { setHinweis('Nicht gespeichert: ' + error.message); return }
+    logActivity('social.cutter', { entity: `${model} ${account}`, detail: `${name} zugeteilt` })
+    laden()
+  }
+  const cutterEntfernen = async (model, account, name) => {
+    if (!window.confirm(`${name} als Cutter von ${account} (${model}) entfernen? Danach schneidet das Model selbst, neue Videos gehen direkt zur Freigabe.`)) return
+    const { error } = await supabase.from('social_account_cutter').delete().eq('model_name', model).eq('account', account).eq('cutter_name', name)
+    if (error) { setHinweis('Nicht gespeichert: ' + error.message); return }
+    logActivity('social.cutter', { entity: `${model} ${account}`, detail: `${name} entfernt` })
     laden()
   }
 
@@ -132,7 +160,7 @@ export default function SocialSteuerung({ userDisplayName }) {
       {hinweis && <div style={{ fontSize: 12.5, color: hinweis.startsWith('✓') ? G : ROT }}>{hinweis}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-        {[[zeilen.length, 'var(--text-primary)', 'Accounts im Service'], [zuPosten.length, C, 'Video da, zu posten'], [fehlt.length, A, 'Video fehlt'], [gepostet7.length, G, 'gepostet, letzte 7 Tage'], [ohnePoster.length, ohnePoster.length ? ROT : 'var(--text-muted)', 'Account ohne Poster']].map(([n, f, l]) => (
+        {[[zeilen.length, 'var(--text-primary)', 'Accounts im Service'], [imSchnitt.length, '#a855f7', 'im Schnitt'], [zurFreigabe.length, '#f97316', 'zur Freigabe'], [zuPosten.length, C, 'bereit zum Posten'], [fehlt.length, A, 'Video fehlt'], [gepostet7.length, G, 'gepostet, letzte 7 Tage'], [ohnePoster.length, ohnePoster.length ? ROT : 'var(--text-muted)', 'Account ohne Poster']].map(([n, f, l]) => (
           <div key={l} style={{ ...card, padding: '12px 14px' }}>
             <div style={{ fontSize: 24, fontWeight: 800, color: f }}>{n}</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{l}</div>
@@ -156,14 +184,18 @@ export default function SocialSteuerung({ userDisplayName }) {
         {zeilen.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
-              <thead><tr>{['Model', 'Account', 'Poster', 'Drehzettel offen', 'Video da', 'Gepostet 7 T / gesamt', 'Letzter Post', 'Posting ab', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Model', 'Account', 'Poster', 'Cutter', 'Drehzettel offen', 'In Arbeit', 'Gepostet 7 T / gesamt', 'Letzter Post', 'Posting ab', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {zeilen.map(({ model: m, acc }) => {
                   const k = schluessel(m.model_name, acc.handle)
                   const eig = aktiv.filter(s => s.model_name === m.model_name && s.ziel_account === acc.handle)
                   const offen = eig.filter(s => statusVon(s) === 'freigegeben')
                   const alt = offen.filter(s => tageSeit(s.erstellt_am) > ALT_TAGE)
-                  const da = eig.filter(s => statusVon(s) === 'gedreht')
+                  const nSchnitt = eig.filter(s => statusVon(s) === 'schnitt').length
+                  const nPruef = eig.filter(s => statusVon(s) === 'pruefung').length
+                  const nBereit = eig.filter(s => statusVon(s) === 'bereit').length
+                  const cs = cutterVon(m.model_name, acc.handle)
+                  const cfrei = cutter.filter(c => !cs.includes(c))
                   const gp = aktiv.filter(s => s.model_name === m.model_name && s.account === acc.handle && statusVon(s) === 'gepostet')
                   const gp7 = gp.filter(s => tageSeit(s.gepostet_am) <= 7)
                   const letzter = gp.map(s => s.gepostet_am).sort().pop()
@@ -197,10 +229,32 @@ export default function SocialSteuerung({ userDisplayName }) {
                             {!poster.length && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>niemand hat die Rolle Social Media</span>}
                           </span>
                         </td>
+                        <td style={td}>
+                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                            {cs.map(c => (
+                              <button key={c} type="button" onClick={() => cutterEntfernen(m.model_name, acc.handle, c)} title="Entfernen"
+                                style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 12, background: 'rgba(168,85,247,0.18)', color: '#d8b4fe', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✂️ {c} ✕</button>
+                            ))}
+                            {!cs.length && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Model schneidet selbst</span>}
+                            {!schnittFehlt && cfrei.length > 0 && (
+                              <select value="" onChange={e => cutterZuteilen(m.model_name, acc.handle, e.target.value)} style={{ ...eingabe, width: 'auto', padding: '3px 6px', fontSize: 12 }} aria-label="Cutter zuteilen">
+                                <option value="">+</option>
+                                {cfrei.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            )}
+                          </span>
+                        </td>
                         <td style={{ ...td, fontWeight: 800, color: alt.length ? ROT : offen.length ? A : 'var(--text-muted)' }}>
                           {offen.length}{alt.length > 0 && <span style={{ ...pill(ROT), marginLeft: 6 }}>{alt.length} über {ALT_TAGE} Tage</span>}
                         </td>
-                        <td style={{ ...td, fontWeight: 800, color: da.length ? C : 'var(--text-muted)' }}>{da.length}</td>
+                        <td style={td}>
+                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {nSchnitt > 0 && <span style={pill('#a855f7')}>✂️ {nSchnitt}</span>}
+                            {nPruef > 0 && <span style={pill('#f97316')}>👀 {nPruef}</span>}
+                            {nBereit > 0 && <span style={pill(C)}>🎬 {nBereit}</span>}
+                            {!(nSchnitt + nPruef + nBereit) && <span style={{ color: 'var(--text-muted)' }}>0</span>}
+                          </span>
+                        </td>
                         <td style={td}><b style={{ color: G }}>{gp7.length}</b> <span style={{ color: 'var(--text-muted)' }}>/ {gp.length}</span></td>
                         <td style={td}>{letzter ? seitText(tageSeit(letzter)) : '—'}</td>
                         <td style={td}>{datum(m.posting_ab)}</td>
@@ -211,7 +265,7 @@ export default function SocialSteuerung({ userDisplayName }) {
                         </td>
                       </tr>
                       {auf && (
-                        <tr><td colSpan={9} style={{ padding: '8px 0 14px', borderBottom: '1px solid var(--border)' }}>
+                        <tr><td colSpan={10} style={{ padding: '8px 0 14px', borderBottom: '1px solid var(--border)' }}>
                           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                             <button type="button" onClick={() => setAlleSkripte(false)} style={knopf('var(--text-secondary)', !alleSkripte)}>Offen</button>
                             <button type="button" onClick={() => setAlleSkripte(true)} style={knopf('var(--text-secondary)', alleSkripte)}>Alle (inkl. gepostet & verworfen)</button>
@@ -260,16 +314,38 @@ export default function SocialSteuerung({ userDisplayName }) {
 
       {/* Poster */}
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 10 }}>Poster</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 10 }}>Team</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Poster (Rolle Social Media) und Cutter (Rolle Cutter). Freigeben dürfen Admins und alle mit der Rolle Social-Freigabe, alles unter Einstellungen → Team.</div>
         {!poster.length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch niemand hat die Rolle Social Media. Unter Einstellungen → Team vergeben.</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 12 }}>
+          {cutter.map(c => {
+            const accs = cutterZ.filter(z => z.cutter_name === c)
+            const meins = (s) => accs.some(z => z.model_name === s.model_name && z.account === s.ziel_account)
+            const offen = aktiv.filter(s => statusVon(s) === 'schnitt' && meins(s))
+            const g7 = aktiv.filter(s => s.schnitt_von === c && s.schnitt_am && tageSeit(s.schnitt_am) <= 7)
+            const aeltestes = offen.map(s => seitVon(s)).sort()[0]
+            const zeile = (l, w, f) => <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5, color: 'var(--text-secondary)' }}><span>{l}</span><span style={{ color: f || 'var(--text-primary)', fontWeight: f ? 800 : 500, textAlign: 'right' }}>{w}</span></div>
+            return (
+              <div key={'c:' + c} style={{ background: 'var(--bg-card2)', borderRadius: 14, padding: '12px 13px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 30, height: 30, borderRadius: 15, background: 'rgba(168,85,247,0.25)', color: '#d8b4fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>✂️</span>
+                  <b style={{ flex: 1, color: 'var(--text-primary)' }}>{c}</b>
+                  <span style={pill('#a855f7')}>Cutter</span>
+                </div>
+                {zeile('Accounts', accs.length ? accs.map(z => z.account).join(', ') : '— keine —', accs.length ? null : A)}
+                {zeile('Zu schneiden', offen.length, offen.length ? '#a855f7' : 'var(--text-muted)')}
+                {zeile('Geschnitten, 7 Tage', g7.length, G)}
+                {aeltestes && zeile('Ältestes Rohvideo', seitText(tageSeit(aeltestes)), tageSeit(aeltestes) > 2 ? ROT : null)}
+              </div>
+            )
+          })}
           {poster.map(p => {
             const accs = zuteilung.filter(z => z.poster_name === p)
             const meins = (s) => accs.some(z => z.model_name === s.model_name && z.account === s.ziel_account)
-            const zp = aktiv.filter(s => statusVon(s) === 'gedreht' && meins(s))
+            const zp = aktiv.filter(s => statusVon(s) === 'bereit' && meins(s))
             const wartet = aktiv.filter(s => statusVon(s) === 'freigegeben' && meins(s))
             const g7 = aktiv.filter(s => statusVon(s) === 'gepostet' && s.gepostet_von === p && tageSeit(s.gepostet_am) <= 7)
-            const aeltestes = zp.map(s => s.video_am).sort()[0]
+            const aeltestes = zp.map(s => s.freigabe_am).sort()[0]
             const zeile = (l, w, f) => <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5, color: 'var(--text-secondary)' }}><span>{l}</span><span style={{ color: f || 'var(--text-primary)', fontWeight: f ? 800 : 500, textAlign: 'right' }}>{w}</span></div>
             return (
               <div key={p} style={{ background: 'var(--bg-card2)', borderRadius: 14, padding: '12px 13px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -280,7 +356,7 @@ export default function SocialSteuerung({ userDisplayName }) {
                 {zeile('Accounts', accs.length ? accs.map(z => z.account).join(', ') : '— keine —', accs.length ? null : A)}
                 {zeile('Zu posten', zp.length, zp.length ? C : 'var(--text-muted)')}
                 {zeile('Gepostet, 7 Tage', g7.length, G)}
-                {aeltestes ? zeile('Ältestes wartendes Video', seitText(tageSeit(aeltestes)), tageSeit(aeltestes) > 2 ? ROT : null) : zeile('Wartet auf Videos', wartet.length ? `${wartet.length} Drehzettel` : '—', wartet.length ? A : null)}
+                {aeltestes ? zeile('Wartet seit Freigabe', seitText(tageSeit(aeltestes)), tageSeit(aeltestes) > 2 ? ROT : null) : zeile('Wartet auf Videos', wartet.length ? `${wartet.length} Drehzettel` : '—', wartet.length ? A : null)}
               </div>
             )
           })}

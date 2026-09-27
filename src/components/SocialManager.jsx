@@ -3,7 +3,8 @@ import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
-import { statusVon, linkOk, mitHttps, instaHandle } from '../reelSkripte'
+import { statusVon, linkOk, mitHttps, instaHandle, cutterLaden, endVideo, seitVon } from '../reelSkripte'
+import { SchnittListe, FreigabeListe } from './SocialAblauf' // v4.106.0
 import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialManager'
 import SocialSteuerung from './SocialSteuerung' // v4.103.0: nur Admins
 
@@ -48,6 +49,26 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const seitText = (n) => n === null ? '' : n === 0 ? t('heute') : n === 1 ? t('gestern') : t('tage', { n })
 
   const [reiter, setReiter] = useState(istAdmin ? 'steuerung' : 'posten')
+  // v4.106.0: eigene Zusatzrollen (social_media = Poster, cutter, social_freigabe)
+  const [rollen, setRollen] = useState(null)
+  useEffect(() => {
+    let weg = false
+    ;(async () => {
+      const { data: u } = await supabase.auth.getUser()
+      if (!u?.user) { if (!weg) setRollen([]); return }
+      const { data } = await supabase.from('user_roles').select('role, roles').eq('user_id', u.user.id).maybeSingle()
+      if (!weg) setRollen([data?.role, ...(Array.isArray(data?.roles) ? data.roles : [])].filter(Boolean))
+    })()
+    return () => { weg = true }
+  }, [])
+  const istPoster = istAdmin || (rollen || []).includes('social_media')
+  const istCutter = istAdmin || (rollen || []).includes('cutter')
+  const istFreigeber = istAdmin || (rollen || []).includes('social_freigabe')
+  useEffect(() => {
+    if (!rollen || istAdmin) return
+    if (reiter === 'posten' && !istPoster) setReiter(istFreigeber ? 'freigabe' : istCutter ? 'schnitt' : 'ueberblick')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rollen])
   const [daten, setDaten] = useState(null)
   const [uebers, setUebers] = useState({})
   const [uebersFehler, setUebersFehler] = useState(false)
@@ -56,6 +77,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const laden = useCallback(async () => {
     const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen').eq('service_aktiv', true).order('model_name')
     if (s.error) { setDaten({ fehlt: true }); return }
+    await cutterLaden() // v4.106.0: für „Im Schnitt“ vs. „Zur Freigabe“
     const namen = (s.data || []).map(x => x.model_name)
     const [sk, b, p] = await Promise.all([
       supabase.from('reel_skripte').select('*').eq('verworfen', false).order('erstellt_am', { ascending: false }).limit(500),
@@ -121,7 +143,9 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
 
   const { models, skripte } = daten
   const imService = (s) => !!models[s.model_name]
-  const zuPosten = skripte.filter(s => imService(s) && statusVon(s) === 'gedreht').sort((a, b) => String(a.video_am).localeCompare(String(b.video_am)))
+  const zuPosten = skripte.filter(s => imService(s) && statusVon(s) === 'bereit').sort((a, b) => String(a.freigabe_am).localeCompare(String(b.freigabe_am)))
+  const zuSchneiden = skripte.filter(s => imService(s) && statusVon(s) === 'schnitt')
+  const zurFreigabe = skripte.filter(s => imService(s) && statusVon(s) === 'pruefung')
   const fehlt = skripte.filter(s => imService(s) && statusVon(s) === 'freigegeben')
   const alt = fehlt.filter(s => tageSeit(s.erstellt_am) > ALT_TAGE)
   const woche = skripte.filter(s => s.gepostet_am && tageSeit(s.gepostet_am + 'T12:00:00') <= 7)
@@ -163,7 +187,9 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[
           ...(istAdmin ? [{ k: 'steuerung', l: '🧭 ' + t('tab_steuerung') }] : []),
-          { k: 'posten', l: '🎬 ' + t('tab_posten'), z: zuPosten.length },
+          ...(istFreigeber ? [{ k: 'freigabe', l: '👀 ' + t('tab_freigabe'), z: zurFreigabe.length }] : []),
+          ...(istCutter ? [{ k: 'schnitt', l: '✂️ ' + t('tab_schnitt'), z: zuSchneiden.length }] : []),
+          ...(istPoster ? [{ k: 'posten', l: '🎬 ' + t('tab_posten'), z: zuPosten.length }] : []),
           { k: 'ueberblick', l: '📋 ' + t('tab_ueberblick') },
           { k: 'models', l: '👤 ' + t('tab_models') },
         ].map(x => (
@@ -175,6 +201,9 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       </div>
 
       {reiter === 'steuerung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} />}
+
+      {reiter === 'freigabe' && istFreigeber && <FreigabeListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
+      {reiter === 'schnitt' && istCutter && <SchnittListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
 
       {reiter === 'posten' && (
         <>
@@ -199,12 +228,12 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
             </thead>
             <tbody>
               {[...skripte].filter(imService).sort((a, b) => {
-                const o = { gedreht: 0, freigegeben: 1, gepostet: 2 }
+                const o = { bereit: 0, pruefung: 1, schnitt: 2, freigegeben: 3, gepostet: 4 }
                 return (o[statusVon(a)] - o[statusVon(b)]) || String(b.erstellt_am).localeCompare(String(a.erstellt_am))
               }).map(s => {
                 const st = statusVon(s)
-                const f = st === 'gedreht' ? C : st === 'gepostet' ? G : A
-                const seit = st === 'gepostet' ? null : tageSeit(st === 'gedreht' ? s.video_am : s.erstellt_am)
+                const f = { bereit: C, pruefung: '#f97316', schnitt: '#a855f7', gepostet: G }[st] || A
+                const seit = st === 'gepostet' ? null : tageSeit(seitVon(s))
                 const zuAlt = st === 'freigegeben' && seit > ALT_TAGE
                 const td = { padding: '9px 8px', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }
                 return (
@@ -216,7 +245,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
                     <td style={td}><span style={pill(zuAlt ? ROT : f)}>{t('st_' + st)}</span></td>
                     <td style={{ ...td, color: zuAlt ? ROT : 'var(--text-secondary)', fontWeight: zuAlt ? 800 : 400 }}>{st === 'gepostet' ? datum(s.gepostet_am) : seitText(seit)}</td>
                     <td style={td}>
-                      {st === 'gedreht' && <button type="button" style={{ ...linkBtn, color: C, fontWeight: 700, fontSize: 12.5, textDecoration: 'none' }} onClick={() => setReiter('posten')}>{t('posten')}</button>}
+                      {st === 'bereit' && istPoster && <button type="button" style={{ ...linkBtn, color: C, fontWeight: 700, fontSize: 12.5, textDecoration: 'none' }} onClick={() => setReiter('posten')}>{t('posten')}</button>}
                       {st === 'gepostet' && <a href={s.reel_url} target="_blank" rel="noreferrer" style={{ color: G, fontWeight: 700 }}>{t('reel')}</a>}
                       {st === 'freigegeben' && kannErinnern && (erinnert[s.id]
                         ? <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{erinnert[s.id]}</span>
@@ -263,7 +292,8 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
                   {wertListe(m.profil.wiedererkennung).length > 0 && zeile(t('wiedererkennung'), text('wiedererkennung'))}
                   {wertListe(m.profil.staerken).length > 0 && zeile(t('staerken'), text('staerken'))}
                   {zeile(t('reels'), <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {z('gedreht') > 0 && <span style={pill(C)}>{t('n_posten', { n: z('gedreht') })}</span>}
+                    {z('bereit') > 0 && <span style={pill(C)}>{t('n_posten', { n: z('bereit') })}</span>}
+                    {(z('schnitt') + z('pruefung')) > 0 && <span style={pill('#a855f7')}>{t('st_schnitt')}/{t('st_pruefung')}: {z('schnitt') + z('pruefung')}</span>}
                     {z('freigegeben') > 0 && <span style={pill(A)}>{t('n_fehlt', { n: z('freigegeben') })}</span>}
                     {z('gepostet') > 0 && <span style={pill(G)}>{t('n_gepostet', { n: z('gepostet') })}</span>}
                     {!eig.length && '—'}
@@ -308,14 +338,14 @@ function PostenKarte({ s, m, t, tr, datum, seitText, notiz, userDisplayName, onN
         <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 800, color: C, fontSize: 12.5 }}>{s.nr}</span>
         <span style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--text-primary)', flex: 1, minWidth: 140 }}>{tr(s.titel)}</span>
         <span style={{ fontSize: 12, fontWeight: 700, color: P, background: 'rgba(236,72,153,0.12)', padding: '2px 9px', borderRadius: 10 }}>{s.model_name}{ziel ? ` → ${ziel}` : ''}</span>
-        <span style={pill(C)}>{t('video_da_seit', { seit: seitText(tageSeit(s.video_am)) })}</span>
+        <span style={pill(C)}>{t('video_da_seit', { seit: seitText(tageSeit(seitVon(s))) })}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
         <div style={spalte}>
           <span style={klein}>{t('sp_material')}</span>
           {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('drehzettel')}</a>}
-          <a href={s.video_link} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('video_laden')}</a>
-          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t('hochgeladen', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}</span>
+          <a href={endVideo(s)} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('video_laden')}</a>
+          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{s.schnitt_link ? t('geschnitten_von', { wer: s.schnitt_von || '—', datum: datum(s.schnitt_am) }) : t('hochgeladen', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}</span>
         </div>
         <div style={spalte}>
           <span style={klein}>{t('sp_achten')}</span>

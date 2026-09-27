@@ -659,7 +659,7 @@ export default function App() {
   const isManager = userRole === 'admin' || userRole === 'manager'
 
   // Tab access per role
-  const isSocialMedia = userRoles.includes('social_media')
+  const isSocialMedia = ['social_media', 'cutter', 'social_freigabe'].some(r => userRoles.includes(r)) // v4.106.0
   const hasRole = (r) => userRole === r || userRole === 'admin'
 
   // v4.68.0: Regeln liegen in src/zugang.js, damit der Routing-Effekt oben

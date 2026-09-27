@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
-import { STATUS, statusVon, skripteLaden, skriptAendern, drehzettelHochladen, linkOk, mitHttps, instaHandle, tagKurz } from '../reelSkripte'
+import { STATUS, statusVon, skripteLaden, skriptAendern, drehzettelHochladen, linkOk, mitHttps, instaHandle, tagKurz, cutterLaden, schnittGilt } from '../reelSkripte'
 
 // ── Admin: Reel-Skripte je Model (v4.101.0) ────────────────────────────────
 // Sitzt in Kommunikation → Creator → Models, unter „Social Media“.
@@ -112,6 +112,9 @@ function Karte({ s, accounts, userName, onNeu }) {
           {s.video_link && !videoEdit ? (
             <>
               <a href={s.video_link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>⬇ Video öffnen / laden</a>
+              {s.schnitt_link && <a href={s.schnitt_link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: '#a855f7', fontWeight: 700 }}>✂️ Schnitt{schnittGilt(s) ? '' : ' (alt)'}{s.schnitt_von ? ` · ${s.schnitt_von}` : ''}</a>}
+              {s.freigabe_am && <span style={{ fontSize: 11, color: '#10b981' }}>✓ freigegeben {tagKurz(s.freigabe_am)}{s.freigabe_von ? ` · ${s.freigabe_von}` : ''}</span>}
+              {s.zurueck_am && s.zurueck_notiz && <span style={{ fontSize: 11, color: '#f97316' }}>↩ {tagKurz(s.zurueck_am)} an {s.zurueck_an === 'cutter' ? 'Cutter' : 'Model'}: {s.zurueck_notiz}</span>}
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tagKurz(s.video_am)}{s.video_von && s.video_von !== s.model_name ? ` · ${s.video_von}` : ''} · <button type="button" onClick={() => setVideoEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>ändern</button></span>
             </>
           ) : videoEdit ? (
@@ -185,6 +188,7 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
 
   const laden = async () => {
     if (!gewaehlt) return
+    await cutterLaden() // v4.106.0
     const [d, b, sv] = await Promise.all([
       skripteLaden(gewaehlt),
       supabase.from('model_board').select('title, content').eq('model_name', gewaehlt).eq('category', SOCIAL_CATEGORY).order('sort_order'),
@@ -249,7 +253,7 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
         <button type="button" onClick={() => setOffen(v => !v)} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 180, textAlign: 'left', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 18 }}>🎬</span>
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Reels · {gewaehlt}</span>
-          {['freigegeben', 'gedreht', 'gepostet'].map(st => zaehl(st) > 0 && (
+          {['freigegeben', 'schnitt', 'pruefung', 'bereit', 'gepostet'].map(st => zaehl(st) > 0 && (
             <span key={st} style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: STATUS[st].f + '22', color: STATUS[st].f }}>{zaehl(st)} {STATUS[st].t}</span>
           ))}
           {!liste.length && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>noch keine Skripte</span>}

@@ -6,18 +6,62 @@ import { supabase } from './supabase'
 // → Reel-Link + Account + Datum (wer postet) → Lyra misst pro Reel.
 // Der Status wird aus den Feldern abgeleitet, nicht gespeichert.
 
+// v4.106.0: mit Cutter und Freigabe
+//   freigegeben → (Model dreht) → schnitt (nur wenn der Account einen Cutter hat)
+//   → pruefung (Freigabe) → bereit (Poster) → gepostet
 export const STATUS = {
-  freigegeben: { t: 'Drehzettel da', f: '#f59e0b', icon: '📄' },
-  gedreht:     { t: 'Video da',      f: '#06b6d4', icon: '🎬' },
-  gepostet:    { t: 'gepostet',      f: '#10b981', icon: '✅' },
-  verworfen:   { t: 'verworfen',     f: '#6b7280', icon: '✕' },
+  freigegeben: { t: 'Drehzettel da',     f: '#f59e0b', icon: '📄' },
+  schnitt:     { t: 'Im Schnitt',        f: '#a855f7', icon: '✂️' },
+  pruefung:    { t: 'Zur Freigabe',      f: '#f97316', icon: '👀' },
+  bereit:      { t: 'Bereit zum Posten', f: '#06b6d4', icon: '🎬' },
+  gepostet:    { t: 'gepostet',          f: '#10b981', icon: '✅' },
+  verworfen:   { t: 'verworfen',         f: '#6b7280', icon: '✕' },
 }
+
+// Welche Accounts einen Cutter haben (social_account_cutter). Wird von den
+// Ansichten geladen, die das wissen dürfen (cutterSetzen). Ohne diese Info
+// (z. B. im Model-Portal) wird aus „Im Schnitt“ „Zur Freigabe“ — für das
+// Model ist beides „Video da“.
+let CUTTER = new Set()
+export function cutterSetzen(zeilen = []) { CUTTER = new Set(zeilen.map(z => z.model_name + '|' + z.account)) }
+export const hatCutter = (s) => CUTTER.has(s.model_name + '|' + s.ziel_account)
+export async function cutterLaden() {
+  const { data, error } = await supabase.from('social_account_cutter').select('model_name, account, cutter_name')
+  if (!error) cutterSetzen(data || [])
+  return error ? [] : (data || [])
+}
+
+const nach = (a, b) => !!a && (!b || new Date(a) > new Date(b))
+
+// Links werden beim „Zurück“ nicht gelöscht: ein Link gilt nur, wenn er
+// NACH dem Zurück (und ein Schnitt nach dem letzten Video) kam.
+export function videoGilt(s) {
+  return !!s.video_link && !(s.zurueck_an === 'model' && !nach(s.video_am, s.zurueck_am))
+}
+export function schnittGilt(s) {
+  return !!s.schnitt_link && nach(s.schnitt_am, s.video_am) && !(s.zurueck_an === 'cutter' && !nach(s.schnitt_am, s.zurueck_am))
+}
+// Das Video, das gepostet wird: der Schnitt, sonst das Rohvideo des Models
+export const endVideo = (s) => (schnittGilt(s) ? s.schnitt_link : s.video_link) || ''
 
 export function statusVon(s) {
   if (s.verworfen) return 'verworfen'
   if (s.reel_url) return 'gepostet'
-  if (s.video_link) return 'gedreht'
-  return 'freigegeben'
+  if (s.freigabe_am && nach(s.freigabe_am, s.zurueck_am)) return 'bereit'
+  if (!videoGilt(s)) return 'freigegeben'
+  if (schnittGilt(s)) return 'pruefung'
+  if (hatCutter(s)) return 'schnitt'
+  return 'pruefung'
+}
+
+// Seit wann steht das Skript im aktuellen Schritt?
+export function seitVon(s) {
+  const st = statusVon(s)
+  if (st === 'gepostet') return s.gepostet_am
+  if (st === 'bereit') return s.freigabe_am
+  if (st === 'pruefung') return schnittGilt(s) ? s.schnitt_am : s.video_am
+  if (st === 'schnitt') return s.video_am
+  return s.zurueck_an === 'model' && s.zurueck_am ? s.zurueck_am : s.erstellt_am
 }
 
 export const linkOk = (v) => /^https?:\/\/\S+\.\S+/i.test(String(v || '').trim())
