@@ -72,7 +72,17 @@ const BEREICHE = [
     // v4.73.0: nur Admin/Manager — die anderen Rollen kommen nach zugang.js ohnehin nicht hin
     { key: 'boards', label: 'Boards', Icon: LayoutDashboard },
     { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
-    { key: 'social', label: 'Social Media', Icon: Globe },
+  ] },
+  // v4.108.0: Social Media als eigener Bereich (vorher ein Tab unter Kommunikation).
+  // Poster/Cutter/Freigeber sehen nur 'social' (ihre eigene Ansicht mit Reitern).
+  { key: 'socialmedia', label: 'Social Media', Icon: Globe, tabs: [
+    { key: 'social', label: 'Steuerung', Icon: LayoutDashboard },
+    { key: 'social-freigabe', label: 'Freigabe', Icon: CheckSquare },
+    { key: 'social-schnitt', label: 'Schnitt', Icon: Film },
+    { key: 'social-posten', label: 'Posten', Icon: Globe },
+    { key: 'social-ueberblick', label: 'Überblick', Icon: Eye },
+    { key: 'social-wirkung', label: 'Wirkung', Icon: TrendingUp },
+    { key: 'social-models', label: 'Models', Icon: Users },
   ] },
   { key: 'zeit', label: 'Zeit', Icon: Calendar, tabs: [
     { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
@@ -1055,8 +1065,11 @@ export default function App() {
           <PerformanceTab modelSnapshots={modelSnapshots} chatterSnapshots={chatterSnapshots} />
         ) : activeTab === 'todos' ? (
           <TodoTab session={session} userDisplayName={userDisplayName} />
-        ) : activeTab === 'social' ? (
-          <SocialManager userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager} />
+        ) : activeTab === 'social' || activeTab.startsWith('social-') ? (
+          // v4.108.0: Admins steuern die Reiter über die Unterreiter oben; alle
+          // anderen Social-Rollen bekommen ihre Ansicht mit eigenen Reitern.
+          <SocialManager key={activeTab} userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager}
+            festerReiter={isManager ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin' }[activeTab] || 'steuerung') : null} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (

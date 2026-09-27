@@ -1732,7 +1732,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             <SektionsKopf id="social" titel="Social" unter="Deine Reels: Drehzettel, Videos und dein Social-Media-Profil" />
             {/* v4.102.0: Drehzettel + Fragebogen — vorher im Board */}
             <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
-              notizen={social.service?.account_notizen || {}}
+              notizen={social.service?.account_notizen || {}} service={social.service}
               leerText="Noch keine Drehzettel. Sobald wir ein Reel für dich geschrieben haben, erscheint es hier." />
             {!social.fehlt && (() => {
               const st = socialStand(social.antworten)

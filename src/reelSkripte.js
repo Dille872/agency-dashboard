@@ -33,6 +33,15 @@ export async function cutterLaden() {
 
 const nach = (a, b) => !!a && (!b || new Date(a) > new Date(b))
 
+// v4.108.0: „Model postet selbst“ je Account (model_social_service.account_modus)
+let MODUS = {}
+export function modusSetzen(services = []) {
+  MODUS = {}
+  for (const sv of services || []) for (const [acc, m] of Object.entries(sv?.account_modus || {})) MODUS[sv.model_name + '|' + acc] = m || {}
+}
+export const postetModel = (s) => MODUS[s.model_name + '|' + s.ziel_account]?.posten === 'model'
+export const modusVon = (model, account) => MODUS[model + '|' + account] || {}
+
 // Links werden beim „Zurück“ nicht gelöscht: ein Link gilt nur, wenn er
 // NACH dem Zurück (und ein Schnitt nach dem letzten Video) kam.
 export function videoGilt(s) {
@@ -47,6 +56,7 @@ export const endVideo = (s) => (schnittGilt(s) ? s.schnitt_link : s.video_link) 
 export function statusVon(s) {
   if (s.verworfen) return 'verworfen'
   if (s.reel_url) return 'gepostet'
+  if (postetModel(s)) return 'freigegeben' // Model dreht, schneidet und postet selbst
   if (s.freigabe_am && nach(s.freigabe_am, s.zurueck_am)) return 'bereit'
   if (!videoGilt(s)) return 'freigegeben'
   if (schnittGilt(s)) return 'pruefung'

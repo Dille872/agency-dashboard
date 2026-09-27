@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
 import { SkriptKarte } from './ReelSkripteAdmin'
-import { statusVon, instaHandle, skriptAnlegen, dateinameLesen, agenturAccountAnlegen, cutterSetzen, seitVon } from '../reelSkripte'
+import { statusVon, instaHandle, skriptAnlegen, dateinameLesen, agenturAccountAnlegen, cutterSetzen, seitVon, modusSetzen } from '../reelSkripte'
 import { serviceSpeichern } from '../socialProfil'
 
 // ── Social-Steuerung (v4.103.0) — nur für Admins/Manager ──────────────────
@@ -32,7 +32,7 @@ const seitText = (n) => n === null ? '—' : n === 0 ? 'heute' : n === 1 ? 'gest
 const datum = (iso) => iso ? new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : '—'
 const schluessel = (m, a) => m + '|' + a
 
-export default function SocialSteuerung({ userDisplayName }) {
+export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung' }) {
   const [d, setD] = useState(null)
   const [offenZeile, setOffenZeile] = useState(null)       // Skripte aufgeklappt
   const [alleSkripte, setAlleSkripte] = useState(false)
@@ -42,7 +42,7 @@ export default function SocialSteuerung({ userDisplayName }) {
   const [hinweis, setHinweis] = useState('')
 
   const laden = useCallback(async () => {
-    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut').eq('service_aktiv', true).order('model_name')
+    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus').eq('service_aktiv', true).order('model_name')
     const z = await supabase.from('social_account_poster').select('*')
     if (s.error || z.error) { setD({ fehlt: true }); return }
     const namen = (s.data || []).map(x => x.model_name)
@@ -54,6 +54,7 @@ export default function SocialSteuerung({ userDisplayName }) {
     const cu = await supabase.from('social_account_cutter').select('*') // v4.106.0
     const cutterZ = cu.error ? [] : (cu.data || [])
     cutterSetzen(cutterZ)
+    modusSetzen(s.data || []) // v4.108.0
     const models = {}
     for (const m of s.data || []) models[m.model_name] = { ...m, accounts: [] }
     for (const x of b.data || []) {
@@ -102,7 +103,8 @@ export default function SocialSteuerung({ userDisplayName }) {
   const zurFreigabe = aktiv.filter(s => statusVon(s) === 'pruefung')
   const fehlt = aktiv.filter(s => statusVon(s) === 'freigegeben')
   const gepostet7 = aktiv.filter(s => statusVon(s) === 'gepostet' && tageSeit(s.gepostet_am) <= 7)
-  const ohnePoster = zeilen.filter(z => !posterVon(z.model.model_name, z.acc.handle).length)
+  const postetSelbst = (m, a) => m.account_modus?.[a]?.posten === 'model'   // v4.108.0
+  const ohnePoster = zeilen.filter(z => !postetSelbst(z.model, z.acc.handle) && !posterVon(z.model.model_name, z.acc.handle).length)
 
   const zuteilen = async (model, account, name) => {
     if (!name) return
@@ -133,6 +135,26 @@ export default function SocialSteuerung({ userDisplayName }) {
     laden()
   }
 
+  // v4.108.0: „Model postet selbst“ an/aus
+  const modelPostet = async (m, account, ja) => {
+    setHinweis('')
+    const ps = posterVon(m.model_name, account), cs = cutterVon(m.model_name, account)
+    if (ja) {
+      const teile = [`${m.model_name} postet ${account} selbst?`, 'Dann dreht, schneidet und postet das Model selbst und trägt im Portal nur den Reel-Link ein. Kein Video-Upload, kein Schnitt, keine Freigabe. Gemessen wird trotzdem.']
+      if (ps.length || cs.length) teile.push(`Zugeteilte ${[ps.length ? `Poster (${ps.join(', ')})` : '', cs.length ? `Cutter (${cs.join(', ')})` : ''].filter(Boolean).join(' und ')} werden dabei entfernt.`)
+      if (!window.confirm(teile.join('\n\n'))) return
+    } else if (!window.confirm(`${account}: wieder vom Team posten lassen? Danach einen Poster zuteilen.`)) return
+    const modus = { ...(m.account_modus || {}) }
+    if (ja) modus[account] = { ...(modus[account] || {}), posten: 'model' }
+    else { const x = { ...(modus[account] || {}) }; delete x.posten; if (Object.keys(x).length) modus[account] = x; else delete modus[account] }
+    const err = await serviceSpeichern(m.model_name, { account_modus: modus }, userDisplayName)
+    if (err) { setHinweis('Nicht gespeichert: ' + err.message); return }
+    if (ja && ps.length) await supabase.from('social_account_poster').delete().eq('model_name', m.model_name).eq('account', account)
+    if (ja && cs.length) await supabase.from('social_account_cutter').delete().eq('model_name', m.model_name).eq('account', account)
+    logActivity('social.account', { entity: `${m.model_name} ${account}`, detail: ja ? 'Model postet selbst' : 'Team postet' })
+    laden()
+  }
+
   // v4.106.0: Cutter pro Account
   const cutterZuteilen = async (model, account, name) => {
     if (!name) return
@@ -160,8 +182,10 @@ export default function SocialSteuerung({ userDisplayName }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* v4.108.0: „Wirkung“ ist ein eigener Unterreiter, Rest = Steuerung */}
+      {ansicht !== 'wirkung' && (<>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 200, fontSize: 13, color: 'var(--text-muted)' }}>Alle Accounts, alle Poster, alles Gepostete. Nur für Admins sichtbar.</div>
+        <div style={{ flex: 1, minWidth: 200, fontSize: 13, color: 'var(--text-muted)' }}>Alle Accounts, Poster und Cutter. Pro Account: wer schneidet, wer postet. Nur für Admins sichtbar.</div>
         <button type="button" onClick={() => setNeuAccount('')} style={{ ...knopf(P, false), padding: '9px 14px' }}>+ Account</button>
         <button type="button" onClick={() => setUpload({ model: '', account: '' })} style={{ ...knopf(C, true), color: '#04212a', padding: '9px 14px' }}>📄 Drehzettel hochladen</button>
       </div>
@@ -222,22 +246,28 @@ export default function SocialSteuerung({ userDisplayName }) {
                           {!acc.imBoard && <div style={{ fontSize: 11, color: A }}>nicht mehr im Board</div>}
                         </td>
                         <td style={td}>
+                          {postetSelbst(m, acc.handle) ? (
+                            <button type="button" onClick={() => modelPostet(m, acc.handle, false)} title="Wieder vom Team posten lassen"
+                              style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 12, background: 'rgba(16,185,129,0.16)', color: G, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>📱 {m.model_name} postet selbst ✕</button>
+                          ) : (
                           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                             {ps.map(p => (
                               <button key={p} type="button" onClick={() => entfernen(m.model_name, acc.handle, p)} title="Entfernen"
                                 style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 12, background: 'rgba(124,58,237,0.18)', color: '#c4b5fd', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{p} ✕</button>
                             ))}
                             {!ps.length && <span style={{ fontSize: 11.5, fontWeight: 800, color: ROT }}>⚠ kein Poster</span>}
-                            {frei.length > 0 && (
-                              <select value="" onChange={e => zuteilen(m.model_name, acc.handle, e.target.value)} style={{ ...eingabe, width: 'auto', padding: '3px 6px', fontSize: 12 }} aria-label="Poster zuteilen">
+                            {(frei.length > 0 || !ps.length) && (
+                              <select value="" onChange={e => e.target.value === '__model__' ? modelPostet(m, acc.handle, true) : zuteilen(m.model_name, acc.handle, e.target.value)} style={{ ...eingabe, width: 'auto', padding: '3px 6px', fontSize: 12 }} aria-label="Poster zuteilen">
                                 <option value="">+</option>
+                                {!ps.length && <option value="__model__">📱 {m.model_name} postet selbst</option>}
                                 {frei.map(p => <option key={p} value={p}>{p}</option>)}
                               </select>
                             )}
-                            {!poster.length && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>niemand hat die Rolle Social Media</span>}
                           </span>
+                          )}
                         </td>
                         <td style={td}>
+                          {postetSelbst(m, acc.handle) ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>— schneidet selbst</span> : (
                           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                             {cs.map(c => (
                               <button key={c} type="button" onClick={() => cutterEntfernen(m.model_name, acc.handle, c)} title="Entfernen"
@@ -251,6 +281,7 @@ export default function SocialSteuerung({ userDisplayName }) {
                               </select>
                             )}
                           </span>
+                          )}
                         </td>
                         <td style={{ ...td, fontWeight: 800, color: alt.length ? ROT : offen.length ? A : 'var(--text-muted)' }}>
                           {offen.length}{alt.length > 0 && <span style={{ ...pill(ROT), marginLeft: 6 }}>{alt.length} über {ALT_TAGE} Tage</span>}
@@ -371,7 +402,10 @@ export default function SocialSteuerung({ userDisplayName }) {
         </div>
       </div>
 
+      </>)}
+
       {/* Zuletzt gepostet */}
+      {ansicht === 'wirkung' && (
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8 }}>Zuletzt gepostet</div>
         {(() => {
@@ -445,6 +479,7 @@ export default function SocialSteuerung({ userDisplayName }) {
           )
         })()}
       </div>
+      )}
 
       {neuAccount !== null && <AccountFenster models={models} startModel={neuAccount} wer={userDisplayName} onZu={(neu) => { setNeuAccount(null); if (neu) { setHinweis(`✓ ${neu} angelegt. Jetzt einen Poster zuteilen.`); laden() } }} />}
       {upload && <UploadFenster start={upload} models={models} wer={userDisplayName} onZu={(neu) => { setUpload(null); if (neu) { setHinweis(`✓ ${neu} Drehzettel angelegt.`); laden() } }} />}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKurz } from '../reelSkripte'
+import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKurz, modusSetzen, postetModel, cutterLaden, hatCutter } from '../reelSkripte'
 
 // ── Model-Portal: Drehzettel (v4.101.0) ────────────────────────────────────
 // Liste der Reel-Skripte des Models. Pro Skript: Drehzettel (PDF) öffnen,
@@ -12,7 +12,14 @@ import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKu
 const R = '#06b6d4'
 const feld = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '10px 11px', borderRadius: 11, fontSize: 15, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }
 
+// v4.108.0: Pro Account unterschiedlich —
+//   Model postet selbst → nur Reel-Link eintragen (kein Video, kein Schnitt, keine Freigabe)
+//   Account mit Cutter  → „Rohmaterial reicht, wir schneiden“
+//   sonst               → „Bitte fertig geschnitten hochladen“
 function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
+  const selbst = postetModel(s)
+  const [reel, setReel] = useState('')
+  const [datum, setDatum] = useState(new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }))
   const [edit, setEdit] = useState(false)
   const [link, setLink] = useState(s.video_link || '')
   const [fehler, setFehler] = useState('')
@@ -31,6 +38,20 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
     setEdit(false); onNeu()
   }
 
+  const gepostetSpeichern = async () => {
+    const r = mitHttps(reel)
+    if (!linkOk(r) || !/instagram\.com\//i.test(r)) { setFehler('Bitte den Instagram-Link zu deinem Reel einfügen (in Instagram: ⋯ → Link kopieren).'); return }
+    setArbeitet(true); setFehler('')
+    const err = await skriptAendern(s.id, { reel_url: r, account: s.ziel_account, gepostet_am: datum, gepostet_von: name })
+    setArbeitet(false)
+    if (err) { setFehler('Nicht gespeichert: ' + err.message); return }
+    try { await logActivity?.('Reel gepostet', 'reels', `${s.nr} ${s.titel}`) } catch { /* nur Hinweis */ }
+    setEdit(false); onNeu()
+  }
+  const hinweis = selbst ? 'Du drehst, schneidest und postest selbst. Danach hier nur den Link zum Reel einfügen.'
+    : hatCutter(s) ? 'Rohmaterial reicht, wir schneiden das Video.'
+    : 'Bitte das fertig geschnittene Video hochladen.'
+
   return (
     <div style={{ border: `1px solid ${status === 'freigegeben' ? 'rgba(245,158,11,0.45)' : 'var(--border)'}`, borderRadius: 14, padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -41,6 +62,7 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
       {s.ziel_account && status !== 'gepostet' && (
         <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--bg-card2)', borderRadius: 10, padding: '7px 9px' }}>
           Für <b style={{ color: '#ec4899' }}>{s.ziel_account}</b>{notizen[s.ziel_account] ? ` · ${notizen[s.ziel_account]}` : ''}
+          {status === 'freigegeben' && <div style={{ marginTop: 3, fontWeight: 700, color: 'var(--text-primary)' }}>{selbst ? '📱 ' : hatCutter(s) ? '✂️ ' : '🎬 '}{hinweis}</div>}
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -59,12 +81,23 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
         </div>
       )}
       {!isPreview && status === 'freigegeben' && !edit && (
-        <button type="button" onClick={() => setEdit(true)} style={{ padding: '10px 12px', borderRadius: 11, border: 'none', background: R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>🎬 Video fertig? Link einfügen</button>
+        <button type="button" onClick={() => setEdit(true)} style={{ padding: '10px 12px', borderRadius: 11, border: 'none', background: selbst ? '#10b981' : R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{selbst ? '📱 Gepostet? Reel-Link einfügen' : '🎬 Video fertig? Link einfügen'}</button>
       )}
-      {edit && (
+      {edit && selbst && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input autoFocus value={reel} onChange={e => setReel(e.target.value.slice(0, 500))} placeholder="https://www.instagram.com/reel/…" style={feld} inputMode="url" autoCapitalize="none" autoCorrect="off" />
+          <input type="date" value={datum} onChange={e => setDatum(e.target.value)} style={feld} />
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>In Instagram beim Reel auf „⋯“ → „Link kopieren“, dann hier einfügen. Bitte auf {s.ziel_account || 'dem richtigen Account'} posten.</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" disabled={arbeitet} onClick={gepostetSpeichern} style={{ flex: 1, padding: 10, borderRadius: 11, border: 'none', background: '#10b981', color: '#04140e', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{arbeitet ? 'Speichert …' : 'Gepostet ✓'}</button>
+            <button type="button" onClick={() => { setEdit(false); setReel(''); setFehler('') }} style={{ padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+          </div>
+        </div>
+      )}
+      {edit && !selbst && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <input autoFocus value={link} onChange={e => setLink(e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={feld} inputMode="url" autoCapitalize="none" autoCorrect="off" />
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>Video in deine Dropbox (oder Google Drive, WeTransfer) laden, dort „Teilen“ → „Link kopieren“ und hier einfügen. Bitte in voller Qualität, nicht über WhatsApp.</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>{hinweis} Video in deine Dropbox (oder Google Drive, WeTransfer) laden, dort „Teilen“ → „Link kopieren“ und hier einfügen. Bitte in voller Qualität, nicht über WhatsApp.</div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button type="button" disabled={arbeitet} onClick={speichern} style={{ flex: 1, padding: 10, borderRadius: 11, border: 'none', background: R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{arbeitet ? 'Speichert …' : 'Speichern'}</button>
             <button type="button" onClick={() => { setEdit(false); setLink(s.video_link || ''); setFehler('') }} style={{ padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
@@ -76,15 +109,17 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
   )
 }
 
-export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, leerText = '' }) {
+export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '' }) {
   const [liste, setListe] = useState(null)
   const [alleGepostet, setAlleGepostet] = useState(false)
   const laden = async () => {
     if (!displayName) return
+    modusSetzen(service ? [service] : [])   // v4.108.0: postet das Model selbst?
+    await cutterLaden()                      // v4.108.0: hat der Account einen Cutter?
     const d = await skripteLaden(displayName, { mitVerworfenen: false })
     setListe(d.fehlt ? [] : d.liste)
   }
-  useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [displayName])
+  useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [displayName, JSON.stringify(service?.account_modus || {})])
   if (!liste) return null
   if (!liste.length) {
     if (!leerText) return null

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
@@ -59,9 +59,10 @@ function Antwort({ wert, typ }) {
   return <span style={{ whiteSpace: 'pre-wrap' }}>{wertText(wert)}</span>
 }
 
-export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName }) {
+export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName, startOffen = false, onGeaendert }) {
+  const ersteLadung = useRef(true) // v4.108.0: Liste links erst nach Änderungen neu laden
   const [daten, setDaten] = useState(null)
-  const [offen, setOffen] = useState(false)
+  const [offen, setOffen] = useState(startOffen)
   const [schicken, setSchicken] = useState(false)
   const [mitTelegram, setMitTelegram] = useState(true)
   const [tgText, setTgText] = useState(TG_TEXT)
@@ -88,6 +89,7 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
     setPostingAb(d.service?.posting_ab || '')
     setNotizen({ ...(d.service?.account_notizen || {}) })
     setAgenturHinweis('')
+    if (ersteLadung.current) ersteLadung.current = false; else onGeaendert?.()
   }
   useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gewaehlt])
 

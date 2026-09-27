@@ -3,7 +3,8 @@ import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
-import { statusVon, linkOk, mitHttps, instaHandle, cutterLaden, endVideo, seitVon } from '../reelSkripte'
+import { statusVon, linkOk, mitHttps, instaHandle, cutterLaden, endVideo, seitVon, modusSetzen } from '../reelSkripte'
+import SocialModelsAdmin from './SocialModelsAdmin' // v4.108.0
 import { SchnittListe, FreigabeListe } from './SocialAblauf' // v4.106.0
 import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialManager'
 import SocialSteuerung from './SocialSteuerung' // v4.103.0: nur Admins
@@ -41,14 +42,17 @@ const heuteISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europ
 const tageSeit = (iso) => iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : null
 const wertListe = (v) => Array.isArray(v) ? v.filter(x => String(x ?? '').trim()) : (String(v ?? '').trim() ? [String(v).trim()] : [])
 
-export default function SocialManager({ userDisplayName, kannErinnern = false, istAdmin = false }) {
+// v4.108.0: festerReiter — Admins bekommen die Reiter als Unterreiter in der
+// oberen Leiste (Bereich „Social Media“, App.jsx); dann hier keine eigene Reiterzeile.
+export default function SocialManager({ userDisplayName, kannErinnern = false, istAdmin = false, festerReiter = null }) {
   const [sprache, setSprache] = useState(spracheLaden)
   const t = useMemo(() => macheT(sprache), [sprache])
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const datum = (iso) => iso ? new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString(loc, { day: '2-digit', month: '2-digit' }) : ''
   const seitText = (n) => n === null ? '' : n === 0 ? t('heute') : n === 1 ? t('gestern') : t('tage', { n })
 
-  const [reiter, setReiter] = useState(istAdmin ? 'steuerung' : 'posten')
+  const [reiter, setReiter] = useState(festerReiter || (istAdmin ? 'steuerung' : 'posten'))
+  useEffect(() => { if (festerReiter) setReiter(festerReiter) }, [festerReiter])
   // v4.106.0: eigene Zusatzrollen (social_media = Poster, cutter, social_freigabe)
   const [rollen, setRollen] = useState(null)
   useEffect(() => {
@@ -75,9 +79,10 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const [erinnert, setErinnert] = useState({})
 
   const laden = useCallback(async () => {
-    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen').eq('service_aktiv', true).order('model_name')
+    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, account_modus').eq('service_aktiv', true).order('model_name')
     if (s.error) { setDaten({ fehlt: true }); return }
     await cutterLaden() // v4.106.0: für „Im Schnitt“ vs. „Zur Freigabe“
+    modusSetzen(s.data || []) // v4.108.0: „Model postet selbst“
     const namen = (s.data || []).map(x => x.model_name)
     const [sk, b, p] = await Promise.all([
       supabase.from('reel_skripte').select('*').eq('verworfen', false).order('erstellt_am', { ascending: false }).limit(500),
@@ -184,7 +189,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       {sprache === 'en' && uebersFehler && <div style={{ fontSize: 12, color: A }}>{t('uebersetzung_fehlt')}</div>}
 
       {/* Reiter */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {!festerReiter && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[
           ...(istAdmin ? [{ k: 'steuerung', l: '🧭 ' + t('tab_steuerung') }] : []),
           ...(istFreigeber ? [{ k: 'freigabe', l: '👀 ' + t('tab_freigabe'), z: zurFreigabe.length }] : []),
@@ -198,9 +203,11 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
             {x.l}{x.z > 0 && <span style={{ marginLeft: 6, background: A, color: '#1a1205', fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 10 }}>{x.z}</span>}
           </button>
         ))}
-      </div>
+      </div>}
 
       {reiter === 'steuerung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} />}
+      {reiter === 'wirkung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} ansicht="wirkung" />}
+      {reiter === 'models-admin' && istAdmin && <SocialModelsAdmin userDisplayName={userDisplayName} />}
 
       {reiter === 'freigabe' && istFreigeber && <FreigabeListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
       {reiter === 'schnitt' && istCutter && <SchnittListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
