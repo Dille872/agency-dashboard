@@ -37,11 +37,12 @@ export default function SocialSteuerung({ userDisplayName }) {
   const [offenZeile, setOffenZeile] = useState(null)       // Skripte aufgeklappt
   const [alleSkripte, setAlleSkripte] = useState(false)
   const [upload, setUpload] = useState(null)               // null | { model, account }
+  const [ausOffen, setAusOffen] = useState(false)          // v4.105.0
   const [neuAccount, setNeuAccount] = useState(null)       // v4.104.0: null | '' | Model-Name (vorbelegt)
   const [hinweis, setHinweis] = useState('')
 
   const laden = useCallback(async () => {
-    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen').eq('service_aktiv', true).order('model_name')
+    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut').eq('service_aktiv', true).order('model_name')
     const z = await supabase.from('social_account_poster').select('*')
     if (s.error || z.error) { setD({ fehlt: true }); return }
     const namen = (s.data || []).map(x => x.model_name)
@@ -63,6 +64,8 @@ export default function SocialSteuerung({ userDisplayName }) {
     const nachtragen = (model, h) => { const m = models[model]; if (m && h && !m.accounts.some(a => a.handle === h)) m.accounts.push({ handle: h, url: null, imBoard: false }) }
     skripte.forEach(x => nachtragen(x.model_name, x.ziel_account))
     ;(z.data || []).forEach(x => nachtragen(x.model_name, x.account))
+    // v4.105.0: nicht betreute Accounts markieren
+    for (const m of Object.values(models)) for (const a of m.accounts) a.betreut = !(m.nicht_betreut || []).includes(a.handle)
     const poster = (r.data || []).filter(x => !['suspended', 'offboarded'].includes(x.status) && x.display_name).map(x => x.display_name).sort((a, b) => a.localeCompare(b))
     setD({ fehlt: false, models, zuteilung: z.data || [], skripte, poster })
   }, [])
@@ -74,7 +77,8 @@ export default function SocialSteuerung({ userDisplayName }) {
   const { models, zuteilung, skripte, poster } = d
   const aktiv = skripte.filter(s => !s.verworfen && models[s.model_name])
   const posterVon = (m, a) => zuteilung.filter(z => z.model_name === m && z.account === a).map(z => z.poster_name)
-  const zeilen = Object.values(models).flatMap(m => m.accounts.map(a => ({ model: m, acc: a })))
+  const zeilen = Object.values(models).flatMap(m => m.accounts.filter(a => a.betreut).map(a => ({ model: m, acc: a })))
+  const zeilenAus = Object.values(models).flatMap(m => m.accounts.filter(a => !a.betreut).map(a => ({ model: m, acc: a })))
   const ohneZiel = aktiv.filter(s => !s.ziel_account && statusVon(s) !== 'gepostet')
 
   const zuPosten = aktiv.filter(s => statusVon(s) === 'gedreht')
@@ -90,6 +94,26 @@ export default function SocialSteuerung({ userDisplayName }) {
     logActivity('social.poster', { entity: `${model} ${account}`, detail: `${name} zugeteilt` })
     laden()
   }
+  // v4.105.0: Account (nicht) betreuen
+  const betreuen = async (m, account, ja) => {
+    setHinweis('')
+    const ps = posterVon(m.model_name, account)
+    const offen = aktiv.filter(s => s.model_name === m.model_name && s.ziel_account === account && ['freigegeben', 'gedreht'].includes(statusVon(s)))
+    if (!ja) {
+      const teile = [`${account} (${m.model_name}) als „nicht betreut“ markieren?`, 'Er verschwindet aus der Liste, zählt nicht mehr als „ohne Poster“, steht beim Hochladen nicht mehr zur Auswahl und geht nicht mehr an Lyra. Im Board bleibt er.']
+      if (ps.length) teile.push(`Zugeteilte Poster (${ps.join(', ')}) werden dabei entfernt.`)
+      if (offen.length) teile.push(`Achtung: ${offen.length} offene${offen.length === 1 ? 's Skript läuft' : ' Skripte laufen'} noch auf diesen Account (${offen.map(s => s.nr).join(', ')}).`)
+      if (!window.confirm(teile.join('\n\n'))) return
+    }
+    const liste = new Set(m.nicht_betreut || [])
+    if (ja) liste.delete(account); else liste.add(account)
+    const err = await serviceSpeichern(m.model_name, { nicht_betreut: [...liste] }, userDisplayName)
+    if (err) { setHinweis('Nicht gespeichert: ' + err.message); return }
+    if (!ja && ps.length) await supabase.from('social_account_poster').delete().eq('model_name', m.model_name).eq('account', account)
+    logActivity('social.account', { entity: `${m.model_name} ${account}`, detail: ja ? 'wieder betreut' : 'nicht betreut' })
+    laden()
+  }
+
   const entfernen = async (model, account, name) => {
     if (!window.confirm(`${name} von ${account} (${model}) entfernen? ${name} sieht die Skripte dieses Accounts dann nicht mehr.`)) return
     const { error } = await supabase.from('social_account_poster').delete().eq('model_name', model).eq('account', account).eq('poster_name', name)
@@ -122,10 +146,10 @@ export default function SocialSteuerung({ userDisplayName }) {
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Die Accounts kommen aus den Instagram-Links im Board der Models im Service. Kurzbeschreibung und „Im Service“ pflegst du unter Kommunikation → Creator → Model → „Social Media“.</div>
         {!Object.keys(models).length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch kein Model im Service. Beim Model unter Kommunikation → Creator → „Social Media“ das Häkchen „Im Social-Media-Service“ setzen und speichern.</div>}
         {/* v4.104.1: Models im Service ohne Instagram-Link waren vorher unsichtbar */}
-        {Object.values(models).filter(m => !m.accounts.length).map(m => (
+        {Object.values(models).filter(m => !m.accounts.some(a => a.betreut)).map(m => (
           <div key={'ohne:' + m.model_name} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
             <span style={{ minWidth: 80, color: 'var(--text-primary)' }}>{m.model_name}</span>
-            <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>⚠ im Service, aber noch kein Instagram-Account im Board. Deshalb gibt es hier noch keine Zeile zum Zuteilen.</span>
+            <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>{m.accounts.length ? '⚠ im Service, aber alle Accounts sind „nicht betreut“.' : '⚠ im Service, aber noch kein Instagram-Account im Board. Deshalb gibt es hier noch keine Zeile zum Zuteilen.'}</span>
             <button type="button" onClick={() => setNeuAccount(m.model_name)} style={{ ...knopf(P, false), padding: '5px 10px', fontSize: 12 }}>+ Account für {m.model_name}</button>
           </div>
         ))}
@@ -182,6 +206,7 @@ export default function SocialSteuerung({ userDisplayName }) {
                         <td style={td}>{datum(m.posting_ab)}</td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>
                           <button type="button" onClick={() => setUpload({ model: m.model_name, account: acc.handle })} style={{ ...knopf(C, false), padding: '4px 9px', fontSize: 12 }}>📄 +</button>{' '}
+                          <button type="button" title="Als „nicht betreut“ markieren" onClick={() => betreuen(m, acc.handle, false)} style={{ ...knopf('var(--text-muted)', false), padding: '4px 8px', fontSize: 11.5 }}>ausblenden</button>{' '}
                           <button type="button" onClick={() => setOffenZeile(auf ? null : k)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 9px', fontSize: 12 }}>{auf ? '▴' : '▾'} {eig.length + gp.filter(s => s.ziel_account !== acc.handle).length}</button>
                         </td>
                       </tr>
@@ -194,7 +219,7 @@ export default function SocialSteuerung({ userDisplayName }) {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {skripte.filter(s => s.model_name === m.model_name && (s.ziel_account === acc.handle || s.account === acc.handle))
                               .filter(s => alleSkripte || !['gepostet', 'verworfen'].includes(statusVon(s)))
-                              .map(s => <SkriptKarte key={s.id + ':' + s.aktualisiert_am} s={s} accounts={m.accounts.map(a => a.handle)} userName={userDisplayName} onNeu={laden} />)}
+                              .map(s => <SkriptKarte key={s.id + ':' + s.aktualisiert_am} s={s} accounts={m.accounts.filter(a => a.betreut).map(a => a.handle)} userName={userDisplayName} onNeu={laden} />)}
                             {!skripte.some(s => s.model_name === m.model_name && (s.ziel_account === acc.handle || s.account === acc.handle) && (alleSkripte || !['gepostet', 'verworfen'].includes(statusVon(s)))) &&
                               <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Nichts {alleSkripte ? '' : 'Offenes '}für diesen Account.</div>}
                           </div>
@@ -205,6 +230,25 @@ export default function SocialSteuerung({ userDisplayName }) {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {/* v4.105.0: nicht betreute Accounts, eingeklappt */}
+        {zeilenAus.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <button type="button" onClick={() => setAusOffen(v => !v)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 700 }}>
+              {ausOffen ? '▴' : '▾'} Nicht betreut ({zeilenAus.length})
+            </button>
+            {ausOffen && (
+              <div style={{ display: 'flex', flexDirection: 'column', marginTop: 6 }}>
+                {zeilenAus.map(({ model: m, acc }) => (
+                  <div key={'aus:' + m.model_name + acc.handle} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '7px 8px', borderBottom: '1px solid var(--border)', fontSize: 13, opacity: 0.75 }}>
+                    <span style={{ minWidth: 80, color: 'var(--text-primary)' }}>{m.model_name}</span>
+                    <span style={{ flex: 1, minWidth: 160 }}>{acc.url ? <a href={acc.url} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 700 }}>{acc.handle}</a> : <span style={{ color: P, fontWeight: 700 }}>{acc.handle}</span>}{acc.agentur && <span style={{ ...pill(L), marginLeft: 6 }}>Agentur</span>}</span>
+                    <button type="button" onClick={() => betreuen(m, acc.handle, true)} style={{ ...knopf(P, false), padding: '4px 10px', fontSize: 12 }}>wieder betreuen</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {ohneZiel.length > 0 && (
@@ -287,7 +331,7 @@ function UploadFenster({ start, models, wer, onZu }) {
   const [arbeitet, setArbeitet] = useState(false)
   const input = useRef(null)
   const angelegt = useRef(0)   // wie viele in diesem Fenster angelegt wurden
-  const accountsVon = (m) => (models[m]?.accounts || []).map(a => a.handle)
+  const accountsVon = (m) => (models[m]?.accounts || []).filter(a => a.betreut).map(a => a.handle)
 
   const dateienDazu = (files) => {
     const neu = [...(files || [])].filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf').map((f, i) => {

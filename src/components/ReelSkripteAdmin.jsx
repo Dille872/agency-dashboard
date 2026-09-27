@@ -185,12 +185,15 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
 
   const laden = async () => {
     if (!gewaehlt) return
-    const [d, b] = await Promise.all([
+    const [d, b, sv] = await Promise.all([
       skripteLaden(gewaehlt),
       supabase.from('model_board').select('title, content').eq('model_name', gewaehlt).eq('category', SOCIAL_CATEGORY).order('sort_order'),
+      supabase.from('model_social_service').select('nicht_betreut').eq('model_name', gewaehlt).maybeSingle(),
     ])
     setDaten(d)
-    setAccounts([...new Set((b.data || []).filter(x => resolvePlatform(x.title).key === 'instagram' && String(x.content || '').trim()).map(x => instaHandle(x.content)))])
+    // v4.105.0: „nicht betreut“ markierte Accounts stehen nicht zur Auswahl
+    const aus = sv.data?.nicht_betreut || []
+    setAccounts([...new Set((b.data || []).filter(x => resolvePlatform(x.title).key === 'instagram' && String(x.content || '').trim()).map(x => instaHandle(x.content)))].filter(h => !aus.includes(h)))
   }
   useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gewaehlt])
 
