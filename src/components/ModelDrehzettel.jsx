@@ -80,8 +80,13 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
           ↩ <b style={{ color: '#f97316' }}>Bitte nochmal drehen:</b> {s.zurueck_notiz}
         </div>
       )}
-      {!isPreview && status === 'freigegeben' && !edit && (
-        <button type="button" onClick={() => setEdit(true)} style={{ padding: '10px 12px', borderRadius: 11, border: 'none', background: selbst ? '#10b981' : R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{selbst ? '📱 Gepostet? Reel-Link einfügen' : '🎬 Video fertig? Link einfügen'}</button>
+      {status === 'freigegeben' && !edit && (
+        // v4.108.1: in der Admin-Vorschau sichtbar, aber ausgegraut
+        <button type="button" disabled={isPreview} onClick={() => { if (!isPreview) setEdit(true) }} title={isPreview ? 'Vorschau: nur das Model selbst kann hier eintragen' : undefined}
+          style={{ padding: '10px 12px', borderRadius: 11, border: 'none', background: selbst ? '#10b981' : R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: isPreview ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isPreview ? 0.45 : 1 }}>{selbst ? '📱 Gepostet? Reel-Link einfügen' : '🎬 Video fertig? Link einfügen'}</button>
+      )}
+      {isPreview && status === 'freigegeben' && !edit && (
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -4 }}>Vorschau: Diesen Knopf kann nur das Model selbst benutzen.</div>
       )}
       {edit && selbst && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
