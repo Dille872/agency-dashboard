@@ -112,3 +112,24 @@ export function dateinameLesen(name, modelNamen = []) {
   const titel = rest.map(p => p.includes(' ') ? p : p.replace(/-/g, ' ')).join(' ').replace(/\s+/g, ' ').trim()
   return { model, account, titel }
 }
+
+// ── v4.104.0: Instagram-Account durch die Agentur anlegen ──────────────────
+// Landet im Board (model_board, social_media) mit von_agentur = true —
+// sichtbar für Chatter und Model, aber nur Staff darf ihn ändern/löschen
+// (sql/agentur-accounts.sql). Eingabe: @handle, handle oder Instagram-Link.
+export async function agenturAccountAnlegen(model, eingabe, wer) {
+  const roh = String(eingabe || '').trim()
+  const handle = (roh.match(/instagram\.com\/([^/?#\s]+)/i)?.[1] || roh.replace(/^@/, '')).trim()
+  if (!model) return { fehler: 'Kein Model gewählt.' }
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(handle)) return { fehler: 'Das sieht nicht nach einem Instagram-Namen aus.' }
+  const url = `https://www.instagram.com/${handle}`
+  const { data: vorhanden } = await supabase.from('model_board').select('content, sort_order').eq('model_name', model).eq('category', 'social_media')
+  if ((vorhanden || []).some(x => instaHandle(x.content).toLowerCase() === '@' + handle.toLowerCase())) return { fehler: `@${handle} steht schon im Board.` }
+  const sort = Math.max(-1, ...(vorhanden || []).map(x => Number(x.sort_order) || 0)) + 1
+  const { error } = await supabase.from('model_board').insert({ model_name: model, category: 'social_media', title: 'instagram', content: url, sort_order: sort, von_agentur: true })
+  if (error) return { fehler: 'Nicht gespeichert: ' + error.message }
+  try { await supabase.from('model_board_activity').insert({ model_name: model, action: 'hinzugefügt', category: 'social_media', details: `Instagram @${handle} (von der Agentur)` }) } catch { /* optional */ }
+  const { logActivity } = await import('./activity')
+  logActivity('social.account', { entity: model, detail: `@${handle} angelegt${wer ? ` von ${wer}` : ''}` })
+  return { handle: '@' + handle }
+}

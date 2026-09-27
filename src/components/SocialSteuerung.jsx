@@ -3,7 +3,8 @@ import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
 import { SkriptKarte } from './ReelSkripteAdmin'
-import { statusVon, instaHandle, skriptAnlegen, dateinameLesen } from '../reelSkripte'
+import { statusVon, instaHandle, skriptAnlegen, dateinameLesen, agenturAccountAnlegen } from '../reelSkripte'
+import { serviceSpeichern } from '../socialProfil'
 
 // ── Social-Steuerung (v4.103.0) — nur für Admins/Manager ──────────────────
 // Reiter im Social Media Manager. Hier läuft alles zusammen:
@@ -36,6 +37,7 @@ export default function SocialSteuerung({ userDisplayName }) {
   const [offenZeile, setOffenZeile] = useState(null)       // Skripte aufgeklappt
   const [alleSkripte, setAlleSkripte] = useState(false)
   const [upload, setUpload] = useState(null)               // null | { model, account }
+  const [neuAccount, setNeuAccount] = useState(false)      // v4.104.0
   const [hinweis, setHinweis] = useState('')
 
   const laden = useCallback(async () => {
@@ -44,7 +46,7 @@ export default function SocialSteuerung({ userDisplayName }) {
     if (s.error || z.error) { setD({ fehlt: true }); return }
     const namen = (s.data || []).map(x => x.model_name)
     const [b, sk, r] = await Promise.all([
-      namen.length ? supabase.from('model_board').select('model_name, title, content, sort_order').in('model_name', namen).eq('category', SOCIAL_CATEGORY).order('sort_order') : Promise.resolve({ data: [] }),
+      namen.length ? supabase.from('model_board').select('model_name, title, content, sort_order, von_agentur').in('model_name', namen).eq('category', SOCIAL_CATEGORY).order('sort_order') : Promise.resolve({ data: [] }),
       supabase.from('reel_skripte').select('*').order('erstellt_am', { ascending: false }).limit(1000),
       supabase.from('user_roles').select('display_name, roles, status').contains('roles', ['social_media']),
     ])
@@ -54,7 +56,7 @@ export default function SocialSteuerung({ userDisplayName }) {
       const m = models[x.model_name]
       if (!m || resolvePlatform(x.title).key !== 'instagram' || !String(x.content || '').trim()) continue
       const h = instaHandle(x.content)
-      if (!m.accounts.some(a => a.handle === h)) m.accounts.push({ handle: h, url: /^https?:\/\//i.test(x.content) ? x.content : `https://${x.content}`, imBoard: true })
+      if (!m.accounts.some(a => a.handle === h)) m.accounts.push({ handle: h, url: /^https?:\/\//i.test(x.content) ? x.content : `https://${x.content}`, imBoard: true, agentur: !!x.von_agentur })
     }
     const skripte = (sk.data || [])
     // Accounts, die nur noch in Skripten oder Zuteilungen stehen (Link aus dem Board entfernt)
@@ -100,6 +102,7 @@ export default function SocialSteuerung({ userDisplayName }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, fontSize: 13, color: 'var(--text-muted)' }}>Alle Accounts, alle Poster, alles Gepostete. Nur für Admins sichtbar.</div>
+        <button type="button" onClick={() => setNeuAccount(true)} style={{ ...knopf(P, false), padding: '9px 14px' }}>+ Account</button>
         <button type="button" onClick={() => setUpload({ model: '', account: '' })} style={{ ...knopf(C, true), color: '#04212a', padding: '9px 14px' }}>📄 Drehzettel hochladen</button>
       </div>
       {hinweis && <div style={{ fontSize: 12.5, color: hinweis.startsWith('✓') ? G : ROT }}>{hinweis}</div>}
@@ -142,6 +145,7 @@ export default function SocialSteuerung({ userDisplayName }) {
                         <td style={td}>{m.model_name}</td>
                         <td style={td}>
                           {acc.url ? <a href={acc.url} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 700 }}>{acc.handle}</a> : <span style={{ color: P, fontWeight: 700 }}>{acc.handle}</span>}
+                          {acc.agentur && <span style={{ ...pill(L), marginLeft: 6 }}>Agentur</span>}
                           {notiz && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{notiz}</div>}
                           {!acc.imBoard && <div style={{ fontSize: 11, color: A }}>nicht mehr im Board</div>}
                         </td>
@@ -261,6 +265,7 @@ export default function SocialSteuerung({ userDisplayName }) {
         <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 10, padding: '8px 10px', color: 'var(--text-muted)', fontSize: 12 }}>Später: Aufrufe, Likes und Follower-Zuwachs pro Reel, sobald Lyra misst.</div>
       </div>
 
+      {neuAccount && <AccountFenster models={models} wer={userDisplayName} onZu={(neu) => { setNeuAccount(false); if (neu) { setHinweis(`✓ ${neu} angelegt. Jetzt einen Poster zuteilen.`); laden() } }} />}
       {upload && <UploadFenster start={upload} models={models} wer={userDisplayName} onZu={(neu) => { setUpload(null); if (neu) { setHinweis(`✓ ${neu} Drehzettel angelegt.`); laden() } }} />}
     </div>
   )
@@ -361,6 +366,50 @@ function UploadFenster({ start, models, wer, onZu }) {
             {arbeitet ? 'Lädt hoch …' : `${offen.length || ''} anlegen (Nummern werden vergeben)`}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── v4.104.0: eigenen Instagram-Account anlegen (z. B. US) ─────────────────
+// Landet im Board des Models (markiert „Agentur“, nur Staff darf ändern),
+// optional gleich mit Kurzbeschreibung.
+function AccountFenster({ models, wer, onZu }) {
+  const namen = Object.keys(models)
+  const [model, setModel] = useState(namen.length === 1 ? namen[0] : '')
+  const [handle, setHandle] = useState('')
+  const [notiz, setNotiz] = useState('')
+  const [fehler, setFehler] = useState('')
+  const [arbeitet, setArbeitet] = useState(false)
+  const anlegen = async () => {
+    setArbeitet(true); setFehler('')
+    const r = await agenturAccountAnlegen(model, handle, wer)
+    if (r.fehler) { setArbeitet(false); setFehler(r.fehler); return }
+    if (notiz.trim()) {
+      const alt = models[model]?.account_notizen || {}
+      const err = await serviceSpeichern(model, { account_notizen: { ...alt, [r.handle]: notiz.trim().slice(0, 60) } }, wer)
+      if (err) { setArbeitet(false); setFehler(`${r.handle} angelegt, aber Kurzbeschreibung nicht gespeichert: ${err.message}`); return }
+    }
+    setArbeitet(false)
+    onZu(r.handle)
+  }
+  return (
+    <div onClick={() => !arbeitet && onZu(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Account anlegen" style={{ width: 'min(440px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 10, boxSizing: 'border-box' }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>+ Instagram-Account</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>Für Accounts, die ihr selbst anlegt (z. B. US). Er steht danach im Board des Models unter „Social Media Kanäle“, markiert als „Agentur“. Chatter und Model sehen ihn, ändern können ihn nur Admins.</div>
+        <select value={model} onChange={e => setModel(e.target.value)} style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }}>
+          <option value="">Model wählen …</option>
+          {namen.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <input value={handle} onChange={e => setHandle(e.target.value.slice(0, 200))} placeholder="@name oder Instagram-Link" style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} autoCapitalize="none" autoCorrect="off" />
+        <input value={notiz} onChange={e => setNotiz(e.target.value.slice(0, 60))} placeholder="Kurzbeschreibung, z. B. US · bitte Englisch" style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} />
+        {fehler && <div role="alert" style={{ fontSize: 12.5, color: ROT }}>{fehler}</div>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" disabled={arbeitet} onClick={() => onZu(null)} style={{ ...knopf('var(--text-muted)', false), flex: 1, padding: 11 }}>Abbrechen</button>
+          <button type="button" disabled={arbeitet || !model || !handle.trim()} onClick={anlegen} style={{ ...knopf(P, true), flex: 2, padding: 11, fontSize: 14, opacity: model && handle.trim() ? 1 : 0.5 }}>{arbeitet ? 'Legt an …' : 'Anlegen'}</button>
+        </div>
+        {!namen.length && <div style={{ fontSize: 12, color: A }}>Noch kein Model im Service. Erst beim Model „Im Social-Media-Service“ setzen.</div>}
       </div>
     </div>
   )

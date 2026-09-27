@@ -2163,7 +2163,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
 
           {/* v3.37.0: Social-Media-Kanäle (Admin/Manager bearbeitbar) */}
           {selectedModel && (
-            <SocialLinksEditor modelName={selectedModel.name} onChanged={loadModelBoardActivity} compact />
+            <SocialLinksEditor modelName={selectedModel.name} onChanged={loadModelBoardActivity} compact istAgentur />
           )}
 
           {/* v3.11.0: Board-Activity Feed (ersetzt "Nachricht senden") */}

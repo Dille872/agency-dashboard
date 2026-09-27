@@ -139,7 +139,7 @@ export function SocialLinksView({ links = [], accent = '#ec4899', embedded = fal
 //   onChanged  (optional)         – Callback nach jeder Änderung
 //   compact    (optional)         – etwas kompaktere Karte
 // ===========================================================================
-export function SocialLinksEditor({ modelName, accent = '#ec4899', onChanged, compact = false }) {
+export function SocialLinksEditor({ modelName, accent = '#ec4899', onChanged, compact = false, istAgentur = false }) {
   const [links, setLinks] = useState([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
@@ -280,7 +280,7 @@ export function SocialLinksEditor({ modelName, accent = '#ec4899', onChanged, co
               <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid var(--border)' }}>
                 <span style={{ color: p.color, display: 'flex' }}><SocialIcon platformKey={p.key} size={18} /></span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{p.label}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{p.label}{item.von_agentur && <span title="Von der Agentur angelegt" style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 8, background: 'rgba(124,58,237,0.18)', color: '#c4b5fd' }}>{istAgentur ? 'Agentur' : '🔒 Agentur'}</span>}</div>
                   {isEditing ? (
                     <input value={editUrl} onChange={e => setEditUrl(e.target.value)} style={{ ...inputS, fontSize: 11, padding: '4px 7px', marginTop: 3 }}
                       onKeyDown={e => { if (e.key === 'Enter') saveEdit(item) }} autoFocus />
@@ -293,7 +293,7 @@ export function SocialLinksEditor({ modelName, accent = '#ec4899', onChanged, co
                     <button onClick={() => saveEdit(item)} style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, background: 'rgba(16,185,129,0.18)', color: '#10b981', border: '1px solid rgba(16,185,129,0.4)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>OK</button>
                     <button onClick={() => setEditId(null)} style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>×</button>
                   </>
-                ) : (
+                ) : item.von_agentur && !istAgentur ? null : (
                   <>
                     <button onClick={() => { setEditId(item.id); setEditUrl(item.content || '') }} title="Link bearbeiten" style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
                     <button onClick={() => removeLink(item)} title="Entfernen" style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>×</button>

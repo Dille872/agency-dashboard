@@ -4,6 +4,7 @@ import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
 import { FRAGEN, BOARD_CHECK, socialLaden, serviceSpeichern, stand, hatWert, wertText, datumKurz } from '../socialProfil'
+import { agenturAccountAnlegen } from '../reelSkripte' // v4.104.0
 import SocialFragebogen from './SocialFragebogen'
 
 // ── Admin: Social-Media-Fragebogen & Service je Model (v4.100.0) ───────────
@@ -71,6 +72,8 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
   const [accounts, setAccounts] = useState([])   // Instagram-Links aus dem Board, nur Anzeige
   const [postingAb, setPostingAb] = useState('')
   const [notizen, setNotizen] = useState({})     // v4.102.0: @handle → „DE · Hauptaccount“
+  const [neuAcc, setNeuAcc] = useState(null)     // v4.104.0: „+ Account“ (null = zu)
+  const [neuHinweis, setNeuHinweis] = useState('')
   const [agenturHinweis, setAgenturHinweis] = useState('')
 
   const laden = async () => {
@@ -189,7 +192,23 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
                     })}
                   </div>
                 ) : <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Noch kein Instagram-Link im Board.</div>}
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Links ändert das Model im Board unter „Social Media Kanäle“. Die Kurzbeschreibung sehen Poster und Model beim Drehzettel.</div>
+                {/* v4.104.0: eigenen Account anlegen (z. B. US) — landet im Board, markiert als „Agentur“ */}
+                {neuAcc === null ? (
+                  <button type="button" onClick={() => { setNeuAcc(''); setNeuHinweis('') }} style={{ ...knopf(P, false), marginTop: 6, padding: '4px 10px', fontSize: 12 }}>+ Account</button>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    <input autoFocus value={neuAcc} onChange={e => setNeuAcc(e.target.value.slice(0, 200))} placeholder="@name oder Instagram-Link" style={{ ...eingabe, flex: 1, minWidth: 160, padding: '6px 9px', fontSize: 12.5 }}
+                      onKeyDown={e => { if (e.key === 'Escape') setNeuAcc(null) }} />
+                    <button type="button" onClick={async () => {
+                      const r = await agenturAccountAnlegen(gewaehlt, neuAcc, userName)
+                      if (r.fehler) { setNeuHinweis(r.fehler); return }
+                      const entwurf = notizen; await laden(); setNotizen(n => ({ ...n, ...entwurf })); setNeuAcc(null); setNeuHinweis(`✓ ${r.handle} angelegt. Kurzbeschreibung eintragen und speichern.`)
+                    }} style={{ ...knopf(P, true), padding: '6px 11px', fontSize: 12 }}>Anlegen</button>
+                    <button type="button" onClick={() => setNeuAcc(null)} style={{ ...knopf('var(--text-muted)', false), padding: '6px 11px', fontSize: 12 }}>Abbrechen</button>
+                  </div>
+                )}
+                {neuHinweis && <div style={{ fontSize: 11.5, marginTop: 4, color: neuHinweis.startsWith('✓') ? '#10b981' : 'var(--ton-rot)' }}>{neuHinweis}</div>}
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Links pflegt das Model im Board unter „Social Media Kanäle“. Mit „+ Account“ legst du selbst einen an (z. B. US), er steht dann auch im Board, markiert als „Agentur“, und nur ihr könnt ihn ändern. Die Kurzbeschreibung sehen Poster und Model beim Drehzettel.</div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Posting ab (Start der Erfolgsmessung)</div>
