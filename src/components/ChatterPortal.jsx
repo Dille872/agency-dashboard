@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { BookOpen, Library, Eye, UserRound } from 'lucide-react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
-import SocialTab from './SocialTab'
+import SocialManager from './SocialManager' // v4.102.0: ersetzt den alten SocialTab
 import SurveyModal from './SurveyModal'
 import SwapModal from './SwapModal'
 import ChatterBell from './ChatterBell'
@@ -2236,8 +2236,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             </button>
           )}
           {isSocialMedia && (
-            <button onClick={() => setShowSocialPortal(!showSocialPortal)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: showSocialPortal ? '#ec4899' : 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.3)', color: showSocialPortal ? '#fff' : '#ec4899', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-              Social
+            <button onClick={() => setShowSocialPortal(!showSocialPortal)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: showSocialPortal ? '#ec4899' : 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.3)', color: showSocialPortal ? '#fff' : '#ec4899', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
+              title={showSocialPortal ? 'Zurück zur Chatter-Ansicht' : 'Social Media Manager'}>
+              {showSocialPortal ? '💬 Chatter' : '📱 Social'}
             </button>
           )}
           {onSwitchToAdmin && (
@@ -2262,7 +2263,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           </div>
         )}
         {showSocialPortal ? (
-          <SocialTab session={session} userDisplayName={displayName} userRole="social_media" />
+          <SocialManager userDisplayName={displayName} />
         ) : (
         <div>
 

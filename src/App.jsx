@@ -27,7 +27,7 @@ import SettingsTab from './components/SettingsTab'
 import BillingTab from './components/BillingTab'
 import PerformanceTab from './components/PerformanceTab'
 import TodoTab from './components/TodoTab'
-import SocialTab from './components/SocialTab'
+import SocialManager from './components/SocialManager' // v4.102.0: ersetzt den alten SocialTab
 import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
 // v4.31.0: dritter Upload — Chatter-Umsatz je Model, siehe sql/model-chatter-daily.sql
@@ -72,7 +72,7 @@ const BEREICHE = [
     // v4.73.0: nur Admin/Manager — die anderen Rollen kommen nach zugang.js ohnehin nicht hin
     { key: 'boards', label: 'Boards', Icon: LayoutDashboard },
     { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
-    { key: 'social', label: 'Social', Icon: Globe },
+    { key: 'social', label: 'Social Media', Icon: Globe },
   ] },
   { key: 'zeit', label: 'Zeit', Icon: Calendar, tabs: [
     { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
@@ -1056,7 +1056,7 @@ export default function App() {
         ) : activeTab === 'todos' ? (
           <TodoTab session={session} userDisplayName={userDisplayName} />
         ) : activeTab === 'social' ? (
-          <SocialTab session={session} userDisplayName={userDisplayName} userRole={userRole} />
+          <SocialManager userDisplayName={userDisplayName} kannErinnern={isManager} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (

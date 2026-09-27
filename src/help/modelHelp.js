@@ -153,7 +153,7 @@ export const HELP_TOPICS = [
   {
     id: 'socialfragebogen',
     icon: '📱',
-    tab: 'board',
+    tab: 'social',
     title: 'Social Media (Fragebogen)',
     short: 'Kurzer Fragebogen, damit wir Reels schreiben können, die zu dir passen.',
     body: [
@@ -161,20 +161,20 @@ export const HELP_TOPICS = [
       'Die Antworten sieht nur das Team, nicht die Chatter und nicht die Fans.',
     ],
     steps: [
-      'Im Board bei „Social Media“ auf „Ausfüllen“ oder „Bearbeiten“ tippen.',
+      'Unten auf „Social“ tippen, dann bei „Social Media“ auf „Ausfüllen“ oder „Bearbeiten“.',
       'Oben siehst du deine No Gos und Instagram-Links aus dem Board. Stimmen sie nicht mehr, ändere sie danach im Board.',
       'Fragen beantworten, Chips antippen, optional 3–4 Fotos deiner Lieblingsecken hochladen. Dann „Fertig“.',
     ],
     watch: [
       'Es wird automatisch gespeichert. „Später weitermachen“ geht jederzeit.',
       'Du kannst deine Antworten später jederzeit ändern, das Team sieht dann, wann du etwas geändert hast.',
-      'Die Karte erscheint erst, wenn das Team dich um den Fragebogen bittet.',
+      '„Social“ gibt es nur, wenn du bei unserem Social-Media-Service dabei bist.',
     ],
   },
   {
     id: 'drehzettel',
     icon: '🎬',
-    tab: 'board',
+    tab: 'social',
     title: 'Drehzettel',
     short: 'Deine Reel-Skripte: Drehzettel öffnen, drehen, Link zum Video einfügen.',
     body: [
@@ -182,14 +182,14 @@ export const HELP_TOPICS = [
       'Das Video lädst du nicht hier hoch, sondern in deine Dropbox (oder Google Drive, WeTransfer) und fügst nur den Link ein. So bleibt die volle Qualität erhalten. Posten machen wir.',
     ],
     steps: [
-      'Im Board bei „Drehzettel“ auf „Drehzettel öffnen“ tippen und das Reel drehen.',
+      'Unten auf „Social“ tippen, beim Drehzettel auf „Drehzettel öffnen“ und das Reel drehen. Oben steht, für welchen Account es ist.',
       'Video in deine Dropbox laden, dort „Teilen“ → „Link kopieren“.',
       'Zurück im Portal auf „Video fertig? Link einfügen“, Link einfügen, Speichern.',
     ],
     watch: [
       'Bitte nicht über WhatsApp schicken, da wird das Video stark verkleinert.',
       'Den Link kannst du ändern, solange das Reel noch nicht gepostet ist.',
-      'Die Karte erscheint erst, wenn wir dir den ersten Drehzettel geschickt haben.',
+      'Steht beim Drehzettel ein US- oder englischer Account, bitte auf Englisch sprechen.',
     ],
   },
   {
@@ -330,14 +330,18 @@ export const HELP_TOPICS = [
     icon: '📱',
     tab: 'social',
     title: 'Social',
-    short: 'Beiträge freigeben, die das Team für dich vorbereitet hat.',
+    short: 'Deine Reels: Drehzettel, Videos und dein Social-Media-Profil.',
     body: [
-      'Hat das Team einen Post vorbereitet, steht er unter „Freigabe ausstehend" mit Plattform, geplantem Zeitpunkt und einem Link zum Material. Du gibst frei oder lehnst ab.',
-      'Darunter siehst du deine Accounts und die zuletzt veröffentlichten Beiträge mit Aufrufzahlen.',
+      'Den Bereich gibt es, wenn du bei unserem Social-Media-Service dabei bist. Wir schreiben Reel-Ideen für dich, du drehst, wir posten.',
+      'Oben stehen deine Drehzettel, darunter dein Social-Media-Fragebogen. Deine Social-Media-Links bleiben im Board, dort sehen sie auch die Chatter.',
+    ],
+    steps: [
+      'Drehzettel öffnen und das Reel drehen.',
+      'Video in deine Dropbox laden und den Link beim Drehzettel einfügen.',
+      'Fragebogen einmal ausfüllen, später jederzeit anpassen.',
     ],
     watch: [
-      'Beim Ablehnen kannst du keine Begründung mitgeben — schreib sie dem Team kurz in den Chat, sonst weiß niemand warum.',
-      'Deine Profil-Links pflegst du nicht hier, sondern unter „Mein Board".',
+      'Der Kalender ist für dich jetzt unter „Mehr“.',
     ],
   },
   {

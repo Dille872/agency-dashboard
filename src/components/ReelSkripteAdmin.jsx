@@ -11,6 +11,8 @@ import { STATUS, statusVon, skripteLaden, skriptAendern, drehzettelHochladen, li
 //   📄 Drehzettel (PDF, hier hochladen → Nummer S-…)
 //   🎬 Video (Link, den das Model im Portal hinterlegt — Dropbox o. Ä.)
 //   ✅ Gepostet (Account aus den Instagram-Links im Board, Reel-Link, Datum)
+// v4.102.0: Ziel-Account wird beim Anlegen festgelegt (Pflicht, sobald das
+// Model Instagram-Links im Board hat) und ist auf der Karte änderbar.
 // Später soll der Mitarbeiter, der postet, den rechten Teil selbst ausfüllen.
 
 const R = '#06b6d4'
@@ -19,7 +21,7 @@ const eingabe = { background: 'var(--bg-input)', border: '1px solid var(--border
 const spalte = { background: 'var(--bg-card2)', borderRadius: 11, padding: '9px 10px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }
 const klein = { fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }
 const heute = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
-const TG_TEXT = 'Neuer Drehzettel {nr} 🎬 „{titel}“. Du findest ihn in deinem Portal im Board unter „Drehzettel“. Wenn das Video fertig ist, dort einfach den Link (z. B. Dropbox) einfügen. Danke! 💛'
+const TG_TEXT = 'Neuer Drehzettel {nr} 🎬 „{titel}“{fuer}. Du findest ihn in deinem Portal unter „Social“. Wenn das Video fertig ist, dort einfach den Link (z. B. Dropbox) einfügen. Danke! 💛'
 
 function Pill({ s }) {
   const st = STATUS[statusVon(s)]
@@ -32,7 +34,8 @@ function Karte({ s, accounts, userName, onNeu }) {
   const [video, setVideo] = useState(s.video_link || '')
   const [postEdit, setPostEdit] = useState(false)
   const [reel, setReel] = useState(s.reel_url || '')
-  const [account, setAccount] = useState(s.account || (accounts.length === 1 ? accounts[0] : ''))
+  const [account, setAccount] = useState(s.account || s.ziel_account || (accounts.length === 1 ? accounts[0] : ''))
+  const [zielEdit, setZielEdit] = useState(false)
   const [datum, setDatum] = useState(s.gepostet_am || heute())
   const [fehler, setFehler] = useState('')
   const [arbeitet, setArbeitet] = useState(false)
@@ -65,6 +68,10 @@ function Karte({ s, accounts, userName, onNeu }) {
     speichere({ reel_url: null, account: null, gepostet_am: null, gepostet_von: null }, 'gepostet zurückgenommen')
   }
 
+  const zielSetzen = async (neu) => {
+    if (await speichere({ ziel_account: neu || null }, `Ziel-Account ${neu || 'entfernt'}`)) setZielEdit(false)
+  }
+
   const verwerfen = async () => {
     if (!s.verworfen && !window.confirm(`${s.nr} „${s.titel}“ verwerfen? Es bleibt gespeichert und kann wiederhergestellt werden.`)) return
     speichere({ verworfen: !s.verworfen }, s.verworfen ? 'wiederhergestellt' : 'verworfen')
@@ -75,6 +82,7 @@ function Karte({ s, accounts, userName, onNeu }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12, fontWeight: 800, color: R, fontFamily: 'ui-monospace, monospace' }}>{s.nr}</span>
         <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 120 }}>{s.titel}</span>
+        {s.ziel_account && <span style={{ fontSize: 11.5, fontWeight: 700, color: '#ec4899', background: 'rgba(236,72,153,0.12)', padding: '2px 8px', borderRadius: 10 }}>→ {s.ziel_account}</span>}
         <Pill s={s} />
         <button type="button" onClick={verwerfen} disabled={arbeitet} style={{ ...knopf('var(--text-muted)', false), padding: '4px 9px', fontSize: 11.5 }}>{s.verworfen ? 'Wiederherstellen' : 'Verwerfen'}</button>
       </div>
@@ -87,6 +95,15 @@ function Karte({ s, accounts, userName, onNeu }) {
             ? <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>PDF öffnen</a>
             : <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>keine Datei</span>}
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tagKurz(s.erstellt_am)}{s.erstellt_von ? ` · ${s.erstellt_von}` : ''}</span>
+          {!s.reel_url && !s.verworfen && (zielEdit ? (
+            <select autoFocus defaultValue={s.ziel_account || ''} onChange={e => zielSetzen(e.target.value)} onBlur={() => setZielEdit(false)} style={eingabe}>
+              <option value="">— kein Ziel —</option>
+              {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+              {s.ziel_account && !accounts.includes(s.ziel_account) && <option value={s.ziel_account}>{s.ziel_account}</option>}
+            </select>
+          ) : (
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Ziel: {s.ziel_account || '—'} · <button type="button" onClick={() => setZielEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>ändern</button></span>
+          ))}
         </div>
 
         {/* 2. Video */}
@@ -120,6 +137,7 @@ function Karte({ s, accounts, userName, onNeu }) {
             <>
               <a href={s.reel_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: '#10b981', fontWeight: 700 }}>Reel ansehen</a>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.account} · {tagKurz(s.gepostet_am)}{s.gepostet_von ? ` · ${s.gepostet_von}` : ''}</span>
+              {s.ziel_account && s.account && s.ziel_account !== s.account && <span style={{ fontSize: 11, color: 'var(--ton-amber)' }}>abweichend vom Ziel {s.ziel_account}</span>}
               <span style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => setPostEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>ändern</button>
                 <button type="button" onClick={postenZurueck} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>zurücknehmen</button>
@@ -158,6 +176,7 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
   const [nurOffene, setNurOffene] = useState(true)
   const [neu, setNeu] = useState(false)
   const [titel, setTitel] = useState('')
+  const [ziel, setZiel] = useState('')
   const [datei, setDatei] = useState(null)
   const [mitTelegram, setMitTelegram] = useState(true)
   const [arbeitet, setArbeitet] = useState(false)
@@ -192,11 +211,13 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
     const t = titel.trim()
     if (!t) { setHinweis('Bitte einen kurzen Titel eingeben.'); return }
     if (!datei) { setHinweis('Bitte den Drehzettel (PDF) auswählen.'); return }
+    const zielWert = ziel || (accounts.length === 1 ? accounts[0] : '')
+    if (accounts.length && !zielWert) { setHinweis('Bitte wählen, auf welchem Account das Reel laufen soll.'); return }
     setArbeitet(true); setHinweis('')
     const up = await drehzettelHochladen(gewaehlt, datei)
     if (up.fehler) { setArbeitet(false); setHinweis('PDF ging nicht hoch: ' + up.fehler.message); return }
     const { data, error } = await supabase.from('reel_skripte')
-      .insert({ model_name: gewaehlt, titel: t.slice(0, 120), drehzettel_url: up.url, erstellt_von: userName || null })
+      .insert({ model_name: gewaehlt, titel: t.slice(0, 120), drehzettel_url: up.url, ziel_account: zielWert || null, erstellt_von: userName || null })
       .select('nr').single()
     if (error) { setArbeitet(false); setHinweis('Nicht gespeichert: ' + error.message); return }
     logActivity('reel.skript', { entity: `${gewaehlt} ${data.nr}`, detail: `Drehzettel „${t}“` })
@@ -205,7 +226,7 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
       const m = models.find(x => x.name === gewaehlt)
       if (!m?.telegram_id) info = ' Keine Telegram-ID, kein Hinweis verschickt.'
       else {
-        const text = TG_TEXT.replace('{nr}', data.nr).replace('{titel}', t)
+        const text = TG_TEXT.replace('{nr}', data.nr).replace('{titel}', t).replace('{fuer}', zielWert ? ` für ${zielWert}` : '')
         try {
           const r = await sendTelegramMessage(m.telegram_id, text)
           const ok = zugestellt(r)
@@ -214,7 +235,7 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
         } catch { info = ' ⚠ Telegram nicht angekommen.' }
       }
     }
-    setArbeitet(false); setNeu(false); setTitel(''); setDatei(null)
+    setArbeitet(false); setNeu(false); setTitel(''); setDatei(null); setZiel('')
     setHinweis(`✓ ${data.nr} angelegt.${info}`)
     laden()
   }
@@ -237,6 +258,15 @@ export default function ReelSkripteAdmin({ models = [], gewaehlt, userName }) {
       {neu && (
         <div style={{ background: 'var(--bg-card2)', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input value={titel} onChange={e => setTitel(e.target.value)} placeholder="Kurzer Titel, z. B. Küche, Outfit-Wechsel" style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} />
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Posten auf</div>
+            {accounts.length ? (
+              <select value={ziel || (accounts.length === 1 ? accounts[0] : '')} onChange={e => setZiel(e.target.value)} style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }}>
+                {accounts.length > 1 && <option value="">Account wählen …</option>}
+                {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            ) : <div style={{ fontSize: 12, color: 'var(--ton-amber)' }}>{gewaehlt} hat noch keinen Instagram-Link im Board. Das Skript lässt sich trotzdem anlegen, der Poster wählt dann selbst.</div>}
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => dateiRef.current?.click()} style={knopf(R, false)}>{datei ? '📄 ' + datei.name : 'PDF auswählen'}</button>
             <input ref={dateiRef} type="file" accept="application/pdf,.pdf" hidden onChange={e => { setDatei(e.target.files?.[0] || null); e.target.value = '' }} />

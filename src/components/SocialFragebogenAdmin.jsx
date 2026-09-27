@@ -8,7 +8,8 @@ import SocialFragebogen from './SocialFragebogen'
 
 // ── Admin: Social-Media-Fragebogen & Service je Model (v4.100.0) ───────────
 // Sitzt in Kommunikation → Creator → Models, unter dem Steckbrief.
-//   • „Social-Media-Fragebogen schicken“ → Status 'offen'. Beim nächsten Öffnen des Portals
+//   • „Social-Media-Fragebogen schicken“ → Status 'offen' (und Service an,
+//     v4.102.0: den Fragebogen gibt es nur für Models im Service). Beim nächsten Öffnen des Portals
 //     startet der Fragebogen. Optional Telegram-Hinweis. Nie automatisch.
 //   • Zurücknehmen, solange nicht fertig (Antworten bleiben).
 //   • Antworten lesen (mit „geändert am“), selbst nachtragen.
@@ -69,6 +70,7 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
   const [aktiv, setAktiv] = useState(false)
   const [accounts, setAccounts] = useState([])   // Instagram-Links aus dem Board, nur Anzeige
   const [postingAb, setPostingAb] = useState('')
+  const [notizen, setNotizen] = useState({})     // v4.102.0: @handle → „DE · Hauptaccount“
   const [agenturHinweis, setAgenturHinweis] = useState('')
 
   const laden = async () => {
@@ -81,6 +83,7 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
     setAktiv(!!d.service?.service_aktiv)
     setAccounts((acc.data || []).filter(a => resolvePlatform(a.title).key === 'instagram' && String(a.content || '').trim()))
     setPostingAb(d.service?.posting_ab || '')
+    setNotizen({ ...(d.service?.account_notizen || {}) })
     setAgenturHinweis('')
   }
   useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gewaehlt])
@@ -101,7 +104,8 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
 
   const anfordern = async () => {
     setArbeitet(true)
-    const err = await serviceSpeichern(gewaehlt, { fragebogen_status: 'offen', angefordert_am: new Date().toISOString(), angefordert_von: userName || null }, userName)
+    // v4.102.0: Fragebogen gibt es nur im Service — wer noch nicht drin ist, wird dabei aufgenommen.
+    const err = await serviceSpeichern(gewaehlt, { fragebogen_status: 'offen', angefordert_am: new Date().toISOString(), angefordert_von: userName || null, ...(service?.service_aktiv ? {} : { service_aktiv: true }) }, userName)
     let info = ''
     if (err) info = '⚠ Nicht gespeichert: ' + err.message
     else if (mitTelegram) {
@@ -131,9 +135,11 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
   }
 
   const instagram = accounts
+  const notizenSauber = () => Object.fromEntries(Object.entries(notizen).map(([k, v]) => [k, String(v || '').trim().slice(0, 60)]).filter(([, v]) => v))
   const agenturSpeichern = async () => {
     if (aktiv && !instagram.length && !window.confirm('Service aktiv, aber im Board steht noch kein Instagram-Link. Trotzdem speichern?')) return
-    const err = await serviceSpeichern(gewaehlt, { service_aktiv: aktiv, posting_ab: postingAb || null }, userName)
+    if (!aktiv && service?.service_aktiv && laeuft && !window.confirm(`${gewaehlt} aus dem Service nehmen? Der offene Fragebogen wird dann nicht mehr angezeigt (Antworten bleiben).`)) return
+    const err = await serviceSpeichern(gewaehlt, { service_aktiv: aktiv, posting_ab: postingAb || null, account_notizen: notizenSauber(), ...(!aktiv && laeuft ? { fragebogen_status: null } : {}) }, userName)
     if (err) { setAgenturHinweis('⚠ Nicht gespeichert: ' + err.message); return }
     logActivity('model.social_service', { entity: gewaehlt, detail: `${aktiv ? 'aktiv' : 'inaktiv'}${postingAb ? ' · ab ' + postingAb : ''}` })
     await laden()
@@ -141,6 +147,7 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
   }
   const agenturGeaendert = aktiv !== !!service?.service_aktiv
     || (postingAb || '') !== (service?.posting_ab || '')
+    || JSON.stringify(notizenSauber()) !== JSON.stringify(Object.fromEntries(Object.entries(service?.account_notizen || {}).filter(([, v]) => String(v || '').trim())))
 
   return (
     <div style={{ background: 'var(--bg-card)', border: `1px solid ${service?.service_aktiv ? 'rgba(236,72,153,0.45)' : 'var(--border)'}`, borderRadius: 14, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -171,12 +178,18 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Instagram (trägt das Model im Board ein)</div>
                 {accounts.length ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {accounts.map((a, i) => (
-                      <a key={i} href={/^https?:\/\//i.test(a.content) ? a.content : `https://${a.content}`} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: P, wordBreak: 'break-all' }}>{instaHandle(a.content)}</a>
-                    ))}
+                    {accounts.map((a, i) => {
+                      const h = instaHandle(a.content)
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <a href={/^https?:\/\//i.test(a.content) ? a.content : `https://${a.content}`} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: P, fontWeight: 700, minWidth: 110 }}>{h}</a>
+                          <input value={notizen[h] || ''} onChange={e => setNotizen(n => ({ ...n, [h]: e.target.value }))} placeholder="z. B. DE · Hauptaccount" style={{ ...eingabe, flex: 1, minWidth: 140, padding: '6px 9px', fontSize: 12.5 }} />
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Noch kein Instagram-Link im Board.</div>}
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Ändern im Board unter „Social Media Kanäle“. Die Pipeline übernimmt diese Links.</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Links ändert das Model im Board unter „Social Media Kanäle“. Die Kurzbeschreibung sehen Poster und Model beim Drehzettel.</div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Posting ab (Start der Erfolgsmessung)</div>
@@ -216,6 +229,7 @@ export default function SocialFragebogenAdmin({ models = [], gewaehlt, userName 
             <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               An: <b style={{ color: 'var(--text-primary)' }}>{gewaehlt}</b><br />
               Beim nächsten Öffnen des Portals startet der Fragebogen. Was schon beantwortet ist, steht dann schon drin.
+              {!service?.service_aktiv && <><br /><span style={{ color: P, fontWeight: 700 }}>{gewaehlt} wird dabei in den Social-Media-Service aufgenommen.</span></>}
               {status === 'fertig' && <><br /><span style={{ color: 'var(--ton-amber)' }}>Hinweis: {gewaehlt} hat schon einmal abgeschlossen. Die Antworten bleiben, es geht nur nochmal durch.</span></>}
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--text-primary)', cursor: 'pointer' }}>

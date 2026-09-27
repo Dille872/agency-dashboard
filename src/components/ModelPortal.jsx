@@ -59,96 +59,8 @@ function formatMoney(v) {
   return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function SocialModelView({ displayName, cardS, itemS }) {
-  const [posts, setPosts] = useState([])
-  const [accounts, setAccounts] = useState([])
-
-  useEffect(() => {
-    const load = async () => {
-      const { data: a } = await supabase.from('social_accounts').select('*').eq('model_name', displayName)
-      setAccounts(a || [])
-      const { data: p } = await supabase.from('social_posts').select('*').eq('model_name', displayName).order('created_at', { ascending: false })
-      setPosts(p || [])
-    }
-    load()
-  }, [displayName])
-
-  const pendingApproval = posts.filter(p => p.status === 'freigabe')
-  const recentPosts = posts.filter(p => p.status === 'gepostet').slice(0, 5)
-
-  const approve = async (id) => {
-    await supabase.from('social_posts').update({ status: 'fertig', approved_by_model: true }).eq('id', id)
-    setPosts(prev => prev.map(p => p.id === id ? { ...p, status: 'fertig', approved_by_model: true } : p))
-  }
-
-  const reject = async (id, feedback) => {
-    await supabase.from('social_posts').update({ status: 'abgelehnt', model_feedback: feedback || null }).eq('id', id)
-    setPosts(prev => prev.map(p => p.id === id ? { ...p, status: 'abgelehnt' } : p))
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {/* Freigaben */}
-      {pendingApproval.length > 0 && (
-        <div style={{ ...cardS, borderColor: 'rgba(245,158,11,0.45)', background: 'linear-gradient(155deg, rgba(245,158,11,0.12), var(--bg-card) 60%)' }}>
-          <div style={{ fontSize: 14.5, color: 'var(--ton-amber)', fontWeight: 700, marginBottom: 10 }}>
-            Freigabe ausstehend · {pendingApproval.length}
-          </div>
-          {pendingApproval.map(post => (
-            <div key={post.id} style={{ ...itemS, border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.04)', marginBottom: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{post.title}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                {post.platform}{post.scheduled_at ? ` · geplant ${new Date(post.scheduled_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
-              </div>
-              {post.material_link && <div style={{ fontSize: 11, marginBottom: 8 }}><a href={post.material_link} target="_blank" rel="noreferrer" style={{ color: '#7c3aed' }}>Material ansehen</a></div>}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => approve(post.id)} style={{ flex: 1, padding: '7px', borderRadius: 7, background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>✓ Freigeben</button>
-                <button onClick={() => reject(post.id)} style={{ padding: '7px 12px', borderRadius: 7, background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>✕ Ablehnen</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Meine Accounts */}
-      {accounts.length > 0 && (
-        <div style={cardS}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 10 }}>Meine Accounts</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
-            {accounts.map(acc => (
-              <div key={acc.id} style={{ ...itemS }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{acc.account_name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{acc.platform}{acc.theme ? ` · ${acc.theme}` : ''}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Letzte Posts */}
-      {recentPosts.length > 0 && (
-        <div style={cardS}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700, marginBottom: 10 }}>Zuletzt gepostet</div>
-          {recentPosts.map(post => (
-            <div key={post.id} style={itemS}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{post.title}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{post.platform}{post.posted_at ? ` · ${new Date(post.posted_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}</div>
-                </div>
-                {post.views > 0 && <span style={{ fontSize: 11, color: '#10b981', fontWeight: 700 }}>{post.views.toLocaleString()} Views</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {pendingApproval.length === 0 && accounts.length === 0 && (
-        <div style={{ ...cardS, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: 30 }}>Kein Social Tracking aktiv</div>
-      )}
-    </div>
-  )
-}
+// v4.102.0: SocialModelView (alte Beitrags-Freigabe aus dem Social-Tab) entfernt —
+// der Bereich „Social“ zeigt jetzt Drehzettel und Social-Media-Fragebogen.
 
 // v4.77.0: wie leisteMerken in App.jsx — <html class="mit-leiste"> solange die Leiste hängt
 const leisteMerkenModel = (el) => {
@@ -778,10 +690,15 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
   const [socialOffen, setSocialOffen] = useState(false)
   const [socialWeg, setSocialWeg] = useState(false)
   const socialStatus = social.service?.fragebogen_status
+  // v4.102.0: „Social“ gibt es nur für Models im Social-Media-Service
+  const socialSichtbar = !social.fehlt && social.service?.service_aktiv === true
   const einfAusstehend = !einfWeg && (einfStatus === 'offen' || einfStatus === 'laeuft')
   useEffect(() => {
-    if (!isPreview && !socialWeg && !socialOffen && !einfuehrung && !einfAusstehend && (socialStatus === 'offen' || socialStatus === 'laeuft')) setSocialOffen(true)
-  }, [socialStatus, isPreview, socialWeg, socialOffen, einfuehrung, einfAusstehend])
+    if (!isPreview && socialSichtbar && !socialWeg && !socialOffen && !einfuehrung && !einfAusstehend && (socialStatus === 'offen' || socialStatus === 'laeuft')) setSocialOffen(true)
+  }, [socialStatus, socialSichtbar, isPreview, socialWeg, socialOffen, einfuehrung, einfAusstehend])
+  useEffect(() => {
+    if (!social.fehlt && !socialSichtbar && activeSection === 'social') setActiveSection('home')
+  }, [social.fehlt, socialSichtbar, activeSection])
   const oeffneBereich = async (key) => {
     setActiveSection(key)
     setMehrOffen(false)
@@ -863,7 +780,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             { key: 'videos', label: <><Icon name="video" /> Videos{videos.length > 0 ? ` (${videos.length})` : ''}</> },
             { key: 'kalender', label: <><Icon name="calendar" /> Kalender{upcomingCal.length > 0 ? ` (${upcomingCal.length})` : ''}</> },
             { key: 'anfragen', label: <><Icon name="mail" /> Anfragen{openRequests.length > 0 ? ` (${openRequests.length})` : ''}</> },
-            { key: 'social', label: 'Social' },
+            ...(socialSichtbar ? [{ key: 'social', label: <>📱 Social</> }] : []),
             { key: 'umsatz', label: <><Icon name="dollar" /> Umsatz</> },
           ].map(t => (
             <button key={t.key} onClick={() => oeffneBereich(t.key)} style={{
@@ -1315,29 +1232,6 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 </div>
               )
             })()}
-            {/* v4.100.0: Social-Media-Fragebogen — nur sichtbar, wenn angefordert oder schon begonnen */}
-            {!social.fehlt && (socialStatus || socialStand(social.antworten).voll > 0) && (() => {
-              const st = socialStand(social.antworten)
-              const laeuft = socialStatus === 'offen' || socialStatus === 'laeuft'
-              return (
-                <div data-help="socialfragebogen" style={{ ...cardS, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 12, border: `1px solid ${laeuft ? 'rgba(236,72,153,0.5)' : 'var(--border)'}`, background: laeuft ? 'linear-gradient(135deg, rgba(236,72,153,0.12), var(--bg-card) 70%)' : undefined }}>
-                  <span style={{ fontSize: 24 }}>📱</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7 }}>Social Media <HelpDot topic="socialfragebogen" /></div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {laeuft ? 'Das Team bittet dich um den Fragebogen für deine Reels.' : `${st.voll} von ${st.gesamt} Fragen beantwortet · nur fürs Team`}
-                    </div>
-                  </div>
-                  {!isPreview && (
-                    <button type="button" onClick={() => { setSocialWeg(false); setSocialOffen(true) }} style={{ padding: '9px 13px', borderRadius: 11, border: 'none', background: '#ec4899', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
-                      {laeuft ? (st.voll ? 'Weitermachen' : 'Ausfüllen') : 'Bearbeiten'}
-                    </button>
-                  )}
-                </div>
-              )
-            })()}
-            {/* v4.101.0: Drehzettel — nur sichtbar, wenn es Reel-Skripte gibt */}
-            <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot} />
             <div data-help="services">
               <ModelSteckbrief displayName={displayName} board={board} services={services} isPreview={isPreview}
                 logActivity={logActivity} onGeaendert={() => Promise.all([loadBoard(), loadServices()])} />
@@ -1835,8 +1729,31 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* SOCIAL */}
         {activeSection === 'social' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <SektionsKopf id="social" titel="Social" unter="Beiträge freigeben, die das Team für dich vorbereitet" />
-            <SocialModelView displayName={displayName} cardS={cardS} itemS={itemS} />
+            <SektionsKopf id="social" titel="Social" unter="Deine Reels: Drehzettel, Videos und dein Social-Media-Profil" />
+            {/* v4.102.0: Drehzettel + Fragebogen — vorher im Board */}
+            <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
+              notizen={social.service?.account_notizen || {}}
+              leerText="Noch keine Drehzettel. Sobald wir ein Reel für dich geschrieben haben, erscheint es hier." />
+            {!social.fehlt && (() => {
+              const st = socialStand(social.antworten)
+              const laeuft = socialStatus === 'offen' || socialStatus === 'laeuft'
+              return (
+                <div data-help="socialfragebogen" style={{ ...cardS, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 12, border: `1px solid ${laeuft ? 'rgba(236,72,153,0.5)' : 'var(--border)'}`, background: laeuft ? 'linear-gradient(135deg, rgba(236,72,153,0.12), var(--bg-card) 70%)' : undefined }}>
+                  <span style={{ fontSize: 24 }}>📱</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 7 }}>Social Media <HelpDot topic="socialfragebogen" /></div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {laeuft ? 'Das Team bittet dich um den Fragebogen für deine Reels.' : st.voll ? `${st.voll} von ${st.gesamt} Fragen beantwortet · nur fürs Team` : 'Damit wir Reels schreiben, die zu dir passen'}
+                    </div>
+                  </div>
+                  {!isPreview && (
+                    <button type="button" onClick={() => { setSocialWeg(false); setSocialOffen(true) }} style={{ padding: '9px 13px', borderRadius: 11, border: 'none', background: '#ec4899', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                      {laeuft ? (st.voll ? 'Weitermachen' : 'Ausfüllen') : st.voll ? 'Bearbeiten' : 'Ausfüllen'}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         )}
 
@@ -1896,7 +1813,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {[
           { key: 'home', icon: '🏠', label: 'Start' },
           { key: 'board', icon: '📋', label: 'Board', zahl: unreadCustomContent || 0 },
-          { key: 'kalender', icon: '🗓', label: 'Kalender' },
+          // v4.102.0: Models im Social-Media-Service haben hier „Social“ statt Kalender
+          socialSichtbar ? { key: 'social', icon: '📱', label: 'Social' } : { key: 'kalender', icon: '🗓', label: 'Kalender' },
           { key: 'videos', icon: '🎬', label: 'Videos' },
         ].map(l => {
           const aktiv = activeSection === l.key
@@ -1911,7 +1829,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           )
         })}
         {(() => {
-          const aktiv = ['anfragen', 'social', 'umsatz'].includes(activeSection)
+          const aktiv = ['anfragen', 'umsatz', ...(socialSichtbar ? ['kalender'] : [])].includes(activeSection)
           return (
             <button type="button" onClick={() => setMehrOffen(true)} className={aktiv ? 'aktiv' : undefined} aria-label={openRequests.length ? `Mehr, ${openRequests.length} Anfragen offen` : 'Mehr'}>
               <span className="leiste-icon" style={{ fontSize: 17, letterSpacing: 1 }}>
@@ -1929,7 +1847,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', alignSelf: 'center', marginBottom: 4 }} />
             {[
               { key: 'anfragen', icon: '✉️', label: 'Anfragen', zahl: openRequests.length },
-              { key: 'social', icon: '📱', label: 'Social' },
+              ...(socialSichtbar ? [{ key: 'kalender', icon: '🗓', label: 'Kalender' }] : []),
               { key: 'umsatz', icon: '💰', label: 'Umsatz' },
             ].map(m => (
               <button key={m.key} type="button" onClick={() => oeffneBereich(m.key)} style={{

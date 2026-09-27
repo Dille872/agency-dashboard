@@ -6,12 +6,13 @@ import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKu
 // nach dem Drehen den LINK zum Video einfügen (Dropbox, Google Drive,
 // WeTransfer …). Keine Videodatei im Dashboard — so bleibt die volle Qualität
 // und große Dateien brechen nicht ab. Posten macht die Agentur.
-// Erscheint nur, wenn es mindestens ein Skript gibt.
+// Erscheint nur, wenn es mindestens ein Skript gibt. Sitzt seit v4.102.0 im
+// Bereich „Social“ (nicht mehr im Board) und zeigt den Ziel-Account.
 
 const R = '#06b6d4'
 const feld = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '10px 11px', borderRadius: 11, fontSize: 15, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }
 
-function Zeile({ s, name, logActivity, onNeu, isPreview }) {
+function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
   const [edit, setEdit] = useState(false)
   const [link, setLink] = useState(s.video_link || '')
   const [fehler, setFehler] = useState('')
@@ -37,6 +38,11 @@ function Zeile({ s, name, logActivity, onNeu, isPreview }) {
         <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 0 }}>{s.titel}</span>
         <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: st.f + '22', color: st.f, whiteSpace: 'nowrap' }}>{status === 'freigegeben' ? 'zu drehen' : st.t}</span>
       </div>
+      {s.ziel_account && status !== 'gepostet' && (
+        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--bg-card2)', borderRadius: 10, padding: '7px 9px' }}>
+          Für <b style={{ color: '#ec4899' }}>{s.ziel_account}</b>{notizen[s.ziel_account] ? ` · ${notizen[s.ziel_account]}` : ''}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 13.5, fontWeight: 700, color: R, padding: '8px 12px', borderRadius: 11, border: `1px solid ${R}`, textDecoration: 'none' }}>📄 Drehzettel öffnen</a>}
         {s.video_link && !edit && (
@@ -64,7 +70,7 @@ function Zeile({ s, name, logActivity, onNeu, isPreview }) {
   )
 }
 
-export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot }) {
+export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, leerText = '' }) {
   const [liste, setListe] = useState(null)
   const [alleGepostet, setAlleGepostet] = useState(false)
   const laden = async () => {
@@ -73,7 +79,17 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
     setListe(d.fehlt ? [] : d.liste)
   }
   useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [displayName])
-  if (!liste || !liste.length) return null
+  if (!liste) return null
+  if (!liste.length) {
+    if (!leerText) return null
+    return (
+      <div data-help="drehzettel" style={{ ...cardS, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 22 }}>🎬</span>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)', flex: 1 }}>{leerText}</span>
+        {HelpDot && <HelpDot topic="drehzettel" />}
+      </div>
+    )
+  }
 
   const offen = liste.filter(s => statusVon(s) !== 'gepostet')
   const gepostet = liste.filter(s => statusVon(s) === 'gepostet')
@@ -87,7 +103,7 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
         {HelpDot && <HelpDot topic="drehzettel" />}
         {zuDrehen > 0 && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: 'rgba(245,158,11,0.15)', color: 'var(--ton-amber)' }}>{zuDrehen} zu drehen</span>}
       </div>
-      {offen.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} />)}
+      {offen.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen} />)}
       {!offen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Alles gedreht und gepostet. Danke! 💛</div>}
       {gepostet.length > 0 && (
         <>
