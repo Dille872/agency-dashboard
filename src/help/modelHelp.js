@@ -172,6 +172,27 @@ export const HELP_TOPICS = [
     ],
   },
   {
+    id: 'drehzettel',
+    icon: '🎬',
+    tab: 'board',
+    title: 'Drehzettel',
+    short: 'Deine Reel-Skripte: Drehzettel öffnen, drehen, Link zum Video einfügen.',
+    body: [
+      'Für jedes Reel, das wir für dich geschrieben haben, bekommst du einen Drehzettel mit Nummer (z. B. S-0003). Darauf steht, was du drehen sollst.',
+      'Das Video lädst du nicht hier hoch, sondern in deine Dropbox (oder Google Drive, WeTransfer) und fügst nur den Link ein. So bleibt die volle Qualität erhalten. Posten machen wir.',
+    ],
+    steps: [
+      'Im Board bei „Drehzettel“ auf „Drehzettel öffnen“ tippen und das Reel drehen.',
+      'Video in deine Dropbox laden, dort „Teilen“ → „Link kopieren“.',
+      'Zurück im Portal auf „Video fertig? Link einfügen“, Link einfügen, Speichern.',
+    ],
+    watch: [
+      'Bitte nicht über WhatsApp schicken, da wird das Video stark verkleinert.',
+      'Den Link kannst du ändern, solange das Reel noch nicht gepostet ist.',
+      'Die Karte erscheint erst, wenn wir dir den ersten Drehzettel geschickt haben.',
+    ],
+  },
+  {
     id: 'services',
     icon: '✅',
     tab: 'board',

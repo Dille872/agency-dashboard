@@ -33,6 +33,7 @@ import ModelEinfuehrung, { themenStand } from './ModelEinfuehrung' // v4.95.0
 import { steckbriefLaden } from '../steckbrief' // v4.95.0
 import SocialFragebogen from './SocialFragebogen' // v4.100.0
 import { socialLaden, stand as socialStand } from '../socialProfil' // v4.100.0
+import ModelDrehzettel from './ModelDrehzettel' // v4.101.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -1335,6 +1336,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 </div>
               )
             })()}
+            {/* v4.101.0: Drehzettel — nur sichtbar, wenn es Reel-Skripte gibt */}
+            <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot} />
             <div data-help="services">
               <ModelSteckbrief displayName={displayName} board={board} services={services} isPreview={isPreview}
                 logActivity={logActivity} onGeaendert={() => Promise.all([loadBoard(), loadServices()])} />

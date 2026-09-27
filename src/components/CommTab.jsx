@@ -13,6 +13,7 @@ import { heuteBerlin } from '../utils' // v4.57.0
 import ReiseListe from './ReiseListe' // v4.94.0: alte Reisen ins Archiv
 import SteckbriefAdmin from './SteckbriefAdmin' // v4.95.0
 import SocialFragebogenAdmin from './SocialFragebogenAdmin' // v4.100.0
+import ReelSkripteAdmin from './ReelSkripteAdmin' // v4.101.0
 
 const OWNER_EMAIL = 'dillemc@hotmail.com'
 
@@ -2088,6 +2089,12 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
             {selectedModel && (
               <div style={{ marginTop: 10 }}>
                 <SocialFragebogenAdmin key={selectedModel.name} models={activeModels} gewaehlt={selectedModel.name} userName={userName} />
+              </div>
+            )}
+            {/* v4.101.0: Reel-Skripte — Drehzettel → Video-Link → gepostet */}
+            {selectedModel && (
+              <div style={{ marginTop: 10 }}>
+                <ReelSkripteAdmin key={'reels:' + selectedModel.name} models={activeModels} gewaehlt={selectedModel.name} userName={userName} />
               </div>
             )}
           </div>
