@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import ModelBell from './ModelBell'
 import ChatterChat from './ChatterChat'
@@ -252,6 +252,22 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
     loadSocial()
     loadBoard(); loadCalendar(); loadContentRequests(); loadAliasesAndRevenue().finally(() => setSubsGeladen(true)); loadModelStatus(); loadVideos(); loadCustomContent(); loadServices(); loadMyTodos()
   }
+
+  // v4.109.1: Kommt das Portal aus dem Hintergrund zurück (Handy-App), Anfragen
+  // neu laden. Vorher wurde nur beim Öffnen geladen — ein Steckbrief oder
+  // Fragebogen, der danach angefordert wurde, erschien am Handy nie.
+  const nachladenRef = useRef(null)
+  nachladenRef.current = () => { loadSteckbrief(); loadSocial(); loadMyTodos() }
+  useEffect(() => {
+    if (!displayName || isPreview) return
+    let weg = Date.now()
+    const sicht = () => {
+      if (document.visibilityState !== 'visible') { weg = Date.now(); return }
+      if (Date.now() - weg > 60000) nachladenRef.current?.()
+    }
+    document.addEventListener('visibilitychange', sicht)
+    return () => document.removeEventListener('visibilitychange', sicht)
+  }, [displayName, isPreview])
 
   // v3.40.0: Meine Aufgaben (vom Team zugewiesen)
   const loadMyTodos = async () => {

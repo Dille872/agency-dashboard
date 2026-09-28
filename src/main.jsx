@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import TelegramFehlerHinweis from './components/TelegramFehlerHinweis.jsx'
+import NeueVersionHinweis from './components/NeueVersionHinweis.jsx' // v4.109.1
 import './components/AppInstallieren.jsx' // v4.91.0: fängt „beforeinstallprompt“ früh ab
 import './index.css'
 
@@ -13,5 +14,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
     {/* v4.48.0: global, damit auch Chatter/Models Telegram-Fehler sehen */}
     <TelegramFehlerHinweis />
+    {/* v4.109.1: Handy-App lange im Hintergrund → Hinweis auf neue Version */}
+    <NeueVersionHinweis />
   </React.StrictMode>,
 )
