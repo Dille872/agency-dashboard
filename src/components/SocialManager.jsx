@@ -8,6 +8,7 @@ import SocialModelsAdmin from './SocialModelsAdmin' // v4.108.0
 import { SchnittListe, FreigabeListe } from './SocialAblauf' // v4.106.0
 import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialManager'
 import SocialSteuerung from './SocialSteuerung' // v4.103.0: nur Admins
+import ReelsOhneSkript from './ReelsOhneSkript' // v4.109.0
 
 // ── Social Media Manager (v4.102.0) ────────────────────────────────────────
 // Arbeitsplatz für die Leute, die Reels posten (Rolle social_media), und für
@@ -79,7 +80,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const [erinnert, setErinnert] = useState({})
 
   const laden = useCallback(async () => {
-    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, account_modus').eq('service_aktiv', true).order('model_name')
+    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, account_modus, nicht_betreut').eq('service_aktiv', true).order('model_name')
     if (s.error) { setDaten({ fehlt: true }); return }
     await cutterLaden() // v4.106.0: für „Im Schnitt“ vs. „Zur Freigabe“
     modusSetzen(s.data || []) // v4.108.0: „Model postet selbst“
@@ -224,6 +225,9 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
           </div>
           {!zuPosten.length && <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13.5 }}>{t('nichts_zu_posten')}</div>}
           {zuPosten.map(s => <PostenKarte key={s.id + ':' + s.aktualisiert_am} s={s} m={models[s.model_name]} t={t} tr={tr} datum={datum} seitText={seitText} notiz={notiz} userDisplayName={userDisplayName} onNeu={laden} />)}
+          {/* v4.109.0: Reels ohne Skript — Poster sehen hier nur ihre eigenen Accounts (RLS) */}
+          <ReelsOhneSkript t={t} sprache={sprache} userDisplayName={userDisplayName} istAdmin={istAdmin}
+            accounts={Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: notiz(m, a.handle) })))} />
         </>
       )}
 

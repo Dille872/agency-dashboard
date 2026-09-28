@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import ReelsOhneSkript from './ReelsOhneSkript' // v4.109.0
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
@@ -444,6 +445,10 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
             </div>
           )
         })()}
+        {/* v4.109.0: Reels ohne Skript eintragen */}
+        <div style={{ marginTop: 14 }}>
+          <ReelsOhneSkript userDisplayName={userDisplayName} istAdmin accounts={zeilen.map(({ model, acc }) => ({ model: model.model_name, handle: acc.handle, notiz: (model.account_notizen || {})[acc.handle] || '' }))} />
+        </div>
         {/* v4.107.0: Wirkung je Account — unsere Reels gegen die eigenen des Models, letzte 30 Tage */}
         {(() => {
           const alle = Object.values(messwerte).filter(x => x.gepostet_am && tageSeit(x.gepostet_am) <= 30)
@@ -455,18 +460,21 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
               <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>Wirkung, letzte 30 Tage</div>
               <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6 }}>Faktor = Aufrufe geteilt durch den Median der früheren Reels desselben Accounts. 1,0× = normal, über 1,5× = deutlich besser. Letzter Messstand je Reel.</div>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
-                  <thead><tr>{['Account', 'Unsere Reels', 'Median-Faktor', 'Eigene Reels', 'Median-Faktor'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                  <thead><tr>{['Account', 'Mit Skript', 'Faktor', 'Ohne Skript (von uns)', 'Faktor', 'Model selbst', 'Faktor'].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
                     {accs.map(a => {
                       const u = alle.filter(x => x.account === a && x.art === 'skript')
+                      const o = alle.filter(x => x.account === a && x.art === 'ohne_skript') // v4.109.0
                       const e = alle.filter(x => x.account === a && x.art === 'vergleich')
-                      const mu = median(u.map(x => x.faktor)), me = median(e.map(x => x.faktor))
+                      const mu = median(u.map(x => x.faktor)), mo = median(o.map(x => x.faktor)), me = median(e.map(x => x.faktor))
                       return (
                         <tr key={a}>
                           <td style={{ ...td, color: P, fontWeight: 700 }}>{a}</td>
                           <td style={td}>{u.length}</td>
                           <td style={{ ...td, fontWeight: 800, color: faktorFarbe(mu) }}>{mu !== null ? `${mu.toFixed(1)}×` : '—'}</td>
+                          <td style={td}>{o.length}</td>
+                          <td style={{ ...td, fontWeight: 800, color: faktorFarbe(mo) }}>{mo !== null ? `${mo.toFixed(1)}×` : '—'}</td>
                           <td style={td}>{e.length}</td>
                           <td style={{ ...td, fontWeight: 800, color: faktorFarbe(me) }}>{me !== null ? `${me.toFixed(1)}×` : '—'}</td>
                         </tr>
