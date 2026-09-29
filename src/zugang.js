@@ -12,7 +12,9 @@ export function darfAufTab(userRole, userRoles, tab) {
   if (userRole === 'manager') return !['settings', 'billing'].includes(tab)
   if (userRole === 'dienstplan') return ['schedule', 'chatters-comm', 'kalender'].includes(tab)
   if (userRole === 'creator_manager') return ['models-comm', 'kalender'].includes(tab)
-  // v4.106.0: alle Social-Zusatzrollen (Poster, Cutter, Freigabe) landen im Social Media Manager
+  // v5.1.0: Social-Leitung — der ganze Bereich Social Media (alle Unterreiter), sonst nichts
+  if (rollen.includes('social_leitung') || userRole === 'social_leitung') return tab === 'social' || tab.startsWith('social-')
+  // v4.106.0: Poster und Cutter landen im Social Media Manager (nur ihre Accounts)
   if (['social_media', 'cutter', 'social_freigabe'].some(r => rollen.includes(r))) return ['social'].includes(tab)
   return false
 }
@@ -22,6 +24,6 @@ export function startTab(userRole, userRoles) {
   const rollen = Array.isArray(userRoles) ? userRoles : []
   if (userRole === 'dienstplan') return 'schedule'
   if (userRole === 'creator_manager') return 'models-comm'
-  if (userRole !== 'admin' && userRole !== 'manager' && ['social_media', 'cutter', 'social_freigabe'].some(r => rollen.includes(r))) return 'social'
+  if (userRole !== 'admin' && userRole !== 'manager' && ['social_media', 'cutter', 'social_leitung', 'social_freigabe'].some(r => rollen.includes(r))) return 'social'
   return 'models'
 }

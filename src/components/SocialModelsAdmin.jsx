@@ -24,7 +24,10 @@ export default function SocialModelsAdmin({ userDisplayName }) {
 
   const laden = async () => {
     const [m, s] = await Promise.all([
-      supabase.from('models_contact').select('*').order('name'),
+      // v5.1.0: Admins lesen models_contact direkt (brauchen die Telegram-ID).
+      // Die Social-Leitung darf das nicht — für sie kommt die Liste über eine Funktion.
+      supabase.from('models_contact').select('*').order('name').then(x => (!x.error && (x.data || []).length) ? x
+        : supabase.rpc('social_models_liste').then(y => y.error ? x : { ...y, data: (y.data || []).sort((a, b) => String(a.name).localeCompare(String(b.name))) })),
       supabase.from('model_social_service').select('model_name, service_aktiv, fragebogen_status'),
     ])
     setModels((m.data || []).filter(x => x.active !== false))

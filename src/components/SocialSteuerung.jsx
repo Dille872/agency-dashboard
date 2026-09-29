@@ -50,7 +50,8 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
     const [b, sk, r] = await Promise.all([
       namen.length ? supabase.from('model_board').select('model_name, title, content, sort_order, von_agentur').in('model_name', namen).eq('category', SOCIAL_CATEGORY).order('sort_order') : Promise.resolve({ data: [] }),
       supabase.from('reel_skripte').select('*').order('erstellt_am', { ascending: false }).limit(1000),
-      supabase.from('user_roles').select('display_name, roles, status').overlaps('roles', ['social_media', 'cutter']),
+      // v5.1.0: Liste über Funktion, damit auch die Social-Leitung sie bekommt (ohne user_roles lesen zu dürfen)
+      supabase.rpc('social_team_liste').then(x => x.error ? supabase.from('user_roles').select('display_name, roles, status').overlaps('roles', ['social_media', 'cutter']) : x),
     ])
     const cu = await supabase.from('social_account_cutter').select('*') // v4.106.0
     const cutterZ = cu.error ? [] : (cu.data || [])

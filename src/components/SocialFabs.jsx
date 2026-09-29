@@ -202,7 +202,7 @@ function SocialGlocke({ T, loc, displayName, rollen, msgs, oeffneChat, isOpen, o
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [lastSeen, markieren] = useGelesen('socialbell', { lokalKey: 'socialbell_' + displayName, startJetzt: true })
   const [daten, setDaten] = useState({ skripte: [], poster: [], cutter: [] })
-  const istPoster = rollen.includes('social_media'), istCutter = rollen.includes('cutter'), istFreigeber = rollen.includes('social_freigabe')
+  const istPoster = rollen.includes('social_media'), istCutter = rollen.includes('cutter'), istFreigeber = rollen.includes('social_freigabe') || rollen.includes('social_leitung')
 
   const laden = useCallback(async () => {
     const [sk, p, c] = await Promise.all([

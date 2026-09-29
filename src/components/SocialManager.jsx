@@ -54,7 +54,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
 
   const [reiter, setReiter] = useState(festerReiter || (istAdmin ? 'steuerung' : 'posten'))
   useEffect(() => { if (festerReiter) setReiter(festerReiter) }, [festerReiter])
-  // v4.106.0: eigene Zusatzrollen (social_media = Poster, cutter, social_freigabe)
+  // v4.106.0: eigene Zusatzrollen (social_media = Poster, cutter; v5.1.0: social_leitung statt social_freigabe)
   const [rollen, setRollen] = useState(null)
   useEffect(() => {
     let weg = false
@@ -68,7 +68,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   }, [])
   const istPoster = istAdmin || (rollen || []).includes('social_media')
   const istCutter = istAdmin || (rollen || []).includes('cutter')
-  const istFreigeber = istAdmin || (rollen || []).includes('social_freigabe')
+  const istFreigeber = istAdmin || (rollen || []).some(r => r === 'social_freigabe' || r === 'social_leitung') // v5.1.0
   useEffect(() => {
     if (!rollen || istAdmin) return
     if (reiter === 'posten' && !istPoster) setReiter(istFreigeber ? 'freigabe' : istCutter ? 'schnitt' : 'ueberblick')

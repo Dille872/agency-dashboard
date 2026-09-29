@@ -26,10 +26,36 @@ const ROLES = [
   { key: 'creator_manager', label: 'Creator Mgr', color: '#f59e0b', desc: 'Nur Creator Tab' },
   { key: 'chatter', label: 'Chatter', color: '#a78bfa', desc: 'Nur Chatter Portal' },
   { key: 'model', label: 'Model', color: '#ef4444', desc: 'Nur Model Portal' },
-  { key: 'social_media', label: 'Social Media', color: '#ec4899', desc: 'Social Portal: postet (Zusatzrolle)' },
-  { key: 'cutter', label: 'Cutter', color: '#a855f7', desc: 'Social Portal: schneidet Reels (Zusatzrolle)' },
-  { key: 'social_freigabe', label: 'Social-Freigabe', color: '#f97316', desc: 'Social Portal: gibt geschnittene Reels frei (Zusatzrolle)' },
+  // v5.1.0: Social-Team klar benannt. Der Schlüssel social_media bleibt (Datenbank), heißt aber „Poster“.
+  { key: 'social_media', label: '📱 Poster', color: '#ec4899', desc: 'Postet freigegebene Reels — nur die Accounts, die ihm in der Steuerung zugeteilt sind' },
+  { key: 'cutter', label: '✂️ Cutter', color: '#a855f7', desc: 'Schneidet Rohvideos — nur die Accounts, die ihm in der Steuerung zugeteilt sind' },
+  { key: 'social_leitung', label: '🧭 Social-Leitung', color: '#f97316', desc: 'Ganzer Social-Media-Bereich für alle Models (Steuerung, Freigabe, Zuteilen, Wirkung) — sonst nichts' },
+  // Altname bis v5.0.0, wird mit sql/social-leitung.sql zu social_leitung. Nicht mehr auswählbar.
+  { key: 'social_freigabe', label: 'Social-Freigabe (alt)', color: '#f97316', desc: 'veraltet, wird zur Social-Leitung', alt: true },
 ]
+
+// v5.1.0: Rollen in Gruppen, damit man durchblickt
+const ROLLEN_GRUPPEN = [
+  { titel: 'Team', hinweis: 'Arbeiten im Dashboard', keys: ['admin', 'manager', 'dienstplan', 'creator_manager'] },
+  { titel: 'Portale', hinweis: 'Eigenes Portal', keys: ['chatter', 'model'] },
+  { titel: 'Social-Media-Team', hinweis: 'Zusatzrollen, auch zu Chatter kombinierbar. Welche Models: Social Media → Steuerung', keys: ['social_media', 'cutter', 'social_leitung'] },
+]
+function RollenGruppen({ render, kompakt = false }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: kompakt ? 8 : 12 }}>
+      {ROLLEN_GRUPPEN.map(g => (
+        <div key={g.titel}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }}>
+            {g.titel}{!kompakt && <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}> · {g.hinweis}</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexDirection: kompakt ? 'row' : 'column' }}>
+            {g.keys.map(k => ROLES.find(r => r.key === k)).filter(Boolean).map(render)}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const DEFAULT_BOT_MESSAGES = {
   shift_start: '✅ Schicht gestartet!\n{shift} · {models}\n\nSende /off wenn fertig.',
@@ -1220,14 +1246,12 @@ export default function SettingsTab() {
           {/* Rollen-Übersicht */}
           <div style={cardS}>
             <div style={labelS}>Rollen & Zugriffe</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {ROLES.map(r => (
+            <RollenGruppen render={r => (
                 <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a' }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: r.color, background: r.color + '22', padding: '2px 8px', borderRadius: 4, minWidth: 90, textAlign: 'center' }}>{r.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: r.color, background: r.color + '22', padding: '2px 8px', borderRadius: 4, minWidth: 110, textAlign: 'center' }}>{r.label}</span>
                   <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{r.desc}</span>
                 </div>
-              ))}
-            </div>
+              )} />
           </div>
 
           {/* v4.16.0: Altlasten — erscheint nur, wenn es welche gibt */}
@@ -1339,16 +1363,14 @@ export default function SettingsTab() {
                   <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="noa@example.com" type="email" style={inputS} />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {ROLES.map(r => (
-                  <button key={r.key} onClick={() => setInviteRole(r.key)} style={{
+              <RollenGruppen kompakt render={r => (
+                  <button key={r.key} onClick={() => setInviteRole(r.key)} title={r.desc} style={{
                     padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
                     background: inviteRole === r.key ? r.color + '22' : 'transparent',
                     color: inviteRole === r.key ? r.color : 'var(--text-muted)',
                     border: `1px solid ${inviteRole === r.key ? r.color : 'var(--border)'}`,
                   }}>{r.label}</button>
-                ))}
-              </div>
+              )} />
               {inviteRole === 'model' && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-secondary)', cursor: 'pointer' }}>
                   <input type="checkbox" checked={inviteEinfuehrung} onChange={e => setInviteEinfuehrung(e.target.checked)} />
@@ -1506,20 +1528,21 @@ export default function SettingsTab() {
                   {editingRole === u.user_id && (
                     <div style={{ background: 'var(--bg-card)', border: `1px solid ${color}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8 }}>Mehrere Rollen möglich – klicken zum an/abwählen</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {ROLES.map(r => {
+                      <RollenGruppen kompakt render={r => {
                           const userRoles = u.roles || [u.role]
                           const active = userRoles.includes(r.key)
                           return (
-                            <button key={r.key} onClick={() => toggleRole(u.user_id, u.role, r.key)} style={{
+                            <button key={r.key} onClick={() => toggleRole(u.user_id, u.role, r.key)} title={r.desc} style={{
                               padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
                               background: active ? r.color + '22' : 'transparent',
                               color: active ? r.color : 'var(--text-muted)',
                               border: `1px solid ${active ? r.color : 'var(--border)'}`,
                             }}>{active ? '✓ ' : ''}{r.label}</button>
                           )
-                        })}
-                      </div>
+                        }} />
+                      {(u.roles || []).includes('social_freigabe') && (
+                        <div style={{ fontSize: 11, color: '#f97316', marginTop: 8 }}>Hat noch die alte Rolle „Social-Freigabe“ — wird mit <code>sql/social-leitung.sql</code> zur Social-Leitung.</div>
+                      )}
                       {/* v4.110.0: Sprache + Kontaktweg */}
                       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', alignItems: 'flex-end' }}>
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>

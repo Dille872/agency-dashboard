@@ -683,10 +683,12 @@ export default function App() {
   const isManager = userRole === 'admin' || userRole === 'manager'
   // v4.110.0: Rahmen auf Englisch nur für Nicht-Admins (Social-Rollen) mit Sprache EN
   const enRahmen = sprache === 'en' && !isManager
-  const tabName = (tab) => (!isManager && tab.key === 'social') ? 'Social Media Manager' : tab.label
+  const tabName = (tab) => (!isManager && !(userRoles.includes('social_leitung') || userRoles.includes('social_freigabe')) && tab.key === 'social') ? 'Social Media Manager' : tab.label
 
   // Tab access per role
-  const isSocialMedia = ['social_media', 'cutter', 'social_freigabe'].some(r => userRoles.includes(r)) // v4.106.0
+  const isSocialMedia = ['social_media', 'cutter', 'social_leitung', 'social_freigabe'].some(r => userRoles.includes(r)) // v4.106.0 · v5.1.0: + Social-Leitung
+  // v5.1.0: Social-Leitung bekommt den ganzen Social-Bereich wie ein Admin (nur dort)
+  const istLeitung = !isManager && (userRoles.includes('social_leitung') || userRoles.includes('social_freigabe'))
   const hasRole = (r) => userRole === r || userRole === 'admin'
 
   // v4.68.0: Regeln liegen in src/zugang.js, damit der Routing-Effekt oben
@@ -1085,8 +1087,8 @@ export default function App() {
         ) : activeTab === 'social' || activeTab.startsWith('social-') ? (
           // v4.108.0: Admins steuern die Reiter über die Unterreiter oben; alle
           // anderen Social-Rollen bekommen ihre Ansicht mit eigenen Reitern.
-          <SocialManager key={activeTab} userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager}
-            festerReiter={isManager ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin' }[activeTab] || 'steuerung') : null} />
+          <SocialManager key={activeTab} userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager || istLeitung}
+            festerReiter={(isManager || istLeitung) ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin' }[activeTab] || 'steuerung') : null} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (
@@ -1186,7 +1188,7 @@ export default function App() {
       )}
 
       {/* v5.0.0: Poster/Cutter/Freigeber — eigener Chat, Glocke, Hilfe (zweisprachig) */}
-      {!isAdmin && !isManager && ['social_media', 'cutter', 'social_freigabe'].some(r => userRoles.includes(r)) && (
+      {!isAdmin && !isManager && ['social_media', 'cutter', 'social_leitung', 'social_freigabe'].some(r => userRoles.includes(r)) && (
         <SocialFabs displayName={userDisplayName} rollen={userRoles} />
       )}
 

@@ -51,7 +51,7 @@ serve(async (req) => {
     if (authErr || !u?.user) return json({ ok: false, error: 'Nicht autorisiert' }, 401)
     const { data: r } = await db.from('user_roles').select('role, roles, status').eq('user_id', u.user.id).maybeSingle()
     const rollen: string[] = [r?.role, ...(Array.isArray(r?.roles) ? r.roles : [])].filter(Boolean)
-    const erlaubt = rollen.some((x) => ['admin', 'manager', 'creator_manager', 'social_media', 'cutter', 'social_freigabe'].includes(x))
+    const erlaubt = rollen.some((x) => ['admin', 'manager', 'creator_manager', 'social_media', 'cutter', 'social_leitung', 'social_freigabe'].includes(x))
     if (!erlaubt || ['suspended', 'offboarded'].includes(r?.status)) return json({ ok: false, error: 'Keine Berechtigung' }, 403)
 
     // --- Eingabe ---
