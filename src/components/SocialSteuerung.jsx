@@ -33,7 +33,8 @@ const seitText = (n) => n === null ? '—' : n === 0 ? 'heute' : n === 1 ? 'gest
 const datum = (iso) => iso ? new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : '—'
 const schluessel = (m, a) => m + '|' + a
 
-export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung' }) {
+export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung', darfBoard = true }) {
+  // v5.1.0: darfBoard=false für die Social-Leitung — Agentur-Accounts im Board anlegen bleibt bei Admins
   const [d, setD] = useState(null)
   const [offenZeile, setOffenZeile] = useState(null)       // Skripte aufgeklappt
   const [alleSkripte, setAlleSkripte] = useState(false)
@@ -187,8 +188,8 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
       {/* v4.108.0: „Wirkung“ ist ein eigener Unterreiter, Rest = Steuerung */}
       {ansicht !== 'wirkung' && (<>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 200, fontSize: 13, color: 'var(--text-muted)' }}>Alle Accounts, Poster und Cutter. Pro Account: wer schneidet, wer postet. Nur für Admins sichtbar.</div>
-        <button type="button" onClick={() => setNeuAccount('')} style={{ ...knopf(P, false), padding: '9px 14px' }}>+ Account</button>
+        <div style={{ flex: 1, minWidth: 200, fontSize: 13, color: 'var(--text-muted)' }}>Alle Accounts, Poster und Cutter. Pro Account: wer schneidet, wer postet. Sichtbar für Admins und die Social-Leitung.</div>
+        {darfBoard && <button type="button" onClick={() => setNeuAccount('')} style={{ ...knopf(P, false), padding: '9px 14px' }}>+ Account</button>}
         <button type="button" onClick={() => setUpload({ model: '', account: '' })} style={{ ...knopf(C, true), color: '#04212a', padding: '9px 14px' }}>📄 Drehzettel hochladen</button>
       </div>
       {hinweis && <div style={{ fontSize: 12.5, color: hinweis.startsWith('✓') ? G : ROT }}>{hinweis}</div>}
@@ -205,14 +206,14 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
       {/* Accounts & Poster */}
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>Accounts & Poster</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Die Accounts kommen aus den Instagram-Links im Board der Models im Service. Kurzbeschreibung und „Im Service“ pflegst du unter Kommunikation → Creator → Model → „Social Media“.</div>
-        {!Object.keys(models).length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch kein Model im Service. Beim Model unter Kommunikation → Creator → „Social Media“ das Häkchen „Im Social-Media-Service“ setzen und speichern.</div>}
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Die Accounts kommen aus den Instagram-Links im Board der Models im Service. Kurzbeschreibung und „Im Service“ pflegst du unter Social Media → Models.</div>
+        {!Object.keys(models).length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch kein Model im Service. Unter Social Media → Models das Model wählen und in den Service aufnehmen.</div>}
         {/* v4.104.1: Models im Service ohne Instagram-Link waren vorher unsichtbar */}
         {Object.values(models).filter(m => !m.accounts.some(a => a.betreut)).map(m => (
           <div key={'ohne:' + m.model_name} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
             <span style={{ minWidth: 80, color: 'var(--text-primary)' }}>{m.model_name}</span>
             <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>{m.accounts.length ? '⚠ im Service, aber alle Accounts sind „nicht betreut“.' : '⚠ im Service, aber noch kein Instagram-Account im Board. Deshalb gibt es hier noch keine Zeile zum Zuteilen.'}</span>
-            <button type="button" onClick={() => setNeuAccount(m.model_name)} style={{ ...knopf(P, false), padding: '5px 10px', fontSize: 12 }}>+ Account für {m.model_name}</button>
+            {darfBoard && <button type="button" onClick={() => setNeuAccount(m.model_name)} style={{ ...knopf(P, false), padding: '5px 10px', fontSize: 12 }}>+ Account für {m.model_name}</button>}
           </div>
         ))}
         {zeilen.length > 0 && (
@@ -356,7 +357,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
       {/* Poster */}
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 10 }}>Team</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Poster (Rolle Social Media) und Cutter (Rolle Cutter). Freigeben dürfen Admins und alle mit der Rolle Social-Freigabe, alles unter Einstellungen → Team.</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>📱 Poster und ✂️ Cutter sehen nur die Accounts, bei denen sie oben eingetragen sind. Freigeben dürfen Admins und die 🧭 Social-Leitung. Rollen vergibst du unter Einstellungen → Team.</div>
         {!poster.length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch niemand hat die Rolle Social Media. Unter Einstellungen → Team vergeben.</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 12 }}>
           {cutter.map(c => {

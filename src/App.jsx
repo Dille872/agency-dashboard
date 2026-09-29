@@ -1087,7 +1087,7 @@ export default function App() {
         ) : activeTab === 'social' || activeTab.startsWith('social-') ? (
           // v4.108.0: Admins steuern die Reiter über die Unterreiter oben; alle
           // anderen Social-Rollen bekommen ihre Ansicht mit eigenen Reitern.
-          <SocialManager key={activeTab} userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager || istLeitung}
+          <SocialManager key={activeTab} userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager || istLeitung} darfBoard={isManager}
             festerReiter={(isManager || istLeitung) ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin' }[activeTab] || 'steuerung') : null} />
         ) : activeTab === 'billing' ? (
           <BillingTab />

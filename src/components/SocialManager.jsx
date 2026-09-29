@@ -45,7 +45,7 @@ const wertListe = (v) => Array.isArray(v) ? v.filter(x => String(x ?? '').trim()
 
 // v4.108.0: festerReiter — Admins bekommen die Reiter als Unterreiter in der
 // oberen Leiste (Bereich „Social Media“, App.jsx); dann hier keine eigene Reiterzeile.
-export default function SocialManager({ userDisplayName, kannErinnern = false, istAdmin = false, festerReiter = null }) {
+export default function SocialManager({ userDisplayName, kannErinnern = false, istAdmin = false, festerReiter = null, darfBoard = true }) {
   const [sprache, setSprache] = useState(spracheLaden)
   const t = useMemo(() => macheT(sprache), [sprache])
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
@@ -206,7 +206,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
         ))}
       </div>}
 
-      {reiter === 'steuerung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} />}
+      {reiter === 'steuerung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} darfBoard={darfBoard} />}
       {reiter === 'wirkung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} ansicht="wirkung" />}
       {reiter === 'models-admin' && istAdmin && <SocialModelsAdmin userDisplayName={userDisplayName} />}
 
