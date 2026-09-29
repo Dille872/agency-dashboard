@@ -28,6 +28,7 @@ import BillingTab from './components/BillingTab'
 import PerformanceTab from './components/PerformanceTab'
 import TodoTab from './components/TodoTab'
 import SocialManager from './components/SocialManager' // v4.102.0: ersetzt den alten SocialTab
+import SocialFabs from './components/SocialFabs' // v5.0.0: Chat · Glocke · Hilfe für Social-Rollen
 import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
 // v4.31.0: dritter Upload — Chatter-Umsatz je Model, siehe sql/model-chatter-daily.sql
@@ -447,7 +448,7 @@ export default function App() {
     const { data: chatUnreadRows } = await supabase
       .from('messages').select('model_name, contact_type')
       .eq('direction', 'in').eq('read', false)
-      .in('contact_type', ['model', 'chatter'])
+      .in('contact_type', ['model', 'chatter', 'social']) // v5.0.0: + Social-Rollen
       .is('message_type', null)
     const uniqueThreads = new Set((chatUnreadRows || []).map(r => `${r.contact_type}:${r.model_name}`))
     setUnreadChat(uniqueThreads.size)
@@ -1182,6 +1183,11 @@ export default function App() {
             <span>Mehr</span>
           </button>
         </nav>
+      )}
+
+      {/* v5.0.0: Poster/Cutter/Freigeber — eigener Chat, Glocke, Hilfe (zweisprachig) */}
+      {!isAdmin && !isManager && ['social_media', 'cutter', 'social_freigabe'].some(r => userRoles.includes(r)) && (
+        <SocialFabs displayName={userDisplayName} rollen={userRoles} />
       )}
 
       {/* v3.61.0: Chat als schwebende Bubble (nur Admin/Manager) */}

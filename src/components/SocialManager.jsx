@@ -170,7 +170,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: istAdmin ? 0 : 150 /* v5.0.0: Platz für Chat/Glocke/Hilfe unten rechts */ }}>
       {/* Kopf + Sprache */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
@@ -231,8 +231,38 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
         </>
       )}
 
+      {/* v5.0.0: Überblick am Handy als Karten statt breiter Tabelle */}
       {reiter === 'ueberblick' && (
-        <div style={{ ...card, overflowX: 'auto' }}>
+        <>
+        <style>{`.ueb-karten { display: none; } @media (max-width: 640px) { .ueb-tabelle { display: none; } .ueb-karten { display: flex; } }`}</style>
+        <div className="ueb-karten" style={{ flexDirection: 'column', gap: 8 }}>
+          {[...skripte].filter(imService).sort((a, b) => {
+            const o = { bereit: 0, pruefung: 1, schnitt: 2, freigegeben: 3, gepostet: 4 }
+            return (o[statusVon(a)] - o[statusVon(b)]) || String(b.erstellt_am).localeCompare(String(a.erstellt_am))
+          }).map(s => {
+            const st = statusVon(s)
+            const f = { bereit: C, pruefung: '#f97316', schnitt: '#a855f7', gepostet: G }[st] || A
+            const seit = st === 'gepostet' ? null : tageSeit(seitVon(s))
+            const zuAlt = st === 'freigegeben' && seit > ALT_TAGE
+            return (
+              <div key={s.id} style={{ ...card, padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 5, opacity: st === 'gepostet' ? 0.65 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 800, color: C, fontSize: 12.5 }}>{s.nr}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: 'var(--text-primary)', fontSize: 13.5 }}>{tr(s.titel)}</span>
+                  <span style={pill(zuAlt ? ROT : f)}>{t('st_' + st)}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{s.model_name}</span>
+                  <span style={{ color: P, fontWeight: 700 }}>{s.account || s.ziel_account || '—'}</span>
+                  <span style={{ marginLeft: 'auto', color: zuAlt ? ROT : 'var(--text-muted)', fontWeight: zuAlt ? 800 : 400 }}>{st === 'gepostet' ? datum(s.gepostet_am) : seitText(seit)}</span>
+                  {st === 'bereit' && istPoster && <button type="button" style={{ ...linkBtn, color: C, fontWeight: 700, fontSize: 12.5, textDecoration: 'none' }} onClick={() => setReiter('posten')}>{t('posten')}</button>}
+                  {st === 'gepostet' && s.reel_url && <a href={s.reel_url} target="_blank" rel="noreferrer" style={{ color: G, fontWeight: 700 }}>{t('reel')}</a>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div className="ueb-tabelle" style={{ ...card, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>{['sp_nr', 'sp_model', 'sp_ziel', 'sp_titel', 'sp_stand', 'sp_seit', ''].map((k, i) => <th key={i} style={{ ...klein, textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>{k ? t(k) : ''}</th>)}</tr>
@@ -269,6 +299,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
           </table>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>{t('rot_hinweis', { tage: ALT_TAGE })}{kannErinnern ? t('rot_hinweis_erinnern') : ''}</div>
         </div>
+        </>
       )}
 
       {reiter === 'models' && (

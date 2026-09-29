@@ -1104,10 +1104,37 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
       chatSendLockRef.current = false
     }
   }
+  const sendSocialAntwort = async (text) => {
+    if (!text) { alert('Bilder gehen an Social-Rollen noch nicht, bitte als Text schreiben.'); return }
+    setChatSendingTo(true)
+    try {
+      const { data: ur } = await supabase.from('user_roles').select('kontakt_telegram').eq('display_name', activeThreadName).maybeSingle()
+      let status = 'sent'
+      if (ur?.kontakt_telegram) {
+        const r = await sendTelegramMessage(ur.kontakt_telegram, text)
+        if (r?.ok !== true) status = 'failed'
+      }
+      const { error } = await supabase.from('messages').insert({
+        model_name: activeThreadName, model_telegram_id: ur?.kontakt_telegram || null,
+        direction: 'out', contact_type: 'social', message_type: null, text, status, sent_by: userName,
+      })
+      if (error) { alert('⚠ Nicht gespeichert: ' + error.message); return }
+      setChatInputText('')
+      await loadMessages()
+      if (status === 'failed') alert('Im Dashboard gespeichert, aber die Telegram-Kopie ist nicht angekommen.')
+    } catch (e) {
+      alert('Netzwerk-Fehler: ' + e.message)
+    } finally {
+      setChatSendingTo(false)
+    }
+  }
   const sendChatThreadMessageIntern = async (contactType) => {
     const text = chatInputText.trim()
     const hasImages = chatAttachments.length > 0
     if (!activeThreadName || (!text && !hasImages) || chatSendingTo) return
+    // v5.0.0: Social-Rollen (Poster, Cutter, Freigeber) chatten im Dashboard.
+    // Telegram nur, wenn in den Einstellungen eine ID hinterlegt ist.
+    if (contactType === 'social') return sendSocialAntwort(text)
     // Telegram-ID lookup
     const contactsTable = contactType === 'model' ? 'models_contact' : 'chatters_contact'
     const { data: contact } = await supabase.from(contactsTable)
@@ -2545,7 +2572,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
         // sie per Telegram an die Admins weiter, im Dashboard fehlten sie
         // komplett. Betraf zuletzt Bennet und Manuela.
         const allowedContactTypes = isUnified
-          ? (chatTypeFilter === 'all' ? ['model', 'chatter', 'unknown'] : [chatTypeFilter])
+          ? (chatTypeFilter === 'all' ? ['model', 'chatter', 'social', 'unknown'] : [chatTypeFilter]) // v5.0.0: + social
           : [contactType]
         // v3.45.0: Chat-Verlauf zeigt jetzt ALLE Nachrichten (auch Tickets, Ansagen,
         // Content-Anfragen) — damit Antworten der Models/Chatter im Kontext der
@@ -2632,6 +2659,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                       { key: 'all', label: 'Alle' },
                       { key: 'chatter', label: 'Chatters' },
                       { key: 'model', label: 'Models' },
+                      { key: 'social', label: 'Social' }, // v5.0.0: Poster/Cutter/Freigeber
                       // v4.26.0: eigener Filter fuer nicht zugeordnete Absender.
                       // Erscheint nur, wenn es welche gibt — sonst waere es ein
                       // Knopf, der bei den meisten immer ins Leere fuehrt.
@@ -2691,10 +2719,10 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {isUnified && (
                             <span style={{
                               fontSize: 8, padding: '1px 5px', borderRadius: 3,
-                              background: thread.contactType === 'model' ? 'rgba(245,158,11,0.18)' : 'rgba(6,182,212,0.18)',
-                              color: thread.contactType === 'model' ? '#f59e0b' : '#06b6d4',
+                              background: thread.contactType === 'model' ? 'rgba(245,158,11,0.18)' : thread.contactType === 'social' ? 'rgba(236,72,153,0.18)' : 'rgba(6,182,212,0.18)',
+                              color: thread.contactType === 'model' ? '#f59e0b' : thread.contactType === 'social' ? '#ec4899' : '#06b6d4',
                               fontWeight: 700, letterSpacing: 0.3,
-                            }}>{thread.contactType === 'model' ? 'M' : 'C'}</span>
+                            }}>{thread.contactType === 'model' ? 'M' : thread.contactType === 'social' ? 'S' : 'C'}</span>
                           )}
                           {thread.name}
                         </span>
@@ -2743,7 +2771,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{activeThreadName}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                        {(isUnified ? activeThreadType : contactType) === 'model' ? 'Model' : 'Chatter'}
+                        {(isUnified ? activeThreadType : contactType) === 'model' ? 'Model' : (isUnified ? activeThreadType : contactType) === 'social' ? 'Social · im Dashboard' : 'Chatter'}
                       </div>
                     </div>
                   </div>
@@ -3364,7 +3392,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: msg.contact_type === 'chatter' ? '#06b6d4' : '#a78bfa' }}>{msg.model_name}</span>
                       <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: msg.contact_type === 'chatter' ? 'rgba(6,182,212,0.15)' : 'rgba(124,58,237,0.15)', color: msg.contact_type === 'chatter' ? '#06b6d4' : '#a78bfa', fontWeight: 600 }}>
-                        {msg.contact_type === 'chatter' ? 'Chatter' : 'Model'}
+                        {msg.contact_type === 'chatter' ? 'Chatter' : msg.contact_type === 'social' ? 'Social' : 'Model'}
                       </span>
                       <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: tBadge.bg, color: tBadge.color, fontWeight: 600 }}>
                         {tBadge.label}
@@ -3471,7 +3499,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           <td style={{ ...tdS, fontWeight: 600 }}>{msg.model_name}</td>
                           <td style={tdS}>
                             <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 600, background: msg.contact_type === 'chatter' ? 'rgba(6,182,212,0.15)' : 'rgba(124,58,237,0.15)', color: msg.contact_type === 'chatter' ? '#06b6d4' : '#a78bfa' }}>
-                              {msg.contact_type === 'chatter' ? 'Chatter' : 'Model'}
+                              {msg.contact_type === 'chatter' ? 'Chatter' : msg.contact_type === 'social' ? 'Social' : 'Model'}
                             </span>
                           </td>
                           <td style={tdS}>
