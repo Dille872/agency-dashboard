@@ -44,7 +44,10 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
   const [hinweis, setHinweis] = useState('')
 
   const laden = useCallback(async () => {
-    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus').eq('service_aktiv', true).order('model_name')
+    // v5.4.0: model_plant (Schalter „Model plant mit“) — ohne sql/plan-model.sql gibt es die Spalte noch nicht
+    let s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus, model_plant').eq('service_aktiv', true).order('model_name')
+    const planSchalter = !s.error
+    if (s.error) s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus').eq('service_aktiv', true).order('model_name')
     const z = await supabase.from('social_account_poster').select('*')
     if (s.error || z.error) { setD({ fehlt: true }); return }
     const namen = (s.data || []).map(x => x.model_name)
@@ -86,14 +89,14 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
     const teamRollen = Object.fromEntries(aktivNutzer.map(x => [x.display_name, x.roles || []]))
     const sp = await supabase.from('user_roles').select('display_name, sprache').in('display_name', aktivNutzer.map(x => x.display_name))
     const teamSprache = Object.fromEntries((sp.error ? [] : (sp.data || [])).map(x => [x.display_name, x.sprache]))
-    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error, messwerte, messFehlt: !!mw.error, teamRollen, teamSprache })
+    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error, messwerte, messFehlt: !!mw.error, teamRollen, teamSprache, planSchalter })
   }, [])
   useEffect(() => { laden() }, [laden])
 
   if (!d) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Lädt …</div>
   if (d.fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Steuerung: Datenbank noch nicht eingerichtet. Einmal <code>sql/social-steuerung.sql</code> ausführen.</div>
 
-  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt, messwerte, messFehlt, teamRollen = {}, teamSprache = {} } = d
+  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt, messwerte, messFehlt, teamRollen = {}, teamSprache = {}, planSchalter = false } = d
   // v5.2.0: kleiner Knopf „👁 Ansicht“ auf jeder Team-Karte
   const ansichtKnopf = (name) => onVorschau && (
     <button type="button" title={`So sieht ${name} die Seite (nur ansehen)`} onClick={() => onVorschau({ name, rollen: (teamRollen[name] || []).filter(r => ['social_media', 'cutter', 'chatter'].includes(r)), sprache: teamSprache[name] || 'de' })}
@@ -164,6 +167,19 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
     if (ja && ps.length) await supabase.from('social_account_poster').delete().eq('model_name', m.model_name).eq('account', account)
     if (ja && cs.length) await supabase.from('social_account_cutter').delete().eq('model_name', m.model_name).eq('account', account)
     logActivity('social.account', { entity: `${m.model_name} ${account}`, detail: ja ? 'Model postet selbst' : 'Team postet' })
+    laden()
+  }
+
+  // v5.4.0: „Model plant mit“ — Model bekommt im Portal den gemeinsamen Posting-Plan
+  const modelPlant = async (m, ja) => {
+    setHinweis('')
+    const text = ja
+      ? `${m.model_name} im Posting-Plan mitplanen lassen?\n\nSie sieht dann im Portal denselben Kalender und darf auf ihren betreuten Accounts Beiträge anlegen, ändern, als gepostet markieren und löschen — auch die vom Poster.`
+      : `${m.model_name}: Mitplanen ausschalten?\n\nSie sieht ihren Plan dann wieder nur zum Lesen. Eingetragene Beiträge bleiben.`
+    if (!window.confirm(text)) return
+    const err = await serviceSpeichern(m.model_name, { model_plant: ja }, userDisplayName)
+    if (err) { setHinweis('Nicht gespeichert: ' + err.message); return }
+    logActivity('social.plan', { entity: m.model_name, detail: ja ? 'Model plant mit' : 'Model plant nicht mehr mit' })
     laden()
   }
 
@@ -335,6 +351,18 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {/* v5.4.0: Schalter „Model plant mit“ */}
+        {planSchalter && Object.values(models).some(m => m.accounts.some(a => a.betreut)) && (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>📅 Plant im Posting-Plan mit:</span>
+            {Object.values(models).filter(m => m.accounts.some(a => a.betreut)).map(m => (
+              <button key={'plan:' + m.model_name} type="button" onClick={() => modelPlant(m, !m.model_plant)} title={m.model_plant ? 'Ausschalten' : 'Einschalten'}
+                style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', border: m.model_plant ? 'none' : '1px solid var(--border)', background: m.model_plant ? 'rgba(16,185,129,0.16)' : 'transparent', color: m.model_plant ? G : 'var(--text-muted)' }}>
+                {m.model_plant ? '✓' : '○'} {m.model_name}
+              </button>
+            ))}
           </div>
         )}
         {/* v4.105.0: nicht betreute Accounts, eingeklappt */}

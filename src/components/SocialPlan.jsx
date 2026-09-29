@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
-import { statusVon, endVideo, linkOk, mitHttps } from '../reelSkripte'
+import { statusVon, endVideo, linkOk, mitHttps, instaHandle } from '../reelSkripte'
+import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks' // v5.4.0
 import { useVorschau, vorschauSperre } from '../vorschau'
 
 // ── Posting-Plan (v5.3.0) ──────────────────────────────────────────────────
@@ -13,6 +14,9 @@ import { useVorschau, vorschauSperre } from '../vorschau'
 //   Admin / Social-Leitung: alles, alle Accounts (Filter oben)
 //   Poster: plant und postet auf seinen zugeteilten Accounts
 //   Model: sieht ihren Plan und trägt Material ein (PlanModel unten)
+//   v5.4.0: Model mit Schalter „plant mit“ (sql/plan-model.sql) bekommt
+//   denselben Kalender und darf auf ihren betreuten Accounts alles wie ein
+//   Poster. Im Beitrag steht, wer ihn eingetragen hat (erstellt_von).
 //
 // Zeiten: gespeichert als Zeitpunkt, angezeigt in der Zeit des Geräts — die
 // Posterin in New York sieht also automatisch ihre Uhrzeit.
@@ -34,6 +38,7 @@ const TX = {
     nicht_gespeichert: 'Nicht gespeichert: ', leer_tag: '', deine_zeit: 'deine Zeit', heute_nichts: 'Heute ist nichts geplant.',
     heute_titel: '📅 Heute geplant', oeffnen: 'Öffnen', model: 'Model', notiz: 'Notiz', tabelle_fehlt: 'Posting-Plan: Datenbank noch nicht eingerichtet (sql/posting-plan.sql).',
     tage: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], nur_lesen: 'Nur ansehen', frames_n: (n) => `Story · ${n} Frame${n === 1 ? '' : 's'}`,
+    von: (w) => `von ${w}`, eingetragen: 'Eingetragen', dein_plan: 'Dein Posting-Plan', dein_plan_text: 'Hier planst du zusammen mit uns: Beiträge eintragen, ändern und als gepostet markieren.',
   },
   en: {
     plan: 'Posting calendar', woche: 'Week', heute: 'Today', alle: 'All accounts', material: 'Material · not scheduled yet',
@@ -48,6 +53,7 @@ const TX = {
     story_gepostet: 'Story posted ✓', gemessen: 'Gets measured automatically.', zurueck: 'Not posted after all',
     fehler_account: 'Please choose an account.', fehler_zeit: 'Please set date and time.', fehler_reel: 'Please paste the Instagram link to the reel.',
     nicht_gespeichert: 'Not saved: ', leer_tag: '', deine_zeit: 'your time', heute_nichts: 'Nothing scheduled today.',
+    von: (w) => `by ${w}`, eingetragen: 'Added', dein_plan: 'Your posting calendar', dein_plan_text: 'Plan together with us: add posts, edit them and mark them as posted.',
     heute_titel: '📅 Scheduled today', oeffnen: 'Open', model: 'Creator', notiz: 'Note', tabelle_fehlt: 'Posting calendar: database not set up yet.',
     tage: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], nur_lesen: 'View only', frames_n: (n) => `Story · ${n} frame${n === 1 ? '' : 's'}`,
   },
@@ -166,7 +172,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               </span>
             </button>
           ))}
-          <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), marginTop: 2 }}>{T.material_neu}</button>
+          {darfPlanen && <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), marginTop: 2 }}>{T.material_neu}</button>}
         </div>
 
         {/* Woche */}
@@ -200,6 +206,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                             style={{ textAlign: 'left', borderRadius: 8, padding: '5px 6px', fontSize: 11, lineHeight: 1.3, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', background: artFarbe(z.art) + '1f', border: `1px solid ${artFarbe(z.art)}55`, opacity: z.status === 'gepostet' ? 0.6 : 1 }}>
                             <span style={{ color: 'var(--text-muted)' }}>{uhr(z.geplant_am, loc)}</span>
                             <b style={{ display: 'block', fontSize: 11.5 }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || T.reel)}</b>
+                            {z.erstellt_von && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)' }}>{T.von(z.erstellt_von)}</span>}
                             {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
                           </button>
                         ))}
@@ -317,6 +324,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
             <button key={a} type="button" disabled={nurLesen} onClick={() => set('art', a)} style={{ ...knopf(artFarbe(a), f.art === a), padding: '5px 12px' }}>{a === 'story' ? T.story : T.reel}</button>
           ))}
           <span style={{ flex: 1 }} />
+          {f.id && f.erstellt_von && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{T.von(f.erstellt_von)}</span>}
           <span style={pill(f.status === 'gepostet' ? G : A)}>{f.status === 'gepostet' ? T.gepostet : T.geplant}</span>
           <button type="button" onClick={() => onZu(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
@@ -447,7 +455,58 @@ export function MaterialFenster({ models = [], T: Taus, sprache = 'de', userDisp
 }
 
 // ── Model-Portal: eigener Plan (nur lesen) + Material eintragen ────────────
-export function PlanModel({ displayName, isPreview = false, cardS = {} }) {
+export function PlanModel({ displayName, isPreview = false, cardS = {}, service = null }) {
+  // v5.4.0: Schalter „Model plant mit“ an → gemeinsamer Kalender
+  if (service?.service_aktiv && service?.model_plant) return <PlanModelVoll displayName={displayName} isPreview={isPreview} cardS={cardS} service={service} />
+  return <PlanModelLesen displayName={displayName} isPreview={isPreview} cardS={cardS} />
+}
+
+// v5.4.0: voller Kalender im Model-Portal — dieselbe Ansicht wie beim Team,
+// nur mit den eigenen betreuten Instagram-Accounts aus dem Board.
+function PlanModelVoll({ displayName, isPreview, cardS, service }) {
+  const T = TX.de
+  const [accounts, setAccounts] = useState(null)
+  const [skripte, setSkripte] = useState([])
+  const nb = (service?.nicht_betreut || []).join(',')
+  useEffect(() => {
+    if (!displayName) return
+    let weg = false
+    ;(async () => {
+      const [b, s] = await Promise.all([
+        supabase.from('model_board').select('title, content, sort_order').eq('model_name', displayName).eq('category', SOCIAL_CATEGORY).order('sort_order'),
+        supabase.from('reel_skripte').select('*').eq('model_name', displayName).order('erstellt_am', { ascending: false }).limit(300),
+      ])
+      if (weg) return
+      const aus = new Set(nb ? nb.split(',') : [])
+      const acc = []
+      for (const x of b.data || []) {
+        if (resolvePlatform(x.title).key !== 'instagram' || !String(x.content || '').trim()) continue
+        const h = instaHandle(x.content)
+        if (!h || aus.has(h) || acc.some(a => a.handle === h)) continue
+        acc.push({ model: displayName, handle: h, notiz: service?.account_notizen?.[h] || '' })
+      }
+      setAccounts(acc)
+      setSkripte(s.error ? [] : (s.data || []))
+    })()
+    return () => { weg = true }
+  }, [displayName, nb]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (accounts === null) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ ...cardS, padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 20 }}>📅</span>
+        <div style={{ flex: 1 }}>
+          <b style={{ fontSize: 14.5, color: 'var(--text-primary)' }}>{T.dein_plan}</b>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.dein_plan_text}</div>
+        </div>
+      </div>
+      {accounts.length ? <SocialPlan accounts={accounts} skripte={skripte} sprache="de" darfPlanen={!isPreview} userDisplayName={displayName} />
+        : <div style={{ ...cardS, padding: '12px 15px', fontSize: 12.5, color: 'var(--text-muted)' }}>Noch kein Instagram-Account in deinem Board.</div>}
+    </div>
+  )
+}
+
+function PlanModelLesen({ displayName, isPreview = false, cardS = {} }) {
   const T = TX.de
   const [zeilen, setZeilen] = useState(null)
   const [material, setMaterial] = useState([])

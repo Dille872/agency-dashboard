@@ -1751,8 +1751,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
               notizen={social.service?.account_notizen || {}} service={social.service}
               leerText="Noch keine Drehzettel. Sobald wir ein Reel für dich geschrieben haben, erscheint es hier." />
-            {/* v5.3.0: Posting-Plan (nur lesen) + eigenes Material */}
-            <PlanModel displayName={displayName} isPreview={isPreview} cardS={cardS} />
+            {/* v5.3.0: Posting-Plan (nur lesen) + eigenes Material · v5.4.0: mit Schalter voller Kalender */}
+            <PlanModel displayName={displayName} isPreview={isPreview} cardS={cardS} service={social.service} />
             {!social.fehlt && (() => {
               const st = socialStand(social.antworten)
               const laeuft = socialStatus === 'offen' || socialStatus === 'laeuft'
