@@ -258,6 +258,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
   const [reel, setReel] = useState(start.reel_url || '')
   const [fehler, setFehler] = useState('')
   const [arbeitet, setArbeitet] = useState(false)
+  const [uebernommen, setUebernommen] = useState(start.vorschlag_uebernommen === 'geaendert') // v5.3.1: „übernehmen“ geklickt?
   const set = (k, v) => setF(x => ({ ...x, [k]: v }))
   const accWert = f.model_name && f.account ? f.model_name + '|' + f.account : ''
   const nurLesen = !darf
@@ -268,7 +269,15 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
     caption: f.caption || null, hashtags: f.hashtags || null, hinweis: f.hinweis || null,
     overlays: (f.overlays || []).filter(o => (o.text || '').trim()), frames: (f.frames || []).filter(x => (x.text || x.link || x.sticker || '').trim()),
     material_id: f.material_id || null, skript_id: f.skript_id || null,
+    // v5.3.1: für Lyras Auswertung — Vorschlag übernommen (ja), übernommen und geändert, oder nicht genutzt
+    ...((f.caption_vorschlag || f.hashtags_vorschlag) ? { vorschlag_uebernommen: vorschlagStand() } : {}),
   })
+  function vorschlagStand() {
+    const gleich = (a, b) => String(a || '').trim() === String(b || '').trim()
+    const capOk = !f.caption_vorschlag || gleich(f.caption, f.caption_vorschlag)
+    const tagOk = !f.hashtags_vorschlag || gleich(f.hashtags, f.hashtags_vorschlag)
+    return capOk && tagOk ? 'ja' : (uebernommen ? 'geaendert' : 'nein')
+  }
   const speichern = async (extra = {}) => {
     if (vorschau) return vorschauSperre()
     if (!f.model_name || !f.account) { setFehler(T.fehler_account); return false }
@@ -328,13 +337,13 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
             <KopierKnopf text={f.caption} T={T} />)}
           {f.caption_vorschlag && f.caption_vorschlag !== f.caption && (
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)', borderRadius: 10, padding: '7px 9px' }}>
-              ✨ {T.vorschlag}: {f.caption_vorschlag} {!nurLesen && <button type="button" onClick={() => set('caption', f.caption_vorschlag)} style={{ ...knopf(V, false), padding: '2px 8px', fontSize: 11 }}>{T.uebernehmen}</button>}
+              ✨ {T.vorschlag}: {f.caption_vorschlag} {!nurLesen && <button type="button" onClick={() => { set('caption', f.caption_vorschlag); setUebernommen(true) }} style={{ ...knopf(V, false), padding: '2px 8px', fontSize: 11 }}>{T.uebernehmen}</button>}
             </div>
           )}
           {zeile(T.hashtags, <input disabled={nurLesen} value={f.hashtags || ''} onChange={e => set('hashtags', e.target.value.slice(0, 600))} placeholder="#…" style={eingabe} />, <KopierKnopf text={f.hashtags} T={T} />)}
           {f.hashtags_vorschlag && f.hashtags_vorschlag !== f.hashtags && (
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)', borderRadius: 10, padding: '7px 9px' }}>
-              ✨ {T.vorschlag}: {f.hashtags_vorschlag} {!nurLesen && <button type="button" onClick={() => set('hashtags', f.hashtags_vorschlag)} style={{ ...knopf(V, false), padding: '2px 8px', fontSize: 11 }}>{T.uebernehmen}</button>}
+              ✨ {T.vorschlag}: {f.hashtags_vorschlag} {!nurLesen && <button type="button" onClick={() => { set('hashtags', f.hashtags_vorschlag); setUebernommen(true) }} style={{ ...knopf(V, false), padding: '2px 8px', fontSize: 11 }}>{T.uebernehmen}</button>}
             </div>
           )}
           {zeile(T.overlays, <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>

@@ -47,3 +47,10 @@ verify_jwt = false
 # (Header x-messwerte-secret); die Function darf nur messwerte_eintragen() aufrufen.
 [functions.messwerte-eintragen]
 verify_jwt = false
+
+# Caption-/Hashtag-Vorschläge von Lyra (v5.3.1). Aufrufer ist ein Sende-Skript
+# ohne KI auf dem Mac mini, ohne Supabase-Login. Abgesichert über das eigene
+# Secret VORSCHLAEGE_SECRET (Header x-vorschlaege-secret); die Function darf
+# nur vorschlaege_eintragen() aufrufen.
+[functions.vorschlaege-eintragen]
+verify_jwt = false
