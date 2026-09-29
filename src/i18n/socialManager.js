@@ -13,6 +13,7 @@ export const TEXTE = {
     hallo: 'Hallo {name} 👋',
     zusammenfassung: '{posten} zu posten · {fehlt} Video fehlt · {alt} seit über {tage} Tagen',
     tab_steuerung: 'Steuerung',
+    tab_plan: 'Plan', // v5.3.0
     // v4.106.0: Schnitt & Freigabe
     tab_schnitt: 'Schnitt',
     tab_freigabe: 'Freigabe',
@@ -114,6 +115,7 @@ export const TEXTE = {
     erinnern_fehler: 'Telegram nicht angekommen.',
   },
   en: {
+    tab_plan: 'Calendar', // v5.3.0
     titel: 'Social Media Manager',
     hallo: 'Hi {name} 👋',
     zusammenfassung: '{posten} to post · {fehlt} video missing · {alt} for more than {tage} days',

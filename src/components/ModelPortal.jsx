@@ -34,6 +34,7 @@ import { steckbriefLaden } from '../steckbrief' // v4.95.0
 import SocialFragebogen from './SocialFragebogen' // v4.100.0
 import { socialLaden, stand as socialStand } from '../socialProfil' // v4.100.0
 import ModelDrehzettel from './ModelDrehzettel' // v4.101.0
+import { PlanModel } from './SocialPlan' // v5.3.0
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -1750,6 +1751,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
               notizen={social.service?.account_notizen || {}} service={social.service}
               leerText="Noch keine Drehzettel. Sobald wir ein Reel für dich geschrieben haben, erscheint es hier." />
+            {/* v5.3.0: Posting-Plan (nur lesen) + eigenes Material */}
+            <PlanModel displayName={displayName} isPreview={isPreview} cardS={cardS} />
             {!social.fehlt && (() => {
               const st = socialStand(social.antworten)
               const laeuft = socialStatus === 'offen' || socialStatus === 'laeuft'

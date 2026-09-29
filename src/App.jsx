@@ -27,7 +27,8 @@ import SettingsTab from './components/SettingsTab'
 import BillingTab from './components/BillingTab'
 import PerformanceTab from './components/PerformanceTab'
 import TodoTab from './components/TodoTab'
-import SocialManager from './components/SocialManager' // v4.102.0: ersetzt den alten SocialTab
+import SocialManager, { SocialVorschauFenster } from './components/SocialManager' // v4.102.0: ersetzt den alten SocialTab
+import AnsichtMenu from './components/AnsichtMenu' // v5.3.0
 import SocialFabs from './components/SocialFabs' // v5.0.0: Chat · Glocke · Hilfe für Social-Rollen
 import SetPasswordPage from './components/SetPasswordPage'
 import UploadBox from './components/UploadBox'
@@ -81,6 +82,7 @@ const BEREICHE = [
     { key: 'social', label: 'Steuerung', Icon: LayoutDashboard },
     { key: 'social-freigabe', label: 'Freigabe', Icon: CheckSquare },
     { key: 'social-schnitt', label: 'Schnitt', Icon: Film },
+    { key: 'social-plan', label: 'Plan', Icon: CalendarDays }, // v5.3.0
     { key: 'social-posten', label: 'Posten', Icon: Globe },
     { key: 'social-ueberblick', label: 'Überblick', Icon: Eye },
     { key: 'social-wirkung', label: 'Wirkung', Icon: TrendingUp },
@@ -176,6 +178,7 @@ export default function App() {
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
   const [theme, setThemeState] = useState(() => initTheme())
+  const [socialVorschau, setSocialVorschau] = useState(null) // v5.3.0: Vollansicht einer Social-Person
   // v4.110.0: Sprache (Anmeldeseite, Social-Rollen). Pro Person aus user_roles.sprache.
   const sprache = useSprache()
   const lastNoteCheck = useRef(null)
@@ -901,24 +904,8 @@ export default function App() {
           {/* v4.55.0: Ansicht-Wechsel nur für Admin/Manager — dienstplan/creator_manager
               landeten sonst ohne Rückweg im echten Chatter-Portal */}
           {isManager && (<>
-          <button onClick={() => setViewMode('chatter')} title="Chatter-Ansicht" style={{
-            fontSize: 12, padding: '6px 10px', borderRadius: 6,
-            background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
-            color: '#06b6d4', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-          }}>
-            <Eye size={13} />
-            <span className="hide-mobile">Chatter</span>
-          </button>
-          <button onClick={() => setViewMode('model')} title="Model-Ansicht" style={{
-            fontSize: 12, padding: '6px 10px', borderRadius: 6,
-            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
-            color: '#f59e0b', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-          }}>
-            <Eye size={13} />
-            <span className="hide-mobile">Model</span>
-          </button>
+          {/* v5.3.0: ein Knopf „Ansicht ▾“ statt Chatter/Model einzeln, plus Social-Team */}
+          <AnsichtMenu onChatter={() => setViewMode('chatter')} onModel={() => setViewMode('model')} onSocial={setSocialVorschau} />
           {/* v4.52.1: rechts neben Chatter/Model, Icon statt Emoji */}
           {isManager && (
             <button onClick={() => setViewMode('mein-chatter')} title="Dein eigenes Chatter-Portal (Schichten, Check-in, Vorschläge)" style={{
@@ -1088,7 +1075,7 @@ export default function App() {
           // v4.108.0: Admins steuern die Reiter über die Unterreiter oben; alle
           // anderen Social-Rollen bekommen ihre Ansicht mit eigenen Reitern.
           <SocialManager key={activeTab} userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager || istLeitung} darfBoard={isManager}
-            festerReiter={(isManager || istLeitung) ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin' }[activeTab] || 'steuerung') : null} />
+            festerReiter={(isManager || istLeitung) ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-plan': 'plan', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin' }[activeTab] || 'steuerung') : null} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (
@@ -1186,6 +1173,8 @@ export default function App() {
           </button>
         </nav>
       )}
+
+      {socialVorschau && <SocialVorschauFenster v={socialVorschau} onZu={() => setSocialVorschau(null)} />}
 
       {/* v5.0.0: Poster/Cutter/Freigeber — eigener Chat, Glocke, Hilfe (zweisprachig) */}
       {!isAdmin && !isManager && ['social_media', 'cutter', 'social_leitung', 'social_freigabe'].some(r => userRoles.includes(r)) && (

@@ -9,6 +9,7 @@ import { SchnittListe, FreigabeListe } from './SocialAblauf' // v4.106.0
 import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialManager'
 import SocialSteuerung from './SocialSteuerung' // v4.103.0: nur Admins
 import SocialFabs from './SocialFabs' // v5.2.0: für die Vorschau
+import SocialPlan, { PlanHeute } from './SocialPlan' // v5.3.0: Posting-Plan
 import { VorschauContext, useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 import ReelsOhneSkript from './ReelsOhneSkript' // v4.109.0
 
@@ -176,6 +177,8 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const alt = fehlt.filter(s => tageSeit(s.erstellt_am) > ALT_TAGE)
   const woche = skripte.filter(s => s.gepostet_am && tageSeit(s.gepostet_am + 'T12:00:00') <= 7)
   const notiz = (m, h) => tr(m?.account_notizen?.[h] || '')
+  // v5.3.0: Accounts für den Plan (Poster/Vorschau: schon auf die eigenen gefiltert)
+  const planAccounts = Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: m.account_notizen?.[a.handle] || '' })))
 
   const erinnere = async (s) => {
     const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', s.model_name).maybeSingle()
@@ -216,6 +219,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
           ...(istFreigeber ? [{ k: 'freigabe', l: '👀 ' + t('tab_freigabe'), z: zurFreigabe.length }] : []),
           ...(istCutter ? [{ k: 'schnitt', l: '✂️ ' + t('tab_schnitt'), z: zuSchneiden.length }] : []),
           ...(istPoster ? [{ k: 'posten', l: '🎬 ' + t('tab_posten'), z: zuPosten.length }] : []),
+          ...((istPoster || istAdmin) ? [{ k: 'plan', l: '📅 ' + t('tab_plan') }] : []), // v5.3.0
           { k: 'ueberblick', l: '📋 ' + t('tab_ueberblick') },
           { k: 'models', l: '👤 ' + t('tab_models') },
         ].map(x => (
@@ -233,8 +237,12 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       {reiter === 'freigabe' && istFreigeber && <FreigabeListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
       {reiter === 'schnitt' && istCutter && <SchnittListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
 
+      {/* v5.3.0: Posting-Plan */}
+      {reiter === 'plan' && <SocialPlan accounts={planAccounts} skripte={skripte.filter(imService)} sprache={sprache} darfPlanen={istAdmin || istPoster} userDisplayName={userDisplayName} />}
+
       {reiter === 'posten' && (
         <>
+          {istPoster && <PlanHeute accounts={planAccounts} sprache={sprache} userDisplayName={userDisplayName} />}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
             {[[zuPosten.length, C, 'kpi_posten'], [fehlt.length, A, 'kpi_fehlt'], [woche.length, G, 'kpi_woche']].map(([n, f, k]) => (
               <div key={k} style={{ ...card, padding: '12px 14px' }}>
@@ -367,22 +375,28 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
         </>
       )}
       {sprache === 'en' && Object.keys(uebers).length > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>ⓘ {t('uebersetzt')}</div>}
-      {/* v5.2.0: Vorschau „als Person ansehen“ — Vollbild über allem, nichts wird gespeichert */}
-      {vorschauAuf && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 100050, background: 'var(--bg-base)', overflowY: 'auto' }}>
-          <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 16px', background: '#f59e0b', color: '#1a1205', fontSize: 13.5, fontWeight: 700 }}>
-            <span style={{ flex: 1, minWidth: 200 }}>👁 Vorschau als {vorschauAuf.name} · {(vorschauAuf.rollen || []).map(r => ({ social_media: 'Poster', cutter: 'Cutter', social_leitung: 'Social-Leitung', chatter: 'Chatter' }[r] || r)).join(' + ')} · {vorschauAuf.sprache === 'en' ? 'Englisch' : 'Deutsch'} · nur ansehen</span>
-            <button type="button" onClick={() => setVorschauAuf(null)} style={{ padding: '6px 14px', borderRadius: 9, border: 'none', background: '#1a1205', color: '#fff', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Beenden</button>
-          </div>
-          <VorschauContext.Provider value={true}>
-            <div style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
-              <SocialManager key={vorschauAuf.name} userDisplayName={vorschauAuf.name} vorschau={vorschauAuf} />
-            </div>
-            {!(vorschauAuf.rollen || []).includes('chatter') && <SocialFabs displayName={vorschauAuf.name} rollen={vorschauAuf.rollen} spracheFest={vorschauAuf.sprache === 'en' ? 'en' : 'de'} />}
-          </VorschauContext.Provider>
-        </div>
-      )}
+      {/* v5.2.0: Vorschau „als Person ansehen“ (v5.3.0: eigene Komponente, auch aus der Kopfzeile aufrufbar) */}
+      {vorschauAuf && <SocialVorschauFenster v={vorschauAuf} onZu={() => setVorschauAuf(null)} />}
     </div>
+  )
+}
+
+// v5.2.0/v5.3.0: Vollbild-Vorschau einer Social-Person (nur ansehen).
+// Aufruf aus Steuerung → Team („👁 Ansicht“) und aus der Kopfzeile („👁 Ansicht ▾“).
+export function SocialVorschauFenster({ v, onZu }) {
+  return (
+<div style={{ position: 'fixed', inset: 0, zIndex: 100050, background: 'var(--bg-base)', overflowY: 'auto' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 16px', background: '#f59e0b', color: '#1a1205', fontSize: 13.5, fontWeight: 700 }}>
+          <span style={{ flex: 1, minWidth: 200 }}>👁 Vorschau als {v.name} · {(v.rollen || []).map(r => ({ social_media: 'Poster', cutter: 'Cutter', social_leitung: 'Social-Leitung', chatter: 'Chatter' }[r] || r)).join(' + ')} · {v.sprache === 'en' ? 'Englisch' : 'Deutsch'} · nur ansehen</span>
+          <button type="button" onClick={onZu} style={{ padding: '6px 14px', borderRadius: 9, border: 'none', background: '#1a1205', color: '#fff', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Beenden</button>
+        </div>
+        <VorschauContext.Provider value={true}>
+          <div style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
+            <SocialManager key={v.name} userDisplayName={v.name} vorschau={v} />
+          </div>
+          {!(v.rollen || []).includes('chatter') && <SocialFabs displayName={v.name} rollen={v.rollen} spracheFest={v.sprache === 'en' ? 'en' : 'de'} />}
+        </VorschauContext.Provider>
+      </div>
   )
 }
 
