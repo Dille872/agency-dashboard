@@ -44,6 +44,7 @@ import { useFabPanels } from './fabPanel'
 // v4.68.0: Ansicht in der Adresszeile + eine Quelle fuer die Tab-Rechte
 import { routeLesen, routeSchreiben } from './route'
 import { darfAufTab, startTab } from './zugang'
+import { spracheSetzen, useSprache } from './i18n/sprache' // v4.110.0
 
 // Sprungziele, die CommTab ueber seine focus-Prop versteht (dort:
 // activeSection). Was nicht hier steht, wird aus der URL ignoriert.
@@ -174,6 +175,8 @@ export default function App() {
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
   const [theme, setThemeState] = useState(() => initTheme())
+  // v4.110.0: Sprache (Anmeldeseite, Social-Rollen). Pro Person aus user_roles.sprache.
+  const sprache = useSprache()
   const lastNoteCheck = useRef(null)
   // v3.79.0: Refs halten die AKTUELLEN Werte für das 30s-Intervall und Realtime-Callbacks.
   // Ohne sie bleibt deren Closure auf dem Initialwert (leer) hängen (Stale Closure) —
@@ -348,6 +351,8 @@ export default function App() {
       // (mario.stegmeir vs Mario). Wenn kein display_name in user_roles → Eintrag fehlt.
       const name = data?.display_name
       const rolle = data ? wirksameRolle(data.role, data.roles) : null
+      // v4.110.0: in den Einstellungen gesetzte Sprache gilt auf jedem Gerät
+      if (data?.sprache === 'en' || data?.sprache === 'de') spracheSetzen(data.sprache)
       if (data && name && rolle) {
         // v3.18.0: Account-Status prüfen — stillgelegte/offboardete User dürfen nicht ins Dashboard
         if (data.status === 'suspended' || data.status === 'offboarded') {
@@ -617,8 +622,16 @@ export default function App() {
     const notSetup = accountBlocked.status === 'not_setup'
     const ladeFehler = accountBlocked.status === 'load_error'
     const icon = ladeFehler ? '📡' : notSetup ? '⚠️' : suspended ? '⏸️' : '📦'
-    const title = ladeFehler ? 'Verbindung fehlgeschlagen' : notSetup ? 'Account nicht korrekt eingerichtet' : suspended ? 'Zugang vorübergehend stillgelegt' : 'Zugang deaktiviert'
-    const message = ladeFehler
+    const en = sprache === 'en' // v4.110.0
+    const title = en
+      ? (ladeFehler ? 'Connection failed' : notSetup ? 'Account not set up correctly' : suspended ? 'Access paused' : 'Access deactivated')
+      : (ladeFehler ? 'Verbindung fehlgeschlagen' : notSetup ? 'Account nicht korrekt eingerichtet' : suspended ? 'Zugang vorübergehend stillgelegt' : 'Zugang deaktiviert')
+    const message = en
+      ? (ladeFehler ? 'Your access could not be loaded right now. Please reload the page.'
+        : notSetup ? 'Your account has no role yet. Please contact the agency so your access can be set up.'
+        : suspended ? 'Your account is currently paused. Please contact the agency if you would like to return.'
+        : 'Your account has been deactivated. If you have questions, please contact the agency.')
+      : ladeFehler
       ? 'Dein Zugang konnte gerade nicht geladen werden. Bitte lade die Seite neu.'
       : notSetup
       ? 'Deinem Konto ist noch keine Rolle zugewiesen. Bitte wende dich an deine Agentur-Leitung, damit dein Zugang eingerichtet wird.'
@@ -642,11 +655,11 @@ export default function App() {
           )}
           {ladeFehler && (
             <button onClick={() => window.location.reload()} style={{ padding: '10px 22px', borderRadius: 8, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginRight: 8 }}>
-              Neu laden
+              {en ? 'Reload' : 'Neu laden'}
             </button>
           )}
           <button onClick={handleLogout} style={{ padding: '10px 22px', borderRadius: 8, background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            Abmelden
+            {en ? 'Sign out' : 'Abmelden'}
           </button>
         </div>
       </div>
@@ -667,6 +680,9 @@ export default function App() {
   const showModelPortal = userRole !== null && ((userRole === 'model' && viewMode !== 'admin') || viewMode === 'model')
   const isAdmin = userRole === 'admin'
   const isManager = userRole === 'admin' || userRole === 'manager'
+  // v4.110.0: Rahmen auf Englisch nur für Nicht-Admins (Social-Rollen) mit Sprache EN
+  const enRahmen = sprache === 'en' && !isManager
+  const tabName = (tab) => (!isManager && tab.key === 'social') ? 'Social Media Manager' : tab.label
 
   // Tab access per role
   const isSocialMedia = ['social_media', 'cutter', 'social_freigabe'].some(r => userRoles.includes(r)) // v4.106.0
@@ -875,7 +891,7 @@ export default function App() {
             alignItems: 'center', gap: 6,
           }}>
             <MoreHorizontal size={16} />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Menü</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{enRahmen ? 'Menu' : 'Menü'}</span>
           </button>
           )}
 
@@ -913,7 +929,7 @@ export default function App() {
             </button>
           )}
           </>)}
-          <button onClick={handleLogout} title="Abmelden" style={{
+          <button onClick={handleLogout} title={enRahmen ? 'Sign out' : 'Abmelden'} style={{
             fontSize: 12, padding: '5px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid var(--border)',
             color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
@@ -971,7 +987,7 @@ export default function App() {
                         fontFamily: 'inherit', width: '100%',
                       }}>
                         <tab.Icon size={16} strokeWidth={2.2} />
-                        <span style={{ flex: 1 }}>{tab.label}</span>
+                        <span style={{ flex: 1 }}>{tabName(tab)}</span>
                         {zahl > 0 && (
                           <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{zahl}</span>
                         )}
@@ -1012,7 +1028,7 @@ export default function App() {
               fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
             }}>
               <tab.Icon size={13} strokeWidth={2.2} />
-              <span>{tab.label}</span>
+              <span>{tabName(tab)}</span>
               {zahl > 0 && !aktiv && (
                 <span style={{ background: '#f59e0b', color: '#000', fontSize: 10, fontWeight: 800, borderRadius: 10, padding: '1px 6px' }}>{zahl}</span>
               )}

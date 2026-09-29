@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useSprache } from '../i18n/sprache' // v4.110.0
 
 // ── Neue Version da? (v4.109.1) ────────────────────────────────────────────
 // Am Handy (vor allem als App auf dem Homescreen) bleibt die Seite oft tagelang
@@ -15,6 +16,7 @@ const dateiVon = (html) => (String(html).match(/\/assets\/index-[A-Za-z0-9_-]+\.
 
 export default function NeueVersionHinweis() {
   const [neu, setNeu] = useState(false)
+  const sprache = useSprache()
   useEffect(() => {
     const aktuell = dateiVon([...document.querySelectorAll('script[src]')].map(s => s.getAttribute('src')).join(' '))
     if (!aktuell) return
@@ -40,7 +42,7 @@ export default function NeueVersionHinweis() {
   return (
     <button type="button" onClick={() => window.location.reload()}
       style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', zIndex: 200000, display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', borderRadius: 14, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 14, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', whiteSpace: 'nowrap' }}>
-      🔄 Neue Version da · tippen zum Aktualisieren
+      {sprache === 'en' ? '🔄 New version available · tap to update' : '🔄 Neue Version da · tippen zum Aktualisieren'}
     </button>
   )
 }

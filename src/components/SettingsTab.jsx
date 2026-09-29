@@ -823,6 +823,17 @@ export default function SettingsTab() {
     loadUsers()
   }
 
+  // v4.110.0: Sprache pro Person + Kontaktweg (Telegram-ID) für Teammitglieder ohne Chatter-/Model-Kontakt
+  const profilSpeichern = async (u, felder, was) => {
+    const { error } = await supabase.from('user_roles').update(felder).eq('user_id', u.user_id)
+    if (error) {
+      alert(/column|spalte/i.test(error.message) ? '⚠ Nicht gespeichert: Einmal sql/sprache-kontakt.sql in Supabase ausführen.' : '⚠ Nicht gespeichert: ' + error.message)
+      return
+    }
+    logActivity('user.profil', { entity: u.display_name || u.user_id, detail: was })
+    loadUsers()
+  }
+
   const saveBotMessage = async (key, value) => {
     setSavingMsg(true)
     await supabase.from('bot_settings').upsert({ key, value }, { onConflict: 'key' })
@@ -1483,6 +1494,7 @@ export default function SettingsTab() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {u.sprache === 'en' && <span title="Oberfläche auf Englisch" style={{ fontSize: 10, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.13)', padding: '2px 6px', borderRadius: 4 }}>EN</span>}
                       {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map(r => {
                         const rc2 = ROLES.find(x => x.key === r)
                         return <span key={r} style={{ fontSize: 10, fontWeight: 700, color: rc2?.color || color, background: (rc2?.color || color) + '22', padding: '2px 8px', borderRadius: 4 }}>{rc2?.label || r}</span>
@@ -1507,6 +1519,24 @@ export default function SettingsTab() {
                             }}>{active ? '✓ ' : ''}{r.label}</button>
                           )
                         })}
+                      </div>
+                      {/* v4.110.0: Sprache + Kontaktweg */}
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', alignItems: 'flex-end' }}>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+                          Sprache (Anmeldung & Social Media Manager)
+                          <select value={u.sprache || ''} onChange={e => profilSpeichern(u, { sprache: e.target.value || null }, 'Sprache ' + (e.target.value || 'Gerät'))}
+                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }}>
+                            <option value="">— wie das Gerät (Standard) —</option>
+                            <option value="de">Deutsch</option>
+                            <option value="en">English</option>
+                          </select>
+                        </label>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+                          Telegram-ID (optional, für spätere Benachrichtigungen)
+                          <input key={'tg:' + u.user_id + ':' + (u.kontakt_telegram || '')} defaultValue={u.kontakt_telegram || ''} placeholder="z. B. 123456789" inputMode="numeric"
+                            onBlur={e => { const v = e.target.value.trim(); if (v === (u.kontakt_telegram || '')) return; if (v && !/^-?\d{4,20}$/.test(v)) { alert('Telegram-ID besteht nur aus Ziffern.'); return } profilSpeichern(u, { kontakt_telegram: v || null }, v ? 'Telegram-ID gesetzt' : 'Telegram-ID entfernt') }}
+                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', width: 170 }} />
+                        </label>
                       </div>
                     </div>
                   )}

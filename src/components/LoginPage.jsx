@@ -2,6 +2,48 @@ import React, { useState } from 'react'
 import { supabase, FUNCTIONS_URL } from '../supabase'
 import Logo from './Logo'
 import { APP_VERSION } from '../version'
+import { loginSprache, spracheSetzen, serverText } from '../i18n/sprache' // v4.110.0
+
+// v4.110.0: Anmeldeseite zweisprachig (DE/EN). Start: gespeicherte Wahl, sonst
+// Handy-Sprache. Umschalter oben rechts auf der Karte.
+const TEXTE = {
+  de: {
+    anmelden: 'Anmelden', konto: 'Konto erstellen', vergessen_t: 'Passwort vergessen', willkommen: 'Willkommen zurück 👋',
+    t_vergessen: 'Trag deine E-Mail ein und frag ein neues Passwort an. Das Team gibt es frei, dann bekommst du einen Code.',
+    t_konto: 'Nimm die E-Mail-Adresse, die das Team für dich freigeschaltet hat, und wähl dir ein Passwort.',
+    t_login: 'Melde dich mit deiner E-Mail und deinem Passwort an.',
+    email: 'E-Mail', passwort: 'Passwort', neues_pw: 'Neues Passwort', pw_wdh: 'Passwort wiederholen', wdh: 'Wiederholen',
+    vergessen_link: 'Vergessen?', laedt_konto: 'Konto wird angelegt…', laedt_login: 'Anmelden…', login_knopf: 'Anmelden →',
+    moment: 'Moment…', anfragen: 'Neues Passwort anfragen', code_da: '🔑 Code schon bekommen?',
+    code_text: 'Dann trag ihn hier mit deinem neuen Passwort ein. Der Code gilt 60 Minuten.', code: 'Code', pw_setzen: 'Neues Passwort setzen',
+    zurueck: '← Zurück zum Anmelden', nicht_frei: 'Kommt „nicht freigeschaltet"? Dann melde dich beim Team — wir schalten deine Adresse frei, danach klappt es sofort.',
+    fuss: 'Zugang nur für das Team', min: (n, akt) => `Mindestens ${n} Zeichen${akt ? ` · aktuell ${akt}` : ''}`,
+    f_login: 'Login fehlgeschlagen. E-Mail oder Passwort falsch.', f_laenge: (n) => `Das Passwort muss mindestens ${n} Zeichen haben.`,
+    f_gleich: 'Die beiden Passwörter sind nicht gleich.', f_konto: 'Konto konnte nicht angelegt werden.',
+    ok_konto: (n) => `Konto angelegt. Willkommen, ${n}!`, f_konto_login: 'Konto angelegt, aber die Anmeldung hat nicht geklappt. Bitte oben normal anmelden.',
+    f_allg: (m) => `Es hat nicht geklappt: ${m}`, f_email: 'Bitte deine E-Mail-Adresse eintragen.', f_anfrage: 'Die Anfrage hat nicht geklappt.',
+    f_code: 'Bitte den Code eintragen, den du bekommen hast.', f_pw: 'Passwort konnte nicht gesetzt werden.',
+    ok_pw: 'Passwort geändert. Bitte melde dich jetzt oben an.', zeigen: 'Passwort anzeigen', verbergen: 'Passwort verbergen',
+  },
+  en: {
+    anmelden: 'Sign in', konto: 'Create account', vergessen_t: 'Forgot password', willkommen: 'Welcome back 👋',
+    t_vergessen: 'Enter your email and request a new password. Once the team approves it, you will get a code.',
+    t_konto: 'Use the email address the team activated for you and choose a password.',
+    t_login: 'Sign in with your email and password.',
+    email: 'Email', passwort: 'Password', neues_pw: 'New password', pw_wdh: 'Repeat password', wdh: 'Repeat',
+    vergessen_link: 'Forgot?', laedt_konto: 'Creating account…', laedt_login: 'Signing in…', login_knopf: 'Sign in →',
+    moment: 'One moment…', anfragen: 'Request new password', code_da: '🔑 Already got a code?',
+    code_text: 'Enter it here together with your new password. The code is valid for 60 minutes.', code: 'Code', pw_setzen: 'Set new password',
+    zurueck: '← Back to sign in', nicht_frei: 'Getting "not activated"? Contact the team, we will activate your address and it will work right away.',
+    fuss: 'Team access only', min: (n, akt) => `At least ${n} characters${akt ? ` · currently ${akt}` : ''}`,
+    f_login: 'Sign-in failed. Wrong email or password.', f_laenge: (n) => `The password must have at least ${n} characters.`,
+    f_gleich: 'The two passwords do not match.', f_konto: 'The account could not be created.',
+    ok_konto: (n) => `Account created. Welcome, ${n}!`, f_konto_login: 'Account created, but signing in did not work. Please sign in above.',
+    f_allg: (m) => `Something went wrong: ${m}`, f_email: 'Please enter your email address.', f_anfrage: 'The request did not work.',
+    f_code: 'Please enter the code you received.', f_pw: 'The password could not be set.',
+    ok_pw: 'Password changed. Please sign in above.', zeigen: 'Show password', verbergen: 'Hide password',
+  },
+}
 
 // v4.11.0: Modus „Konto erstellen" — freigeschaltete Adresse + selbst gewähltes Passwort.
 // v4.12.0: Modus „Passwort vergessen" — Anfrage, Freigabe durch einen Admin, Code, neues Passwort.
@@ -48,7 +90,7 @@ const linkS = {
 }
 
 // Passwortfeld mit Auge (anzeigen/verbergen)
-function PasswortFeld({ value, onChange, autoComplete, required }) {
+function PasswortFeld({ value, onChange, autoComplete, required, T = TEXTE.de }) {
   const [sichtbar, setSichtbar] = useState(false)
   return (
     <div style={{ position: 'relative' }}>
@@ -56,7 +98,7 @@ function PasswortFeld({ value, onChange, autoComplete, required }) {
         placeholder="••••••••" required={required} autoComplete={autoComplete}
         style={{ ...inputS, paddingRight: 48 }} {...fokus} />
       <button type="button" className="login-auge" onClick={() => setSichtbar(v => !v)}
-        aria-label={sichtbar ? 'Passwort verbergen' : 'Passwort anzeigen'}
+        aria-label={sichtbar ? T.verbergen : T.zeigen}
         style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 38, height: 38, borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
         {sichtbar ? '🙈' : '👁'}
       </button>
@@ -65,6 +107,10 @@ function PasswortFeld({ value, onChange, autoComplete, required }) {
 }
 
 export default function LoginPage() {
+  const [sprache, setSprache] = useState(loginSprache)
+  const T = TEXTE[sprache]
+  const umschalten = (s) => { setSprache(s); spracheSetzen(s) }
+  const st = (x) => serverText(x, sprache)
   const [modus, setModus] = useState('login')   // login | registrieren | vergessen
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -90,15 +136,15 @@ export default function LoginPage() {
     e.preventDefault()
     setError(''); setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) setError('Login fehlgeschlagen. E-Mail oder Passwort falsch.')
+    if (error) setError(T.f_login)
     setLoading(false)
   }
 
   const handleRegister = async (e) => {
     e.preventDefault()
     setError(''); setHinweis('')
-    if (password.length < MIN_PASSWORT) return setError(`Das Passwort muss mindestens ${MIN_PASSWORT} Zeichen haben.`)
-    if (password !== password2) return setError('Die beiden Passwörter sind nicht gleich.')
+    if (password.length < MIN_PASSWORT) return setError(T.f_laenge(MIN_PASSWORT))
+    if (password !== password2) return setError(T.f_gleich)
     setLoading(true)
     try {
       const resp = await fetch(`${FUNCTIONS_URL}/self-signup`, {
@@ -107,31 +153,31 @@ export default function LoginPage() {
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       })
       const data = await resp.json().catch(() => ({}))
-      if (!data.ok) { setError(data.error || 'Konto konnte nicht angelegt werden.'); setLoading(false); return }
-      setHinweis(`Konto angelegt. Willkommen, ${data.display_name || ''}!`)
+      if (!data.ok) { setError(st(data.error) || T.f_konto); setLoading(false); return }
+      setHinweis(T.ok_konto(data.display_name || ''))
       const { error: loginErr } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(), password,
       })
       if (loginErr) {
         setHinweis('')
-        setError('Konto angelegt, aber die Anmeldung hat nicht geklappt. Bitte oben normal anmelden.')
+        setError(T.f_konto_login)
         setModus('login')
       }
     } catch (err) {
-      setError(`Es hat nicht geklappt: ${err.message}`)
+      setError(T.f_allg(err.message))
     }
     setLoading(false)
   }
 
   const handleAnfrage = async () => {
-    if (!email.trim()) return setError('Bitte deine E-Mail-Adresse eintragen.')
+    if (!email.trim()) return setError(T.f_email)
     setError(''); setHinweis(''); setLoading(true)
     try {
       const data = await ruf('request')
-      if (data.ok) setHinweis(data.message)
-      else setError(data.error || 'Die Anfrage hat nicht geklappt.')
+      if (data.ok) setHinweis(st(data.message))
+      else setError(st(data.error) || T.f_anfrage)
     } catch (err) {
-      setError(`Es hat nicht geklappt: ${err.message}`)
+      setError(T.f_allg(err.message))
     }
     setLoading(false)
   }
@@ -139,22 +185,22 @@ export default function LoginPage() {
   const handleNeuesPasswort = async (e) => {
     e.preventDefault()
     setError(''); setHinweis('')
-    if (!code.trim()) return setError('Bitte den Code eintragen, den du bekommen hast.')
-    if (password.length < MIN_PASSWORT) return setError(`Das Passwort muss mindestens ${MIN_PASSWORT} Zeichen haben.`)
-    if (password !== password2) return setError('Die beiden Passwörter sind nicht gleich.')
+    if (!code.trim()) return setError(T.f_code)
+    if (password.length < MIN_PASSWORT) return setError(T.f_laenge(MIN_PASSWORT))
+    if (password !== password2) return setError(T.f_gleich)
     setLoading(true)
     try {
       const data = await ruf('set', { code: code.trim(), password })
-      if (!data.ok) { setError(data.error || 'Passwort konnte nicht gesetzt werden.'); setLoading(false); return }
+      if (!data.ok) { setError(st(data.error) || T.f_pw); setLoading(false); return }
       const { error: loginErr } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(), password,
       })
       if (loginErr) {
-        setHinweis('Passwort geändert. Bitte melde dich jetzt oben an.')
+        setHinweis(T.ok_pw)
         setModus('login')
       }
     } catch (err) {
-      setError(`Es hat nicht geklappt: ${err.message}`)
+      setError(T.f_allg(err.message))
     }
     setLoading(false)
   }
@@ -176,7 +222,7 @@ export default function LoginPage() {
   )
   const laengeHinweis = (
     <div style={{ fontSize: 11.5, color: password && password.length < MIN_PASSWORT ? 'var(--ton-amber)' : 'var(--text-muted)', marginTop: 6 }}>
-      Mindestens {MIN_PASSWORT} Zeichen{password ? ` · aktuell ${password.length}` : ''}
+      {T.min(MIN_PASSWORT, password ? password.length : 0)}
     </div>
   )
 
@@ -203,11 +249,22 @@ export default function LoginPage() {
       <div style={{
         background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 22,
         padding: 'clamp(22px, 5vw, 32px)', width: '100%', maxWidth: 410, boxSizing: 'border-box',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.25)', position: 'relative',
       }}>
+        {/* v4.110.0: Sprache */}
+        <div role="group" aria-label="Sprache / Language" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 9, overflow: 'hidden' }}>
+            {['de', 'en'].map(s => (
+              <button key={s} type="button" onClick={() => umschalten(s)} aria-pressed={sprache === s}
+                style={{ padding: '5px 10px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, background: sprache === s ? '#7c3aed' : 'transparent', color: sprache === s ? '#fff' : 'var(--text-muted)' }}>
+                {s.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
         {!vergessen && (
           <div style={{ display: 'flex', gap: 4, background: 'var(--bg-input)', padding: 4, borderRadius: 13, marginBottom: 22, border: '1px solid var(--border)' }}>
-            {[['login', 'Anmelden'], ['registrieren', 'Konto erstellen']].map(([k, l]) => (
+            {[['login', T.anmelden], ['registrieren', T.konto]].map(([k, l]) => (
               <button key={k} type="button" className="login-tab" onClick={() => wechseln(k)} style={{
                 flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
                 fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700,
@@ -220,45 +277,45 @@ export default function LoginPage() {
         )}
 
         <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6, letterSpacing: '-0.01em' }}>
-          {vergessen ? 'Passwort vergessen' : registrieren ? 'Konto erstellen' : 'Willkommen zurück 👋'}
+          {vergessen ? T.vergessen_t : registrieren ? T.konto : T.willkommen}
         </div>
         <div style={{ fontSize: 13.5, color: 'var(--text-muted)', marginBottom: 22, lineHeight: 1.55 }}>
           {vergessen
-            ? 'Trag deine E-Mail ein und frag ein neues Passwort an. Das Team gibt es frei, dann bekommst du einen Code.'
+            ? T.t_vergessen
             : registrieren
-              ? 'Nimm die E-Mail-Adresse, die das Team für dich freigeschaltet hat, und wähl dir ein Passwort.'
-              : 'Melde dich mit deiner E-Mail und deinem Passwort an.'}
+              ? T.t_konto
+              : T.t_login}
         </div>
 
         {/* ── Anmelden / Konto erstellen ───────────────────────────────── */}
         {!vergessen && (
           <form onSubmit={registrieren ? handleRegister : handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
             <div>
-              <label style={labelS}>E-Mail</label>
+              <label style={labelS}>{T.email}</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="name@agency.com" required autoComplete="email" style={inputS} {...fokus} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                <label style={labelS}>{registrieren ? 'Neues Passwort' : 'Passwort'}</label>
+                <label style={labelS}>{registrieren ? T.neues_pw : T.passwort}</label>
                 {!registrieren && (
-                  <button type="button" className="login-link" onClick={() => wechseln('vergessen')} style={{ ...linkS, fontSize: 12 }}>Vergessen?</button>
+                  <button type="button" className="login-link" onClick={() => wechseln('vergessen')} style={{ ...linkS, fontSize: 12 }}>{T.vergessen_link}</button>
                 )}
               </div>
-              <PasswortFeld value={password} onChange={e => setPassword(e.target.value)} required
+              <PasswortFeld T={T} value={password} onChange={e => setPassword(e.target.value)} required
                 autoComplete={registrieren ? 'new-password' : 'current-password'} />
               {registrieren && laengeHinweis}
             </div>
             {registrieren && (
               <div>
-                <label style={labelS}>Passwort wiederholen</label>
-                <PasswortFeld value={password2} onChange={e => setPassword2(e.target.value)} required autoComplete="new-password" />
+                <label style={labelS}>{T.pw_wdh}</label>
+                <PasswortFeld T={T} value={password2} onChange={e => setPassword2(e.target.value)} required autoComplete="new-password" />
               </div>
             )}
             {fehlerKasten}
             {hinweisKasten}
             <button type="submit" className="login-knopf" disabled={loading} style={knopfS(loading)}>
-              {loading ? (registrieren ? 'Konto wird angelegt…' : 'Anmelden…') : (registrieren ? 'Konto erstellen' : 'Anmelden →')}
+              {loading ? (registrieren ? T.laedt_konto : T.laedt_login) : (registrieren ? T.konto : T.login_knopf)}
             </button>
           </form>
         )}
@@ -267,41 +324,41 @@ export default function LoginPage() {
         {vergessen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
             <div>
-              <label style={labelS}>E-Mail</label>
+              <label style={labelS}>{T.email}</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="name@agency.com" autoComplete="email" style={inputS} {...fokus} />
             </div>
             {fehlerKasten}
             {hinweisKasten}
             <button type="button" className="login-knopf" onClick={handleAnfrage} disabled={loading} style={knopfS(loading)}>
-              {loading ? 'Moment…' : 'Neues Passwort anfragen'}
+              {loading ? T.moment : T.anfragen}
             </button>
 
             <div style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 16, padding: 16, marginTop: 4 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                🔑 Code schon bekommen?
+                {T.code_da}
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 14, lineHeight: 1.5 }}>
-                Dann trag ihn hier mit deinem neuen Passwort ein. Der Code gilt 60 Minuten.
+                {T.code_text}
               </div>
               <form onSubmit={handleNeuesPasswort} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
                 <div>
-                  <label style={labelS}>Code</label>
+                  <label style={labelS}>{T.code}</label>
                   <input value={code} onChange={e => setCode(e.target.value)} placeholder="123456"
                     inputMode="numeric" maxLength={6}
                     style={{ ...inputS, background: 'var(--bg-card)', fontFamily: 'monospace', letterSpacing: '0.35em', fontSize: 18, textAlign: 'center' }} {...fokus} />
                 </div>
                 <div>
-                  <label style={labelS}>Neues Passwort</label>
-                  <PasswortFeld value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
+                  <label style={labelS}>{T.neues_pw}</label>
+                  <PasswortFeld T={T} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
                   {laengeHinweis}
                 </div>
                 <div>
-                  <label style={labelS}>Wiederholen</label>
-                  <PasswortFeld value={password2} onChange={e => setPassword2(e.target.value)} autoComplete="new-password" />
+                  <label style={labelS}>{T.wdh}</label>
+                  <PasswortFeld T={T} value={password2} onChange={e => setPassword2(e.target.value)} autoComplete="new-password" />
                 </div>
                 <button type="submit" className="login-knopf" disabled={loading} style={knopfS(loading)}>
-                  {loading ? 'Moment…' : 'Neues Passwort setzen'}
+                  {loading ? T.moment : T.pw_setzen}
                 </button>
               </form>
             </div>
@@ -312,16 +369,16 @@ export default function LoginPage() {
         {(vergessen || registrieren) && (
           <div style={{ marginTop: 18, fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6, textAlign: vergessen ? 'center' : 'left' }}>
             {vergessen ? (
-              <button type="button" className="login-link" onClick={() => wechseln('login')} style={linkS}>← Zurück zum Anmelden</button>
+              <button type="button" className="login-link" onClick={() => wechseln('login')} style={linkS}>{T.zurueck}</button>
             ) : (
-              <>Kommt „nicht freigeschaltet"? Dann melde dich beim Team — wir schalten deine Adresse frei, danach klappt es sofort.</>
+              <>{T.nicht_frei}</>
             )}
           </div>
         )}
       </div>
 
       <div style={{ marginTop: 18, fontSize: 11.5, color: 'var(--text-muted)', textAlign: 'center' }}>
-        Zugang nur für das Team · {APP_VERSION}
+        {T.fuss} · {APP_VERSION}
       </div>
     </div>
   )

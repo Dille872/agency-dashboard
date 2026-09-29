@@ -231,13 +231,8 @@ export const CHIPS_EN = {
   'Stativ': 'Tripod', 'Ringlicht': 'Ring light', 'Mikro': 'Microphone', 'Nichts davon': 'None of these',
 }
 
-const SPEICHER = 'sm_sprache'
-export function spracheLaden() {
-  try { const s = localStorage.getItem(SPEICHER); return s === 'en' ? 'en' : 'de' } catch { return 'de' }
-}
-export function spracheMerken(s) {
-  try { localStorage.setItem(SPEICHER, s) } catch { /* egal */ }
-}
+// v4.110.0: Sprache liegt jetzt zentral in i18n/sprache.js (gleicher Speicher-Schlüssel)
+export { spracheJetzt as spracheLaden, spracheSetzen as spracheMerken } from './sprache'
 
 export function macheT(sprache) {
   const tab = TEXTE[sprache] || TEXTE.de
