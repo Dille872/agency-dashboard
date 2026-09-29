@@ -8,6 +8,8 @@ import SocialModelsAdmin from './SocialModelsAdmin' // v4.108.0
 import { SchnittListe, FreigabeListe } from './SocialAblauf' // v4.106.0
 import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialManager'
 import SocialSteuerung from './SocialSteuerung' // v4.103.0: nur Admins
+import SocialFabs from './SocialFabs' // v5.2.0: für die Vorschau
+import { VorschauContext, useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 import ReelsOhneSkript from './ReelsOhneSkript' // v4.109.0
 
 // ── Social Media Manager (v4.102.0) ────────────────────────────────────────
@@ -45,8 +47,10 @@ const wertListe = (v) => Array.isArray(v) ? v.filter(x => String(x ?? '').trim()
 
 // v4.108.0: festerReiter — Admins bekommen die Reiter als Unterreiter in der
 // oberen Leiste (Bereich „Social Media“, App.jsx); dann hier keine eigene Reiterzeile.
-export default function SocialManager({ userDisplayName, kannErinnern = false, istAdmin = false, festerReiter = null, darfBoard = true }) {
-  const [sprache, setSprache] = useState(spracheLaden)
+// v5.2.0: vorschau = { name, rollen, sprache } — zeigt die Seite so, wie diese Person sie sieht (nur ansehen)
+export default function SocialManager({ userDisplayName, kannErinnern = false, istAdmin = false, festerReiter = null, darfBoard = true, vorschau = null }) {
+  const [sprache, setSprache] = useState(() => vorschau ? (vorschau.sprache === 'en' ? 'en' : 'de') : spracheLaden())
+  const [vorschauAuf, setVorschauAuf] = useState(null) // v5.2.0: offene Vorschau (nur im echten Admin-Fenster)
   const t = useMemo(() => macheT(sprache), [sprache])
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const datum = (iso) => iso ? new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString(loc, { day: '2-digit', month: '2-digit' }) : ''
@@ -55,8 +59,9 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const [reiter, setReiter] = useState(festerReiter || (istAdmin ? 'steuerung' : 'posten'))
   useEffect(() => { if (festerReiter) setReiter(festerReiter) }, [festerReiter])
   // v4.106.0: eigene Zusatzrollen (social_media = Poster, cutter; v5.1.0: social_leitung statt social_freigabe)
-  const [rollen, setRollen] = useState(null)
+  const [rollen, setRollen] = useState(vorschau ? vorschau.rollen : null)
   useEffect(() => {
+    if (vorschau) return
     let weg = false
     ;(async () => {
       const { data: u } = await supabase.auth.getUser()
@@ -103,8 +108,23 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       }
     }
     for (const z of p.data || []) if (models[z.model_name]) models[z.model_name].profil[z.schluessel] = z.antwort
-    setDaten({ fehlt: false, models, skripte: sk.data || [] })
-  }, [])
+    let skripte = sk.data || []
+    if (vorschau && !(vorschau.rollen || []).some(r => r === 'social_leitung' || r === 'social_freigabe')) {
+      // v5.2.0: wie RLS für diese Person — nur zugeteilte Accounts (Poster- bzw. Cutter-Spalte)
+      const [zp, zc] = await Promise.all([
+        (vorschau.rollen || []).includes('social_media') ? supabase.from('social_account_poster').select('model_name, account').eq('poster_name', vorschau.name) : Promise.resolve({ data: [] }),
+        (vorschau.rollen || []).includes('cutter') ? supabase.from('social_account_cutter').select('model_name, account').eq('cutter_name', vorschau.name) : Promise.resolve({ data: [] }),
+      ])
+      const z = [...(zp.data || []), ...(zc.data || [])]
+      const hat = (m, a) => z.some(x => x.model_name === m && x.account === a)
+      skripte = skripte.filter(s => hat(s.model_name, s.ziel_account))
+      for (const name of Object.keys(models)) {
+        if (!z.some(x => x.model_name === name)) { delete models[name]; continue }
+        models[name].instagram = models[name].instagram.filter(a => hat(name, a.handle))
+      }
+    }
+    setDaten({ fehlt: false, models, skripte })
+  }, [vorschau])
   useEffect(() => { laden() }, [laden])
 
   // ── Übersetzen (nur EN) ──
@@ -142,7 +162,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sprache, daten])
 
-  const umschalten = (s) => { setSprache(s); spracheMerken(s) }
+  const umschalten = (s) => { setSprache(s); if (!vorschau) spracheMerken(s) } // Vorschau: Gerät nicht umstellen
 
   if (!daten) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>{t('laedt')}</div>
   if (daten.fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>{t('tabelle_fehlt')}</div>
@@ -206,7 +226,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
         ))}
       </div>}
 
-      {reiter === 'steuerung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} darfBoard={darfBoard} />}
+      {reiter === 'steuerung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} darfBoard={darfBoard} onVorschau={vorschau ? null : setVorschauAuf} />}
       {reiter === 'wirkung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} ansicht="wirkung" />}
       {reiter === 'models-admin' && istAdmin && <SocialModelsAdmin userDisplayName={userDisplayName} />}
 
@@ -347,11 +367,27 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
         </>
       )}
       {sprache === 'en' && Object.keys(uebers).length > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>ⓘ {t('uebersetzt')}</div>}
+      {/* v5.2.0: Vorschau „als Person ansehen“ — Vollbild über allem, nichts wird gespeichert */}
+      {vorschauAuf && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100050, background: 'var(--bg-base)', overflowY: 'auto' }}>
+          <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 16px', background: '#f59e0b', color: '#1a1205', fontSize: 13.5, fontWeight: 700 }}>
+            <span style={{ flex: 1, minWidth: 200 }}>👁 Vorschau als {vorschauAuf.name} · {(vorschauAuf.rollen || []).map(r => ({ social_media: 'Poster', cutter: 'Cutter', social_leitung: 'Social-Leitung', chatter: 'Chatter' }[r] || r)).join(' + ')} · {vorschauAuf.sprache === 'en' ? 'Englisch' : 'Deutsch'} · nur ansehen</span>
+            <button type="button" onClick={() => setVorschauAuf(null)} style={{ padding: '6px 14px', borderRadius: 9, border: 'none', background: '#1a1205', color: '#fff', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Beenden</button>
+          </div>
+          <VorschauContext.Provider value={true}>
+            <div style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
+              <SocialManager key={vorschauAuf.name} userDisplayName={vorschauAuf.name} vorschau={vorschauAuf} />
+            </div>
+            {!(vorschauAuf.rollen || []).includes('chatter') && <SocialFabs displayName={vorschauAuf.name} rollen={vorschauAuf.rollen} spracheFest={vorschauAuf.sprache === 'en' ? 'en' : 'de'} />}
+          </VorschauContext.Provider>
+        </div>
+      )}
     </div>
   )
 }
 
 function PostenKarte({ s, m, t, tr, datum, seitText, notiz, userDisplayName, onNeu }) {
+  const vorschau = useVorschau()
   const ziel = s.ziel_account || ''
   const [reel, setReel] = useState('')
   const [datumWert, setDatumWert] = useState(heuteISO())
@@ -362,6 +398,7 @@ function PostenKarte({ s, m, t, tr, datum, seitText, notiz, userDisplayName, onN
   const accounts = (m?.instagram || []).map(a => a.handle)
 
   const posten = async () => {
+    if (vorschau) return vorschauSperre()
     const r = mitHttps(reel)
     if (!linkOk(r) || !/instagram\.com\//i.test(r)) { setFehler(t('fehler_reel')); return }
     if (!account) { setFehler(t('fehler_account')); return }

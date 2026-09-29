@@ -6,6 +6,7 @@ import { useFabPanels, useFabOpen } from '../fabPanel'
 import { useGelesen } from '../gelesen'
 import { useSprache } from '../i18n/sprache'
 import { statusVon } from '../reelSkripte'
+import { useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 
 // ── Chat · Glocke · Hilfe für Social-Rollen (v5.0.0) ───────────────────────
 // Poster, Cutter und Freigeber haben nur den Social Media Manager. Unten rechts
@@ -86,8 +87,9 @@ const zahlPunkt = (n) => n > 0 && (
 )
 const zeit = (iso, loc) => { try { return new Date(iso).toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) } catch { return '' } }
 
-export default function SocialFabs({ displayName, rollen = [] }) {
-  const sprache = useSprache()
+export default function SocialFabs({ displayName, rollen = [], spracheFest = null }) {
+  const spracheGlobal = useSprache()
+  const sprache = spracheFest || spracheGlobal // v5.2.0: in der Vorschau die Sprache der Person
   const T = TXT[sprache] || TXT.de
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const panels = useFabPanels()
@@ -121,6 +123,7 @@ export default function SocialFabs({ displayName, rollen = [] }) {
 }
 
 function SocialChat({ T, loc, displayName, msgs, setMsgs, neu, isOpen, onToggle }) {
+  const vorschau = useVorschau()
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -128,7 +131,7 @@ function SocialChat({ T, loc, displayName, msgs, setMsgs, neu, isOpen, onToggle 
   const unread = msgs.filter(m => m.direction === 'out' && !m.read_at).length
 
   useEffect(() => {
-    if (!open) return
+    if (!open || vorschau) return // v5.2.0: in der Vorschau nichts als gelesen markieren
     setTimeout(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight }, 60)
     const ids = msgs.filter(m => m.direction === 'out' && !m.read_at).map(m => m.id)
     if (!ids.length) return
@@ -139,6 +142,7 @@ function SocialChat({ T, loc, displayName, msgs, setMsgs, neu, isOpen, onToggle 
   }, [open, msgs.length])
 
   const senden = async () => {
+    if (vorschau) return vorschauSperre()
     const t = text.trim()
     if (!t || sending) return
     setSending(true)
@@ -199,8 +203,12 @@ function SocialChat({ T, loc, displayName, msgs, setMsgs, neu, isOpen, onToggle 
 }
 
 function SocialGlocke({ T, loc, displayName, rollen, msgs, oeffneChat, isOpen, onToggle }) {
+  const vorschau = useVorschau()
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
-  const [lastSeen, markieren] = useGelesen('socialbell', { lokalKey: 'socialbell_' + displayName, startJetzt: true })
+  const [lastSeenEcht, markierenEcht] = useGelesen('socialbell', { lokalKey: 'socialbell_' + displayName, startJetzt: true })
+  // v5.2.0: in der Vorschau nicht den Gelesen-Stand des Admins benutzen oder ändern
+  const lastSeen = vorschau ? '' : lastSeenEcht
+  const markieren = vorschau ? vorschauSperre : markierenEcht
   const [daten, setDaten] = useState({ skripte: [], poster: [], cutter: [] })
   const istPoster = rollen.includes('social_media'), istCutter = rollen.includes('cutter'), istFreigeber = rollen.includes('social_freigabe') || rollen.includes('social_leitung')
 
@@ -210,8 +218,14 @@ function SocialGlocke({ T, loc, displayName, rollen, msgs, oeffneChat, isOpen, o
       istPoster ? supabase.from('social_account_poster').select('*').eq('poster_name', displayName) : Promise.resolve({ data: [] }),
       istCutter ? supabase.from('social_account_cutter').select('*').eq('cutter_name', displayName) : Promise.resolve({ data: [] }),
     ])
-    setDaten({ skripte: sk.data || [], poster: p.data || [], cutter: c.data || [] })
-  }, [displayName, istPoster, istCutter])
+    let skripte = sk.data || []
+    if (vorschau) {
+      // v5.2.0: Admin sieht alles — für die Vorschau auf die Accounts der Person filtern
+      const z = [...(p.data || []), ...(c.data || [])]
+      skripte = skripte.filter(s => z.some(x => x.model_name === s.model_name && x.account === s.ziel_account))
+    }
+    setDaten({ skripte, poster: p.data || [], cutter: c.data || [] })
+  }, [displayName, istPoster, istCutter, vorschau])
   useEffect(() => {
     laden()
     const iv = setInterval(laden, 120000)

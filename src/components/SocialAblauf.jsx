@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
@@ -58,10 +59,12 @@ export function SchnittListe({ skripte, t, tr, datum, seitText, userDisplayName,
 }
 
 function SchnittKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
+  const vorschau = useVorschau()
   const [link, setLink] = useState('')
   const [fehler, setFehler] = useState('')
   const [arbeitet, setArbeitet] = useState(false)
   const speichern = async () => {
+    if (vorschau) return vorschauSperre()
     const v = mitHttps(link)
     if (!linkOk(v)) { setFehler(t('fehler_link')); return }
     setArbeitet(true); setFehler('')
@@ -106,6 +109,7 @@ export function FreigabeListe({ skripte, t, tr, datum, seitText, userDisplayName
 }
 
 function FreigabeKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
+  const vorschau = useVorschau()
   const mitCutter = hatCutter(s) || !!s.schnitt_link
   const [zurueck, setZurueck] = useState(false)
   const [an, setAn] = useState(mitCutter ? 'cutter' : 'model')
@@ -116,6 +120,7 @@ function FreigabeKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
   const geschnitten = schnittGilt(s)
 
   const freigeben = async () => {
+    if (vorschau) return vorschauSperre()
     setArbeitet(true); setFehler('')
     const { error } = await supabase.from('reel_skripte').update({ freigabe_am: new Date().toISOString(), freigabe_von: userDisplayName || null }).eq('id', s.id)
     setArbeitet(false)
@@ -124,6 +129,7 @@ function FreigabeKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
     onNeu()
   }
   const zurueckGeben = async () => {
+    if (vorschau) return vorschauSperre()
     if (!notiz.trim()) { setFehler(t('notiz_pflicht')); return }
     setArbeitet(true); setFehler('')
     const { error } = await supabase.from('reel_skripte').update({ zurueck_an: an, zurueck_am: new Date().toISOString(), zurueck_von: userDisplayName || null, zurueck_notiz: notiz.trim().slice(0, 500) }).eq('id', s.id)

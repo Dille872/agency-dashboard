@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { macheT } from '../i18n/socialManager'
+import { useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 
 // ── Reels ohne Skript (v4.109.0) ───────────────────────────────────────────
 // Reels, die wir posten, ohne dass ein Drehzettel vorausging (z. B. alter
@@ -22,6 +23,7 @@ const codeVon = (url) => String(url || '').match(/instagram\.com\/(?:reel|reels|
 
 export default function ReelsOhneSkript({ accounts = [], t: tAussen, userDisplayName, istAdmin = false, sprache = 'de' }) {
   const t = useMemo(() => tAussen || macheT(sprache), [tAussen, sprache])
+  const vorschau = useVorschau()
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const schluessel = accounts.map(a => a.model + '|' + a.handle).join(',')
   const [wahl, setWahl] = useState(accounts.length === 1 ? schluessel : '')
@@ -51,6 +53,7 @@ export default function ReelsOhneSkript({ accounts = [], t: tAussen, userDisplay
   useEffect(() => { laden() }, [laden])
 
   const eintragen = async () => {
+    if (vorschau) return vorschauSperre()
     setMeldung(null)
     const url = String(link || '').trim()
     if (!codeVon(url)) { setMeldung({ ok: false, text: t('os_fehler_link') }); return }
@@ -70,6 +73,7 @@ export default function ReelsOhneSkript({ accounts = [], t: tAussen, userDisplay
   }
 
   const entfernen = async (x) => {
+    if (vorschau) return vorschauSperre()
     if (!window.confirm(t('os_entfernen_frage'))) return
     const { error } = await supabase.from('reel_ohne_skript').delete().eq('shortcode', x.shortcode)
     if (error) { setMeldung({ ok: false, text: error.message }); return }

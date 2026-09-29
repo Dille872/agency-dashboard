@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react' // v5.2.0: Linien-Icon statt Emoji
 import { supabase, FUNCTIONS_URL } from '../supabase'
 import Logo from './Logo'
 import { APP_VERSION } from '../version'
@@ -99,8 +100,8 @@ function PasswortFeld({ value, onChange, autoComplete, required, T = TEXTE.de })
         style={{ ...inputS, paddingRight: 48 }} {...fokus} />
       <button type="button" className="login-auge" onClick={() => setSichtbar(v => !v)}
         aria-label={sichtbar ? T.verbergen : T.zeigen}
-        style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 38, height: 38, borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-        {sichtbar ? '🙈' : '👁'}
+        style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 38, height: 38, borderRadius: 10, border: 'none', background: 'transparent', color: sichtbar ? 'var(--ton-lila)' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'color 0.15s' }}>
+        {sichtbar ? <EyeOff size={18} strokeWidth={2} /> : <Eye size={18} strokeWidth={2} />}
       </button>
     </div>
   )

@@ -33,7 +33,7 @@ const seitText = (n) => n === null ? '—' : n === 0 ? 'heute' : n === 1 ? 'gest
 const datum = (iso) => iso ? new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : '—'
 const schluessel = (m, a) => m + '|' + a
 
-export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung', darfBoard = true }) {
+export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung', darfBoard = true, onVorschau = null }) {
   // v5.1.0: darfBoard=false für die Social-Leitung — Agentur-Accounts im Board anlegen bleibt bei Admins
   const [d, setD] = useState(null)
   const [offenZeile, setOffenZeile] = useState(null)       // Skripte aufgeklappt
@@ -82,14 +82,23 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
     const mw = await supabase.from('reel_messwerte').select('shortcode, account, art, skript_nr, gepostet_am, gemessen_am, alter_std, plays, likes, comments, faktor').order('gemessen_am', { ascending: false }).limit(3000)
     const messwerte = {}
     for (const x of (mw.error ? [] : (mw.data || []))) if (!messwerte[x.shortcode]) messwerte[x.shortcode] = x
-    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error, messwerte, messFehlt: !!mw.error })
+    // v5.2.0: für „👁 Ansicht“ — Rollen und Sprache je Person (Sprache nur, wenn lesbar; sonst Deutsch)
+    const teamRollen = Object.fromEntries(aktivNutzer.map(x => [x.display_name, x.roles || []]))
+    const sp = await supabase.from('user_roles').select('display_name, sprache').in('display_name', aktivNutzer.map(x => x.display_name))
+    const teamSprache = Object.fromEntries((sp.error ? [] : (sp.data || [])).map(x => [x.display_name, x.sprache]))
+    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error, messwerte, messFehlt: !!mw.error, teamRollen, teamSprache })
   }, [])
   useEffect(() => { laden() }, [laden])
 
   if (!d) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Lädt …</div>
   if (d.fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Steuerung: Datenbank noch nicht eingerichtet. Einmal <code>sql/social-steuerung.sql</code> ausführen.</div>
 
-  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt, messwerte, messFehlt } = d
+  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt, messwerte, messFehlt, teamRollen = {}, teamSprache = {} } = d
+  // v5.2.0: kleiner Knopf „👁 Ansicht“ auf jeder Team-Karte
+  const ansichtKnopf = (name) => onVorschau && (
+    <button type="button" title={`So sieht ${name} die Seite (nur ansehen)`} onClick={() => onVorschau({ name, rollen: (teamRollen[name] || []).filter(r => ['social_media', 'cutter', 'chatter'].includes(r)), sprache: teamSprache[name] || 'de' })}
+      style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 8, padding: '3px 8px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>👁 Ansicht</button>
+  )
   const shortcodeVon = (url) => String(url || '').match(/instagram\.com\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/i)?.[1] || null
   const zahl = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('de-DE')
   const faktorFarbe = (f) => f === null || f === undefined ? 'var(--text-muted)' : f >= 1.5 ? G : f < 0.7 ? ROT : 'var(--text-primary)'
@@ -373,6 +382,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
                   <span style={{ width: 30, height: 30, borderRadius: 15, background: 'rgba(168,85,247,0.25)', color: '#d8b4fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>✂️</span>
                   <b style={{ flex: 1, color: 'var(--text-primary)' }}>{c}</b>
                   <span style={pill('#a855f7')}>Cutter</span>
+                  {ansichtKnopf(c)}
                 </div>
                 {zeile('Accounts', accs.length ? accs.map(z => z.account).join(', ') : '— keine —', accs.length ? null : A)}
                 {zeile('Zu schneiden', offen.length, offen.length ? '#a855f7' : 'var(--text-muted)')}
@@ -394,6 +404,8 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 30, height: 30, borderRadius: 15, background: 'rgba(124,58,237,0.25)', color: '#c4b5fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{p[0]?.toUpperCase()}</span>
                   <b style={{ flex: 1, color: 'var(--text-primary)' }}>{p}</b>
+                  <span style={pill(P)}>Poster</span>
+                  {ansichtKnopf(p)}
                 </div>
                 {zeile('Accounts', accs.length ? accs.map(z => z.account).join(', ') : '— keine —', accs.length ? null : A)}
                 {zeile('Zu posten', zp.length, zp.length ? C : 'var(--text-muted)')}
