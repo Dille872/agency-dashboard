@@ -234,13 +234,36 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Die Accounts kommen aus den Instagram-Links im Board der Models im Service. Kurzbeschreibung und „Im Service“ pflegst du unter Social Media → Models.</div>
         {!Object.keys(models).length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch kein Model im Service. Unter Social Media → Models das Model wählen und in den Service aufnehmen.</div>}
         {/* v4.104.1: Models im Service ohne Instagram-Link waren vorher unsichtbar */}
-        {Object.values(models).filter(m => !m.accounts.some(a => a.betreut)).map(m => (
-          <div key={'ohne:' + m.model_name} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+        {Object.values(models).filter(m => !m.accounts.some(a => a.betreut)).map(m => {
+          // v5.4.1: Drehzettel auch ohne Account sehen (z. B. Account wird gerade erst erstellt)
+          const k = 'ohne:' + m.model_name
+          const eig = skripte.filter(s => s.model_name === m.model_name && (alleSkripte || !['gepostet', 'verworfen'].includes(statusVon(s))))
+          const nOffen = aktiv.filter(s => s.model_name === m.model_name && statusVon(s) !== 'gepostet').length
+          const auf = offenZeile === k
+          return (
+          <div key={k} style={{ borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 8px', fontSize: 13 }}>
             <span style={{ minWidth: 80, color: 'var(--text-primary)' }}>{m.model_name}</span>
-            <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>{m.accounts.length ? '⚠ im Service, aber alle Accounts sind „nicht betreut“.' : '⚠ im Service, aber noch kein Instagram-Account im Board. Deshalb gibt es hier noch keine Zeile zum Zuteilen.'}</span>
+            <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>{m.accounts.length ? '⚠ im Service, aber alle Accounts sind „nicht betreut“.' : '⚠ im Service, aber noch kein Instagram-Account. Drehzettel gehen trotzdem schon; Poster sehen sie erst, wenn ein Account da ist.'}</span>
+            <button type="button" onClick={() => setUpload({ model: m.model_name, account: '' })} style={{ ...knopf(C, false), padding: '4px 9px', fontSize: 12 }}>📄 +</button>
             {darfBoard && <button type="button" onClick={() => setNeuAccount(m.model_name)} style={{ ...knopf(P, false), padding: '5px 10px', fontSize: 12 }}>+ Account für {m.model_name}</button>}
+            <button type="button" onClick={() => setOffenZeile(auf ? null : k)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 9px', fontSize: 12 }}>{auf ? '▴' : '▾'} {nOffen} Drehzettel</button>
           </div>
-        ))}
+          {auf && (
+            <div style={{ padding: '0 8px 14px' }}>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <button type="button" onClick={() => setAlleSkripte(false)} style={knopf('var(--text-secondary)', !alleSkripte)}>Offen</button>
+                <button type="button" onClick={() => setAlleSkripte(true)} style={knopf('var(--text-secondary)', alleSkripte)}>Alle (inkl. gepostet & verworfen)</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {eig.map(s => <SkriptKarte key={s.id + ':' + s.aktualisiert_am} s={s} accounts={[]} userName={userDisplayName} onNeu={laden} />)}
+                {!eig.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Nichts {alleSkripte ? '' : 'Offenes '}für {m.model_name}.</div>}
+              </div>
+            </div>
+          )}
+          </div>
+          )
+        })}
         {zeilen.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
