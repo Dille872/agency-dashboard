@@ -5,10 +5,11 @@ import { logActivity } from '../activity'
 
 // ── Wirkung als Kurve (v5.5.0) ─────────────────────────────────────────────
 // Pro Account: Aufrufe nach Tagen seit dem Posten. Jede Linie ist eines
-// unserer Reels (Pink = mit Skript, Lila = ohne Skript). Grau gestrichelt =
-// typischer Verlauf der eigenen Reels des Models (Median, nur solange noch
-// mindestens 3 Reels so alt sind — sonst springt die Linie). Ein Reel in der
-// Liste antippen → seine Linie wird hervorgehoben.
+// unserer Reels (Pink = mit Skript, Lila = ohne Skript). Dünn grau = die
+// eigenen Reels des Models, jedes einzeln (v5.6.1: vorher Median — der war
+// aus verschiedenen Reels zusammengestückelt und fiel teils wieder ab, weil
+// es Verlauf erst seit dem 27.09. gibt). Reels mit nur einem Messpunkt
+// erscheinen als Punkt. Ein Reel in der Liste antippen → hervorgehoben.
 //
 // Faktor (v5.6.0, rechnet das Dashboard selbst): Aufrufe des Reels an Tag 7
 // geteilt durch den Median der früheren Reels desselben Accounts (60 Tage vor
@@ -54,9 +55,18 @@ function wertAm(r, t) {
 
 function Mini({ punkte, f }) {
   if (!punkte.length) return <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
-  const w = 110, h = 26, mx = Math.max(...punkte.map(p => p.v), 1), md = Math.max(...punkte.map(p => p.t), 1)
-  const d = punkte.map((p, i) => `${i ? 'L' : 'M'}${(p.t / md * (w - 4) + 2).toFixed(1)},${(h - 2 - p.v / mx * (h - 4)).toFixed(1)}`).join(' ')
-  return <svg width={w} height={h} style={{ display: 'block' }}><path d={d} fill="none" stroke={f} strokeWidth="2" strokeLinejoin="round" /></svg>
+  // x = Tag im Messfenster (0 … 30 bzw. länger), damit man auch das Alter sieht
+  const w = 110, h = 26, mx = Math.max(...punkte.map(p => p.v), 1), md = Math.max(FENSTER, ...punkte.map(p => p.t))
+  const xy = (p) => [(p.t / md * (w - 6) + 3).toFixed(1), (h - 3 - p.v / mx * (h - 6)).toFixed(1)]
+  const d = punkte.map((p, i) => `${i ? 'L' : 'M'}${xy(p).join(',')}`).join(' ')
+  const [lx, ly] = xy(punkte[punkte.length - 1])
+  return (
+    <svg width={w} height={h} style={{ display: 'block' }}>
+      <line x1="3" y1={h - 2} x2={w - 3} y2={h - 2} stroke="var(--border)" strokeWidth="1" />
+      {punkte.length > 1 && <path d={d} fill="none" stroke={f} strokeWidth="2" strokeLinejoin="round" />}
+      <circle cx={lx} cy={ly} r="2.8" fill={f} />
+    </svg>
+  )
 }
 
 export default function WirkungKurven({ accounts = [], darfVerlaengern = true, userDisplayName }) {
@@ -141,17 +151,16 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
   const maxTag = Math.min(90, Math.max(FENSTER, ...reels.filter(r => r.offen || letzte30(r)).map(r => r.ts[r.ts.length - 1] || 0)))
   const gewaehlt = reels.find(r => r.code === wahl)
   const linien = useMemo(() => reels.filter(r => r.art !== 'vergleich' && (alle || r.offen || r.alter <= 30)), [reels, alle])
+  const eigenLinien = useMemo(() => reels.filter(r => r.art === 'vergleich' && r.ts.some(t => t <= maxTag) && r.alter <= maxTag + 15), [reels, maxTag])
   const daten = useMemo(() => {
-    const eig = reels.filter(r => r.art === 'vergleich' && r.alter <= 90)
     return [...Array(maxTag + 1)].map((_, t) => {
       const zeile = { tag: t }
-      const werte = eig.map(r => r.tage[t]?.v).filter(v => v !== undefined)
-      if (werte.length >= 3) zeile.vergleich = Math.round(median(werte))
+      for (const r of eigenLinien) if (r.tage[t]) zeile['e_' + r.code] = r.tage[t].v
       for (const r of linien) if (r.tage[t]) zeile['r_' + r.code] = r.tage[t].v
       return zeile
     })
-  }, [reels, linien, maxTag])
-  const hat = (k) => k === 'vergleich' ? daten.some(d => d.vergleich !== undefined) : linien.some(r => r.art === k)
+  }, [linien, eigenLinien, maxTag])
+  const hat = (k) => k === 'vergleich' ? eigenLinien.length > 0 : linien.some(r => r.art === k)
 
   const kpi = {
     anzahl: unsere.filter(letzte30).length,
@@ -174,12 +183,12 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
   const sichtbar = unsere.filter(r => alle || r.offen || letzte30(r))
   const tipp = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
-    const namen = { vergleich: 'Model selbst (typisch)' }
+    const namen = {}
     for (const r of linien) namen['r_' + r.code] = `${r.nr || 'ohne Skript'} · ${new Date(r.start + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`
     return (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 11px', fontSize: 12 }}>
         <div style={{ fontWeight: 800, marginBottom: 3 }}>Tag {label}</div>
-        {[...payload].sort((a, b) => b.value - a.value).slice(0, 8).map(p => <div key={p.dataKey} style={{ color: p.stroke }}>{namen[p.dataKey]}: {Number(p.value).toLocaleString('de-DE')} Aufrufe</div>)}
+        {[...payload].filter(p => String(p.dataKey).startsWith('r_')).sort((a, b) => b.value - a.value).slice(0, 8).map(p => <div key={p.dataKey} style={{ color: p.stroke }}>{namen[p.dataKey]}: {Number(p.value).toLocaleString('de-DE')} Aufrufe</div>)}
       </div>
     )
   }
@@ -224,7 +233,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
             <span style={{ fontWeight: 800, color: 'var(--text-primary)', flex: 1, minWidth: 200 }}>Aufrufe nach Tagen seit dem Posten</span>
             {hat('skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: P, verticalAlign: 'middle' }} /> Reel mit Skript</span>}
             {hat('ohne_skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: V, verticalAlign: 'middle' }} /> Reel ohne Skript (von uns)</span>}
-            {hat('vergleich') && <span><span style={{ display: 'inline-block', width: 12, height: 0, borderTop: `2px dashed ${GR}`, verticalAlign: 'middle' }} /> Model selbst, typisch</span>}
+            {hat('vergleich') && <span><span style={{ display: 'inline-block', width: 12, height: 2, background: GR, opacity: 0.6, verticalAlign: 'middle' }} /> Model selbst (je Reel)</span>}
             {gewaehlt && <span style={{ color: C }}>{gewaehlt.nr || 'ohne Skript'} hervorgehoben <button type="button" onClick={() => setWahl(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button></span>}
           </div>
           <div style={{ height: 250 }}>
@@ -234,9 +243,12 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
                 <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `Tag ${t}`} interval="preserveStartEnd" minTickGap={24} />
                 <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={kurz} width={48} />
                 <Tooltip content={tipp} />
-                {hat('vergleich') && <Line type="monotone" dataKey="vergleich" stroke={GR} strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls isAnimationActive={false} />}
+                {eigenLinien.map(r => (
+                  <Line key={'e' + r.code} type="monotone" dataKey={'e_' + r.code} stroke={GR} strokeWidth={1.2} strokeOpacity={0.4} connectNulls isAnimationActive={false}
+                    dot={r.ts.length === 1 ? { r: 2, fill: GR, stroke: 'none', fillOpacity: 0.5 } : false} activeDot={false} />
+                ))}
                 {[...linien].sort((a, b) => (a.code === wahl) - (b.code === wahl)).map(r => (
-                  <Line key={r.code} type="monotone" dataKey={'r_' + r.code} stroke={farbe(r.art)} dot={r.code === wahl ? { r: 2.5 } : false} connectNulls isAnimationActive={false}
+                  <Line key={r.code} type="monotone" dataKey={'r_' + r.code} stroke={farbe(r.art)} dot={r.code === wahl || r.ts.length <= 2 ? { r: r.code === wahl ? 3.5 : 3, fill: farbe(r.art), stroke: 'none' } : false} connectNulls isAnimationActive={false}
                     strokeWidth={r.code === wahl ? 4 : 2} strokeOpacity={wahl && r.code !== wahl ? 0.25 : 0.9} />
                 ))}
               </LineChart>
@@ -259,7 +271,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
               const an = wahl === r.code
               return (
                 <div key={r.code} onClick={() => setWahl(an ? null : r.code)}
-                  style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1.4fr) 120px 110px 80px 90px minmax(120px, auto)', gap: 10, alignItems: 'center', padding: '8px 6px', borderTop: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', minWidth: 720, background: an ? 'rgba(6,182,212,0.08)' : 'transparent', borderRadius: an ? 8 : 0, opacity: r.offen ? 1 : 0.65 }}>
+                  style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 280px) 120px 110px 80px 90px minmax(120px, 1fr)', gap: 10, alignItems: 'center', padding: '8px 6px', borderTop: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', minWidth: 720, background: an ? 'rgba(6,182,212,0.08)' : 'transparent', borderRadius: an ? 8 : 0, opacity: r.offen ? 1 : 0.65 }}>
                   <span>
                     <b style={{ color: farbe(r.art) }}>{r.nr || 'ohne Skript'}</b>
                     <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}> · {new Date(r.start + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
