@@ -54,3 +54,8 @@ verify_jwt = false
 # nur vorschlaege_eintragen() aufrufen.
 [functions.vorschlaege-eintragen]
 verify_jwt = false
+
+# v5.6.0: Sammel-Skript fragt den Messplan ab — ohne Login, abgesichert über
+# x-messwerte-secret (gleiches Geheimnis wie messwerte-eintragen).
+[functions.messplan-lesen]
+verify_jwt = false

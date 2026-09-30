@@ -10,8 +10,15 @@ import { logActivity } from '../activity'
 // mindestens 3 Reels so alt sind — sonst springt die Linie). Ein Reel in der
 // Liste antippen → seine Linie wird hervorgehoben.
 //
-// Faktor „an Tag 7“: Vergleich bei gleichem Alter. Solange ein Reel jünger
-// ist, steht der aktuelle Faktor grau als „vorläufig“ da.
+// Faktor (v5.6.0, rechnet das Dashboard selbst): Aufrufe des Reels an Tag 7
+// geteilt durch den Median der früheren Reels desselben Accounts (60 Tage vor
+// dem Posten, mind. 3) ebenfalls an Tag 7 — also bei gleichem Alter. Jüngere
+// Reels: am heutigen Tag verglichen, grau mit * („vorläufig“). Fehlen
+// Vergleichsreels mit Verlauf, steht der grobe Faktor der Pipeline da (~).
+//
+// Bereinigung Altdaten (Hinweis Pipeline 30.09.): bis einschließlich 30.09.
+// kamen manche Reels mehrere Nächte mit altem Stand an. Aufeinanderfolgende
+// Messpunkte mit exakt gleichen Aufrufen/Likes/Kommentaren zählen als einer.
 //
 // Messfenster (sql/reel-messfenster.sql): 30 Tage ab Posten, danach
 // abgeschlossen. „+30 Tage“ verlängert, beliebig oft. Die Pipeline misst nur,
@@ -33,6 +40,17 @@ const faktorText = (f) => f === null || f === undefined ? '—' : Number(f).toFi
 
 // Tag seit Posten für eine Messung (Alter in Stunden, sonst Kalendertage)
 const tagVon = (m) => m.alter_std !== null && m.alter_std !== undefined ? Math.floor(Number(m.alter_std) / 24) : (m.gepostet_am ? Math.max(0, tageZwischen(tagIso(m.gepostet_am), m.mess_tag || tagIso(m.gemessen_am))) : null)
+
+const ALTDATEN_BIS = '2026-09-30'   // bis hierhin konnten alte Stände mehrfach ankommen
+
+// Aufrufe an Tag t: gemessen oder zwischen zwei Messpunkten geschätzt (nie darüber hinaus)
+function wertAm(r, t) {
+  if (r.tage[t]) return r.tage[t].v
+  const vor = r.ts.filter(x => x < t).pop(), nach = r.ts.find(x => x > t)
+  if (vor === undefined || nach === undefined) return null
+  const a = r.tage[vor].v, b = r.tage[nach].v
+  return a + (b - a) * (t - vor) / (nach - vor)
+}
 
 function Mini({ punkte, f }) {
   if (!punkte.length) return <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
@@ -57,7 +75,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
     if (!acc) { setZeilen([]); return }
     const seit = new Date(Date.now() - 180 * 86400000).toISOString()
     const m = await supabase.from('reel_messwerte')
-      .select('shortcode, reel_url, art, skript_nr, gepostet_am, gemessen_am, mess_tag, alter_std, plays, faktor')
+      .select('shortcode, reel_url, art, skript_nr, gepostet_am, gemessen_am, mess_tag, alter_std, plays, likes, comments, faktor')
       .eq('account', acc).gte('gepostet_am', seit).order('gemessen_am').limit(8000)
     if (m.error) { setFehlt(x => ({ ...x, mess: true })); setZeilen([]); return }
     setZeilen(m.data || [])
@@ -75,15 +93,18 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
     const map = {}
     for (const z of zeilen || []) {
       const t = tagVon(z); if (t === null) continue
-      const r = map[z.shortcode] || (map[z.shortcode] = { code: z.shortcode, url: z.reel_url, art: z.art, nr: z.skript_nr, gepostet: z.gepostet_am, tage: {} })
+      const r = map[z.shortcode] || (map[z.shortcode] = { code: z.shortcode, url: z.reel_url, art: z.art, nr: z.skript_nr, gepostet: z.gepostet_am, tage: {}, zuletzt: null })
       r.art = z.art; r.nr = z.skript_nr || r.nr   // letzter Stand gewinnt (Skript hat Vorrang in der DB)
+      const stand = `${z.plays}|${z.likes}|${z.comments}`
+      const tag = z.mess_tag || tagIso(z.gemessen_am)
+      if (tag <= ALTDATEN_BIS && stand === r.zuletzt) continue   // alter Stand erneut gesendet → kein neuer Messpunkt
+      r.zuletzt = stand
       r.tage[t] = { v: Number(z.plays || 0), f: z.faktor === null || z.faktor === undefined ? null : Number(z.faktor) }
     }
     const heute = tagIso(new Date())
-    return Object.values(map).map(r => {
+    const liste = Object.values(map).map(r => {
       const ts = Object.keys(r.tage).map(Number).sort((a, b) => a - b)
       const letzt = r.tage[ts[ts.length - 1]]
-      const t7 = ts.find(t => t >= 7)
       const start = r.gepostet ? tagIso(r.gepostet) : heute
       const bis = fenster[r.code]?.messen_bis || plusTage(start, FENSTER)
       const alter = tageZwischen(start, heute)
@@ -92,11 +113,24 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
       const waechst = vor !== undefined && r.tage[vor].v > 0 && (letzt.v - r.tage[vor].v) / r.tage[vor].v > 0.1
       return {
         ...r, ts, plays: letzt.v, alter, bis, laenge: tageZwischen(start, bis), start,
-        faktor7: t7 !== undefined ? r.tage[t7].f : null, faktorJetzt: letzt.f, vorlaeufig: t7 === undefined,
+        faktorPipeline: letzt.f,
         offen: heute <= bis, waechst, verlaengert: !!fenster[r.code],
         punkte: ts.map(t => ({ t, v: r.tage[t].v })),
       }
     }).sort((a, b) => String(b.gepostet).localeCompare(String(a.gepostet)))
+    // Faktor bei gleichem Alter (Tag 7, bei jüngeren Reels: heute)
+    for (const r of liste) {
+      const t = Math.min(7, r.alter)
+      const v = wertAm(r, t)
+      const vor = liste.filter(o => o.code !== r.code && o.gepostet && r.gepostet && o.gepostet < r.gepostet
+        && (new Date(r.gepostet) - new Date(o.gepostet)) <= 60 * 86400000)
+      const basis = median(vor.map(o => wertAm(o, t)))
+      const anzahl = vor.filter(o => wertAm(o, t) !== null).length
+      if (v !== null && basis && anzahl >= 3) { r.faktor = v / basis; r.fArt = 'alter' }
+      else { r.faktor = r.faktorPipeline; r.fArt = 'grob' }
+      r.fTag = t; r.vorlaeufig = r.alter < 7
+    }
+    return liste
   }, [zeilen, fenster])
 
   const unsere = reels.filter(r => r.art !== 'vergleich')
@@ -121,8 +155,8 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
 
   const kpi = {
     anzahl: unsere.filter(letzte30).length,
-    fUns: median(unsere.filter(r => letzte30(r) && !r.vorlaeufig).map(r => r.faktor7)),
-    fEigen: median(eigene.filter(r => letzte30(r) && !r.vorlaeufig).map(r => r.faktor7)),
+    fUns: median(unsere.filter(r => letzte30(r) && !r.vorlaeufig && r.fArt === 'alter').map(r => r.faktor)),
+    fEigen: median(eigene.filter(r => letzte30(r) && !r.vorlaeufig && r.fArt === 'alter').map(r => r.faktor)),
     bestes: [...unsere.filter(letzte30)].sort((a, b) => b.plays - a.plays)[0],
   }
 
@@ -221,7 +255,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
           {!sichtbar.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '6px 0' }}>Noch keine Reels von uns auf {acc}.</div>}
           <div style={{ overflowX: 'auto' }}>
             {sichtbar.map(r => {
-              const f = r.vorlaeufig ? r.faktorJetzt : r.faktor7
+              const f = r.faktor
               const an = wahl === r.code
               return (
                 <div key={r.code} onClick={() => setWahl(an ? null : r.code)}
@@ -237,8 +271,8 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
                     {r.verlaengert && <span title={fenster[r.code]?.verlaengert_von ? `verlängert von ${fenster[r.code].verlaengert_von}` : ''} style={{ color: C }}> · verl.</span>}
                   </span>
                   <b>{kurz(r.plays)}</b>
-                  <span title={r.vorlaeufig ? 'Noch keine 7 Tage alt: aktueller Faktor, vorläufig' : 'Faktor an Tag 7'}
-                    style={{ fontWeight: 800, color: r.vorlaeufig ? 'var(--text-muted)' : faktorFarbe(f) }}>{faktorText(f)}{r.vorlaeufig && f !== null && f !== undefined ? ' *' : ''}</span>
+                  <span title={r.fArt === 'grob' ? 'Grob (Pipeline): gegen den Endstand früherer Reels, noch zu wenig Verlauf für den Vergleich bei gleichem Alter' : r.vorlaeufig ? `Noch keine 7 Tage alt: verglichen an Tag ${r.fTag}, vorläufig` : 'An Tag 7 verglichen mit den früheren Reels des Accounts an Tag 7'}
+                    style={{ fontWeight: 800, color: r.vorlaeufig || r.fArt === 'grob' ? 'var(--text-muted)' : faktorFarbe(f) }}>{r.fArt === 'grob' && f !== null && f !== undefined ? '~' : ''}{faktorText(f)}{r.vorlaeufig && f !== null && f !== undefined ? ' *' : ''}</span>
                   <span style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
                     {r.waechst && (r.laenge - r.alter <= 5 || !r.offen) && <span style={{ fontSize: 11, fontWeight: 800, color: A }}>↗ wächst noch</span>}
                     {darfVerlaengern && !fehlt.fenster && (r.laenge - r.alter <= 5 || !r.offen) && (
@@ -249,7 +283,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
               )
             })}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>* noch keine 7 Tage alt, Faktor vorläufig. „+30 Tage“ erscheint in den letzten 5 Tagen des Fensters und bei abgeschlossenen Reels.</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>Faktor = Aufrufe an Tag 7 im Vergleich zu den früheren Reels des Accounts an Tag 7. * noch keine 7 Tage alt, vorläufig. ~ grob, noch zu wenig Verlauf zum Vergleichen. „+30 Tage“ erscheint in den letzten 5 Tagen des Fensters und bei abgeschlossenen Reels.</div>
           {fehlt.fenster && <div style={{ fontSize: 11.5, color: A, marginTop: 4 }}>Verlängern geht erst, wenn <code>sql/reel-messfenster.sql</code> ausgeführt ist.</div>}
           {hinweis && <div style={{ fontSize: 12.5, color: ROT, marginTop: 4 }}>{hinweis}</div>}
         </div>
