@@ -50,6 +50,7 @@ const TX = {
     heute_titel: '📅 Heute geplant', oeffnen: 'Öffnen', model: 'Model', notiz: 'Notiz', tabelle_fehlt: 'Posting-Plan: Datenbank noch nicht eingerichtet (sql/posting-plan.sql).',
     tage: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], nur_lesen: 'Nur ansehen', frames_n: (n) => `Story · ${n} Frame${n === 1 ? '' : 's'}`,
     vorschau_hoch: 'Vorschau: Hochladen kann nur das Model selbst.', hoch_titel: '📤 Content hochladen', hoch_text: 'Fotos und Videos auf Vorrat. Mehrere auf einmal gehen. Danach landen sie unten in der Ablage und werden eingeplant.', nichts_tag: 'Nichts geplant.',
+    ohne_video: 'auch Skripte ohne Video (noch nicht gedreht)',
     tipp_handy: 'Tipp: Content oben antippen (mehrere möglich), dann beim Account „hier einplanen“.',
     fuer: 'Für', fuer_beitrag: 'Beitrag', fuer_tipp: 'Vor dem Hochladen wählen: Story-Content oder Beitrags-Content (Reel, Foto, Karussell). Lässt sich am Bild später umschalten.', sicht_alle: 'Alle', umschalten: 'Antippen = zwischen Story und Beitrag umschalten',
     von: (w) => `von ${w}`, eingetragen: 'Eingetragen', dein_plan: 'Dein Posting-Plan', dein_plan_text: 'Hier planst du zusammen mit uns: Beiträge eintragen, ändern und als gepostet markieren.',
@@ -75,6 +76,7 @@ const TX = {
     fehler_account: 'Please choose an account.', fehler_zeit: 'Please set date and time.', fehler_reel: 'Please paste the Instagram link to the reel.',
     nicht_gespeichert: 'Not saved: ', leer_tag: '', deine_zeit: 'your time', zeit_von: (k) => `${k} time`, de_zeit: 'German time', heute_nichts: 'Nothing scheduled today.',
     vorschau_hoch: 'Preview: only the creator can upload here.', hoch_titel: '📤 Upload content', hoch_text: 'Photos and videos in advance, several at once. They land in the library below and get scheduled.', nichts_tag: 'Nothing scheduled.',
+    ohne_video: 'also scripts without video (not shot yet)',
     tipp_handy: 'Tip: tap content above (several possible), then “schedule here” at the account.',
     fuer: 'For', fuer_beitrag: 'Post', fuer_tipp: 'Choose before uploading: story content or post content (reel, photo, carousel). Can be switched later on the tile.', sicht_alle: 'All', umschalten: 'Tap = switch between story and post',
     von: (w) => `by ${w}`, eingetragen: 'Added', dein_plan: 'Your posting calendar', dein_plan_text: 'Plan together with us: add posts, edit them and mark them as posted.',
@@ -224,6 +226,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const [neuMaterial, setNeuMaterial] = useState(false)
   const [auswahl, setAuswahl] = useState([])        // v5.12.0: markierter Content (Reihenfolge = Auswahl)
   const [alleZeigen, setAlleZeigen] = useState(false)
+  const [ohneVideo, setOhneVideo] = useState(false)   // v5.16.0: auch noch nicht gedrehte Skripte zeigen
   const [kopie, setKopie] = useState(null)           // v5.12.0: Beitrag im Kopiermodus
   const [ziehen, setZiehen] = useState(null)         // { art: 'content' } | { art: 'eintrag', z }
   const [ueber, setUeber] = useState('')             // Zelle, über der gerade gezogen wird
@@ -263,7 +266,8 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   // Content-Ablage: eigenes Material + Skript-Reels (nicht gepostet)
   const alles = [
     ...material.map(m => ({ key: 'm' + m.id, art: m.art, titel: m.titel, model: m.model_name, link: m.link, quelle: m.erstellt_von || T.ohne_skript, material_id: m.id, notiz: m.notiz, von: m.erstellt_von })),
-    ...skripte.filter(s => !s.verworfen && !s.reel_url && models.includes(s.model_name) && statusVon(s) !== 'gepostet')
+    // v5.16.0: Skripte ohne Video (noch nicht gedreht) nur auf Wunsch — sonst füllen sie die Ablage mit leeren Kacheln
+    ...skripte.filter(s => !s.verworfen && !s.reel_url && models.includes(s.model_name) && statusVon(s) !== 'gepostet' && (ohneVideo || !!endVideo(s)))
       .map(s => ({ key: 's' + s.id, art: 'reel', titel: `${s.nr} ${s.titel}`, model: s.model_name, link: endVideo(s), quelle: `${T.aus_skript} · ${s.nr}`, skript_id: s.id, ziel: s.ziel_account })),
   ].filter(x => !filter || x.model === filter.split('|')[0])
   const materialListe = alles.filter(x => alleZeigen || !istVerplant(x))
@@ -463,7 +467,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
           </div>
           {!materialListe.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{T.kein_material}</div>}
           {/* v5.14.0: Flex statt Raster (die Mobil-Regel stapelt sonst jede Kachel in eine Zeile); am Handy eine wischbare Reihe */}
-          <div style={{ display: 'flex', flexWrap: schmal ? 'nowrap' : 'wrap', overflowX: schmal ? 'auto' : 'visible', gap: 6, paddingBottom: schmal ? 4 : 0, WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ display: 'flex', flexWrap: schmal ? 'nowrap' : 'wrap', overflowX: schmal ? 'auto' : 'hidden', overflowY: schmal ? 'hidden' : 'auto', maxHeight: schmal ? undefined : 470, alignContent: 'flex-start', gap: 6, padding: schmal ? '0 0 4px' : '0 4px 0 0', WebkitOverflowScrolling: 'touch' }}>
             {materialListe.slice(0, 120).map(x => {
               const nr = auswahl.indexOf(x.key)
               const an = nr >= 0
@@ -491,6 +495,9 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
           </div>
           <label className="plan-check" style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={alleZeigen} onChange={e => setAlleZeigen(e.target.checked)} /> {T.auch_verplante}
+          </label>
+          <label className="plan-check" style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', marginTop: -4 }}>
+            <input type="checkbox" checked={ohneVideo} onChange={e => setOhneVideo(e.target.checked)} /> {T.ohne_video}
           </label>
           {darfPlanen && <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 10px', fontSize: 11.5 }}>{T.material_neu}</button>}
         </div>
