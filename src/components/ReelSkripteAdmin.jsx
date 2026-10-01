@@ -1,4 +1,4 @@
-import { VideoLink } from './VideoLink' // v5.7.0
+import { VideoLink, VideoHochladen } from './VideoLink' // v5.7.0 / v5.9.1
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
@@ -120,16 +120,18 @@ function Karte({ s, accounts, userName, onNeu }) {
             </>
           ) : videoEdit ? (
             <>
-              <input value={video} onChange={e => setVideo(e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={eingabe} autoCapitalize="none" autoCorrect="off" />
+              {/* v5.9.1: nur noch Hochladen, keine Links */}
+              <VideoHochladen skriptId={s.id} art="roh" farbe={R} text="🎬 Video hochladen"
+                onFertig={async (v) => (await speichere({ video_link: v, video_am: new Date().toISOString(), video_von: userName || null }, 'Video hochgeladen')) ? (setVideoEdit(false), null) : 'nicht gespeichert'} />
               <span style={{ display: 'flex', gap: 6 }}>
-                <button type="button" disabled={arbeitet} onClick={videoSpeichern} style={knopf(R, true)}>Speichern</button>
+                {s.video_link && <button type="button" disabled={arbeitet} onClick={() => { if (window.confirm('Video aus dem Skript nehmen? Das Skript steht danach wieder auf „Drehzettel da“.')) { setVideo(''); speichere({ video_link: null, video_am: null, video_von: null }, 'Video entfernt').then(ok => ok && setVideoEdit(false)) } }} style={knopf('#ef4444', false)}>Video entfernen</button>}
                 <button type="button" onClick={() => { setVideoEdit(false); setVideo(s.video_link || '') }} style={knopf('var(--text-muted)', false)}>Abbrechen</button>
               </span>
             </>
           ) : (
             <>
               <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>wartet auf {s.model_name}</span>
-              {!s.verworfen && <button type="button" onClick={() => setVideoEdit(true)} style={{ ...knopf('var(--text-muted)', false), alignSelf: 'flex-start', padding: '4px 9px', fontSize: 11.5 }}>Link selbst eintragen</button>}
+              {!s.verworfen && <button type="button" onClick={() => setVideoEdit(true)} style={{ ...knopf('var(--text-muted)', false), alignSelf: 'flex-start', padding: '4px 9px', fontSize: 11.5 }}>Video selbst hochladen</button>}
             </>
           )}
         </div>

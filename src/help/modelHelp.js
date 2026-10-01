@@ -188,7 +188,7 @@ export const HELP_TOPICS = [
     ],
     watch: [
       'Bitte nicht über WhatsApp schicken, da wird das Video stark verkleinert.',
-      'Ein neues Video kannst du hochladen, solange das Reel noch nicht gepostet ist („ändern“). Notfalls geht auch weiter ein Link (Dropbox, Google Drive) über „oder Link einfügen“.',
+      'Ein neues Video kannst du hochladen, solange das Reel noch nicht gepostet ist („ändern“). Nur wenn wir für dich schneiden und du viele Rohclips hast, geht auch ein geteilter Ordner-Link („viele Clips? Link einfügen“).',
       'Steht beim Drehzettel ein US- oder englischer Account, bitte auf Englisch sprechen.',
     ],
   },

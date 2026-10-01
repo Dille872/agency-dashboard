@@ -101,7 +101,8 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
             gesperrt={isPreview} gesperrtText="Vorschau: nur das Model selbst kann hier hochladen" />
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -2 }}>
             {hinweis} In voller Qualität aus der Galerie wählen, nicht über WhatsApp.
-            {!isPreview && <> · <button type="button" onClick={() => setEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>oder Link einfügen</button></>}
+            {/* v5.9.1: Link nur noch für Rohmaterial an den Cutter */}
+            {!isPreview && hatCutter(s) && <> · <button type="button" onClick={() => setEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>viele Clips? Link einfügen</button></>}
           </div>
         </>
       )}
@@ -127,11 +128,13 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
       {edit && !selbst && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {status !== 'freigegeben' && <VideoHochladen skriptId={s.id} art="roh" onFertig={hochgeladen} farbe={R} text="🎬 Neues Video hochladen" />}
-          {status !== 'freigegeben' && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>oder einen Link einfügen:</div>}
+          {status !== 'freigegeben' && hatCutter(s) && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>oder (viele Rohclips) einen Link einfügen:</div>}
+          {hatCutter(s) && <>
           <input autoFocus value={link} onChange={e => setLink(e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={feld} inputMode="url" autoCapitalize="none" autoCorrect="off" />
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>{hinweis} Video in deine Dropbox (oder Google Drive, WeTransfer) laden, dort „Teilen“ → „Link kopieren“ und hier einfügen. Bitte in voller Qualität, nicht über WhatsApp.</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>Nur für Rohmaterial mit vielen Clips: Ordner in Dropbox (oder Google Drive, WeTransfer) teilen, „Link kopieren“ und hier einfügen. Ein einzelnes Video bitte oben hochladen.</div>
+          </>}
           <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" disabled={arbeitet} onClick={speichern} style={{ flex: 1, padding: 10, borderRadius: 11, border: 'none', background: R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{arbeitet ? 'Speichert …' : 'Speichern'}</button>
+            {hatCutter(s) && <button type="button" disabled={arbeitet} onClick={speichern} style={{ flex: 1, padding: 10, borderRadius: 11, border: 'none', background: R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{arbeitet ? 'Speichert …' : 'Speichern'}</button>}
             <button type="button" onClick={() => { setEdit(false); setLink(s.video_link || ''); setFehler('') }} style={{ padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
           </div>
         </div>

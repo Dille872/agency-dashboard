@@ -91,9 +91,7 @@ function SchnittKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
           <ZurueckHinweis s={s} t={t} an="cutter" />
           <VideoHochladen skriptId={s.id} art="schnitt" farbe={V} text={t('schnitt_hochladen')} onFertig={(v) => speichern(v)}
             gesperrt={vorschau} gesperrtText="Vorschau" />
-          <input value={link} onChange={e => setLink(e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={eingabe} autoCapitalize="none" autoCorrect="off" inputMode="url" />
-          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t('schnitt_hinweis')}</span>
-          <button type="button" disabled={arbeitet} onClick={speichern} style={{ ...knopf(V, true), alignSelf: 'flex-start' }}>{arbeitet ? t('speichert') : t('schnitt_fertig')}</button>
+          {/* v5.9.1: Schnitt nur noch hochladen, kein Link */}
           {fehler && <span role="alert" style={{ fontSize: 12, color: ROT }}>{fehler}</span>}
         </div>
       </div>
