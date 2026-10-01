@@ -26,13 +26,14 @@ export function Abspieler({ link, liste = null, onZu }) {
   }, [jetzt])
   useEffect(() => {
     const taste = (e) => {
-      if (e.key === 'Escape') onZu()
+      // v5.15.1: Esc schließt nur den Player, nicht auch das Fenster dahinter
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); onZu() }
       if (e.key === 'ArrowRight' && nr < alle.length - 1) setNr(nr + 1)
       if (e.key === 'ArrowLeft' && nr > 0) setNr(nr - 1)
     }
-    window.addEventListener('keydown', taste)
+    window.addEventListener('keydown', taste, true)
     const alt = document.body.style.overflow; document.body.style.overflow = 'hidden'
-    return () => { window.removeEventListener('keydown', taste); document.body.style.overflow = alt }
+    return () => { window.removeEventListener('keydown', taste, true); document.body.style.overflow = alt }
   }, [nr, alle.length, onZu])
   const herunter = async () => {
     const u = await speicherUrl(jetzt, { laden: true })
@@ -40,9 +41,15 @@ export function Abspieler({ link, liste = null, onZu }) {
   }
   const k = { padding: '9px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }
   return createPortal(
-    <div onClick={onZu} className="abspieler" style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(0,0,0,0.88)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '12px 10px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
+    // v5.15.1: Klicks im Player gehen nicht mehr an die Fenster dahinter weiter
+    // (React reicht Ereignisse aus einem Portal an die Eltern weiter → das Beitrags-
+    // Fenster ging zu bzw. die Ablage-Kachel wurde markiert). Ganz oben über allem.
+    <div onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onZu() }}
+      onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}
+      onDragStart={e => { e.preventDefault(); e.stopPropagation() }} draggable={false}
+      className="abspieler" style={{ position: 'fixed', inset: 0, zIndex: 2147483000, background: 'rgba(0,0,0,0.88)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '12px 10px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
       <style>{`.abspieler button { padding: 9px 14px !important; font-size: 14px !important; }`}</style>
-      <div onClick={e => e.stopPropagation()} style={{ position: 'relative', flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) onZu() }} style={{ position: 'relative', flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {fehler ? <div style={{ color: '#fff', fontSize: 14, maxWidth: 320, textAlign: 'center', lineHeight: 1.5 }}>{fehler}</div>
           : !url ? <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Lädt …</div>
           : foto ? <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 10 }} />
