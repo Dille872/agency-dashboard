@@ -418,7 +418,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: minmax(0, 1fr); } } .plan-raster > * { min-width: 0; } .plan-check input { width: auto !important; flex-shrink: 0; } .plan-raster > .plan-ablage.plan-ablage { flex-wrap: nowrap !important; } @media (max-width: 768px) { .plan-tage button { padding: 5px 0 3px !important; } .plan-eintrag { padding: 8px 10px !important; font-size: 12.5px !important; } .plan-plus { padding: 8px 0 !important; font-size: 13px !important; } .plan-gross { padding: 12px 14px !important; font-size: 14.5px !important; } }`}</style>
+      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: minmax(0, 1fr); } } .plan-raster > * { min-width: 0; } .plan-check input { width: auto !important; flex-shrink: 0; } .abspiel-knopf.abspiel-knopf { padding: 0 !important; font-size: 12px !important; } .plan-raster > .plan-ablage.plan-ablage { flex-wrap: nowrap !important; } @media (max-width: 768px) { .plan-tage button { padding: 5px 0 3px !important; } .plan-eintrag { padding: 8px 10px !important; font-size: 12.5px !important; } .plan-plus { padding: 8px 0 !important; font-size: 13px !important; } .plan-gross { padding: 12px 14px !important; font-size: 14.5px !important; } }`}</style>
 
       {/* Hinweisleiste: Kopiermodus / Auswahl */}
       {modus && (
@@ -474,7 +474,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                   onClick={() => darfPlanen && markieren(x)}
                   title={`${x.titel}${x.model ? ` · ${x.model}` : ''}${x.quelle ? ` · ${x.quelle}` : ''}`}
                   style={{ position: 'relative', width: 72, flexShrink: 0, boxSizing: 'border-box', borderRadius: 10, padding: 4, background: an ? C + '22' : 'var(--bg-card2)', border: `2px solid ${an ? C : 'transparent'}`, cursor: darfPlanen ? 'grab' : 'default', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, opacity: istVerplant(x) ? 0.5 : 1 }}>
-                  {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={84} onClick={() => {}} />
+                  {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={84} onClick={darfPlanen ? () => {} : undefined} knopf={darfPlanen} />
                     : <span style={{ width: 48, height: 84, borderRadius: 8, background: artFarbe(x.art) + '33', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.art === 'story' || x.art === 'foto' ? '📷' : '🎬'}</span>}
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.skript_id ? x.titel.split(' ')[0] : (models.length > 1 && !filter ? x.model : (x.von || ''))}</span>
                   {an && <span style={{ position: 'absolute', top: 2, left: 2, background: C, color: '#04212a', borderRadius: 9, fontSize: 10.5, fontWeight: 800, padding: '0 6px' }}>{nr + 1}</span>}

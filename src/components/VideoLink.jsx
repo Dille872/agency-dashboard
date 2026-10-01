@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { istSpeicher, istBild, speicherUrl, videoHochladen, planDateiHochladen } from '../videoSpeicher'
 
 // ── Video-Link + Vorschaubild + Hochladen (v5.7.0) ─────────────────────────
@@ -6,11 +7,69 @@ import { istSpeicher, istBild, speicherUrl, videoHochladen, planDateiHochladen }
 // Speicher). Dann wird beim Antippen ein zeitlich begrenzter Link geholt.
 // Mit bild zeigt er zusätzlich das Vorschaubild.
 
+// v5.15.0: Abspielen direkt im Dashboard. Antippen von Vorschaubild oder
+// „ansehen“ öffnet einen Player über der Seite (Video läuft sofort, Fotos
+// groß). „⬇ Laden“ im Player lädt die Datei herunter. Mit liste (Story-Frames,
+// Karussell) kann man mit ‹ › blättern.
+export function Abspieler({ link, liste = null, onZu }) {
+  const alle = liste && liste.length ? liste : [link]
+  const [nr, setNr] = useState(Math.max(0, alle.indexOf(link)))
+  const [url, setUrl] = useState(null)
+  const [fehler, setFehler] = useState('')
+  const jetzt = alle[nr]
+  const foto = istBild(jetzt)
+  useEffect(() => {
+    let aus = false
+    setUrl(null); setFehler('')
+    speicherUrl(jetzt).then(u => { if (aus) return; if (u) setUrl(u); else setFehler('Nicht abrufbar. Entweder fehlt die Berechtigung, oder die Datei wurde gelöscht.') })
+    return () => { aus = true }
+  }, [jetzt])
+  useEffect(() => {
+    const taste = (e) => {
+      if (e.key === 'Escape') onZu()
+      if (e.key === 'ArrowRight' && nr < alle.length - 1) setNr(nr + 1)
+      if (e.key === 'ArrowLeft' && nr > 0) setNr(nr - 1)
+    }
+    window.addEventListener('keydown', taste)
+    const alt = document.body.style.overflow; document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', taste); document.body.style.overflow = alt }
+  }, [nr, alle.length, onZu])
+  const herunter = async () => {
+    const u = await speicherUrl(jetzt, { laden: true })
+    if (u) window.location.href = u
+  }
+  const k = { padding: '9px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }
+  return createPortal(
+    <div onClick={onZu} className="abspieler" style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(0,0,0,0.88)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '12px 10px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
+      <style>{`.abspieler button { padding: 9px 14px !important; font-size: 14px !important; }`}</style>
+      <div onClick={e => e.stopPropagation()} style={{ position: 'relative', flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {fehler ? <div style={{ color: '#fff', fontSize: 14, maxWidth: 320, textAlign: 'center', lineHeight: 1.5 }}>{fehler}</div>
+          : !url ? <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Lädt …</div>
+          : foto ? <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 10 }} />
+          : <video key={url} src={url} controls autoPlay playsInline
+              onError={() => setFehler('Dieses Video kann der Browser nicht abspielen (z. B. iPhone-Format HEVC in Chrome). Mit „⬇ Laden“ herunterladen und am Gerät ansehen.')}
+              style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 10, background: '#000' }} />}
+      </div>
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+        {alle.length > 1 && <button type="button" disabled={nr === 0} onClick={() => setNr(nr - 1)} style={{ ...k, opacity: nr === 0 ? 0.35 : 1 }}>‹</button>}
+        {alle.length > 1 && <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, minWidth: 44, textAlign: 'center' }}>{nr + 1} / {alle.length}</span>}
+        {alle.length > 1 && <button type="button" disabled={nr === alle.length - 1} onClick={() => setNr(nr + 1)} style={{ ...k, opacity: nr === alle.length - 1 ? 0.35 : 1 }}>›</button>}
+        <button type="button" onClick={herunter} style={k}>⬇ Laden</button>
+        <button type="button" onClick={onZu} style={{ ...k, background: '#fff', color: '#000' }}>✕ Schließen</button>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 export function VideoLink({ href, children, style, laden = false, bild = false, title }) {
+  const [spielt, setSpielt] = useState(false)
   if (!href) return null
   if (!istSpeicher(href)) {
     return <a href={href} target="_blank" rel="noreferrer" style={style} title={title}>{children}</a>
   }
+  // v5.15.0: ohne laden → im Player abspielen statt neuen Tab öffnen
+  const abspielen = (e) => { e.preventDefault(); e.stopPropagation(); setSpielt(true) }
   const oeffnen = async (e) => {
     e.preventDefault(); e.stopPropagation()
     const fenster = window.open('', '_blank')   // sofort öffnen, sonst blockt der Browser das Fenster
@@ -20,15 +79,21 @@ export function VideoLink({ href, children, style, laden = false, bild = false, 
   }
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      {bild && <VideoBild href={href} onClick={oeffnen} />}
-      <a href="#" onClick={oeffnen} style={style} title={title}>{children}</a>
+      {bild && <VideoBild href={href} onClick={abspielen} />}
+      <a href="#" onClick={laden ? oeffnen : abspielen} style={style} title={title}>{children}</a>
+      {laden && <a href="#" onClick={abspielen} style={{ ...style, fontWeight: 700 }} title="Im Dashboard abspielen">▶ ansehen</a>}
+      {spielt && <Abspieler link={href} onZu={() => setSpielt(false)} />}
     </span>
   )
 }
 
-export function VideoBild({ href, onClick, hoehe = 64 }) {
+// v5.15.0: ohne onClick spielt Antippen ab. knopf → zusätzlich kleiner ▶-Knopf
+// (für Kacheln, bei denen Antippen etwas anderes macht, z. B. markieren). liste → blättern im Player.
+export function VideoBild({ href, onClick, hoehe = 64, knopf = false, liste = null }) {
   const [url, setUrl] = useState(null)
   const [weg, setWeg] = useState(false)
+  const [spielt, setSpielt] = useState(false)
+  const spielen = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); setSpielt(true) }
   useEffect(() => {
     let aus = false
     if (istSpeicher(href)) speicherUrl(href, { bild: true }).then(u => { if (!aus) { setUrl(u); setWeg(!u) } })
@@ -38,9 +103,12 @@ export function VideoBild({ href, onClick, hoehe = 64 }) {
   const box = { width: Math.round(hoehe * 9 / 16), height: hoehe, borderRadius: 8, background: 'var(--bg-card2)', flexShrink: 0, cursor: 'pointer', objectFit: 'cover', display: 'block' }
   if (!url) return <span style={box} />
   return (
-    <span onClick={onClick} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }} title="Ansehen">
+    <span onClick={onClick || spielen} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }} title={onClick && knopf ? undefined : 'Ansehen'}>
       <img src={url} alt="" style={box} onError={() => setWeg(true)} />
-      {!istBild(href) && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16, textShadow: '0 1px 4px rgba(0,0,0,.7)', pointerEvents: 'none' }}>▶</span>}
+      {!istBild(href) && !knopf && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16, textShadow: '0 1px 4px rgba(0,0,0,.7)', pointerEvents: 'none' }}>▶</span>}
+      {knopf && <button type="button" onClick={spielen} title={istBild(href) ? 'Groß ansehen' : 'Abspielen'} className="abspiel-knopf"
+        style={{ position: 'absolute', left: 'calc(100% - 8px)', top: '40%', width: 26, height: 26, borderRadius: 13, border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>{istBild(href) ? '🔍' : '▶'}</button>}
+      {spielt && <Abspieler link={href} liste={liste} onZu={() => setSpielt(false)} />}
     </span>
   )
 }

@@ -112,7 +112,7 @@ function Karte({ s, accounts, userName, onNeu }) {
           <span style={klein}>🎬 Video</span>
           {s.video_link && !videoEdit ? (
             <>
-              <VideoLink href={s.video_link} bild style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>⬇ Video öffnen / laden</VideoLink>
+              <VideoLink href={s.video_link} bild style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>▶ Video ansehen</VideoLink>
               {s.schnitt_link && <VideoLink href={s.schnitt_link} style={{ fontSize: 12.5, color: '#a855f7', fontWeight: 700 }}>✂️ Schnitt{schnittGilt(s) ? '' : ' (alt)'}{s.schnitt_von ? ` · ${s.schnitt_von}` : ''}</VideoLink>}
               {s.freigabe_am && <span style={{ fontSize: 11, color: '#10b981' }}>✓ freigegeben {tagKurz(s.freigabe_am)}{s.freigabe_von ? ` · ${s.freigabe_von}` : ''}</span>}
               {s.zurueck_am && s.zurueck_notiz && <span style={{ fontSize: 11, color: '#f97316' }}>↩ {tagKurz(s.zurueck_am)} an {s.zurueck_an === 'cutter' ? 'Cutter' : 'Model'}: {s.zurueck_notiz}</span>}
