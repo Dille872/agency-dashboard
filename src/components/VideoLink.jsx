@@ -15,7 +15,7 @@ export function VideoLink({ href, children, style, laden = false, bild = false, 
     e.preventDefault(); e.stopPropagation()
     const fenster = window.open('', '_blank')   // sofort öffnen, sonst blockt der Browser das Fenster
     const url = await speicherUrl(href, { laden })
-    if (!url) { if (fenster) fenster.close(); window.alert('Das Video ist nicht abrufbar (keine Berechtigung oder gelöscht).'); return }
+    if (!url) { if (fenster) fenster.close(); window.alert('Das Video ist nicht abrufbar. Entweder fehlt die Berechtigung, oder es wurde gelöscht (Rohvideos 30 Tage nach dem Posten, wenn es eine geschnittene Fassung gibt).'); return }
     if (fenster) fenster.location.href = url; else window.location.href = url
   }
   return (

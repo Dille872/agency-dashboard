@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import ReelsOhneSkript from './ReelsOhneSkript' // v4.109.0
 import WirkungKurven from './WirkungKurven' // v5.5.0
+import SpeicherAnzeige from './SpeicherAnzeige' // v5.8.0
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
@@ -219,6 +220,8 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
         <button type="button" onClick={() => setUpload({ model: '', account: '' })} style={{ ...knopf(C, true), color: '#04212a', padding: '9px 14px' }}>📄 Drehzettel hochladen</button>
       </div>
       {hinweis && <div style={{ fontSize: 12.5, color: hinweis.startsWith('✓') ? G : ROT }}>{hinweis}</div>}
+      {/* v5.8.0: Speicher (Videos) + Aufräumen */}
+      {ansicht !== 'wirkung' && <SpeicherAnzeige userDisplayName={userDisplayName} />}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         {[[zeilen.length, 'var(--text-primary)', 'Accounts im Service'], [imSchnitt.length, '#a855f7', 'im Schnitt'], [zurFreigabe.length, '#f97316', 'zur Freigabe'], [zuPosten.length, C, 'bereit zum Posten'], [fehlt.length, A, 'Video fehlt'], [gepostet7.length, G, 'gepostet, letzte 7 Tage'], [ohnePoster.length, ohnePoster.length ? ROT : 'var(--text-muted)', 'Account ohne Poster']].map(([n, f, l]) => (
