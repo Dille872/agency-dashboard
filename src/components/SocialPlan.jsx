@@ -49,6 +49,7 @@ const TX = {
     nicht_gespeichert: 'Nicht gespeichert: ', leer_tag: '', deine_zeit: 'deine Zeit', zeit_von: (k) => `Zeit ${k}`, de_zeit: 'deutsche Zeit', heute_nichts: 'Heute ist nichts geplant.',
     heute_titel: '📅 Heute geplant', oeffnen: 'Öffnen', model: 'Model', notiz: 'Notiz', tabelle_fehlt: 'Posting-Plan: Datenbank noch nicht eingerichtet (sql/posting-plan.sql).',
     tage: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], nur_lesen: 'Nur ansehen', frames_n: (n) => `Story · ${n} Frame${n === 1 ? '' : 's'}`,
+    fuer: 'Für', fuer_beitrag: 'Beitrag', fuer_tipp: 'Vor dem Hochladen wählen: Story-Content oder Beitrags-Content (Reel, Foto, Karussell). Lässt sich am Bild später umschalten.', sicht_alle: 'Alle', umschalten: 'Antippen = zwischen Story und Beitrag umschalten',
     von: (w) => `von ${w}`, eingetragen: 'Eingetragen', dein_plan: 'Dein Posting-Plan', dein_plan_text: 'Hier planst du zusammen mit uns: Beiträge eintragen, ändern und als gepostet markieren.',
   },
   en: {
@@ -71,6 +72,7 @@ const TX = {
     story_gepostet: 'Story posted ✓', gemessen: 'Gets measured automatically.', zurueck: 'Not posted after all',
     fehler_account: 'Please choose an account.', fehler_zeit: 'Please set date and time.', fehler_reel: 'Please paste the Instagram link to the reel.',
     nicht_gespeichert: 'Not saved: ', leer_tag: '', deine_zeit: 'your time', zeit_von: (k) => `${k} time`, de_zeit: 'German time', heute_nichts: 'Nothing scheduled today.',
+    fuer: 'For', fuer_beitrag: 'Post', fuer_tipp: 'Choose before uploading: story content or post content (reel, photo, carousel). Can be switched later on the tile.', sicht_alle: 'All', umschalten: 'Tap = switch between story and post',
     von: (w) => `by ${w}`, eingetragen: 'Added', dein_plan: 'Your posting calendar', dein_plan_text: 'Plan together with us: add posts, edit them and mark them as posted.',
     heute_titel: '📅 Scheduled today', oeffnen: 'Open', model: 'Creator', notiz: 'Note', tabelle_fehlt: 'Posting calendar: database not set up yet.',
     tage: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], nur_lesen: 'View only', frames_n: (n) => `Story · ${n} frame${n === 1 ? '' : 's'}`,
@@ -88,6 +90,23 @@ const artFarbe = (a) => a === 'story' ? V : a === 'foto' ? A : a === 'karussell'
 const ARTEN = ['reel', 'foto', 'karussell', 'story']
 const artName = (a, T) => T[a] || T.reel
 const artText = (z, T) => z.art === 'story' ? T.frames_n((z.frames || []).length) : z.art === 'karussell' ? (z.titel || T.karussell_n((z.frames || []).length)) : (z.titel || artName(z.art, T))
+
+// v5.13.0: Content ist entweder für Stories oder für Beiträge (Reel/Foto/Karussell) gedacht.
+// Gespeichert in social_material.art: 'story' bzw. 'reel'/'foto' (je nach Datei).
+const istStoryContent = (x) => x.art === 'story'
+const artFuerDatei = (fuer, link) => fuer === 'story' ? 'story' : (istBild(link) ? 'foto' : 'reel')
+function FuerWahl({ wert, onChange, T, klein: k = false }) {
+  const b = (w, f, txt) => (
+    <button type="button" onClick={() => onChange(w)}
+      style={{ padding: k ? '4px 9px' : '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${wert === w ? f : 'var(--border)'}`, background: wert === w ? f + '22' : 'transparent', color: wert === w ? f : 'var(--text-muted)' }}>{txt}</button>
+  )
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} title={T.fuer_tipp}>
+      <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 700 }}>{T.fuer}:</span>
+      {b('beitrag', P, '🎬 ' + T.fuer_beitrag)}{b('story', V, '◐ ' + T.story)}
+    </span>
+  )
+}
 
 // Datum-Helfer (lokale Zeit des Geräts)
 const tagStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
@@ -191,6 +210,8 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const [ueber, setUeber] = useState('')             // Zelle, über der gerade gezogen wird
   const [hinweis, setHinweis] = useState('')
   const [ablageModel, setAblageModel] = useState('')
+  const [ablageFuer, setAblageFuer] = useState('beitrag')   // v5.13.0: für Story oder Beitrag hochladen
+  const [ablageSicht, setAblageSicht] = useState('')         // v5.13.0: '' | 'story' | 'beitrag'
   const ende = useMemo(() => plusTage(start, 7), [start])
   const { zeilen, fehlt, laden } = usePlan(accounts, start, ende)
   const models = [...new Set(accounts.map(a => a.model))]
@@ -225,14 +246,17 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
       .map(s => ({ key: 's' + s.id, art: 'reel', titel: `${s.nr} ${s.titel}`, model: s.model_name, link: endVideo(s), quelle: `${T.aus_skript} · ${s.nr}`, skript_id: s.id, ziel: s.ziel_account })),
   ].filter(x => !filter || x.model === filter.split('|')[0])
   const materialListe = alles.filter(x => alleZeigen || !istVerplant(x))
+    .filter(x => !ablageSicht || (ablageSicht === 'story') === istStoryContent(x))
   const gewaehlt = auswahl.map(k => alles.find(x => x.key === k)).filter(Boolean)
   const markieren = (x) => setAuswahl(a => a.includes(x.key) ? a.filter(k => k !== x.key) : [...a, x.key])
   const istVideoLink = (l) => !!l && !istBild(l)
 
-  // Eintrag aus Content füllen. Ein Teil → Reel (Video) bzw. Foto. Mehrere → Story (umschaltbar auf Karussell).
+  // Eintrag aus Content füllen. Ein Teil → Reel (Video) bzw. Foto, Story-Content → Story.
+  // Mehrere → Story; v5.13.0: sind alle als Beitrag markiert → Karussell (umschaltbar).
   const ausContent = (acc, isoZeit, teile) => {
     const ein = teile.length === 1 ? teile[0] : null
-    const art = ein ? (ein.art === 'story' ? 'story' : istVideoLink(ein.link) || !ein.link ? 'reel' : 'foto') : 'story'
+    const art = ein ? (ein.art === 'story' ? 'story' : istVideoLink(ein.link) || !ein.link ? 'reel' : 'foto')
+      : (teile.every(x => !istStoryContent(x)) ? 'karussell' : 'story')
     return {
       model_name: acc.model, account: acc.handle, art, titel: ein ? ein.titel : '', geplant_am: isoZeit,
       video_link: ein && art !== 'story' ? (ein.link || '') : '',
@@ -302,9 +326,19 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
     if (vorschau) return vorschauSperre()
     const jetzt = new Date().toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
     const foto = istBild(link)
-    const { error } = await supabase.from('social_material').insert({ model_name: ablageZiel, art: foto ? 'foto' : 'reel', titel: `${foto ? T.foto : T.video} ${jetzt}`, link, erstellt_von: userDisplayName || null })
+    const art = artFuerDatei(ablageFuer, link)
+    const { error } = await supabase.from('social_material').insert({ model_name: ablageZiel, art, titel: `${art === 'story' ? T.story + ' · ' : ''}${foto ? T.foto : T.video} ${jetzt}`, link, erstellt_von: userDisplayName || null })
     if (error) { setHinweis(T.nicht_gespeichert + error.message); return }
     ladenMaterial()
+  }
+  // v5.13.0: Story ↔ Beitrag umschalten (nur eigenes Material, Skript-Reels sind immer Beitrag)
+  const umschalten = async (x) => {
+    if (vorschau) return vorschauSperre()
+    if (!x.material_id) return
+    const art = istStoryContent(x) ? artFuerDatei('beitrag', x.link) : 'story'
+    const { error } = await supabase.from('social_material').update({ art }).eq('id', x.material_id)
+    if (error) { setHinweis(T.nicht_gespeichert + error.message); return }
+    setMaterial(m => m.map(y => y.id === x.material_id ? { ...y, art } : y))
   }
   const verwerfen = async (x) => {
     if (vorschau) return vorschauSperre()
@@ -344,9 +378,19 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                   {models.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               )}
-              <DateiHochladen model={ablageZiel} mehrere gesperrt={!ablageZiel} farbe={P} text={T.content_hoch} onFertig={contentRein} />
+              <FuerWahl wert={ablageFuer} onChange={setAblageFuer} T={T} />
+              <DateiHochladen model={ablageZiel} mehrere gesperrt={!ablageZiel} farbe={ablageFuer === 'story' ? V : P} text={T.content_hoch} onFertig={contentRein} />
             </div>
           )}
+          {/* v5.13.0: nur Story- oder nur Beitrags-Content zeigen */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {[['', T.sicht_alle, 'var(--text-secondary)'], ['beitrag', T.fuer_beitrag, P], ['story', T.story, V]].map(([w, txt, f]) => (
+              <button key={w || 'alle'} type="button" onClick={() => { setAblageSicht(w); setAuswahl([]) }}
+                style={{ padding: '3px 9px', borderRadius: 12, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${ablageSicht === w ? f : 'var(--border)'}`, background: ablageSicht === w ? 'var(--bg-card2)' : 'transparent', color: ablageSicht === w ? f : 'var(--text-muted)' }}>
+                {txt} · {alles.filter(x => (alleZeigen || !istVerplant(x)) && (!w || (w === 'story') === istStoryContent(x))).length}
+              </button>
+            ))}
+          </div>
           {!materialListe.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{T.kein_material}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 6 }}>
             {materialListe.slice(0, 120).map(x => {
@@ -364,6 +408,11 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.skript_id ? x.titel.split(' ')[0] : (models.length > 1 && !filter ? x.model : (x.von || ''))}</span>
                   {an && <span style={{ position: 'absolute', top: 2, left: 2, background: C, color: '#04212a', borderRadius: 9, fontSize: 10.5, fontWeight: 800, padding: '0 6px' }}>{nr + 1}</span>}
                   {istVerplant(x) && <span style={{ position: 'absolute', top: 2, right: 2, fontSize: 10 }} title={T.verplant}>✓</span>}
+                  {/* v5.13.0: Story/Beitrag-Marke, antippen schaltet um */}
+                  <span onClick={(e) => { if (darfPlanen && x.material_id) { e.stopPropagation(); umschalten(x) } }} title={darfPlanen && x.material_id ? T.umschalten : undefined}
+                    style={{ position: 'absolute', top: 70, left: 2, fontSize: 9.5, fontWeight: 800, padding: '0 5px', borderRadius: 6, background: istStoryContent(x) ? V : P, color: '#fff', cursor: darfPlanen && x.material_id ? 'pointer' : 'default' }}>
+                    {istStoryContent(x) ? T.story : T.fuer_beitrag}
+                  </span>
                   {darfPlanen && x.material_id && !an && <button type="button" onClick={(e) => { e.stopPropagation(); verwerfen(x) }} title={T.verwerfen} style={{ position: 'absolute', bottom: 18, right: 2, background: 'rgba(0,0,0,0.55)', border: 'none', color: '#fff', borderRadius: 6, fontSize: 10, cursor: 'pointer', padding: '0 4px' }}>✕</button>}
                 </div>
               )
@@ -779,6 +828,7 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
   const [zeilen, setZeilen] = useState(null)
   const [material, setMaterial] = useState([])
   const [neu, setNeu] = useState(false)
+  const [fuer, setFuer] = useState('beitrag')   // v5.13.0
   const laden = useCallback(async () => {
     if (!displayName) return
     const von = tagStart(new Date())
@@ -798,13 +848,20 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
         <span style={{ fontSize: 20 }}>📅</span>
         <b style={{ flex: 1, fontSize: 14.5, color: 'var(--text-primary)' }}>Dein Posting-Plan · 14 Tage</b>
         {/* v5.12.0: Content auf Vorrat hochladen (mehrere), das Team verplant ihn */}
-        {!isPreview && <DateiHochladen model={displayName} mehrere farbe={P} text="⬆ Content hochladen" onFertig={async (link) => {
-          const foto = istBild(link)
-          const jetzt = new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-          await supabase.from('social_material').insert({ model_name: displayName, art: foto ? 'foto' : 'reel', titel: `${foto ? 'Foto' : 'Video'} ${jetzt}`, link, erstellt_von: displayName })
-          laden()
-        }} />}
       </div>
+      {/* v5.12.0: Content auf Vorrat hochladen (mehrere), das Team verplant ihn. v5.13.0: vorher Story oder Beitrag wählen */}
+      {!isPreview && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FuerWahl wert={fuer} onChange={setFuer} T={T} />
+          <DateiHochladen model={displayName} mehrere farbe={fuer === 'story' ? V : P} text="⬆ Content hochladen" onFertig={async (link) => {
+            const foto = istBild(link)
+            const art = artFuerDatei(fuer, link)
+            const jetzt = new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+            await supabase.from('social_material').insert({ model_name: displayName, art, titel: `${art === 'story' ? 'Story · ' : ''}${foto ? 'Foto' : 'Video'} ${jetzt}`, link, erstellt_von: displayName })
+            laden()
+          }} />
+        </div>
+      )}
       {!zeilen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Noch nichts geplant.</div>}
       {tage.map(t => (
         <div key={t}>
@@ -824,7 +881,10 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Dein Content ({material.length}) · wir verplanen ihn für dich:</span>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-            {material.map(m => istSpeicher(m.link) ? <VideoBild key={m.id} href={m.link} hoehe={56} /> : <span key={m.id} style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{m.art === 'reel' ? '🎬' : '📷'} {m.titel}</span>)}
+            {material.map(m => istSpeicher(m.link)
+              ? <span key={m.id} style={{ position: 'relative', display: 'inline-block' }}><VideoBild href={m.link} hoehe={56} />
+                  <span style={{ position: 'absolute', bottom: 2, left: 2, fontSize: 8.5, fontWeight: 800, padding: '0 4px', borderRadius: 5, background: m.art === 'story' ? V : P, color: '#fff' }}>{m.art === 'story' ? 'Story' : 'Beitrag'}</span></span>
+              : <span key={m.id} style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{m.art === 'reel' ? '🎬' : '📷'} {m.titel}</span>)}
           </div>
         </div>
       )}
