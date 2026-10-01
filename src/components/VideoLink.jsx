@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useSprache } from '../i18n/sprache'
+// v5.18.0: Texte zweisprachig (Poster mit Englisch)
+const VT = {
+  de: { ansehen: '▶ ansehen', laden: '⬇ Laden', zu: '✕ Schließen', laedt: 'Lädt …', weg: 'Nicht abrufbar. Entweder fehlt die Berechtigung, oder die Datei wurde gelöscht.', codec: 'Dieses Video kann der Browser nicht abspielen (z. B. iPhone-Format HEVC in Chrome). Mit „⬇ Laden“ herunterladen und am Gerät ansehen.', titel: 'Im Dashboard abspielen' },
+  en: { ansehen: '▶ view', laden: '⬇ Download', zu: '✕ Close', laedt: 'Loading …', weg: 'Not available. Either you lack permission or the file was deleted.', codec: 'Your browser can’t play this video (e.g. iPhone HEVC format in Chrome). Use “⬇ Download” and watch it on your device.', titel: 'Play in the dashboard' },
+}
 import { istSpeicher, istBild, speicherUrl, videoHochladen, planDateiHochladen } from '../videoSpeicher'
 
 // ── Video-Link + Vorschaubild + Hochladen (v5.7.0) ─────────────────────────
@@ -12,6 +18,7 @@ import { istSpeicher, istBild, speicherUrl, videoHochladen, planDateiHochladen }
 // groß). „⬇ Laden“ im Player lädt die Datei herunter. Mit liste (Story-Frames,
 // Karussell) kann man mit ‹ › blättern.
 export function Abspieler({ link, liste = null, onZu }) {
+  const V = VT[useSprache()] || VT.de
   const alle = liste && liste.length ? liste : [link]
   const [nr, setNr] = useState(Math.max(0, alle.indexOf(link)))
   const [url, setUrl] = useState(null)
@@ -21,7 +28,7 @@ export function Abspieler({ link, liste = null, onZu }) {
   useEffect(() => {
     let aus = false
     setUrl(null); setFehler('')
-    speicherUrl(jetzt).then(u => { if (aus) return; if (u) setUrl(u); else setFehler('Nicht abrufbar. Entweder fehlt die Berechtigung, oder die Datei wurde gelöscht.') })
+    speicherUrl(jetzt).then(u => { if (aus) return; if (u) setUrl(u); else setFehler(V.weg) })
     return () => { aus = true }
   }, [jetzt])
   useEffect(() => {
@@ -51,18 +58,18 @@ export function Abspieler({ link, liste = null, onZu }) {
       <style>{`.abspieler button { padding: 9px 14px !important; font-size: 14px !important; }`}</style>
       <div onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) onZu() }} style={{ position: 'relative', flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {fehler ? <div style={{ color: '#fff', fontSize: 14, maxWidth: 320, textAlign: 'center', lineHeight: 1.5 }}>{fehler}</div>
-          : !url ? <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Lädt …</div>
+          : !url ? <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>{V.laedt}</div>
           : foto ? <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 10 }} />
           : <video key={url} src={url} controls autoPlay playsInline
-              onError={() => setFehler('Dieses Video kann der Browser nicht abspielen (z. B. iPhone-Format HEVC in Chrome). Mit „⬇ Laden“ herunterladen und am Gerät ansehen.')}
+              onError={() => setFehler(V.codec)}
               style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 10, background: '#000' }} />}
       </div>
       <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
         {alle.length > 1 && <button type="button" disabled={nr === 0} onClick={() => setNr(nr - 1)} style={{ ...k, opacity: nr === 0 ? 0.35 : 1 }}>‹</button>}
         {alle.length > 1 && <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, minWidth: 44, textAlign: 'center' }}>{nr + 1} / {alle.length}</span>}
         {alle.length > 1 && <button type="button" disabled={nr === alle.length - 1} onClick={() => setNr(nr + 1)} style={{ ...k, opacity: nr === alle.length - 1 ? 0.35 : 1 }}>›</button>}
-        <button type="button" onClick={herunter} style={k}>⬇ Laden</button>
-        <button type="button" onClick={onZu} style={{ ...k, background: '#fff', color: '#000' }}>✕ Schließen</button>
+        <button type="button" onClick={herunter} style={k}>{V.laden}</button>
+        <button type="button" onClick={onZu} style={{ ...k, background: '#fff', color: '#000' }}>{V.zu}</button>
       </div>
     </div>,
     document.body
@@ -71,6 +78,7 @@ export function Abspieler({ link, liste = null, onZu }) {
 
 export function VideoLink({ href, children, style, laden = false, bild = false, title }) {
   const [spielt, setSpielt] = useState(false)
+  const V = VT[useSprache()] || VT.de
   if (!href) return null
   if (!istSpeicher(href)) {
     return <a href={href} target="_blank" rel="noreferrer" style={style} title={title}>{children}</a>
@@ -88,7 +96,7 @@ export function VideoLink({ href, children, style, laden = false, bild = false, 
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       {bild && <VideoBild href={href} onClick={abspielen} />}
       <a href="#" onClick={laden ? oeffnen : abspielen} style={style} title={title}>{children}</a>
-      {laden && <a href="#" onClick={abspielen} style={{ ...style, fontWeight: 700 }} title="Im Dashboard abspielen">▶ ansehen</a>}
+      {laden && <a href="#" onClick={abspielen} style={{ ...style, fontWeight: 700 }} title={V.titel}>{V.ansehen}</a>}
       {spielt && <Abspieler link={href} onZu={() => setSpielt(false)} />}
     </span>
   )

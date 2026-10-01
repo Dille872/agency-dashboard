@@ -5,6 +5,7 @@ import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks' // v5.4.0
 import { useVorschau, vorschauSperre } from '../vorschau'
 import { VideoLink, VideoBild, DateiHochladen } from './VideoLink' // v5.7.0 / v5.9.0
 import { istSpeicher, istBild } from '../videoSpeicher'
+import { spracheJetzt } from '../i18n/sprache' // v5.18.0
 import { STANDARD, zoneKurz, geraeteZone, tagIn, uhrIn, inputWert, vonInput, lokalerTag, wochentagIn } from '../planZeit' // v5.10.0
 
 // ── Posting-Plan (v5.3.0) ──────────────────────────────────────────────────
@@ -39,6 +40,7 @@ const TX = {
     fertig: 'Fertig', auswahl_weg: 'Auswahl aufheben', hier_einfuegen: '⧉ hier einfügen', hier_einplanen: '⤵ hier einplanen', kopieren_knopf: '⧉ Kopieren',
     zieh_tipp: 'Tipp: Content oder Beiträge per Ziehen auf einen Tag legen. Ein Beitrag lässt sich so auch verschieben.', karussell_n: (n) => `Karussell · ${n}`, hoch_foto: '⬆ Foto hochladen', hoch_karussell: '⬆ Fotos/Videos hinzufügen (auch mehrere)', karussell_tipp: 'Reihenfolge = wie hier von links nach rechts (1 kommt zuerst). Mit ← → verschieben. Bis zu 20 Teile.', beitrag_link: 'Link zum Beitrag (optional)', beitrag_gepostet: 'Gepostet ✓', geplant: 'geplant', gepostet: 'gepostet',
     neu: '+ Beitrag', einplanen: 'Einplanen', speichern: 'Speichern', abbrechen: 'Abbrechen', loeschen: 'Löschen',
+    richtwert: '⏰ Richtwert: etwas früher oder später ist okay.',
     loeschen_frage: 'Diesen Eintrag aus dem Plan löschen?', art: 'Art', account: 'Account', wann: 'Wann', titel: 'Titel',
     video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', hoch_frames: '⬆ Fotos/Videos hinzufügen (auch mehrere)', story_tipp: 'Jede Datei wird ein eigener Frame, in der Reihenfolge der Auswahl.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
     frames: 'Story-Frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (Umfrage, Link …)', frame_link: 'Material-Link',
@@ -68,6 +70,7 @@ const TX = {
     fertig: 'Done', auswahl_weg: 'Clear selection', hier_einfuegen: '⧉ paste here', hier_einplanen: '⤵ schedule here', kopieren_knopf: '⧉ Copy',
     zieh_tipp: 'Tip: drag content or posts onto a day. Posts can be moved that way too.', karussell_n: (n) => `Carousel · ${n}`, hoch_foto: '⬆ Upload photo', hoch_karussell: '⬆ Add photos/videos (several at once)', karussell_tipp: 'Order = left to right as shown (1 comes first). Move with ← →. Up to 20 items.', beitrag_link: 'Link to the post (optional)', beitrag_gepostet: 'Posted ✓', geplant: 'scheduled', gepostet: 'posted',
     neu: '+ Post', einplanen: 'Schedule', speichern: 'Save', abbrechen: 'Cancel', loeschen: 'Delete',
+    richtwert: '⏰ Guideline: a bit earlier or later is fine.',
     loeschen_frage: 'Delete this entry from the calendar?', art: 'Type', account: 'Account', wann: 'When', titel: 'Title',
     video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', hoch_frames: '⬆ Add photos/videos (several at once)', story_tipp: 'Each file becomes its own frame, in the order selected.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
     frames: 'Story frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (poll, link …)', frame_link: 'Material link',
@@ -128,14 +131,17 @@ const gleicherTag = (a, b) => tagStart(a).getTime() === tagStart(b).getTime()
 const zuLokalInput = (iso) => { if (!iso) return ''; const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
 const uhr = (iso, loc) => new Date(iso).toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' })
 
+// v5.18.0: kleine Texte im Link-Feld zweisprachig (Sprache wie im Social Manager)
+const LT = () => spracheJetzt() === 'en' ? { laden: '⬇ download', hoch: 'uploaded ✓', alt: '(old link)' } : { laden: '⬇ laden', hoch: 'hochgeladen ✓', alt: '(alter Link)' }
+
 // v5.9.0: Link-Feld mit „⬆ Hochladen“. Hochgeladene Datei → Vorschaubild statt
 // „speicher://…“-Text. model/account bestimmen Ablage und Rechte (Material: ohne account).
 function LinkFeld({ value, onChange, model, account = null, nurLesen, placeholder, material = false, nurFoto = false }) {
   if (istSpeicher(value)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <VideoLink href={value} bild laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>⬇ laden</VideoLink>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>hochgeladen ✓</span>
+        <VideoLink href={value} bild laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{LT().laden}</VideoLink>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{LT().hoch}</span>
         {!nurLesen && <button type="button" onClick={() => onChange('')} title="Datei aus dem Eintrag nehmen" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>✕</button>}
       </div>
     )
@@ -144,8 +150,8 @@ function LinkFeld({ value, onChange, model, account = null, nurLesen, placeholde
   if (value) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <VideoLink href={mitHttps(value)} laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>⬇ laden</VideoLink>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(alter Link)</span>
+        <VideoLink href={mitHttps(value)} laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{LT().laden}</VideoLink>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{LT().alt}</span>
         {!nurLesen && <button type="button" onClick={() => onChange('')} title="Link entfernen" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>✕</button>}
       </div>
     )
@@ -751,6 +757,8 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onK
               if (g !== zoneJetzt && g !== STANDARD) teile.push(`= ${wochentagIn(iso, g, loc)} ${uhrIn(iso, g)} ${T.deine_zeit}`)
               return teile.length ? <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{teile.join(' · ')}</span> : null
             })()}
+            {/* v5.18.0: Zeiten sind Richtwerte (Entscheidung Chris) */}
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{T.richtwert}</span>
           </div>)}
         </div>
         {zeile(T.titel, <input disabled={nurLesen} value={f.titel || ''} onChange={e => set('titel', e.target.value.slice(0, 120))} style={eingabe} />)}
@@ -759,7 +767,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onK
           // v5.17.0: Platzhalter-Skript → Video kommt automatisch vom Skript
           !f.video_link && f._skript ? (f._skript.video
             ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <VideoLink href={f._skript.video} bild laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>⬇ laden</VideoLink>
+                <VideoLink href={f._skript.video} bild laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{LT().laden}</VideoLink>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.vom_skript(f._skript.nr)}</span>
               </div>
             : <div style={{ fontSize: 12.5, color: A, fontWeight: 700, lineHeight: 1.45 }}>{T.wartet_lang(f._skript.nr)}</div>)

@@ -20,7 +20,8 @@ import { useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 // Glocke: aus vorhandenen Daten abgeleitet, keine eigene Tabelle:
 //   Reel bereit zum Posten / Video zum Schneiden / wartet auf Freigabe,
 //   neu zugeteilter Account, Antwort im Chat. Gelesen-Stand pro Login (gelesen.js).
-// Hilfe: kurze FAQ für Social-Rollen.
+// Hilfe: FAQ für Social-Rollen. v5.18.0: komplett neu (Kalender, Richtwert-Zeiten, „up to you“,
+//   Abspielen, Platzhalter) + Einführungsfenster beim ersten Login als Poster.
 // Alles zweisprachig, folgt der Sprache der Person (i18n/sprache.js).
 
 const TXT = {
@@ -34,12 +35,27 @@ const TXT = {
     e_account: (z) => `Dir wurde ${z.account} (${z.model_name}) zugeteilt`,
     e_nachricht: (m) => `Neue Nachricht${m.sent_by ? ` von ${m.sent_by}` : ''}: ${String(m.text || '').slice(0, 80)}`,
     hilfe: 'Hilfe', schliessen: 'Schließen',
+    einf_nochmal: '📖 Einführung nochmal ansehen',
+    einf_titel: 'Willkommen! So funktioniert das Posten',
+    einf_los: 'Alles klar, los geht’s',
+    einf_hilfe: 'Alles steht auch jederzeit unten rechts unter ❓ Hilfe.',
+    einf: [
+      ['📅', 'Der Kalender', 'Reiter „Plan“: Oben wählst du den Account, dann siehst du nur dessen Woche. Jeder Eintrag ist ein Beitrag: Reel, Foto, Karussell oder Story.'],
+      ['👆', 'Beitrag öffnen', 'Antippen zeigt alles: Video oder Fotos (▶ ansehen, ⬇ laden), Caption, Hashtags, Text-Overlays und Musik/Hinweis. Beim Karussell gilt die Reihenfolge von links nach rechts.'],
+      ['⏰', 'Zeiten sind Richtwerte', 'Die Uhrzeit ist eine Empfehlung. Passt etwas früher oder später besser, ist das völlig okay. Wichtig sind der richtige Tag und der richtige Account.'],
+      ['✨', '„up to you“ = deine Entscheidung', 'Steht bei Musik, Caption, Sticker o. Ä. „up to you“, such dir gern selbst etwas Passendes aus, z. B. einen Sound, der gerade trendet.'],
+      ['✅', 'Nach dem Posten', 'Beitrag öffnen, bei Reels den Instagram-Link einfügen (⋯ → Link kopieren) und „Gepostet ✓“ tippen. Bei Stories reicht „Story gepostet ✓“. Reels werden danach automatisch gemessen.'],
+      ['💬', 'Fragen?', 'Unten rechts: 💬 Chat mit dem Team, 🔔 Neuigkeiten, ❓ Hilfe.'],
+    ],
     faq: [
-      ['🎬 Wie poste ich ein Reel?', 'Unter „Zu posten“ steht jedes freigegebene Reel. 1) Drehzettel ansehen und Video herunterladen. 2) Auf „Worauf achten“ schauen (No Gos, Stil). 3) Auf genau dem angezeigten Account posten. 4) In Instagram beim Reel „⋯ → Link kopieren“, Link einfügen, Datum prüfen, „Gepostet ✓“.'],
-      ['📌 Auf welchen Account?', 'Der rosa Kasten „Posten auf“ zeigt den festen Account. Hast du doch woanders gepostet, tippe auf „Account ändern“ und wähle den richtigen, damit die Zahlen stimmen.'],
-      ['⬇ Das Video lädt nicht', 'Der Link führt meist zu Dropbox oder Google Drive. Im Browser öffnen und dort herunterladen. Klappt es nicht, schreib uns im Chat mit der Nummer (S-…).'],
-      ['📎 Reels ohne Skript', 'Postest du für uns etwas ohne Drehzettel (z. B. älteren Content), trag den Link unten in „Reels ohne Skript“ ein. Dann wird es nachts mitgemessen und zählt als unser Reel.'],
-      ['📋 Überblick und 👤 Models', '„Überblick“ zeigt alle Reels deiner Accounts und wo sie stehen. „Models“ zeigt, was du zum Posten brauchst: Accounts, No Gos, Stil, Englisch-Level.'],
+      ['📅 Wo sehe ich, was ich posten soll?', 'Im Reiter „Plan“. Oben den Account wählen, dann siehst du die Woche nur für diesen Account. Am Handy oben den Tag antippen. Jeder Eintrag ist ein Beitrag (Reel, Foto, Karussell, Story). Antippen öffnet alles, was du brauchst.'],
+      ['⏰ Muss ich die Uhrzeit genau einhalten?', 'Nein, die Zeiten sind Richtwerte. Etwas früher oder später ist völlig okay, wenn es besser passt. Wichtig: richtiger Tag, richtiger Account. Bei US-Accounts steht die Zeit des Accounts (z. B. LA), daneben klein die deutsche Zeit.'],
+      ['✨ Was heißt „up to you“?', 'Dann entscheidest du selbst, z. B. bei Musik, Caption oder Sticker. Such dir gern etwas aus, das gerade gut läuft und zum Model passt.'],
+      ['▶ Video oder Fotos ansehen und laden', 'Im Beitrag aufs Vorschaubild oder „▶ ansehen“ tippen, dann läuft es direkt. „⬇ laden“ speichert die Datei. Story: jeder Frame einzeln. Karussell: Reihenfolge von links nach rechts.'],
+      ['⏳ „wartet auf Video“', 'Der Beitrag ist schon eingeplant, aber das Model hat das Video noch nicht hochgeladen. Sobald es da ist, steht es automatisch im Beitrag.'],
+      ['✅ Als gepostet markieren', 'Beitrag öffnen. Reel: in Instagram „⋯ → Link kopieren“, Link einfügen, „Gepostet ✓“. Foto/Karussell: Link ist freiwillig. Story: „Story gepostet ✓“. Reels werden danach automatisch gemessen.'],
+      ['🎬 Reiter „Zu posten“', 'Dort stehen die freigegebenen Skript-Reels mit Drehzettel, „Worauf achten“ (No Gos, Stil) und dem festen Account. Unten: „Reels ohne Skript“ für Reels ohne Drehzettel.'],
+      ['📋 Überblick und 👤 Models', '„Überblick“ zeigt alle Reels deiner Accounts und wo sie stehen. „Models“ zeigt Accounts, No Gos, Stil und Englisch-Level.'],
       ['🌐 Sprache', 'Oben rechts auf DE oder EN tippen. Deine feste Sprache stellt das Team in deinem Profil ein.'],
       ['💬 Fragen?', 'Unten rechts auf den Chat tippen. Die Nachricht geht direkt an das Team.'],
     ],
@@ -54,12 +70,27 @@ const TXT = {
     e_account: (z) => `You were assigned ${z.account} (${z.model_name})`,
     e_nachricht: (m) => `New message${m.sent_by ? ` from ${m.sent_by}` : ''}: ${String(m.text || '').slice(0, 80)}`,
     hilfe: 'Help', schliessen: 'Close',
+    einf_nochmal: '📖 Show the introduction again',
+    einf_titel: 'Welcome! Here’s how posting works',
+    einf_los: 'Got it, let’s go',
+    einf_hilfe: 'You can find all of this anytime under ❓ Help at the bottom right.',
+    einf: [
+      ['📅', 'The calendar', '"Calendar" tab: pick the account at the top and you only see that account’s week. Each entry is one post: Reel, Photo, Carousel or Story.'],
+      ['👆', 'Open a post', 'Tap it to see everything: video or photos (▶ view, ⬇ download), caption, hashtags, text overlays and music/notes. For carousels the order is left to right.'],
+      ['⏰', 'Times are guidelines', 'The time is a suggestion. If a bit earlier or later works better, that’s totally fine. What matters is the right day and the right account.'],
+      ['✨', '"up to you" = your call', 'If it says "up to you" for music, caption, stickers etc., feel free to pick something yourself, e.g. a sound that’s trending right now.'],
+      ['✅', 'After posting', 'Open the post, for reels paste the Instagram link (⋯ → Copy link) and tap "Posted ✓". For stories, "Story posted ✓" is enough. Reels are then measured automatically.'],
+      ['💬', 'Questions?', 'Bottom right: 💬 chat with the team, 🔔 updates, ❓ help.'],
+    ],
     faq: [
-      ['🎬 How do I post a reel?', 'Every approved reel is listed under "To post". 1) Open the script and download the video. 2) Check "Keep in mind" (no-gos, style). 3) Post on exactly the account shown. 4) In Instagram tap "⋯ → Copy link" on the reel, paste the link, check the date, tap "Posted ✓".'],
-      ['📌 Which account?', 'The pink "Post to" box shows the fixed account. If you posted somewhere else after all, tap "Change account" and pick the right one so the numbers are correct.'],
-      ['⬇ The video won\'t download', 'The link usually goes to Dropbox or Google Drive. Open it in the browser and download it there. If that doesn\'t work, message us in the chat with the number (S-…).'],
-      ['📎 Reels without a script', 'If you post something for us without a shooting script (e.g. older content), add the link under "Reels without a script" at the bottom. It then gets measured overnight and counts as ours.'],
-      ['📋 Overview and 👤 Creators', '"Overview" shows all reels of your accounts and their status. "Creators" shows what you need for posting: accounts, no-gos, style, English level.'],
+      ['📅 Where do I see what to post?', 'In the "Calendar" tab. Pick the account at the top and you see the week for that account only. On the phone, tap the day at the top. Each entry is one post (Reel, Photo, Carousel, Story). Tap it to open everything you need.'],
+      ['⏰ Do I have to stick to the exact time?', 'No, times are guidelines. A bit earlier or later is totally fine if it works better. What matters: right day, right account. For US accounts the account’s time is shown (e.g. LA) with German time next to it.'],
+      ['✨ What does "up to you" mean?', 'It’s your call, e.g. for music, caption or stickers. Feel free to pick something that’s doing well right now and fits the creator.'],
+      ['▶ Viewing and downloading videos or photos', 'In the post, tap the thumbnail or "▶ view" and it plays right away. "⬇ download" saves the file. Stories: every frame separately. Carousel: order from left to right.'],
+      ['⏳ "waiting for video"', 'The post is already scheduled, but the creator hasn’t uploaded the video yet. As soon as it’s there, it shows up in the post automatically.'],
+      ['✅ Marking as posted', 'Open the post. Reel: in Instagram "⋯ → Copy link", paste it, tap "Posted ✓". Photo/carousel: link is optional. Story: "Story posted ✓". Reels are then measured automatically.'],
+      ['🎬 "To post" tab', 'Approved script reels with the shooting script, "Keep in mind" (no-gos, style) and the fixed account. At the bottom: "Reels without a script" for reels without a shooting script.'],
+      ['📋 Overview and 👤 Creators', '"Overview" shows all reels of your accounts and their status. "Creators" shows accounts, no-gos, style and English level.'],
       ['🌐 Language', 'Tap DE or EN at the top right. Your default language is set by the team in your profile.'],
       ['💬 Questions?', 'Tap the chat at the bottom right. Your message goes straight to the team.'],
     ],
@@ -109,6 +140,19 @@ export default function SocialFabs({ displayName, rollen = [], spracheFest = nul
     return () => clearInterval(iv)
   }, [ladenChat])
 
+  // v5.18.0: Einführung beim ersten Login als Poster (einmal pro Person und Gerät), nicht in der Vorschau
+  const vorschau = useVorschau()
+  const istPoster = (rollen || []).includes('social_media')
+  const EINF_KEY = `social_einfuehrung_v1_${displayName || ''}`
+  const [einf, setEinf] = useState(false)
+  useEffect(() => {
+    if (!displayName || vorschau || !istPoster) return
+    let gesehen = null
+    try { gesehen = localStorage.getItem(EINF_KEY) } catch { /* egal */ }
+    if (!gesehen) { const t = setTimeout(() => setEinf(true), 900); return () => clearTimeout(t) }
+  }, [displayName, vorschau, istPoster, EINF_KEY])
+  const einfZu = () => { setEinf(false); if (!vorschau) try { localStorage.setItem(EINF_KEY, new Date().toISOString()) } catch { /* egal */ } }
+
   if (!displayName) return null
   return (
     <>
@@ -117,7 +161,8 @@ export default function SocialFabs({ displayName, rollen = [], spracheFest = nul
       <SocialGlocke T={T} loc={loc} displayName={displayName} rollen={rollen} msgs={msgs}
         oeffneChat={() => panels.set('chat', true)}
         isOpen={panels.active === 'glocke'} onToggle={(v) => panels.set('glocke', v)} />
-      <SocialHilfe T={T} isOpen={panels.active === 'hilfe'} onToggle={(v) => panels.set('hilfe', v)} />
+      <SocialHilfe T={T} isOpen={panels.active === 'hilfe'} onToggle={(v) => panels.set('hilfe', v)} onEinfuehrung={() => { panels.set('hilfe', false); setEinf(true) }} />
+      {einf && <Einfuehrung T={T} onZu={einfZu} />}
     </>
   )
 }
@@ -289,7 +334,30 @@ function SocialGlocke({ T, loc, displayName, rollen, msgs, oeffneChat, isOpen, o
   )
 }
 
-function SocialHilfe({ T, isOpen, onToggle }) {
+// v5.18.0: Einführungsfenster (Schritte), auch über die Hilfe wieder aufrufbar
+function Einfuehrung({ T, onZu }) {
+  return (
+    <div onClick={onZu} style={{ position: 'fixed', inset: 0, zIndex: 100200, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div onClick={e => e.stopPropagation()} className="social-einf" style={{ width: 'min(520px, 100%)', maxHeight: 'calc(100vh - 28px)', overflowY: 'auto', background: 'var(--bg-base)', border: '1px solid var(--border-bright, var(--border))', borderRadius: 18, boxShadow: '0 24px 70px rgba(0,0,0,0.6)', padding: '18px 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <style>{`.social-einf .einf-los { padding: 12px 16px !important; font-size: 15px !important; }`}</style>
+        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>{T.einf_titel}</div>
+        {T.einf.map(([icon, titel, text], i) => (
+          <div key={i} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 20, width: 28, flexShrink: 0, textAlign: 'center' }}>{icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{titel}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{text}</div>
+            </div>
+          </div>
+        ))}
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.einf_hilfe}</div>
+        <button type="button" onClick={onZu} className="einf-los" style={{ padding: '12px 16px', borderRadius: 12, border: 'none', background: '#ec4899', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{T.einf_los}</button>
+      </div>
+    </div>
+  )
+}
+
+function SocialHilfe({ T, isOpen, onToggle, onEinfuehrung }) {
   const [open, setOpen] = useFabOpen(isOpen, onToggle)
   const [auf, setAuf] = useState(0)
   return (
@@ -301,6 +369,7 @@ function SocialHilfe({ T, isOpen, onToggle }) {
             <button onClick={() => setOpen(false)} aria-label={T.schliessen} style={{ ...zu, border: '1px solid var(--border)', borderRadius: 7, width: 26, height: 26, justifyContent: 'center', padding: 0 }}>✕</button>
           </div>
           <div style={{ overflowY: 'auto', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {onEinfuehrung && <button type="button" onClick={onEinfuehrung} style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(236,72,153,0.45)', background: 'rgba(236,72,153,0.1)', color: '#ec4899', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>{T.einf_nochmal}</button>}
             {T.faq.map(([frage, antwort], i) => (
               <div key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <button type="button" onClick={() => setAuf(auf === i ? -1 : i)} style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
