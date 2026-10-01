@@ -107,8 +107,11 @@ function modelRechnung(s, rev) {
   const agentur = base * (s.percentage / 100)
   return { base, agentur, model: rev.total - agentur }
 }
-function chatterRechnung(s, rev) {
+// v5.23.0: Chatter „inaktiv ab Monat“ — ab dann keine Auszahlung (Umsatz läuft trotzdem auf den Namen)
+const istInaktiv = (s, monat) => !!(s && s.inaktiv_ab && monat >= s.inaktiv_ab)
+function chatterRechnung(s, rev, monat = null) {
   if (!s) return null
+  if (monat && istInaktiv(s, monat)) return null
   const base = s.include_chat ? rev.chat : rev.total
   return { base, auszahlung: base * (s.percentage / 100) }
 }
@@ -196,7 +199,7 @@ export default function BillingTab() {
       const ca = chatterVerteilen(chatters, chatterAliases, cs.data || [])
       let agentur = 0, auszahlung = 0, umsatz = 0
       for (const [name, rev] of Object.entries(ma.proPerson)) { umsatz += rev.total; const x = modelRechnung(getSetting(name, 'model'), rev); if (x) agentur += x.agentur }
-      for (const [name, rev] of Object.entries(ca.proPerson)) { const x = chatterRechnung(getSetting(name, 'chatter'), rev); if (x) auszahlung += x.auszahlung }
+      for (const [name, rev] of Object.entries(ca.proPerson)) { const x = chatterRechnung(getSetting(name, 'chatter'), rev, m); if (x) auszahlung += x.auszahlung }
       zeilen.push({ monat: m, umsatz, agentur, auszahlung, tage: (ms.data || []).length })
     }
     setVerlauf(zeilen)
@@ -240,6 +243,7 @@ export default function BillingTab() {
       include_subs: s ? s.include_subs : true,
       include_chat: s ? s.include_chat : true,
       include_tips: s ? s.include_tips : true,
+      ...(type === 'chatter' ? { inaktiv_ab: s?.inaktiv_ab || '' } : {}),
     })
   }
 
@@ -248,12 +252,13 @@ export default function BillingTab() {
     setSaving(true)
     const ex = getSetting(editing.name, editing.type)
     const payload = { person_name: editing.name, person_type: editing.type, ...editVals, updated_at: new Date().toISOString() }
+    if ('inaktiv_ab' in payload) payload.inaktiv_ab = payload.inaktiv_ab || null
     const { error } = ex
       ? await supabase.from('billing_settings').update(payload).eq('id', ex.id)
       : await supabase.from('billing_settings').insert(payload)
     if (error) {
       // v4.49.0: vorher wurde der Fehler verschluckt und das Formular geschlossen
-      alert('⚠ Prozente NICHT gespeichert: ' + error.message)
+      alert(/inaktiv_ab/.test(error.message) ? '⚠ Nicht gespeichert: Datenbank fehlt noch, einmal sql/billing-inaktiv.sql ausführen.' : '⚠ Prozente NICHT gespeichert: ' + error.message)
       setSaving(false)
       return
     }
@@ -318,10 +323,12 @@ export default function BillingTab() {
     const s = getSetting(m.name, 'model'); const rev = modelRev(m.name)
     return { name: m.name, s, rev, x: modelRechnung(s, rev) }
   })
-  const chatterZeilen = chatters.filter(c => c.active !== false || chatterRev(c.name).total > 0).map(c => {
+  const chatterAlle = chatters.filter(c => c.active !== false || chatterRev(c.name).total > 0).map(c => {
     const s = getSetting(c.name, 'chatter'); const rev = chatterRev(c.name)
-    return { name: c.name, s, rev, x: chatterRechnung(s, rev) }
+    return { name: c.name, s, rev, x: chatterRechnung(s, rev, month), inaktiv: istInaktiv(s, month), kontaktInaktiv: c.active === false }
   })
+  const chatterZeilen = chatterAlle.filter(z => !z.inaktiv)
+  const chatterInaktiv = chatterAlle.filter(z => z.inaktiv)
   const summe = (liste, f) => liste.reduce((t, z) => t + (f(z) || 0), 0)
 
   return (
@@ -445,6 +452,29 @@ export default function BillingTab() {
         </>)
       })()}
 
+      {section === 'chatters' && chatterInaktiv.some(z => z.rev.total > 0.004) && (() => {
+        const liste = chatterInaktiv.filter(z => z.rev.total > 0.004).sort((a, b) => b.rev.total - a.rev.total)
+        return (
+          <details style={{ ...card, padding: '10px 14px', border: '1px solid var(--border)', background: 'var(--bg-card2)' }}>
+            <summary style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }}>⏸ Nicht mit einberechnet (inaktiv): {money(summe(liste, z => z.rev.total))} · {liste.length} Chatter</summary>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0' }}>
+              Diese Chatter sind inaktiv. Kunden kaufen trotzdem noch auf ihren Namen, das wird ihnen in der Datei zugerechnet, aber nicht ausgezahlt und zählt unten nicht mit.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {liste.map(z => (
+                <div key={z.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{z.name} <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11.5 }}>· inaktiv seit {new Date(z.s.inaktiv_ab + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</span></span>
+                  <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{money(z.rev.total)}</span>
+                    <button type="button" onClick={() => startEdit(z.name, 'chatter')} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>ändern</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )
+      })()}
+
       {section === 'chatters' && (() => {
         const mitSatz = chatterZeilen.filter(z => z.x)
         const gezeigt = chatterZeilen.filter(z => passt(z.name, z.rev.total, z.s)).sort((a, b) => b.rev.total - a.rev.total)
@@ -452,7 +482,7 @@ export default function BillingTab() {
         const aus = summe(mitSatz, z => z.x.auszahlung)
         return (<>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }} className="kpi-mini-grid">
-            {kpi(money(umsatz), k ? euroText(umsatz * k) : null, 'Umsatz aller Chatter', '#06b6d4')}
+            {kpi(money(umsatz), k ? euroText(umsatz * k) : null, chatterInaktiv.length ? 'Umsatz aktiver Chatter' : 'Umsatz aller Chatter', '#06b6d4')}
             {kpi(money(aus), k ? euroText(aus * k) : null, 'Auszahlung Chatter', '#10b981')}
             {kpi(String(chatterZeilen.filter(z => z.rev.total > 0.004).length), null, 'Chatter mit Umsatz', 'var(--text-primary)')}
             {kpi(String(chatterZeilen.filter(z => !z.s && z.rev.total > 0).length), null, 'mit Umsatz, ohne Satz', '#f59e0b')}
@@ -468,7 +498,7 @@ export default function BillingTab() {
                 <tbody>
                   {gezeigt.map(z => (
                     <tr key={z.name}>
-                      <td style={tdName}>{z.name}</td>
+                      <td style={tdName}>{z.name}{z.kontaktInaktiv && <span title="Im Kontakt als inaktiv markiert, im Billing aber noch aktiv" style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#f59e0b' }}>· Kontakt inaktiv</span>}</td>
                       <td style={{ ...td, textAlign: 'left' }}>{satzKnopf(z.name, 'chatter', z.s ? `${z.s.percentage} %` : '', '#06b6d4')}</td>
                       <td style={td}>{money(z.rev.total)}</td>
                       <td style={{ ...td, color: '#10b981', fontWeight: 800 }}>{z.x ? <>{money(z.x.auszahlung)}{eur(z.x.auszahlung)}</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
@@ -549,8 +579,30 @@ export default function BillingTab() {
                 <CheckBox checked={editVals.include_chat} onChange={() => setEditVals(p => ({ ...p, include_chat: !p.include_chat }))} label="Chat Revenue" />
                 <CheckBox checked={editVals.include_tips} onChange={() => setEditVals(p => ({ ...p, include_tips: !p.include_tips }))} label="Tips" />
               </div>
-            </>) : null}
-            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Gilt dauerhaft, für alle Monate.</div>
+            </>) : (
+              // v5.23.0: aktiv / inaktiv ab Monat
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[['', 'Aktiv'], [editVals.inaktiv_ab || month, 'Inaktiv']].map(([wert, label]) => {
+                    const an = label === 'Aktiv' ? !editVals.inaktiv_ab : !!editVals.inaktiv_ab
+                    return <button key={label} type="button" onClick={() => setEditVals(p => ({ ...p, inaktiv_ab: wert }))}
+                      style={{ flex: 1, padding: '7px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
+                        border: `1px solid ${an ? (label === 'Aktiv' ? '#10b981' : '#f59e0b') : 'var(--border)'}`, background: an ? (label === 'Aktiv' ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)') : 'transparent',
+                        color: an ? (label === 'Aktiv' ? '#10b981' : '#f59e0b') : 'var(--text-secondary)' }}>{label}</button>
+                  })}
+                </div>
+                {editVals.inaktiv_ab && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                    inaktiv ab
+                    <select value={editVals.inaktiv_ab} onChange={e => setEditVals(p => ({ ...p, inaktiv_ab: e.target.value }))} style={inp}>
+                      {[...new Set([editVals.inaktiv_ab, ...months])].sort().reverse().map(m => <option key={m} value={m}>{new Date(m + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</option>)}
+                    </select>
+                  </div>
+                )}
+                {editVals.inaktiv_ab && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>Ab diesem Monat keine Auszahlung mehr. Was Kunden danach noch auf den Namen kaufen, steht oben unter „Nicht mit einberechnet“. Frühere Monate bleiben wie sie sind.</div>}
+              </div>
+            )}
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Der Satz gilt dauerhaft, für alle Monate.</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setEditing(null)} disabled={saving} style={{ flex: 1, padding: '9px', borderRadius: 9, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
               <button onClick={save} disabled={saving} style={{ flex: 2, padding: '9px', borderRadius: 9, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? '…' : 'Speichern'}</button>
