@@ -83,7 +83,7 @@ export function VideoHochladen({ skriptId, art = 'roh', onFertig, text = '🎬 V
 // Story-Frame) und Material. Fotos oder Videos. onFertig(link) setzt nur das
 // Feld im Formular, gespeichert wird mit dem Eintrag.
 // v5.10.1: mehrere → mehrere Dateien auf einmal, onFertig wird je Datei aufgerufen (Story: ein Frame pro Datei)
-export function DateiHochladen({ model, account = null, onFertig, text = '⬆ Hochladen', nurVideo = false, farbe = '#06b6d4', gesperrt = false, mehrere = false }) {
+export function DateiHochladen({ model, account = null, onFertig, text = '⬆ Hochladen', nurVideo = false, nurFoto = false, farbe = '#06b6d4', gesperrt = false, mehrere = false }) {
   const input = useRef(null)
   const [stand, setStand] = useState(null)
   const [fehler, setFehler] = useState('')
@@ -103,7 +103,7 @@ export function DateiHochladen({ model, account = null, onFertig, text = '⬆ Ho
   const laeuft = stand !== null
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
-      <input ref={input} type="file" multiple={mehrere} accept={nurVideo ? 'video/*' : 'image/*,video/*'} style={{ display: 'none' }} onChange={e => { const d = [...(e.target.files || [])]; e.target.value = ''; los(d) }} />
+      <input ref={input} type="file" multiple={mehrere} accept={nurVideo ? 'video/*' : nurFoto ? 'image/*' : 'image/*,video/*'} style={{ display: 'none' }} onChange={e => { const d = [...(e.target.files || [])]; e.target.value = ''; los(d) }} />
       <button type="button" disabled={laeuft || gesperrt || !model} onClick={() => input.current?.click()}
         style={{ padding: '6px 10px', borderRadius: 9, fontSize: 12, fontWeight: 800, cursor: laeuft || gesperrt ? 'not-allowed' : 'pointer', fontFamily: 'inherit', border: `1px solid ${farbe}`, background: 'transparent', color: farbe, whiteSpace: 'nowrap', opacity: gesperrt ? 0.45 : 1 }}>
         {laeuft ? `${nr}${Math.round(stand * 100)} %` : text}

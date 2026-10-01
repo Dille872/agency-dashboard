@@ -30,7 +30,7 @@ const TX = {
   de: {
     plan: 'Posting-Plan', woche: 'Woche', heute: 'Heute', alle: 'Alle Accounts', material: 'Material · noch nicht eingeplant',
     material_text: 'Tippen zum Einplanen.', material_neu: '+ Material eintragen', kein_material: 'Kein offenes Material.',
-    aus_skript: 'aus Skript', ohne_skript: 'ohne Skript', reel: 'Reel', story: 'Story', geplant: 'geplant', gepostet: 'gepostet',
+    aus_skript: 'aus Skript', ohne_skript: 'ohne Skript', reel: 'Reel', story: 'Story', foto: 'Foto', karussell: 'Karussell', karussell_n: (n) => `Karussell · ${n}`, hoch_foto: '⬆ Foto hochladen', hoch_karussell: '⬆ Fotos/Videos hinzufügen (auch mehrere)', karussell_tipp: 'Reihenfolge = wie hier von links nach rechts (1 kommt zuerst). Mit ← → verschieben. Bis zu 20 Teile.', beitrag_link: 'Link zum Beitrag (optional)', beitrag_gepostet: 'Gepostet ✓', geplant: 'geplant', gepostet: 'gepostet',
     neu: '+ Beitrag', einplanen: 'Einplanen', speichern: 'Speichern', abbrechen: 'Abbrechen', loeschen: 'Löschen',
     loeschen_frage: 'Diesen Eintrag aus dem Plan löschen?', art: 'Art', account: 'Account', wann: 'Wann', titel: 'Titel',
     video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', hoch_frames: '⬆ Fotos/Videos hinzufügen (auch mehrere)', story_tipp: 'Jede Datei wird ein eigener Frame, in der Reihenfolge der Auswahl.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
@@ -47,7 +47,7 @@ const TX = {
   en: {
     plan: 'Posting calendar', woche: 'Week', heute: 'Today', alle: 'All accounts', material: 'Material · not scheduled yet',
     material_text: 'Tap to schedule.', material_neu: '+ Add material', kein_material: 'No open material.',
-    aus_skript: 'from script', ohne_skript: 'no script', reel: 'Reel', story: 'Story', geplant: 'scheduled', gepostet: 'posted',
+    aus_skript: 'from script', ohne_skript: 'no script', reel: 'Reel', story: 'Story', foto: 'Photo', karussell: 'Carousel', karussell_n: (n) => `Carousel · ${n}`, hoch_foto: '⬆ Upload photo', hoch_karussell: '⬆ Add photos/videos (several at once)', karussell_tipp: 'Order = left to right as shown (1 comes first). Move with ← →. Up to 20 items.', beitrag_link: 'Link to the post (optional)', beitrag_gepostet: 'Posted ✓', geplant: 'scheduled', gepostet: 'posted',
     neu: '+ Post', einplanen: 'Schedule', speichern: 'Save', abbrechen: 'Cancel', loeschen: 'Delete',
     loeschen_frage: 'Delete this entry from the calendar?', art: 'Type', account: 'Account', wann: 'When', titel: 'Title',
     video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', hoch_frames: '⬆ Add photos/videos (several at once)', story_tipp: 'Each file becomes its own frame, in the order selected.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
@@ -69,7 +69,11 @@ const eingabe = { background: 'var(--bg-input)', border: '1px solid var(--border
 const klein = { fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }
 const pill = (f) => ({ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: f + '22', color: f, whiteSpace: 'nowrap' })
 const knopf = (f, voll) => ({ padding: '7px 12px', borderRadius: 9, fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', border: voll ? 'none' : `1px solid ${f}`, background: voll ? f : 'transparent', color: voll ? '#fff' : f, whiteSpace: 'nowrap' })
-const artFarbe = (a) => a === 'story' ? V : P
+const artFarbe = (a) => a === 'story' ? V : a === 'foto' ? A : a === 'karussell' ? C : P
+// v5.11.0: Beitragsarten
+const ARTEN = ['reel', 'foto', 'karussell', 'story']
+const artName = (a, T) => T[a] || T.reel
+const artText = (z, T) => z.art === 'story' ? T.frames_n((z.frames || []).length) : z.art === 'karussell' ? (z.titel || T.karussell_n((z.frames || []).length)) : (z.titel || artName(z.art, T))
 
 // Datum-Helfer (lokale Zeit des Geräts)
 const tagStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
@@ -81,7 +85,7 @@ const uhr = (iso, loc) => new Date(iso).toLocaleTimeString(loc, { hour: '2-digit
 
 // v5.9.0: Link-Feld mit „⬆ Hochladen“. Hochgeladene Datei → Vorschaubild statt
 // „speicher://…“-Text. model/account bestimmen Ablage und Rechte (Material: ohne account).
-function LinkFeld({ value, onChange, model, account = null, nurLesen, placeholder, material = false }) {
+function LinkFeld({ value, onChange, model, account = null, nurLesen, placeholder, material = false, nurFoto = false }) {
   if (istSpeicher(value)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -104,7 +108,7 @@ function LinkFeld({ value, onChange, model, account = null, nurLesen, placeholde
   if (nurLesen) return <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <DateiHochladen model={model} account={material ? null : account} gesperrt={!model || (!material && !account)} onFertig={onChange} text={placeholder || '⬆ Hochladen'} />
+      <DateiHochladen model={model} account={material ? null : account} gesperrt={!model || (!material && !account)} onFertig={onChange} text={placeholder || '⬆ Hochladen'} nurFoto={nurFoto} />
       {!model || (!material && !account) ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>erst Account wählen</span> : null}
     </div>
   )
@@ -118,6 +122,10 @@ function KopierKnopf({ text, T }) {
   return <button type="button" onClick={async () => { if (await kopiere(text)) { setOk(true); setTimeout(() => setOk(false), 1500) } }}
     style={{ background: 'none', border: 'none', color: ok ? G : C, fontWeight: 700, fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>📋 {ok ? T.kopiert : T.kopieren}</button>
 }
+
+// v5.11.0: Karussell-Reihenfolge ändern
+const verschieben = (liste, i, d) => { const l = [...liste]; const j = i + d; if (j < 0 || j >= l.length) return l; [l[i], l[j]] = [l[j], l[i]]; return l }
+const pfeil = { background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, padding: '1px 6px', fontFamily: 'inherit' }
 
 // Zeitzone eines Plan-Eintrags/Accounts
 const zoneVon = (accounts, model, handle) => accounts.find(a => a.model === model && String(a.handle).toLowerCase() === String(handle || '').toLowerCase())?.zone || STANDARD
@@ -254,7 +262,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                           <button key={z.id} type="button" onClick={() => setOffen(z)}
                             style={{ textAlign: 'left', borderRadius: 8, padding: '5px 6px', fontSize: 11, lineHeight: 1.3, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', background: artFarbe(z.art) + '1f', border: `1px solid ${artFarbe(z.art)}55`, opacity: z.status === 'gepostet' ? 0.6 : 1 }}>
                             <ZeitText iso={z.geplant_am} zone={a.zone || STANDARD} />
-                            <b style={{ display: 'block', fontSize: 11.5 }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || T.reel)}</b>
+                            <b style={{ display: 'block', fontSize: 11.5 }}>{artText(z, T)}</b>
                             {z.erstellt_von && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)' }}>{T.von(z.erstellt_von)}</span>}
                             {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
                           </button>
@@ -292,9 +300,9 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
       {!liste.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{T.heute_nichts}</div>}
       {liste.map(z => (
         <div key={z.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 11, background: 'var(--bg-card2)', border: `1px solid ${artFarbe(z.art)}44` }}>
-          <span style={pill(artFarbe(z.art))}>{z.art === 'story' ? T.story : T.reel}</span>
+          <span style={pill(artFarbe(z.art))}>{artName(z.art, T)}</span>
           <ZeitText iso={z.geplant_am} zone={zoneVon(accounts, z.model_name, z.account)} gross />
-          <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1, minWidth: 120 }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || '')} · <span style={{ color: P, fontWeight: 700 }}>{z.account}</span></span>
+          <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1, minWidth: 120 }}>{artText(z, T)} · <span style={{ color: P, fontWeight: 700 }}>{z.account}</span></span>
           {z.video_link && <VideoLink href={mitHttps(z.video_link)} laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{T.laden}</VideoLink>}
           <KopierKnopf text={z.caption} T={{ ...T, kopieren: T.caption }} />
           <KopierKnopf text={z.hashtags} T={{ ...T, kopieren: T.hashtags }} />
@@ -359,6 +367,11 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
       const r = mitHttps(reel)
       if (!linkOk(r) || !/instagram\.com\//i.test(r)) { setFehler(T.fehler_reel); return }
       await speichern({ status: 'gepostet', reel_url: r, gepostet_von: userDisplayName || null })
+    } else if (f.art === 'foto' || f.art === 'karussell') {
+      // v5.11.0: Link zum Beitrag ist freiwillig (wird nicht gemessen)
+      const r = String(reel || '').trim() ? mitHttps(reel) : null
+      if (r && (!linkOk(r) || !/instagram\.com\//i.test(r))) { setFehler(T.fehler_reel); return }
+      await speichern({ status: 'gepostet', reel_url: r, gepostet_von: userDisplayName || null })
     } else await speichern({ status: 'gepostet', gepostet_von: userDisplayName || null })
   }
 
@@ -371,8 +384,8 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
     <div onClick={() => !arbeitet && onZu(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 12px', overflowY: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {['reel', 'story'].map(a => (
-            <button key={a} type="button" disabled={nurLesen} onClick={() => set('art', a)} style={{ ...knopf(artFarbe(a), f.art === a), padding: '5px 12px' }}>{a === 'story' ? T.story : T.reel}</button>
+          {ARTEN.map(a => (
+            <button key={a} type="button" disabled={nurLesen} onClick={() => set('art', a)} style={{ ...knopf(artFarbe(a), f.art === a), padding: '5px 10px' }}>{artName(a, T)}</button>
           ))}
           <span style={{ flex: 1 }} />
           {f.id && f.erstellt_von && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{T.von(f.erstellt_von)}</span>}
@@ -400,9 +413,35 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
         </div>
         {zeile(T.titel, <input disabled={nurLesen} value={f.titel || ''} onChange={e => set('titel', e.target.value.slice(0, 120))} style={eingabe} />)}
         {/* v5.10.1: Bei Stories kommt das Material in die Frames (Foto oder Video), kein eigenes Video-Feld */}
-        {(f.art === 'reel' || f.video_link) && zeile(T.video, <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={T.hoch_video} />)}
+        {(f.art === 'reel' || f.art === 'foto' || (f.video_link && f.art !== 'karussell')) && zeile(f.art === 'foto' ? T.foto : T.video, <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={f.art === 'foto' ? T.hoch_foto : T.hoch_video} nurFoto={f.art === 'foto'} />)}
 
-        {f.art === 'reel' && (<>
+        {/* v5.11.0: Karussell – mehrere Fotos/Videos in fester Reihenfolge (frames[].link) */}
+        {f.art === 'karussell' && zeile(T.karussell, <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {(f.frames || []).filter(x => x.link).length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', gap: 8 }}>
+              {(f.frames || []).map((x, i) => x.link ? (
+                <div key={i} style={{ background: 'var(--bg-card2)', borderRadius: 10, padding: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <b style={{ fontSize: 11, color: C }}>{i + 1}</b>
+                  <VideoBild href={x.link} hoehe={96} />
+                  {!nurLesen && (
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      <button type="button" disabled={i === 0} onClick={() => set('frames', verschieben(f.frames, i, -1))} title="nach vorne" style={pfeil}>←</button>
+                      <button type="button" disabled={i === f.frames.length - 1} onClick={() => set('frames', verschieben(f.frames, i, 1))} title="nach hinten" style={pfeil}>→</button>
+                      <button type="button" onClick={() => set('frames', f.frames.filter((_, j) => j !== i))} title="entfernen" style={pfeil}>✕</button>
+                    </div>
+                  )}
+                </div>
+              ) : null)}
+            </div>
+          )}
+          {!nurLesen && (f.frames || []).length < 20 && (
+            <DateiHochladen model={f.model_name} account={f.account} gesperrt={!f.model_name || !f.account} mehrere farbe={C} text={T.hoch_karussell}
+              onFertig={(link) => setF(x => ({ ...x, frames: [...(x.frames || []).filter(y => y.link), { link }].slice(0, 20) }))} />
+          )}
+          {!nurLesen && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{T.karussell_tipp}</span>}
+        </div>)}
+
+        {f.art !== 'story' && (<>
           {zeile(T.caption, <textarea disabled={nurLesen} rows={3} value={f.caption || ''} onChange={e => set('caption', e.target.value.slice(0, 2200))} style={{ ...eingabe, resize: 'vertical' }} />,
             <KopierKnopf text={f.caption} T={T} />)}
           {f.caption_vorschlag && f.caption_vorschlag !== f.caption && (
@@ -416,7 +455,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
               ✨ {T.vorschlag}: {f.hashtags_vorschlag} {!nurLesen && <button type="button" onClick={() => { set('hashtags', f.hashtags_vorschlag); setUebernommen(true) }} style={{ ...knopf(V, false), padding: '2px 8px', fontSize: 11 }}>{T.uebernehmen}</button>}
             </div>
           )}
-          {zeile(T.overlays, <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {f.art === 'reel' && zeile(T.overlays, <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {(f.overlays || []).map((o, i) => (
               <div key={i} style={{ display: 'flex', gap: 6 }}>
                 <input disabled={nurLesen} value={o.zeit || ''} onChange={e => set('overlays', f.overlays.map((x, j) => j === i ? { ...x, zeit: e.target.value.slice(0, 8) } : x))} placeholder="0:04" style={{ ...eingabe, width: 70, fontFamily: 'ui-monospace, monospace' }} />
@@ -459,14 +498,14 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
         {f.id && darf && f.status !== 'gepostet' && (
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={klein}>{T.posten_titel}</div>
-            {f.art === 'reel' && <input value={reel} onChange={e => setReel(e.target.value.slice(0, 500))} placeholder={T.reel_link} inputMode="url" autoCapitalize="none" style={eingabe} />}
-            <button type="button" disabled={arbeitet} onClick={gepostet} style={{ ...knopf(G, true), color: '#04140e', padding: 10 }}>{f.art === 'reel' ? T.gepostet_knopf : T.story_gepostet}</button>
+            {f.art !== 'story' && <input value={reel} onChange={e => setReel(e.target.value.slice(0, 500))} placeholder={f.art === 'reel' ? T.reel_link : T.beitrag_link} inputMode="url" autoCapitalize="none" style={eingabe} />}
+            <button type="button" disabled={arbeitet} onClick={gepostet} style={{ ...knopf(G, true), color: '#04140e', padding: 10 }}>{f.art === 'reel' ? T.gepostet_knopf : f.art === 'story' ? T.story_gepostet : T.beitrag_gepostet}</button>
             {f.art === 'reel' && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{T.gemessen}</div>}
           </div>
         )}
         {f.id && darf && f.status === 'gepostet' && (
           <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-            ✓ {T.gepostet}{f.reel_url && <> · <a href={f.reel_url} target="_blank" rel="noreferrer" style={{ color: G, fontWeight: 700 }}>Reel</a></>}
+            ✓ {T.gepostet}{f.reel_url && <> · <a href={f.reel_url} target="_blank" rel="noreferrer" style={{ color: G, fontWeight: 700 }}>{artName(f.art, T)}</a></>}
             {' · '}<button type="button" onClick={() => speichern({ status: 'geplant', reel_url: null, gepostet_am: null, gepostet_von: null })} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 }}>{T.zurueck}</button>
           </div>
         )}
@@ -607,9 +646,9 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
           <div style={{ ...klein, marginBottom: 4 }}>{new Date(t).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' })}</div>
           {zeilen.filter(z => tagStart(z.geplant_am).getTime() === t).map(z => (
             <div key={z.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={pill(artFarbe(z.art))}>{z.art === 'story' ? 'Story' : 'Reel'}</span>
+              <span style={pill(artFarbe(z.art))}>{artName(z.art, T)}</span>
               <ZeitText iso={z.geplant_am} zone={service?.account_modus?.[z.account]?.zeitzone || STANDARD} />
-              <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || '')}</span>
+              <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{artText(z, T)}</span>
               <span style={{ color: P, fontSize: 12 }}>{z.account}</span>
               {z.status === 'gepostet' && <span style={pill(G)}>gepostet</span>}
             </div>
