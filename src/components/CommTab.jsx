@@ -1788,7 +1788,18 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
     const { data } = await supabase.from('content_requests').select('*').order('created_at', { ascending: false })
     _contentRequestsCache = data || [] // v3.54.0: Cache aktualisieren
     setContentRequests(data || [])
-    setUnreadRequests((data || []).filter(r => r.status === 'neu').length)
+    setUnreadRequests((data || []).filter(istUngelesen).length)
+  }
+  // v5.21.1: „gelesen“ ist unabhängig vom Status — die Anfrage bleibt „neu“, zählt aber nicht mehr als ungelesen
+  const istUngelesen = (r) => r.status === 'neu' && !r.admin_gelesen_am
+  const alsGelesen = async (ids) => {
+    if (!ids.length) return
+    const jetzt = new Date().toISOString()
+    const { error } = await supabase.from('content_requests').update({ admin_gelesen_am: jetzt, admin_gelesen_von: userName || null }).in('id', ids)
+    if (error) { alert(/admin_gelesen/.test(error.message) ? 'Datenbank fehlt noch: einmal sql/custom-gelesen.sql ausführen.' : 'Nicht gespeichert: ' + error.message); return }
+    // alte Einträge aus custom_content (wird seit v3.x nicht mehr beschrieben) zählten sonst ewig im Creator-Zähler mit
+    try { await supabase.from('custom_content').update({ read_by_admin: true }).eq('read_by_admin', false) } catch { /* egal */ }
+    loadContentRequests()
   }
 
   // Helper: TG-Notification an Chatter über Status-Wechsel seiner Custom-Content-Anfrage
@@ -3616,6 +3627,13 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 fontWeight: 600, fontFamily: 'inherit'
               }}>{f.label}</button>
             ))}
+            {/* v5.21.1: alle ungelesenen als gelesen markieren */}
+            {contentRequests.some(istUngelesen) && (
+              <button onClick={() => alsGelesen(contentRequests.filter(istUngelesen).map(r => r.id))} title="Alle neuen Anfragen als gelesen markieren (Status bleibt)"
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.5)', color: '#10b981', fontWeight: 700, fontFamily: 'inherit' }}>
+                ✓ Alle gelesen ({contentRequests.filter(istUngelesen).length})
+              </button>
+            )}
             {/* v3.43.0: Alle Karten ein-/ausklappen */}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
               <button onClick={() => setExpandedReqs(new Set(filteredRequests.map(r => r.id)))} title="Alle Karten aufklappen"
@@ -3721,7 +3739,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
                           {req.content_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: isLiveType(req.content_type) ? 'rgba(239,68,68,0.15)' : 'rgba(124,58,237,0.15)', color: isLiveType(req.content_type) ? '#ef4444' : '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: 5 }}>{isLiveType(req.content_type) && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />}{contentTypeLabel(req.content_type)}</span>}
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: statusColor + '22', color: statusColor, display: 'inline-flex', alignItems: 'center', gap: 4 }}><sMeta.Icon size={11} strokeWidth={2.6} />{sMeta.label}</span>
-                          {req.status === 'neu' && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>NEU</span>}
+                          {istUngelesen(req) && <span style={{ fontSize: 9, background: '#7c3aed', color: '#fff', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>NEU</span>}
+                          {istUngelesen(req) && <button type="button" onClick={(e) => { e.stopPropagation(); alsGelesen([req.id]) }} title="Als gelesen markieren (Status bleibt)"
+                            style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 7px', borderRadius: 4, border: '1px solid rgba(16,185,129,0.5)', background: 'transparent', color: '#10b981', cursor: 'pointer', fontFamily: 'inherit' }}>✓ gelesen</button>}
                           {/* v3.43.0: Deadline-Badge im eingeklappten Zustand sichtbar */}
                           {!isExpanded && deadlineMeta && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: deadlineMeta.color + '22', color: deadlineMeta.color }}>{deadlineMeta.label}</span>}
                         </div>

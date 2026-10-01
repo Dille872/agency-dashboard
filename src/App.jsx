@@ -430,10 +430,13 @@ export default function App() {
       .from('custom_content').select('*', { count: 'exact', head: true })
       .eq('read_by_admin', false)
 
-    // New content requests
-    const { count: reqCount } = await supabase
+    // New content requests — v5.21.1: als gelesen markierte zählen nicht mehr (sql/custom-gelesen.sql)
+    let { count: reqCount, error: reqFehler } = await supabase
       .from('content_requests').select('*', { count: 'exact', head: true })
-      .eq('status', 'neu')
+      .eq('status', 'neu').is('admin_gelesen_am', null)
+    if (reqFehler) ({ count: reqCount } = await supabase
+      .from('content_requests').select('*', { count: 'exact', head: true })
+      .eq('status', 'neu'))
 
     // Unread MODEL TICKETS (message_type set) — gehört zum Creator-Badge
     const { count: modelTicketCount } = await supabase
