@@ -1,3 +1,4 @@
+import { VideoLink } from './VideoLink' // v5.7.0
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
@@ -111,8 +112,8 @@ function Karte({ s, accounts, userName, onNeu }) {
           <span style={klein}>🎬 Video</span>
           {s.video_link && !videoEdit ? (
             <>
-              <a href={s.video_link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>⬇ Video öffnen / laden</a>
-              {s.schnitt_link && <a href={s.schnitt_link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: '#a855f7', fontWeight: 700 }}>✂️ Schnitt{schnittGilt(s) ? '' : ' (alt)'}{s.schnitt_von ? ` · ${s.schnitt_von}` : ''}</a>}
+              <VideoLink href={s.video_link} bild style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>⬇ Video öffnen / laden</VideoLink>
+              {s.schnitt_link && <VideoLink href={s.schnitt_link} style={{ fontSize: 12.5, color: '#a855f7', fontWeight: 700 }}>✂️ Schnitt{schnittGilt(s) ? '' : ' (alt)'}{s.schnitt_von ? ` · ${s.schnitt_von}` : ''}</VideoLink>}
               {s.freigabe_am && <span style={{ fontSize: 11, color: '#10b981' }}>✓ freigegeben {tagKurz(s.freigabe_am)}{s.freigabe_von ? ` · ${s.freigabe_von}` : ''}</span>}
               {s.zurueck_am && s.zurueck_notiz && <span style={{ fontSize: 11, color: '#f97316' }}>↩ {tagKurz(s.zurueck_am)} an {s.zurueck_an === 'cutter' ? 'Cutter' : 'Model'}: {s.zurueck_notiz}</span>}
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tagKurz(s.video_am)}{s.video_von && s.video_von !== s.model_name ? ` · ${s.video_von}` : ''} · <button type="button" onClick={() => setVideoEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>ändern</button></span>

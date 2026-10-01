@@ -4,6 +4,7 @@ import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
 import { statusVon, linkOk, mitHttps, instaHandle, cutterLaden, endVideo, seitVon, modusSetzen } from '../reelSkripte'
+import { VideoLink } from './VideoLink' // v5.7.0
 import SocialModelsAdmin from './SocialModelsAdmin' // v4.108.0
 import { SchnittListe, FreigabeListe } from './SocialAblauf' // v4.106.0
 import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialManager'
@@ -437,7 +438,7 @@ function PostenKarte({ s, m, t, tr, datum, seitText, notiz, userDisplayName, onN
         <div style={spalte}>
           <span style={klein}>{t('sp_material')}</span>
           {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('drehzettel')}</a>}
-          <a href={endVideo(s)} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('video_laden')}</a>
+          <VideoLink href={endVideo(s)} laden bild style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('video_laden')}</VideoLink>
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{s.schnitt_link ? t('geschnitten_von', { wer: s.schnitt_von || '—', datum: datum(s.schnitt_am) }) : t('hochgeladen', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}</span>
         </div>
         <div style={spalte}>

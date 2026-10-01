@@ -176,19 +176,19 @@ export const HELP_TOPICS = [
     icon: '🎬',
     tab: 'social',
     title: 'Drehzettel',
-    short: 'Deine Reel-Skripte: Drehzettel öffnen, drehen, Link zum Video einfügen.',
+    short: 'Deine Reel-Skripte: Drehzettel öffnen, drehen, Video hochladen.',
     body: [
       'Für jedes Reel, das wir für dich geschrieben haben, bekommst du einen Drehzettel mit Nummer (z. B. S-0003). Darauf steht, was du drehen sollst.',
-      'Das Video lädst du nicht hier hoch, sondern in deine Dropbox (oder Google Drive, WeTransfer) und fügst nur den Link ein. So bleibt die volle Qualität erhalten. Posten machen wir.',
+      'Das fertige Video lädst du direkt hier hoch, in voller Qualität. Wir sehen es sofort mit Vorschaubild. Posten machen wir.',
     ],
     steps: [
       'Unten auf „Social“ tippen, beim Drehzettel auf „Drehzettel öffnen“ und das Reel drehen. Oben steht, für welchen Account es ist.',
-      'Video in deine Dropbox laden, dort „Teilen“ → „Link kopieren“.',
-      'Zurück im Portal auf „Video fertig? Link einfügen“, Link einfügen, Speichern.',
+      'Beim Drehzettel auf „Video fertig? Hochladen“ tippen und das Video aus deiner Galerie wählen.',
+      'Warten, bis der Balken bei 100 % ist, und die Seite so lange offen lassen. Bricht das Netz ab, einfach nochmal wählen, es geht an derselben Stelle weiter.',
     ],
     watch: [
       'Bitte nicht über WhatsApp schicken, da wird das Video stark verkleinert.',
-      'Den Link kannst du ändern, solange das Reel noch nicht gepostet ist.',
+      'Ein neues Video kannst du hochladen, solange das Reel noch nicht gepostet ist („ändern“). Notfalls geht auch weiter ein Link (Dropbox, Google Drive) über „oder Link einfügen“.',
       'Steht beim Drehzettel ein US- oder englischer Account, bitte auf Englisch sprechen.',
     ],
   },
@@ -337,7 +337,7 @@ export const HELP_TOPICS = [
     ],
     steps: [
       'Drehzettel öffnen und das Reel drehen.',
-      'Video in deine Dropbox laden und den Link beim Drehzettel einfügen.',
+      'Das Video beim Drehzettel hochladen.',
       'Fragebogen einmal ausfüllen, später jederzeit anpassen.',
     ],
     watch: [

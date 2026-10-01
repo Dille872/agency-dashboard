@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKurz, modusSetzen, postetModel, cutterLaden, hatCutter } from '../reelSkripte'
+import { VideoBild, VideoHochladen, VideoLink } from './VideoLink' // v5.7.0
+import { istSpeicher } from '../videoSpeicher'
 
 // ── Model-Portal: Drehzettel (v4.101.0) ────────────────────────────────────
 // Liste der Reel-Skripte des Models. Pro Skript: Drehzettel (PDF) öffnen,
 // nach dem Drehen den LINK zum Video einfügen (Dropbox, Google Drive,
 // WeTransfer …). Keine Videodatei im Dashboard — so bleibt die volle Qualität
 // und große Dateien brechen nicht ab. Posten macht die Agentur.
+// v5.7.0: Standard ist jetzt „🎬 Video hochladen“ direkt ins Dashboard
+// (eigener Speicher, mit Vorschaubild). Link einfügen bleibt als Ausweg.
 // Erscheint nur, wenn es mindestens ein Skript gibt. Sitzt seit v4.102.0 im
 // Bereich „Social“ (nicht mehr im Board) und zeigt den Ziel-Account.
 
@@ -38,6 +42,15 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
     setEdit(false); onNeu()
   }
 
+  // v5.7.0: Video im eigenen Speicher hochgeladen → wie ein Link eintragen
+  const hochgeladen = async (v) => {
+    const err = await skriptAendern(s.id, { video_link: v, video_am: new Date().toISOString(), video_von: name })
+    if (err) return err
+    try { await logActivity?.('Video hochgeladen', 'reels', `${s.nr} ${s.titel}`) } catch { /* nur Hinweis */ }
+    setEdit(false); onNeu()
+    return null
+  }
+
   const gepostetSpeichern = async () => {
     const r = mitHttps(reel)
     if (!linkOk(r) || !/instagram\.com\//i.test(r)) { setFehler('Bitte den Instagram-Link zu deinem Reel einfügen (in Instagram: ⋯ → Link kopieren).'); return }
@@ -68,8 +81,9 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 13.5, fontWeight: 700, color: R, padding: '8px 12px', borderRadius: 11, border: `1px solid ${R}`, textDecoration: 'none' }}>📄 Drehzettel öffnen</a>}
         {s.video_link && !edit && status !== 'freigegeben' && (
-          <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-            ✓ Video-Link hinterlegt {tagKurz(s.video_am)}
+          <span style={{ fontSize: 12.5, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {istSpeicher(s.video_link) && <VideoLink href={s.video_link} bild style={{ color: 'var(--text-muted)' }}>ansehen</VideoLink>}
+            ✓ {istSpeicher(s.video_link) ? 'Video hochgeladen' : 'Video-Link hinterlegt'} {tagKurz(s.video_am)}
             {status !== 'gepostet' && !isPreview && <> · <button type="button" onClick={() => setEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>ändern</button></>}
           </span>
         )}
@@ -80,10 +94,21 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
           ↩ <b style={{ color: '#f97316' }}>Bitte nochmal drehen:</b> {s.zurueck_notiz}
         </div>
       )}
-      {status === 'freigegeben' && !edit && (
+      {/* v5.7.0: Video direkt hochladen (Link einfügen nur noch als Ausweg) */}
+      {status === 'freigegeben' && !edit && !selbst && (
+        <>
+          <VideoHochladen skriptId={s.id} art="roh" onFertig={hochgeladen} farbe={R} text="🎬 Video fertig? Hochladen"
+            gesperrt={isPreview} gesperrtText="Vorschau: nur das Model selbst kann hier hochladen" />
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -2 }}>
+            {hinweis} In voller Qualität aus der Galerie wählen, nicht über WhatsApp.
+            {!isPreview && <> · <button type="button" onClick={() => setEdit(true)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>oder Link einfügen</button></>}
+          </div>
+        </>
+      )}
+      {status === 'freigegeben' && !edit && selbst && (
         // v4.108.1: in der Admin-Vorschau sichtbar, aber ausgegraut
         <button type="button" disabled={isPreview} onClick={() => { if (!isPreview) setEdit(true) }} title={isPreview ? 'Vorschau: nur das Model selbst kann hier eintragen' : undefined}
-          style={{ padding: '10px 12px', borderRadius: 11, border: 'none', background: selbst ? '#10b981' : R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: isPreview ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isPreview ? 0.45 : 1 }}>{selbst ? '📱 Gepostet? Reel-Link einfügen' : '🎬 Video fertig? Link einfügen'}</button>
+          style={{ padding: '10px 12px', borderRadius: 11, border: 'none', background: selbst ? '#10b981' : R, color: '#04212a', fontSize: 14, fontWeight: 800, cursor: isPreview ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isPreview ? 0.45 : 1 }}>📱 Gepostet? Reel-Link einfügen</button>
       )}
       {isPreview && status === 'freigegeben' && !edit && (
         <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -4 }}>Vorschau: Diesen Knopf kann nur das Model selbst benutzen.</div>
@@ -101,6 +126,8 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
       )}
       {edit && !selbst && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {status !== 'freigegeben' && <VideoHochladen skriptId={s.id} art="roh" onFertig={hochgeladen} farbe={R} text="🎬 Neues Video hochladen" />}
+          {status !== 'freigegeben' && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>oder einen Link einfügen:</div>}
           <input autoFocus value={link} onChange={e => setLink(e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={feld} inputMode="url" autoCapitalize="none" autoCorrect="off" />
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>{hinweis} Video in deine Dropbox (oder Google Drive, WeTransfer) laden, dort „Teilen“ → „Link kopieren“ und hier einfügen. Bitte in voller Qualität, nicht über WhatsApp.</div>
           <div style={{ display: 'flex', gap: 6 }}>

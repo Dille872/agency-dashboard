@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
 import { statusVon, hatCutter, endVideo, schnittGilt, seitVon, linkOk, mitHttps } from '../reelSkripte'
+import { VideoLink, VideoHochladen } from './VideoLink' // v5.7.0
 
 // ── Schnitt und Freigabe (v4.106.0) ────────────────────────────────────────
 // Zwei Listen im Social Media Manager:
@@ -63,16 +64,17 @@ function SchnittKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
   const [link, setLink] = useState('')
   const [fehler, setFehler] = useState('')
   const [arbeitet, setArbeitet] = useState(false)
-  const speichern = async () => {
+  const speichern = async (direkt) => {
     if (vorschau) return vorschauSperre()
-    const v = mitHttps(link)
+    const v = typeof direkt === 'string' ? direkt : mitHttps(link)
     if (!linkOk(v)) { setFehler(t('fehler_link')); return }
     setArbeitet(true); setFehler('')
     const { error } = await supabase.from('reel_skripte').update({ schnitt_link: v, schnitt_am: new Date().toISOString(), schnitt_von: userDisplayName || null }).eq('id', s.id)
     setArbeitet(false)
-    if (error) { setFehler(t('nicht_gespeichert', { fehler: error.message })); return }
+    if (error) { setFehler(t('nicht_gespeichert', { fehler: error.message })); return error }
     logActivity('reel.skript', { entity: `${s.model_name} ${s.nr}`, detail: 'geschnitten' })
     onNeu()
+    return null
   }
   return (
     <div style={card}>
@@ -81,12 +83,14 @@ function SchnittKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
         <div style={spalte}>
           <span style={klein}>{t('sp_material')}</span>
           {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('drehzettel')}</a>}
-          <a href={s.video_link} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('rohvideo_laden')}</a>
+          <VideoLink href={s.video_link} laden bild style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('rohvideo_laden')}</VideoLink>
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t('hochgeladen', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}</span>
         </div>
         <div style={spalte}>
           <span style={klein}>{t('sp_fertig')}</span>
           <ZurueckHinweis s={s} t={t} an="cutter" />
+          <VideoHochladen skriptId={s.id} art="schnitt" farbe={V} text={t('schnitt_hochladen')} onFertig={(v) => speichern(v)}
+            gesperrt={vorschau} gesperrtText="Vorschau" />
           <input value={link} onChange={e => setLink(e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={eingabe} autoCapitalize="none" autoCorrect="off" inputMode="url" />
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t('schnitt_hinweis')}</span>
           <button type="button" disabled={arbeitet} onClick={speichern} style={{ ...knopf(V, true), alignSelf: 'flex-start' }}>{arbeitet ? t('speichert') : t('schnitt_fertig')}</button>
@@ -139,7 +143,7 @@ function FreigabeKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
       try {
         const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', s.model_name).maybeSingle()
         if (m?.telegram_id) {
-          const text = `Hey ${s.model_name} 👋 zu ${s.nr} „${s.titel}“: bitte nochmal drehen. ${notiz.trim()}\n\nDen neuen Link bitte im Portal unter „Social“ einfügen. Danke! 💛`
+          const text = `Hey ${s.model_name} 👋 zu ${s.nr} „${s.titel}“: bitte nochmal drehen. ${notiz.trim()}\n\nDas neue Video bitte im Portal unter „Social“ hochladen. Danke! 💛`
           const r = await sendTelegramMessage(m.telegram_id, text)
           await supabase.from('messages').insert({ model_name: s.model_name, model_telegram_id: m.telegram_id, direction: 'out', contact_type: 'model', message_type: 'announcement', text, status: zugestellt(r) ? 'sent' : 'failed', sent_by: userDisplayName })
         }
@@ -155,11 +159,11 @@ function FreigabeKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
         <div style={spalte}>
           <span style={klein}>{t('sp_ansehen')}</span>
-          <a href={endVideo(s)} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 800, fontSize: 14 }}>{t('fertiges_video')}</a>
+          <VideoLink href={endVideo(s)} bild style={{ color: C, fontWeight: 800, fontSize: 14 }}>{t('fertiges_video')}</VideoLink>
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
             {geschnitten ? t('geschnitten_von', { wer: s.schnitt_von || '—', datum: datum(s.schnitt_am) }) : t('ungeschnitten', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}
           </span>
-          {geschnitten && <a href={s.video_link} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('rohvideo_laden')}</a>}
+          {geschnitten && <VideoLink href={s.video_link} laden style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('rohvideo_laden')}</VideoLink>}
           {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('drehzettel')}</a>}
         </div>
         <div style={spalte}>

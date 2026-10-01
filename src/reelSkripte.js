@@ -74,8 +74,9 @@ export function seitVon(s) {
   return s.zurueck_an === 'model' && s.zurueck_am ? s.zurueck_am : s.erstellt_am
 }
 
-export const linkOk = (v) => /^https?:\/\/\S+\.\S+/i.test(String(v || '').trim())
-export const mitHttps = (v) => { const t = String(v || '').trim(); return !t ? '' : /^https?:\/\//i.test(t) ? t : `https://${t}` }
+// v5.7.0: „speicher://…“ = Video im eigenen Speicher (videoSpeicher.js)
+export const linkOk = (v) => /^https?:\/\/\S+\.\S+/i.test(String(v || '').trim()) || /^speicher:\/\/[a-z0-9-]+\/\S+$/.test(String(v || '').trim())
+export const mitHttps = (v) => { const t = String(v || '').trim(); return !t ? '' : /^(https?|speicher):\/\//i.test(t) ? t : `https://${t}` }
 
 // @handle aus einem Instagram-Link (Tracking-Anhänge wie ?igsh=… fallen weg)
 export const instaHandle = (url) => {

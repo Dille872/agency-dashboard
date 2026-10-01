@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { statusVon, endVideo, linkOk, mitHttps, instaHandle } from '../reelSkripte'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks' // v5.4.0
 import { useVorschau, vorschauSperre } from '../vorschau'
+import { VideoLink } from './VideoLink' // v5.7.0
 
 // ── Posting-Plan (v5.3.0) ──────────────────────────────────────────────────
 // Kalender pro Account und Tag für Reels und Stories. Links das Material
@@ -246,7 +247,7 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
           <b style={{ fontSize: 13, color: 'var(--text-primary)' }}>{uhr(z.geplant_am, loc)}</b>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({T.deine_zeit})</span>
           <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1, minWidth: 120 }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || '')} · <span style={{ color: P, fontWeight: 700 }}>{z.account}</span></span>
-          {z.video_link && <a href={mitHttps(z.video_link)} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{T.laden}</a>}
+          {z.video_link && <VideoLink href={mitHttps(z.video_link)} laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{T.laden}</VideoLink>}
           <KopierKnopf text={z.caption} T={{ ...T, kopieren: T.caption }} />
           <KopierKnopf text={z.hashtags} T={{ ...T, kopieren: T.hashtags }} />
           <button type="button" onClick={() => setOffen(z)} style={knopf(P, true)}>{T.oeffnen}</button>
@@ -338,7 +339,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
         </div>
         {zeile(T.titel, <input disabled={nurLesen} value={f.titel || ''} onChange={e => set('titel', e.target.value.slice(0, 120))} style={eingabe} />)}
         {zeile(T.video, <input disabled={nurLesen} value={f.video_link || ''} onChange={e => set('video_link', e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={eingabe} />,
-          f.video_link ? <a href={mitHttps(f.video_link)} target="_blank" rel="noreferrer" style={{ color: C, textTransform: 'none', letterSpacing: 0 }}>{T.laden}</a> : null)}
+          f.video_link ? <VideoLink href={mitHttps(f.video_link)} laden style={{ color: C, textTransform: 'none', letterSpacing: 0 }}>{T.laden}</VideoLink> : null)}
 
         {f.art === 'reel' && (<>
           {zeile(T.caption, <textarea disabled={nurLesen} rows={3} value={f.caption || ''} onChange={e => set('caption', e.target.value.slice(0, 2200))} style={{ ...eingabe, resize: 'vertical' }} />,

@@ -26,7 +26,8 @@ export const TEXTE = {
     sp_ansehen: '1 · Ansehen',
     sp_entscheidung: '2 · Entscheidung',
     rohvideo_laden: '⬇ Rohvideo laden',
-    schnitt_hinweis: 'Fertiges Video in Dropbox (o. Ä.) laden, Teilen-Link hier einfügen.',
+    schnitt_hinweis: 'Oder: fertiges Video in Dropbox (o. Ä.) laden und den Teilen-Link hier einfügen.',
+    schnitt_hochladen: '✂️ Geschnittenes Video hochladen', // v5.7.0
     schnitt_fertig: '✂️ Schnitt fertig',
     fehler_link: 'Bitte den kompletten Link einfügen.',
     fertiges_video: '▶ Fertiges Video ansehen',
@@ -132,7 +133,8 @@ export const TEXTE = {
     sp_ansehen: '1 · Review',
     sp_entscheidung: '2 · Decision',
     rohvideo_laden: '⬇ Download raw video',
-    schnitt_hinweis: 'Upload the final video to Dropbox (or similar) and paste the share link here.',
+    schnitt_hinweis: 'Or: upload the final video to Dropbox (or similar) and paste the share link here.',
+    schnitt_hochladen: '✂️ Upload edited video', // v5.7.0
     schnitt_fertig: '✂️ Edit done',
     fehler_link: 'Please paste the full link.',
     fertiges_video: '▶ Watch final video',
