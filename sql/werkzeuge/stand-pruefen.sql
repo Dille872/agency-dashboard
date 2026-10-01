@@ -1,0 +1,66 @@
+-- ============================================================================
+-- Stand prüfen: Welche SQL-Dateien sind in Supabase schon ausgeführt?
+-- ÄNDERT NICHTS, liest nur. Im SQL-Editor ausführen.
+-- Ergebnis: eine Zeile pro Datei, „ausgefuehrt“ = ja / NEIN.
+-- Geprüft wird jeweils das Erkennungszeichen der Datei (neue Spalte, Tabelle,
+-- Funktion oder Regel). NEIN heißt: Datei (nochmal) ausführen — alle Dateien
+-- sind wiederholbar.
+-- ============================================================================
+select datei, case when ok then 'ja' else 'NEIN' end as ausgefuehrt
+from (values
+  ('agentur-accounts.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='model_board' and column_name='von_agentur'))),
+  ('boards.sql', (to_regclass('public.boards') is not null)),
+  ('chatter-umbenennen.sql', (exists(select 1 from pg_proc where proname='chatter_umbenennen'))),
+  ('content-ablage.sql', (exists(select 1 from pg_constraint where conname='social_material_art_check' and pg_get_constraintdef(oid) like '%foto%'))),
+  ('gelesen-stand.sql', (to_regclass('public.gelesen_stand') is not null)),
+  ('kalender-abo.sql', (to_regclass('public.kalender_abos') is not null)),
+  ('messplan-lesen.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='messplan_lesen'))),
+  ('model-chatter-daily.sql', (to_regclass('public.model_chatter_daily') is not null)),
+  ('model-postet-selbst.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='model_social_service' and column_name='account_modus'))),
+  ('model-reise-und-zeitzone.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='model_board' and column_name='reise_geht'))),
+  ('model-social-profil.sql', (to_regclass('public.model_social_profil') is not null)),
+  ('model-steckbrief.sql', (to_regclass('public.model_steckbrief') is not null)),
+  ('model-termin-erreichbar.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='model_calendar' and column_name='end_time'))),
+  ('nicht-betreut.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='model_social_service' and column_name='nicht_betreut'))),
+  ('password-reset-fehlversuche.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='password_resets' and column_name='fehlversuche'))),
+  ('plan-beitragsarten.sql', (exists(select 1 from pg_constraint where conname='social_plan_art_check' and pg_get_constraintdef(oid) like '%karussell%'))),
+  ('plan-dateien.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='hex_text'))),
+  ('plan-model.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='model_social_service' and column_name='model_plant'))),
+  ('plan-vorschlaege.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='social_plan' and column_name='vorschlag_uebernommen'))),
+  ('posting-plan.sql', (to_regclass('public.social_material') is not null)),
+  ('reel-messfenster.sql', (to_regclass('public.reel_messfenster') is not null)),
+  ('reel-messwerte.sql', (to_regclass('public.reel_messwerte') is not null)),
+  ('reel-ohne-skript.sql', (to_regclass('public.reel_ohne_skript') is not null)),
+  ('reel-skripte.sql', (to_regclass('public.reel_skripte') is not null)),
+  ('reel-videos.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='reel_video_recht'))),
+  ('rls-stufe4-sperre-und-schreibschutz.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='darf_kontakte_pflegen'))),
+  ('rls-stufe5-notizen-nachrichten.sql', (exists(select 1 from pg_policies where tablename='notes' and policyname='notizen_lesen_staff_oder_eigene'))),
+  ('rls-stufe6-umfragen-rollen.sql', (exists(select 1 from pg_policies where tablename='survey_responses' and policyname='umfrage_lesen_staff_oder_eigene'))),
+  ('rls-stufe7-content-und-schichtlogs.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='meine_model_namen'))),
+  ('rollen-social-erlauben.sql', (not exists(select 1 from pg_constraint where conrelid='public.user_roles'::regclass and contype='c' and pg_get_constraintdef(oid) ~ '\mchatter\M' and pg_get_constraintdef(oid) !~ '\msocial_leitung\M'))),
+  ('schichtuebergabe-abschnitte.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='shift_logs' and column_name='handover_parts'))),
+  ('schichtuebergabe-empfaenger.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='shift_logs' and column_name='handover_for'))),
+  ('schichtuebergabe-index.sql', (to_regclass('public.shift_logs_handover_at_idx') is not null)),
+  ('schichtuebergabe-modelbezug.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='shift_logs' and column_name='handover_about'))),
+  ('schichtuebergabe.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='shift_logs' and column_name='handover_text'))),
+  ('shift-swaps-abgelaufen.sql', (exists(select 1 from pg_constraint where conname='shift_swaps_status_check' and pg_get_constraintdef(oid) like '%abgelaufen%'))),
+  ('signup-invites.sql', (to_regclass('public.signup_invites') is not null)),
+  ('social-chat.sql', (not exists(select 1 from pg_constraint where conrelid='public.messages'::regclass and contype='c' and pg_get_constraintdef(oid) ilike '%contact_type%' and pg_get_constraintdef(oid) !~* '\msocial\M'))),
+  ('social-leitung.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='ist_social_leitung'))),
+  ('social-manager.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='reel_skripte' and column_name='ziel_account'))),
+  ('social-schnitt.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='reel_skripte' and column_name='schnitt_link'))),
+  ('social-steuerung.sql', (to_regclass('public.social_account_poster') is not null)),
+  ('speicher-aufraeumen.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='videos_zum_aufraeumen'))),
+  ('sprache-kontakt.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='user_roles' and column_name='sprache'))),
+  ('storage-loeschen-nur-staff.sql', (exists(select 1 from pg_policies where schemaname='storage' and policyname='Staff kann Chat-Anhaenge loeschen'))),
+  ('team-kalender-ausbau.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='team_kalender' and column_name='model_name'))),
+  ('team-kalender-folgeaufgaben.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='team_kalender' and column_name='folge_von'))),
+  ('team-kalender-stufe2.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='online_status' and column_name='zeitzone'))),
+  ('team-kalender-wiederholung.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='team_kalender' and column_name='serie_id'))),
+  ('team-kalender.sql', (to_regclass('public.team_kalender') is not null)),
+  ('todos-frist.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='due_date'))),
+  ('todos-notified-at.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='notified_at'))),
+  ('wiederholung-mit-zeit.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='recurring_shifts' and column_name='time_override'))),
+  ('zeitzone-bestaetigt.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='online_status' and column_name='zeitzone_bestaetigt')))
+) as t(datei, ok)
+order by ok, datei;
