@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { istSpeicher, speicherUrl, videoHochladen } from '../videoSpeicher'
+import { istSpeicher, istBild, speicherUrl, videoHochladen, planDateiHochladen } from '../videoSpeicher'
 
 // ── Video-Link + Vorschaubild + Hochladen (v5.7.0) ─────────────────────────
 // VideoLink: wie <a href>, versteht aber auch „speicher://…“ (eigener
@@ -38,9 +38,9 @@ export function VideoBild({ href, onClick, hoehe = 64 }) {
   const box = { width: Math.round(hoehe * 9 / 16), height: hoehe, borderRadius: 8, background: 'var(--bg-card2)', flexShrink: 0, cursor: 'pointer', objectFit: 'cover', display: 'block' }
   if (!url) return <span style={box} />
   return (
-    <span onClick={onClick} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }} title="Video ansehen">
+    <span onClick={onClick} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }} title="Ansehen">
       <img src={url} alt="" style={box} onError={() => setWeg(true)} />
-      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16, textShadow: '0 1px 4px rgba(0,0,0,.7)', pointerEvents: 'none' }}>▶</span>
+      {!istBild(href) && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16, textShadow: '0 1px 4px rgba(0,0,0,.7)', pointerEvents: 'none' }}>▶</span>}
     </span>
   )
 }
@@ -76,5 +76,33 @@ export function VideoHochladen({ skriptId, art = 'roh', onFertig, text = '🎬 V
       {laeuft && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Bitte die Seite offen lassen. Bricht das Netz ab, geht es beim nächsten Versuch an derselben Stelle weiter.</div>}
       {fehler && <div style={{ fontSize: 12.5, color: '#ef4444' }}>{fehler}</div>}
     </div>
+  )
+}
+
+// v5.9.0: kleiner Knopf „⬆ Hochladen“ für Plan-Einträge (Reel-Video,
+// Story-Frame) und Material. Fotos oder Videos. onFertig(link) setzt nur das
+// Feld im Formular, gespeichert wird mit dem Eintrag.
+export function DateiHochladen({ model, account = null, onFertig, text = '⬆ Hochladen', nurVideo = false, farbe = '#06b6d4', gesperrt = false }) {
+  const input = useRef(null)
+  const [stand, setStand] = useState(null)
+  const [fehler, setFehler] = useState('')
+  const los = async (datei) => {
+    if (!datei) return
+    setFehler(''); setStand(0)
+    const r = await planDateiHochladen({ datei, model, account, onFortschritt: setStand })
+    setStand(null)
+    if (r.fehler) { setFehler(r.fehler); return }
+    onFertig(r.link)
+  }
+  const laeuft = stand !== null
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
+      <input ref={input} type="file" accept={nurVideo ? 'video/*' : 'image/*,video/*'} style={{ display: 'none' }} onChange={e => { const d = e.target.files?.[0]; e.target.value = ''; los(d) }} />
+      <button type="button" disabled={laeuft || gesperrt || !model} onClick={() => input.current?.click()}
+        style={{ padding: '6px 10px', borderRadius: 9, fontSize: 12, fontWeight: 800, cursor: laeuft || gesperrt ? 'not-allowed' : 'pointer', fontFamily: 'inherit', border: `1px solid ${farbe}`, background: 'transparent', color: farbe, whiteSpace: 'nowrap', opacity: gesperrt ? 0.45 : 1 }}>
+        {laeuft ? `${Math.round(stand * 100)} %` : text}
+      </button>
+      {fehler && <span style={{ fontSize: 11.5, color: '#ef4444', maxWidth: 260 }}>{fehler}</span>}
+    </span>
   )
 }

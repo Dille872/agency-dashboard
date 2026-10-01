@@ -17,7 +17,11 @@ const PRAEFIX = `speicher://${BUCKET}/`
 
 export const istSpeicher = (link) => String(link || '').startsWith(PRAEFIX)
 export const pfadVon = (link) => istSpeicher(link) ? String(link).slice(PRAEFIX.length) : null
-export const vorschauPfad = (link) => istSpeicher(link) ? pfadVon(link) + '.jpg' : null
+export const istBild = (link) => /\.(jpe?g|png|webp)$/i.test(String(link || '')) && !/\.[a-z0-9]{2,5}\.jpg$/i.test(String(link || ''))
+// Vorschau: Fotos sind ihr eigenes Vorschaubild, Videos haben „<datei>.jpg“ daneben
+export const vorschauPfad = (link) => istSpeicher(link) ? (istBild(link) ? pfadVon(link) : pfadVon(link) + '.jpg') : null
+const hex = (t) => Array.from(new TextEncoder().encode(String(t))).map(b => b.toString(16).padStart(2, '0')).join('')
+const zufall = () => Math.random().toString(36).slice(2, 8).padEnd(4, '0')
 
 const endung = (datei) => {
   const e = String(datei?.name || '').split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -49,14 +53,36 @@ export function vorschauMachen(datei, breite = 360) {
   })
 }
 
-// Hochladen. art: 'roh' (Model) oder 'schnitt' (Cutter).
+const istVideo = (d) => /^video\//.test(d?.type || '') || /\.(mp4|mov|m4v|webm|3gp)$/i.test(d?.name || '')
+const istFoto = (d) => /^image\//.test(d?.type || '') || /\.(jpe?g|png|webp|heic|heif)$/i.test(d?.name || '')
+
+// Hochladen eines Skript-Videos. art: 'roh' (Model) oder 'schnitt' (Cutter).
 // onFortschritt(0…1). Liefert { link } oder { fehler }.
 export async function videoHochladen({ datei, skriptId, art = 'roh', onFortschritt }) {
   if (!datei) return { fehler: 'Keine Datei gewählt.' }
-  if (!/^video\//.test(datei.type || '') && !/\.(mp4|mov|m4v|webm|3gp)$/i.test(datei.name || '')) return { fehler: 'Bitte ein Video auswählen.' }
+  if (!istVideo(datei)) return { fehler: 'Bitte ein Video auswählen.' }
+  return speicherHochladen({ datei, pfad: `skript/${skriptId}/${art}-${Date.now()}.${endung(datei)}`, onFortschritt })
+}
+
+// v5.9.0: Foto oder Video für den Posting-Plan (Reel/Story) bzw. fürs Material.
+// Mit account → Ablage für den Plan-Eintrag, ohne → Material des Models.
+export async function planDateiHochladen({ datei, model, account = null, onFortschritt }) {
+  if (!datei) return { fehler: 'Keine Datei gewählt.' }
+  if (!istVideo(datei) && !istFoto(datei)) return { fehler: 'Bitte ein Foto oder Video auswählen.' }
+  let d = datei
+  if (!istVideo(d)) {   // iPhone-Fotos (HEIC) → JPG
+    try { const { convertHeicIfNeeded } = await import('./imageUtils'); d = await convertHeicIfNeeded(d) } catch { /* Original versuchen */ }
+    if (/hei[cf]/i.test(d.type || '') || /\.hei[cf]$/i.test(d.name || '')) return { fehler: 'Dieses Foto-Format geht nicht. Bitte als JPG speichern.' }
+  }
+  const ext = istVideo(d) ? endung(d) : (/png/.test(d.type) ? 'png' : /webp/.test(d.type) ? 'webp' : 'jpg')
+  const name = `${Date.now()}-${zufall()}.${ext}`
+  const pfad = account ? `plan/${hex(model)}/${hex(account)}/${name}` : `material/${hex(model)}/${name}`
+  return speicherHochladen({ datei: d, pfad, onFortschritt, bildTyp: istVideo(d) ? null : (d.type || 'image/jpeg') })
+}
+
+async function speicherHochladen({ datei, pfad, onFortschritt, bildTyp = null }) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { fehler: 'Nicht angemeldet.' }
-  const pfad = `skript/${skriptId}/${art}-${Date.now()}.${endung(datei)}`
 
   const ergebnis = await new Promise((fertig) => {
     const up = new tus.Upload(datei, {
@@ -65,7 +91,7 @@ export async function videoHochladen({ datei, skriptId, art = 'roh', onFortschri
       headers: { authorization: `Bearer ${session.access_token}`, 'x-upsert': 'false' },
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
-      metadata: { bucketName: BUCKET, objectName: pfad, contentType: typVon(datei), cacheControl: '3600' },
+      metadata: { bucketName: BUCKET, objectName: pfad, contentType: bildTyp || typVon(datei), cacheControl: '3600' },
       chunkSize: 6 * 1024 * 1024, // von Supabase so vorgegeben
       onError: (e) => fertig({ fehler: meldung(e) }),
       onProgress: (gesendet, gesamt) => onFortschritt && onFortschritt(gesamt ? gesendet / gesamt : 0),
@@ -75,8 +101,8 @@ export async function videoHochladen({ datei, skriptId, art = 'roh', onFortschri
   })
   if (ergebnis.fehler) return ergebnis
 
-  // Vorschaubild (darf fehlen)
-  try {
+  // Vorschaubild für Videos (darf fehlen); Fotos sind selbst das Bild
+  if (!bildTyp) try {
     const bild = await vorschauMachen(datei)
     if (bild) await supabase.storage.from(BUCKET).upload(pfad + '.jpg', bild, { contentType: 'image/jpeg', upsert: false })
   } catch { /* ohne Bild weiter */ }
@@ -85,9 +111,9 @@ export async function videoHochladen({ datei, skriptId, art = 'roh', onFortschri
 
 function meldung(e) {
   const t = String(e?.originalResponse?.getBody?.() || e?.message || e || '')
-  if (/row-level security|403|Unauthorized/i.test(t)) return 'Keine Berechtigung, für dieses Skript hochzuladen.'
-  if (/413|too large|maximum allowed size|exceeded/i.test(t)) return 'Das Video ist zu groß.'
-  if (/mime|content type/i.test(t)) return 'Dieses Dateiformat geht nicht. Bitte MP4 oder MOV.'
+  if (/row-level security|403|Unauthorized/i.test(t)) return 'Keine Berechtigung, hier hochzuladen.'
+  if (/413|too large|maximum allowed size|exceeded/i.test(t)) return 'Die Datei ist zu groß.'
+  if (/mime|content type/i.test(t)) return 'Dieses Dateiformat geht nicht (Video: MP4 oder MOV, Foto: JPG oder PNG).'
   return 'Hochladen hat nicht geklappt: ' + t.slice(0, 160)
 }
 

@@ -3,7 +3,8 @@ import { supabase } from '../supabase'
 import { statusVon, endVideo, linkOk, mitHttps, instaHandle } from '../reelSkripte'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks' // v5.4.0
 import { useVorschau, vorschauSperre } from '../vorschau'
-import { VideoLink } from './VideoLink' // v5.7.0
+import { VideoLink, VideoBild, DateiHochladen } from './VideoLink' // v5.7.0 / v5.9.0
+import { istSpeicher } from '../videoSpeicher'
 
 // ── Posting-Plan (v5.3.0) ──────────────────────────────────────────────────
 // Kalender pro Account und Tag für Reels und Stories. Links das Material
@@ -75,6 +76,26 @@ const plusTage = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); 
 const gleicherTag = (a, b) => tagStart(a).getTime() === tagStart(b).getTime()
 const zuLokalInput = (iso) => { if (!iso) return ''; const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
 const uhr = (iso, loc) => new Date(iso).toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' })
+
+// v5.9.0: Link-Feld mit „⬆ Hochladen“. Hochgeladene Datei → Vorschaubild statt
+// „speicher://…“-Text. model/account bestimmen Ablage und Rechte (Material: ohne account).
+function LinkFeld({ value, onChange, model, account = null, nurLesen, placeholder, material = false }) {
+  if (istSpeicher(value)) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <VideoLink href={value} bild laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>⬇ laden</VideoLink>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>hochgeladen ✓</span>
+        {!nurLesen && <button type="button" onClick={() => onChange('')} title="Datei aus dem Eintrag nehmen" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>✕</button>}
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+      <input disabled={nurLesen} value={value || ''} onChange={e => onChange(e.target.value.slice(0, 500))} placeholder={placeholder} style={{ ...eingabe, flex: 1, minWidth: 0 }} />
+      {!nurLesen && <DateiHochladen model={model} account={material ? null : account} gesperrt={!model || (!material && !account)} onFertig={onChange} />}
+    </div>
+  )
+}
 
 async function kopiere(text) { try { await navigator.clipboard.writeText(text || ''); return true } catch { return false } }
 
@@ -166,7 +187,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
           {materialListe.slice(0, 40).map(x => (
             <button key={x.key} type="button" disabled={!darfPlanen} onClick={() => einplanen(x)}
               style={{ display: 'flex', gap: 8, alignItems: 'center', textAlign: 'left', padding: 8, borderRadius: 11, background: 'var(--bg-card2)', border: '1px solid var(--border)', cursor: darfPlanen ? 'pointer' : 'default', fontFamily: 'inherit', color: 'var(--text-primary)' }}>
-              <span style={{ width: 30, height: 40, borderRadius: 7, background: artFarbe(x.art) + '33', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{x.art === 'story' ? '📷' : '🎬'}</span>
+              {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={40} /> : <span style={{ width: 30, height: 40, borderRadius: 7, background: artFarbe(x.art) + '33', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{x.art === 'story' ? '📷' : '🎬'}</span>}
               <span style={{ minWidth: 0 }}>
                 <b style={{ display: 'block', fontSize: 12.5 }}>{x.titel}</b>
                 <span style={pill(artFarbe(x.art))}>{x.art === 'story' ? T.story : T.reel}</span> <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{x.model} · {x.quelle}</span>
@@ -338,8 +359,8 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
           {zeile(`${T.wann} (${T.deine_zeit})`, <input disabled={nurLesen} type="datetime-local" value={zeit} onChange={e => setZeit(e.target.value)} style={eingabe} />)}
         </div>
         {zeile(T.titel, <input disabled={nurLesen} value={f.titel || ''} onChange={e => set('titel', e.target.value.slice(0, 120))} style={eingabe} />)}
-        {zeile(T.video, <input disabled={nurLesen} value={f.video_link || ''} onChange={e => set('video_link', e.target.value.slice(0, 500))} placeholder="https://www.dropbox.com/…" style={eingabe} />,
-          f.video_link ? <VideoLink href={mitHttps(f.video_link)} laden style={{ color: C, textTransform: 'none', letterSpacing: 0 }}>{T.laden}</VideoLink> : null)}
+        {zeile(T.video, <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder="https://www.dropbox.com/… oder hochladen" />,
+          f.video_link && !istSpeicher(f.video_link) ? <VideoLink href={mitHttps(f.video_link)} laden style={{ color: C, textTransform: 'none', letterSpacing: 0 }}>{T.laden}</VideoLink> : null)}
 
         {f.art === 'reel' && (<>
           {zeile(T.caption, <textarea disabled={nurLesen} rows={3} value={f.caption || ''} onChange={e => set('caption', e.target.value.slice(0, 2200))} style={{ ...eingabe, resize: 'vertical' }} />,
@@ -372,7 +393,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '26px 1fr', gap: 6, alignItems: 'start', background: 'var(--bg-card2)', borderRadius: 10, padding: 7 }}>
               <b style={{ color: V, textAlign: 'center', paddingTop: 7 }}>{i + 1}</b>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <input disabled={nurLesen} value={x.link || ''} onChange={e => set('frames', f.frames.map((y, j) => j === i ? { ...y, link: e.target.value.slice(0, 500) } : y))} placeholder={T.frame_link} style={eingabe} />
+                <LinkFeld value={x.link} onChange={v => set('frames', f.frames.map((y, j) => j === i ? { ...y, link: v } : y))} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={T.frame_link} />
                 <input disabled={nurLesen} value={x.text || ''} onChange={e => set('frames', f.frames.map((y, j) => j === i ? { ...y, text: e.target.value.slice(0, 200) } : y))} placeholder={T.frame_text} style={eingabe} />
                 <div style={{ display: 'flex', gap: 6 }}>
                   <input disabled={nurLesen} value={x.sticker || ''} onChange={e => set('frames', f.frames.map((y, j) => j === i ? { ...y, sticker: e.target.value.slice(0, 200) } : y))} placeholder={T.frame_sticker} style={eingabe} />
@@ -443,7 +464,7 @@ export function MaterialFenster({ models = [], T: Taus, sprache = 'de', userDisp
         {!festesModel && models.length > 1 && <select value={model} onChange={e => setModel(e.target.value)} style={eingabe}><option value="">{T.model} …</option>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>}
         <div style={{ display: 'flex', gap: 6 }}>{['reel', 'story'].map(a => <button key={a} type="button" onClick={() => setArt(a)} style={{ ...knopf(artFarbe(a), art === a), padding: '5px 12px' }}>{a === 'story' ? T.story : T.reel}</button>)}</div>
         <input value={titel} onChange={e => setTitel(e.target.value)} placeholder={T.titel} style={eingabe} />
-        <input value={link} onChange={e => setLink(e.target.value)} placeholder={T.video + ' (Dropbox, Google Drive …)'} inputMode="url" autoCapitalize="none" style={eingabe} />
+        <LinkFeld value={link} onChange={setLink} model={model} material placeholder={T.video + ' (Link oder hochladen)'} />
         <input value={notiz} onChange={e => setNotiz(e.target.value)} placeholder={T.notiz} style={eingabe} />
         {fehler && <div style={{ fontSize: 12.5, color: ROT }}>{fehler}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
