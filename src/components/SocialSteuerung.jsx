@@ -7,7 +7,7 @@ import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
 import { SkriptKarte } from './ReelSkripteAdmin'
-import { statusVon, instaHandle, skriptAnlegen, dateinameLesen, agenturAccountAnlegen, cutterSetzen, seitVon, modusSetzen } from '../reelSkripte'
+import { statusVon, instaHandle, skriptAnlegen, dateinameLesen, agenturAccountAnlegen, cutterSetzen, seitVon, modusSetzen, platzhalterListe, platzhalterAnlegen, platzhalterUmstellen } from '../reelSkripte'
 import { serviceSpeichern } from '../socialProfil'
 
 // ── Social-Steuerung (v4.103.0) — nur für Admins/Manager ──────────────────
@@ -44,11 +44,15 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
   const [upload, setUpload] = useState(null)               // null | { model, account }
   const [ausOffen, setAusOffen] = useState(false)          // v4.105.0
   const [neuAccount, setNeuAccount] = useState(null)       // v4.104.0: null | '' | Model-Name (vorbelegt)
+  const [umstellen, setUmstellen] = useState(null)         // v5.20.0: { model, handle, name } Platzhalter → echter Account
   const [hinweis, setHinweis] = useState('')
 
   const laden = useCallback(async () => {
     // v5.4.0: model_plant (Schalter „Model plant mit“) — ohne sql/plan-model.sql gibt es die Spalte noch nicht
-    let s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus, model_plant').eq('service_aktiv', true).order('model_name')
+    // v5.20.0: platzhalter (sql/platzhalter-accounts.sql) — ohne die Spalte wie vorher
+    let s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus, model_plant, platzhalter').eq('service_aktiv', true).order('model_name')
+    const platzhalterDa = !s.error
+    if (s.error) s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus, model_plant').eq('service_aktiv', true).order('model_name')
     const planSchalter = !s.error
     if (s.error) s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, nicht_betreut, account_modus').eq('service_aktiv', true).order('model_name')
     const z = await supabase.from('social_account_poster').select('*')
@@ -72,6 +76,10 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
       const h = instaHandle(x.content)
       if (!m.accounts.some(a => a.handle === h)) m.accounts.push({ handle: h, url: /^https?:\/\//i.test(x.content) ? x.content : `https://${x.content}`, imBoard: true, agentur: !!x.von_agentur })
     }
+    // v5.20.0: Platzhalter wie Accounts behandeln (vor „nachtragen“, sonst kämen sie als „nicht mehr im Board“)
+    for (const m of Object.values(models)) for (const p of platzhalterListe(m)) {
+      if (!m.accounts.some(a => a.handle.toLowerCase() === p.handle.toLowerCase())) m.accounts.push({ handle: p.handle, name: p.name, url: null, imBoard: true, platzhalter: true })
+    }
     const skripte = (sk.data || [])
     // Accounts, die nur noch in Skripten oder Zuteilungen stehen (Link aus dem Board entfernt)
     const nachtragen = (model, h) => { const m = models[model]; if (m && h && !m.accounts.some(a => a.handle === h)) m.accounts.push({ handle: h, url: null, imBoard: false }) }
@@ -92,14 +100,14 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
     const teamRollen = Object.fromEntries(aktivNutzer.map(x => [x.display_name, x.roles || []]))
     const sp = await supabase.from('user_roles').select('display_name, sprache').in('display_name', aktivNutzer.map(x => x.display_name))
     const teamSprache = Object.fromEntries((sp.error ? [] : (sp.data || [])).map(x => [x.display_name, x.sprache]))
-    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error, messwerte, messFehlt: !!mw.error, teamRollen, teamSprache, planSchalter })
+    setD({ fehlt: false, models, zuteilung: z.data || [], cutterZ, skripte, poster, cutter, schnittFehlt: !!cu.error, messwerte, messFehlt: !!mw.error, teamRollen, teamSprache, planSchalter, platzhalterDa })
   }, [])
   useEffect(() => { laden() }, [laden])
 
   if (!d) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Lädt …</div>
   if (d.fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Steuerung: Datenbank noch nicht eingerichtet. Einmal <code>sql/social-steuerung.sql</code> ausführen.</div>
 
-  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt, messwerte, messFehlt, teamRollen = {}, teamSprache = {}, planSchalter = false } = d
+  const { models, zuteilung, cutterZ, skripte, poster, cutter, schnittFehlt, messwerte, messFehlt, teamRollen = {}, teamSprache = {}, planSchalter = false, platzhalterDa = false } = d
   // v5.2.0: kleiner Knopf „👁 Ansicht“ auf jeder Team-Karte
   const ansichtKnopf = (name) => onVorschau && (
     <button type="button" title={`So sieht ${name} die Seite (nur ansehen)`} onClick={() => onVorschau({ name, rollen: (teamRollen[name] || []).filter(r => ['social_media', 'cutter', 'chatter'].includes(r)), sprache: teamSprache[name] || 'de' })}
@@ -114,6 +122,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
   const cutterVon = (m, a) => cutterZ.filter(z => z.model_name === m && z.account === a).map(z => z.cutter_name)
   const zeilen = Object.values(models).flatMap(m => m.accounts.filter(a => a.betreut).map(a => ({ model: m, acc: a })))
   const zeilenAus = Object.values(models).flatMap(m => m.accounts.filter(a => !a.betreut).map(a => ({ model: m, acc: a })))
+  const zeilenEcht = zeilen.filter(z => !z.acc.platzhalter)   // v5.20.0: ohne Platzhalter (Messung, Reels ohne Skript)
   const ohneZiel = aktiv.filter(s => !s.ziel_account && statusVon(s) !== 'gepostet')
 
   const zuPosten = aktiv.filter(s => statusVon(s) === 'bereit')
@@ -122,7 +131,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
   const fehlt = aktiv.filter(s => statusVon(s) === 'freigegeben')
   const gepostet7 = aktiv.filter(s => statusVon(s) === 'gepostet' && tageSeit(s.gepostet_am) <= 7)
   const postetSelbst = (m, a) => m.account_modus?.[a]?.posten === 'model'   // v4.108.0
-  const ohnePoster = zeilen.filter(z => !postetSelbst(z.model, z.acc.handle) && !posterVon(z.model.model_name, z.acc.handle).length)
+  const ohnePoster = zeilenEcht.filter(z => !postetSelbst(z.model, z.acc.handle) && !posterVon(z.model.model_name, z.acc.handle).length)
 
   const zuteilen = async (model, account, name) => {
     if (!name) return
@@ -262,7 +271,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
           <div key={k} style={{ borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 8px', fontSize: 13 }}>
             <span style={{ minWidth: 80, color: 'var(--text-primary)' }}>{m.model_name}</span>
-            <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>{m.accounts.length ? '⚠ im Service, aber alle Accounts sind „nicht betreut“.' : '⚠ im Service, aber noch kein Instagram-Account. Drehzettel gehen trotzdem schon; Poster sehen sie erst, wenn ein Account da ist.'}</span>
+            <span style={{ flex: 1, minWidth: 200, color: A, fontSize: 12.5 }}>{m.accounts.length ? '⚠ im Service, aber alle Accounts sind „nicht betreut“.' : '⚠ im Service, aber noch kein Instagram-Account. Drehzettel gehen trotzdem schon. Zum Planen: „+ Account“ → „🚧 Noch nicht angelegt“ (Platzhalter).'}</span>
             <button type="button" onClick={() => setUpload({ model: m.model_name, account: '' })} style={{ ...knopf(C, false), padding: '4px 9px', fontSize: 12 }}>📄 +</button>
             {darfBoard && <button type="button" onClick={() => setNeuAccount(m.model_name)} style={{ ...knopf(P, false), padding: '5px 10px', fontSize: 12 }}>+ Account für {m.model_name}</button>}
             <button type="button" onClick={() => setOffenZeile(auf ? null : k)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 9px', fontSize: 12 }}>{auf ? '▴' : '▾'} {nOffen} Drehzettel</button>
@@ -309,8 +318,13 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
                       <tr>
                         <td style={td}>{m.model_name}</td>
                         <td style={td}>
-                          {acc.url ? <a href={acc.url} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 700 }}>{acc.handle}</a> : <span style={{ color: P, fontWeight: 700 }}>{acc.handle}</span>}
+                          {acc.platzhalter ? <span style={{ color: P, fontWeight: 700 }}>{acc.name || acc.handle}</span>
+                            : acc.url ? <a href={acc.url} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 700 }}>{acc.handle}</a> : <span style={{ color: P, fontWeight: 700 }}>{acc.handle}</span>}
                           {acc.agentur && <span style={{ ...pill(L), marginLeft: 6 }}>Agentur</span>}
+                          {/* v5.20.0: Platzhalter — echten Account später eintragen */}
+                          {acc.platzhalter && <div style={{ fontSize: 11, color: A, fontWeight: 700 }}>🚧 noch nicht angelegt</div>}
+                          {acc.platzhalter && darfBoard && <button type="button" onClick={() => setUmstellen({ model: m.model_name, handle: acc.handle, name: acc.name })}
+                            style={{ marginTop: 3, display: 'block', background: 'transparent', border: `1px solid ${P}`, color: P, borderRadius: 7, fontSize: 11, fontWeight: 800, padding: '2px 7px', cursor: 'pointer', fontFamily: 'inherit' }}>Echten Account eintragen</button>}
                           {notiz && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{notiz}</div>}
                           {/* v5.10.0: Zeitzone für den Posting-Plan */}
                           <select value={m.account_modus?.[acc.handle]?.zeitzone || STANDARD} onChange={e => zoneSetzen(m, acc.handle, e.target.value)} title="Zeitzone im Posting-Plan"
@@ -320,7 +334,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
                           {!acc.imBoard && <div style={{ fontSize: 11, color: A }}>nicht mehr im Board</div>}
                         </td>
                         <td style={td}>
-                          {postetSelbst(m, acc.handle) ? (
+                          {acc.platzhalter ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>— erst beim echten Account</span> : postetSelbst(m, acc.handle) ? (
                             <button type="button" onClick={() => modelPostet(m, acc.handle, false)} title="Wieder vom Team posten lassen"
                               style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 12, background: 'rgba(16,185,129,0.16)', color: G, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>📱 {m.model_name} postet selbst ✕</button>
                           ) : (
@@ -341,7 +355,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
                           )}
                         </td>
                         <td style={td}>
-                          {postetSelbst(m, acc.handle) ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>— schneidet selbst</span> : (
+                          {acc.platzhalter ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>—</span> : postetSelbst(m, acc.handle) ? <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>— schneidet selbst</span> : (
                           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                             {cs.map(c => (
                               <button key={c} type="button" onClick={() => cutterEntfernen(m.model_name, acc.handle, c)} title="Entfernen"
@@ -494,7 +508,7 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
       </>)}
 
       {/* v5.5.0: Wirkung als Kurve je Account, oben */}
-      {ansicht === 'wirkung' && <WirkungKurven accounts={zeilen.map(({ acc }) => acc.handle)} userDisplayName={userDisplayName} />}
+      {ansicht === 'wirkung' && <WirkungKurven accounts={zeilenEcht.map(({ acc }) => acc.handle)} userDisplayName={userDisplayName} />}
 
       {/* Zuletzt gepostet */}
       {ansicht === 'wirkung' && (
@@ -538,13 +552,15 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
         })()}
         {/* v4.109.0: Reels ohne Skript eintragen */}
         <div style={{ marginTop: 14 }}>
-          <ReelsOhneSkript userDisplayName={userDisplayName} istAdmin accounts={zeilen.map(({ model, acc }) => ({ model: model.model_name, handle: acc.handle, notiz: (model.account_notizen || {})[acc.handle] || '' }))} />
+          <ReelsOhneSkript userDisplayName={userDisplayName} istAdmin accounts={zeilenEcht.map(({ model, acc }) => ({ model: model.model_name, handle: acc.handle, notiz: (model.account_notizen || {})[acc.handle] || '' }))} />
         </div>
         {/* v5.5.0: Tabelle „Wirkung, letzte 30 Tage“ ersetzt durch WirkungKurven oben */}
       </div>
       )}
 
-      {neuAccount !== null && <AccountFenster models={models} startModel={neuAccount} wer={userDisplayName} onZu={(neu) => { setNeuAccount(null); if (neu) { setHinweis(`✓ ${neu} angelegt. Jetzt einen Poster zuteilen.`); laden() } }} />}
+      {neuAccount !== null && <AccountFenster models={models} startModel={neuAccount} wer={userDisplayName} platzhalterDa={platzhalterDa}
+        onZu={(neu) => { setNeuAccount(null); if (neu) { setHinweis(neu.startsWith('🚧') ? `✓ ${neu.slice(2)} angelegt. Ihr könnt jetzt planen und Content sammeln; den echten Account tragt ihr später ein.` : `✓ ${neu} angelegt. Jetzt einen Poster zuteilen.`); laden() } }} />}
+      {umstellen && <UmstellenFenster start={umstellen} wer={userDisplayName} onZu={(text) => { setUmstellen(null); if (text) { setHinweis(text); laden() } }} />}
       {upload && <UploadFenster start={upload} models={models} wer={userDisplayName} onZu={(neu) => { setUpload(null); if (neu) { setHinweis(`✓ ${neu} Drehzettel angelegt.`); laden() } }} />}
     </div>
   )
@@ -653,15 +669,29 @@ function UploadFenster({ start, models, wer, onZu }) {
 // ── v4.104.0: eigenen Instagram-Account anlegen (z. B. US) ─────────────────
 // Landet im Board des Models (markiert „Agentur“, nur Staff darf ändern),
 // optional gleich mit Kurzbeschreibung.
-function AccountFenster({ models, startModel = '', wer, onZu }) {
+// v5.20.0: zweite Art „noch nicht angelegt“ → Platzhalter (Name statt Handle)
+function AccountFenster({ models, startModel = '', wer, onZu, platzhalterDa = false }) {
   const namen = Object.keys(models)
   const [model, setModel] = useState(startModel || (namen.length === 1 ? namen[0] : ''))
+  const [art, setArt] = useState('echt')   // 'echt' | 'platzhalter'
   const [handle, setHandle] = useState('')
+  const [pname, setPname] = useState('')
   const [notiz, setNotiz] = useState('')
   const [fehler, setFehler] = useState('')
   const [arbeitet, setArbeitet] = useState(false)
   const anlegen = async () => {
     setArbeitet(true); setFehler('')
+    if (art === 'platzhalter') {
+      const r = await platzhalterAnlegen(model, pname || `${model} · neuer Account`, wer)
+      if (r.fehler) { setArbeitet(false); setFehler(r.fehler); return }
+      if (notiz.trim()) {
+        const alt = models[model]?.account_notizen || {}
+        await serviceSpeichern(model, { account_notizen: { ...alt, [r.handle]: notiz.trim().slice(0, 60) } }, wer)
+      }
+      setArbeitet(false)
+      onZu('🚧' + r.name)
+      return
+    }
     const r = await agenturAccountAnlegen(model, handle, wer)
     if (r.fehler) { setArbeitet(false); setFehler(r.fehler); return }
     if (notiz.trim()) {
@@ -676,19 +706,59 @@ function AccountFenster({ models, startModel = '', wer, onZu }) {
     <div onClick={() => !arbeitet && onZu(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Account anlegen" style={{ width: 'min(440px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 10, boxSizing: 'border-box' }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>+ Instagram-Account</div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>Für Accounts, die ihr selbst anlegt (z. B. US). Er steht danach im Board des Models unter „Social Media Kanäle“, markiert als „Agentur“. Chatter und Model sehen ihn, ändern können ihn nur Admins.</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" onClick={() => setArt('echt')} style={{ ...knopf(P, art === 'echt'), flex: 1, padding: '8px 6px' }}>Account gibt es schon</button>
+          <button type="button" onClick={() => platzhalterDa && setArt('platzhalter')} title={platzhalterDa ? undefined : 'Erst sql/platzhalter-accounts.sql ausführen'} style={{ ...knopf(A, art === 'platzhalter'), flex: 1, padding: '8px 6px', opacity: platzhalterDa ? 1 : 0.45 }}>🚧 Noch nicht angelegt</button>
+        </div>
+        {art === 'echt' ? (
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>Für Accounts, die ihr selbst anlegt (z. B. US). Er steht danach im Board des Models unter „Social Media Kanäle“, markiert als „Agentur“. Chatter und Model sehen ihn, ändern können ihn nur Admins.</div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>Platzhalter für einen Account, der erst noch erstellt wird. Ihr könnt damit schon planen, Content sammeln und Drehzettel zuordnen. Poster sehen ihn noch nicht. Sobald es den Account gibt: „Echten Account eintragen“ — dann wandert alles mit.</div>
+        )}
         <select value={model} onChange={e => setModel(e.target.value)} style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }}>
           <option value="">Model wählen …</option>
           {namen.map(n => <option key={n} value={n}>{n}</option>)}
         </select>
-        <input value={handle} onChange={e => setHandle(e.target.value.slice(0, 200))} placeholder="@name oder Instagram-Link" style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} autoCapitalize="none" autoCorrect="off" />
+        {art === 'echt'
+          ? <input value={handle} onChange={e => setHandle(e.target.value.slice(0, 200))} placeholder="@name oder Instagram-Link" style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} autoCapitalize="none" autoCorrect="off" />
+          : <input value={pname} onChange={e => setPname(e.target.value.slice(0, 40))} placeholder={`Name, z. B. ${model || 'Dina'} · Haupt-Account`} style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} />}
         <input value={notiz} onChange={e => setNotiz(e.target.value.slice(0, 60))} placeholder="Kurzbeschreibung, z. B. US · bitte Englisch" style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} />
         {fehler && <div role="alert" style={{ fontSize: 12.5, color: ROT }}>{fehler}</div>}
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" disabled={arbeitet} onClick={() => onZu(null)} style={{ ...knopf('var(--text-muted)', false), flex: 1, padding: 11 }}>Abbrechen</button>
-          <button type="button" disabled={arbeitet || !model || !handle.trim()} onClick={anlegen} style={{ ...knopf(P, true), flex: 2, padding: 11, fontSize: 14, opacity: model && handle.trim() ? 1 : 0.5 }}>{arbeitet ? 'Legt an …' : 'Anlegen'}</button>
+          <button type="button" disabled={arbeitet || !model || (art === 'echt' && !handle.trim())} onClick={anlegen} style={{ ...knopf(art === 'echt' ? P : A, true), flex: 2, padding: 11, fontSize: 14, opacity: model && (art !== 'echt' || handle.trim()) ? 1 : 0.5 }}>{arbeitet ? 'Legt an …' : art === 'echt' ? 'Anlegen' : 'Platzhalter anlegen'}</button>
         </div>
         {!namen.length && <div style={{ fontSize: 12, color: A }}>Noch kein Model im Service. Erst beim Model „Im Social-Media-Service“ setzen.</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── v5.20.0: Platzhalter → echter Account ──────────────────────────────────
+function UmstellenFenster({ start, wer, onZu }) {
+  const [handle, setHandle] = useState('')
+  const [fehler, setFehler] = useState('')
+  const [arbeitet, setArbeitet] = useState(false)
+  const los = async () => {
+    setArbeitet(true); setFehler('')
+    const r = await platzhalterUmstellen(start.model, start.handle, handle, wer)
+    setArbeitet(false)
+    if (r.fehler) { setFehler(r.fehler); return }
+    onZu(`✓ ${start.name || start.handle} ist jetzt ${r.handle}. Umgestellt: ${r.plan ?? 0} Beiträge im Plan, ${r.skripte ?? 0} Drehzettel. Jetzt einen Poster zuteilen.`)
+  }
+  return (
+    <div onClick={() => !arbeitet && onZu(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Echten Account eintragen" style={{ width: 'min(440px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 10, boxSizing: 'border-box' }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>Echten Account eintragen</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          <b>{start.name || start.handle}</b> ({start.model}) wird zum echten Instagram-Account. Alles wandert mit: geplante Beiträge, Drehzettel, Zeitzone und Kurzbeschreibung. Der Account kommt ins Board des Models (markiert „Agentur“).
+        </div>
+        <input autoFocus value={handle} onChange={e => setHandle(e.target.value.slice(0, 200))} placeholder="@name oder Instagram-Link" style={{ ...eingabe, fontSize: 13.5, padding: '9px 10px' }} autoCapitalize="none" autoCorrect="off" />
+        {fehler && <div role="alert" style={{ fontSize: 12.5, color: ROT }}>{fehler}</div>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" disabled={arbeitet} onClick={() => onZu(null)} style={{ ...knopf('var(--text-muted)', false), flex: 1, padding: 11 }}>Abbrechen</button>
+          <button type="button" disabled={arbeitet || !handle.trim()} onClick={los} style={{ ...knopf(P, true), flex: 2, padding: 11, fontSize: 14, opacity: handle.trim() ? 1 : 0.5 }}>{arbeitet ? 'Stellt um …' : 'Umstellen'}</button>
+        </div>
       </div>
     </div>
   )

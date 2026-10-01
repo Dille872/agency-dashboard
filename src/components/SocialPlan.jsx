@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
-import { statusVon, endVideo, linkOk, mitHttps, instaHandle } from '../reelSkripte'
+import { statusVon, endVideo, linkOk, mitHttps, instaHandle, istPlatzhalter, platzhalterListe } from '../reelSkripte'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks' // v5.4.0
 import { useVorschau, vorschauSperre } from '../vorschau'
 import { VideoLink, VideoBild, DateiHochladen } from './VideoLink' // v5.7.0 / v5.9.0
@@ -40,7 +40,7 @@ const TX = {
     fertig: 'Fertig', auswahl_weg: 'Auswahl aufheben', hier_einfuegen: '⧉ hier einfügen', hier_einplanen: '⤵ hier einplanen', kopieren_knopf: '⧉ Kopieren',
     zieh_tipp: 'Tipp: Content oder Beiträge per Ziehen auf einen Tag legen. Ein Beitrag lässt sich so auch verschieben.', karussell_n: (n) => `Karussell · ${n}`, hoch_foto: '⬆ Foto hochladen', hoch_karussell: '⬆ Fotos/Videos hinzufügen (auch mehrere)', karussell_tipp: 'Reihenfolge = wie hier von links nach rechts (1 kommt zuerst). Mit ← → verschieben. Bis zu 20 Teile.', beitrag_link: 'Link zum Beitrag (optional)', beitrag_gepostet: 'Gepostet ✓', geplant: 'geplant', gepostet: 'gepostet',
     neu: '+ Beitrag', einplanen: 'Einplanen', speichern: 'Speichern', abbrechen: 'Abbrechen', loeschen: 'Löschen',
-    richtwert: '⏰ Richtwert: etwas früher oder später ist okay.', schliessen: 'Schließen',
+    richtwert: '⏰ Richtwert: etwas früher oder später ist okay.', schliessen: 'Schließen', platzhalter_info: '🚧 Der Account wird gerade erst angelegt. Posten geht, sobald der echte Account eingetragen ist (Steuerung → „Echten Account eintragen“).',
     loeschen_frage: 'Diesen Eintrag aus dem Plan löschen?', art: 'Art', account: 'Account', wann: 'Wann', titel: 'Titel',
     video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', hoch_frames: '⬆ Fotos/Videos hinzufügen (auch mehrere)', story_tipp: 'Jede Datei wird ein eigener Frame, in der Reihenfolge der Auswahl.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
     frames: 'Story-Frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (Umfrage, Link …)', frame_link: 'Material-Link',
@@ -70,7 +70,7 @@ const TX = {
     fertig: 'Done', auswahl_weg: 'Clear selection', hier_einfuegen: '⧉ paste here', hier_einplanen: '⤵ schedule here', kopieren_knopf: '⧉ Copy',
     zieh_tipp: 'Tip: drag content or posts onto a day. Posts can be moved that way too.', karussell_n: (n) => `Carousel · ${n}`, hoch_foto: '⬆ Upload photo', hoch_karussell: '⬆ Add photos/videos (several at once)', karussell_tipp: 'Order = left to right as shown (1 comes first). Move with ← →. Up to 20 items.', beitrag_link: 'Link to the post (optional)', beitrag_gepostet: 'Posted ✓', geplant: 'scheduled', gepostet: 'posted',
     neu: '+ Post', einplanen: 'Schedule', speichern: 'Save', abbrechen: 'Cancel', loeschen: 'Delete',
-    richtwert: '⏰ Guideline: a bit earlier or later is fine.', schliessen: 'Close',
+    richtwert: '⏰ Guideline: a bit earlier or later is fine.', schliessen: 'Close', platzhalter_info: '🚧 This account is still being set up. Posting works once the real account is added.',
     loeschen_frage: 'Delete this entry from the calendar?', art: 'Type', account: 'Account', wann: 'When', titel: 'Title',
     video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', hoch_frames: '⬆ Add photos/videos (several at once)', story_tipp: 'Each file becomes its own frame, in the order selected.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
     frames: 'Story frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (poll, link …)', frame_link: 'Material link',
@@ -507,8 +507,8 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
             return (
               <button key={k} type="button" onClick={() => { if (!an) { setFilter(k); setAuswahl([]); setPlatzhalterAuf(false) } }}
                 style={{ flexShrink: 0, padding: '7px 12px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${an ? P : 'var(--border)'}`, background: an ? P : 'transparent', color: an ? '#fff' : 'var(--text-secondary)', fontSize: 13, fontWeight: 800, whiteSpace: 'nowrap', textAlign: 'left', lineHeight: 1.2 }}>
-                {a.handle}
-                <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: 0.8 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</span>
+                {a.name || a.handle}
+                <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: 0.8 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}{a.platzhalter ? ' · 🚧 noch nicht angelegt' : ''}</span>
               </button>
             )
           })}
@@ -603,7 +603,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               <b style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{tage[tagWahl].toLocaleDateString(loc, { weekday: 'long', day: '2-digit', month: '2-digit' })}</b>
               {sichtbar.map(a => (
                 <div key={a.model + a.handle} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 800, color: P }}>{a.handle}<span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> · {a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</span></div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: P }}>{a.name || a.handle}{a.platzhalter ? ' 🚧' : ''}<span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> · {a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</span></div>
                   {zelle(a, tage[tagWahl], tagWahl)}
                 </div>
               ))}
@@ -615,7 +615,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               {tage.map((d, i) => <div key={i} style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: gleicherTag(d, new Date()) ? P : 'var(--text-secondary)', padding: '3px 0' }}>{T.tage[i]} {d.getDate()}.</div>)}
               {sichtbar.map(a => (
                 <React.Fragment key={a.model + a.handle}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: P, padding: '6px 2px', wordBreak: 'break-all' }}>{a.handle}<div style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</div></div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: P, padding: '6px 2px', wordBreak: 'break-all' }}>{a.name || a.handle}{a.platzhalter && <div style={{ color: A, fontWeight: 700, fontSize: 10.5 }}>🚧 noch nicht angelegt</div>}<div style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</div></div>
                   {tage.map((d, i) => <React.Fragment key={i}>{zelle(a, d, i)}</React.Fragment>)}
                 </React.Fragment>
               ))}
@@ -749,7 +749,7 @@ function PlanFenster({ start, accounts, T, loc, darf, darfPosten = null, userDis
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {zeile(T.account, <select disabled={nurLesen} value={accWert} onChange={e => { const [m, h] = e.target.value.split('|'); setF(x => ({ ...x, model_name: m, account: h })) }} style={eingabe}>
             <option value="">—</option>
-            {accounts.map(a => <option key={a.model + a.handle} value={a.model + '|' + a.handle}>{a.handle} · {a.model}</option>)}
+            {accounts.map(a => <option key={a.model + a.handle} value={a.model + '|' + a.handle}>{a.name || a.handle} · {a.model}</option>)}
           </select>)}
           {zeile(`${T.wann} (${zoneJetzt === STANDARD ? T.de_zeit : T.zeit_von(zoneKurz(zoneJetzt))})`, <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <input disabled={nurLesen} type="datetime-local" value={zeit} onChange={e => setZeit(e.target.value)} style={eingabe} />
@@ -858,7 +858,9 @@ function PlanFenster({ start, accounts, T, loc, darf, darfPosten = null, userDis
         {zeile(T.hinweis, <input disabled={nurLesen} value={f.hinweis || ''} onChange={e => set('hinweis', e.target.value.slice(0, 300))} style={eingabe} />)}
 
         {/* Posten */}
-        {f.id && posten && f.status !== 'gepostet' && (
+        {/* v5.20.0: Platzhalter-Account → noch nicht postbar */}
+        {f.id && istPlatzhalter(f.account) && <div style={{ fontSize: 12.5, color: A, fontWeight: 700 }}>{T.platzhalter_info}</div>}
+        {f.id && posten && f.status !== 'gepostet' && !istPlatzhalter(f.account) && (
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={klein}>{T.posten_titel}</div>
             {f.art !== 'story' && <input value={reel} onChange={e => setReel(e.target.value.slice(0, 500))} placeholder={f.art === 'reel' ? T.reel_link : T.beitrag_link} inputMode="url" autoCapitalize="none" style={eingabe} />}
@@ -965,11 +967,13 @@ function PlanModelVoll({ displayName, isPreview, cardS, service }) {
         if (!h || aus.has(h) || acc.some(a => a.handle === h)) continue
         acc.push({ model: displayName, handle: h, notiz: service?.account_notizen?.[h] || '', zone: service?.account_modus?.[h]?.zeitzone || null })
       }
+      // v5.20.0: Accounts in Vorbereitung (Platzhalter) gleich mit
+      for (const p of platzhalterListe(service)) if (!acc.some(a => a.handle === p.handle)) acc.push({ model: displayName, handle: p.handle, name: p.name, platzhalter: true, notiz: service?.account_notizen?.[p.handle] || '', zone: service?.account_modus?.[p.handle]?.zeitzone || null })
       setAccounts(acc)
       setSkripte(s.error ? [] : (s.data || []))
     })()
     return () => { weg = true }
-  }, [displayName, nb]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [displayName, nb, JSON.stringify(service?.platzhalter || [])]) // eslint-disable-line react-hooks/exhaustive-deps
   if (accounts === null) return null
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

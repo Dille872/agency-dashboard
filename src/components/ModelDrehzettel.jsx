@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKurz, modusSetzen, postetModel, cutterLaden, hatCutter } from '../reelSkripte'
+import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKurz, modusSetzen, postetModel, cutterLaden, hatCutter, accountName } from '../reelSkripte'
 import { VideoBild, VideoHochladen, VideoLink } from './VideoLink' // v5.7.0
 import { istSpeicher } from '../videoSpeicher'
 
@@ -21,7 +21,8 @@ const feld = { background: 'var(--bg-input)', border: '1px solid var(--border)',
 //   Account mit Cutter  → „Rohmaterial reicht, wir schneiden“
 //   sonst               → „Bitte fertig geschnitten hochladen“
 // v5.14.0: zugeklappt nur Kopfzeile + Account; antippen klappt auf/zu
-function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = true, onKlapp }) {
+function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = true, onKlapp, service = null }) {
+  const ziel = accountName(service, s.ziel_account)   // v5.20.0: Platzhalter mit Namen
   const selbst = postetModel(s)
   const [reel, setReel] = useState('')
   const [datum, setDatum] = useState(new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }))
@@ -75,12 +76,12 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = tru
         {onKlapp && <span style={{ color: 'var(--text-muted)', fontSize: 13, width: 14, textAlign: 'center', transform: auf ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>}
       </div>
       {!auf && s.ziel_account && status !== 'gepostet' && (
-        <div onClick={onKlapp} style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4, cursor: 'pointer' }}>für <b style={{ color: '#ec4899' }}>{s.ziel_account}</b></div>
+        <div onClick={onKlapp} style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4, cursor: 'pointer' }}>für <b style={{ color: '#ec4899' }}>{ziel}</b></div>
       )}
       {auf && <>
       {s.ziel_account && status !== 'gepostet' && (
         <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--bg-card2)', borderRadius: 10, padding: '7px 9px' }}>
-          Für <b style={{ color: '#ec4899' }}>{s.ziel_account}</b>{notizen[s.ziel_account] ? ` · ${notizen[s.ziel_account]}` : ''}
+          Für <b style={{ color: '#ec4899' }}>{ziel}</b>{notizen[s.ziel_account] ? ` · ${notizen[s.ziel_account]}` : ''}
           {status === 'freigegeben' && <div style={{ marginTop: 3, fontWeight: 700, color: 'var(--text-primary)' }}>{selbst ? '📱 ' : hatCutter(s) ? '✂️ ' : '🎬 '}{hinweis}</div>}
         </div>
       )}
@@ -194,7 +195,7 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
           style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: '3px 8px', fontFamily: 'inherit' }}>{zu ? '▾' : '▴'}</button>
       </div>
       {zu ? null : <>
-      {offen.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen}
+      {offen.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen} service={service}
         auf={aktiv === s.id} onKlapp={() => setOffenId(aktiv === s.id ? '' : s.id)} />)}
       {!offen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Alles gedreht und gepostet. Danke! 💛</div>}
       {gepostet.length > 0 && (

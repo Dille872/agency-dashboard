@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
-import { statusVon, linkOk, mitHttps, instaHandle, cutterLaden, endVideo, seitVon, modusSetzen } from '../reelSkripte'
+import { statusVon, linkOk, mitHttps, instaHandle, cutterLaden, endVideo, seitVon, modusSetzen, platzhalterListe } from '../reelSkripte'
 import { VideoLink } from './VideoLink' // v5.7.0
 import SocialModelsAdmin from './SocialModelsAdmin' // v4.108.0
 import { SchnittListe, FreigabeListe } from './SocialAblauf' // v4.106.0
@@ -87,7 +87,9 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const [erinnert, setErinnert] = useState({})
 
   const laden = useCallback(async () => {
-    const s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, account_modus, nicht_betreut').eq('service_aktiv', true).order('model_name')
+    // v5.20.0: platzhalter (Accounts in Vorbereitung) — ohne sql/platzhalter-accounts.sql wie vorher
+    let s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, account_modus, nicht_betreut, platzhalter').eq('service_aktiv', true).order('model_name')
+    if (s.error) s = await supabase.from('model_social_service').select('model_name, service_aktiv, posting_ab, account_notizen, account_modus, nicht_betreut').eq('service_aktiv', true).order('model_name')
     if (s.error) { setDaten({ fehlt: true }); return }
     await cutterLaden() // v4.106.0: für „Im Schnitt“ vs. „Zur Freigabe“
     modusSetzen(s.data || []) // v4.108.0: „Model postet selbst“
@@ -179,7 +181,11 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const woche = skripte.filter(s => s.gepostet_am && tageSeit(s.gepostet_am + 'T12:00:00') <= 7)
   const notiz = (m, h) => tr(m?.account_notizen?.[h] || '')
   // v5.3.0: Accounts für den Plan (Poster/Vorschau: schon auf die eigenen gefiltert)
-  const planAccounts = Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: m.account_notizen?.[a.handle] || '', zone: m.account_modus?.[a.handle]?.zeitzone || null })))
+  const planAccounts = [
+    ...Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: m.account_notizen?.[a.handle] || '', zone: m.account_modus?.[a.handle]?.zeitzone || null }))),
+    // v5.20.0: Platzhalter nur fürs Team (Poster bekommen sie erst als echten Account)
+    ...(istAdmin && !vorschau ? Object.values(models).flatMap(m => platzhalterListe(m).map(p => ({ model: m.model_name, handle: p.handle, name: p.name, platzhalter: true, notiz: m.account_notizen?.[p.handle] || '', zone: m.account_modus?.[p.handle]?.zeitzone || null }))) : []),
+  ]
 
   const erinnere = async (s) => {
     const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', s.model_name).maybeSingle()

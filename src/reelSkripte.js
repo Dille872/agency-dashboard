@@ -188,3 +188,45 @@ export async function agenturAccountAnlegen(model, eingabe, wer) {
   logActivity('social.account', { entity: model, detail: `@${handle} angelegt${wer ? ` von ${wer}` : ''}` })
   return { handle: '@' + handle }
 }
+
+// ── v5.20.0: Platzhalter-Accounts („Account in Vorbereitung“) ──────────────
+// Handle @neu-<model>-<n> (Bindestrich gibt es in echten Instagram-Namen nicht).
+// Stehen in model_social_service.platzhalter (sql/platzhalter-accounts.sql).
+export const istPlatzhalter = (h) => /^@neu-/i.test(String(h || ''))
+export const platzhalterListe = (service) => Array.isArray(service?.platzhalter) ? service.platzhalter.filter(p => p && p.handle) : []
+// Anzeigename: beim Platzhalter der vergebene Name, sonst der Handle
+export const accountName = (service, h) => (istPlatzhalter(h) && platzhalterListe(service).find(p => p.handle.toLowerCase() === String(h).toLowerCase())?.name) || h
+
+const slug = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss').replace(/[^a-z0-9]+/g, '').slice(0, 16) || 'model'
+
+export async function platzhalterAnlegen(model, name, wer) {
+  const { data, error } = await supabase.from('model_social_service').select('platzhalter').eq('model_name', model).maybeSingle()
+  if (error) return { fehler: /platzhalter/.test(error.message) ? 'Datenbank fehlt noch: sql/platzhalter-accounts.sql ausführen.' : error.message }
+  const liste = platzhalterListe(data)
+  let n = 1
+  while (liste.some(p => p.handle === `@neu-${slug(model)}-${n}`)) n++
+  const handle = `@neu-${slug(model)}-${n}`
+  const eintrag = { handle, name: String(name || '').trim().slice(0, 40) || `${model} · neuer Account`, angelegt_am: new Date().toISOString(), angelegt_von: wer || null }
+  const { serviceSpeichern } = await import('./socialProfil')
+  const err = await serviceSpeichern(model, { platzhalter: [...liste, eintrag] }, wer)
+  if (err) return { fehler: 'Nicht gespeichert: ' + err.message }
+  try { const { logActivity } = await import('./activity'); logActivity('social.account', { entity: model, detail: `Platzhalter „${eintrag.name}“ angelegt` }) } catch { /* nur Protokoll */ }
+  return { handle, name: eintrag.name }
+}
+
+// Echten Account eintragen: erst ins Board (wie „+ Account“), dann alles umstellen
+export async function platzhalterUmstellen(model, alt, eingabe, wer) {
+  const roh = String(eingabe || '').trim()
+  const handle = (roh.match(/instagram\.com\/([^/?#\s]+)/i)?.[1] || roh.replace(/^@/, '')).trim().toLowerCase()   // Instagram-Namen sind klein; so stimmen Board, Plan und Zuteilung überein
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(handle)) return { fehler: 'Das sieht nicht nach einem Instagram-Namen aus.' }
+  const { data: vorhanden } = await supabase.from('model_board').select('content').eq('model_name', model).eq('category', 'social_media')
+  const schonDa = (vorhanden || []).some(x => instaHandle(x.content).toLowerCase() === '@' + handle.toLowerCase())
+  if (!schonDa) {
+    const r = await agenturAccountAnlegen(model, handle, wer)
+    if (r.fehler) return r
+  }
+  const { data, error } = await supabase.rpc('platzhalter_umstellen', { p_model: model, p_alt: alt, p_neu: '@' + handle })
+  if (error) return { fehler: (schonDa ? '' : `@${handle} steht jetzt im Board, aber das Umstellen hat nicht geklappt: `) + error.message }
+  try { const { logActivity } = await import('./activity'); logActivity('social.account', { entity: model, detail: `Platzhalter ${alt} → @${handle}` }) } catch { /* nur Protokoll */ }
+  return { handle: '@' + handle, ...data }
+}

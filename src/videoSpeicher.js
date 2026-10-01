@@ -76,7 +76,9 @@ export async function planDateiHochladen({ datei, model, account = null, onForts
   }
   const ext = istVideo(d) ? endung(d) : (/png/.test(d.type) ? 'png' : /webp/.test(d.type) ? 'webp' : 'jpg')
   const name = `${Date.now()}-${zufall()}.${ext}`
-  const pfad = account ? `plan/${hex(model)}/${hex(account)}/${name}` : `material/${hex(model)}/${name}`
+  // v5.20.0: Platzhalter-Account (@neu-…) → in die Ablage des Models, damit beim Umstellen nichts umziehen muss
+  const platzhalter = /^@neu-/i.test(String(account || ''))
+  const pfad = account && !platzhalter ? `plan/${hex(model)}/${hex(account)}/${name}` : `material/${hex(model)}/${name}`
   return speicherHochladen({ datei: d, pfad, onFortschritt, bildTyp: istVideo(d) ? null : (d.type || 'image/jpeg') })
 }
 
