@@ -4,7 +4,7 @@ import { statusVon, endVideo, linkOk, mitHttps, instaHandle } from '../reelSkrip
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks' // v5.4.0
 import { useVorschau, vorschauSperre } from '../vorschau'
 import { VideoLink, VideoBild, DateiHochladen } from './VideoLink' // v5.7.0 / v5.9.0
-import { istSpeicher } from '../videoSpeicher'
+import { istSpeicher, istBild } from '../videoSpeicher'
 import { STANDARD, zoneKurz, geraeteZone, tagIn, uhrIn, inputWert, vonInput, lokalerTag, wochentagIn } from '../planZeit' // v5.10.0
 
 // ── Posting-Plan (v5.3.0) ──────────────────────────────────────────────────
@@ -30,7 +30,14 @@ const TX = {
   de: {
     plan: 'Posting-Plan', woche: 'Woche', heute: 'Heute', alle: 'Alle Accounts', material: 'Material · noch nicht eingeplant',
     material_text: 'Tippen zum Einplanen.', material_neu: '+ Material eintragen', kein_material: 'Kein offenes Material.',
-    aus_skript: 'aus Skript', ohne_skript: 'ohne Skript', reel: 'Reel', story: 'Story', foto: 'Foto', karussell: 'Karussell', karussell_n: (n) => `Karussell · ${n}`, hoch_foto: '⬆ Foto hochladen', hoch_karussell: '⬆ Fotos/Videos hinzufügen (auch mehrere)', karussell_tipp: 'Reihenfolge = wie hier von links nach rechts (1 kommt zuerst). Mit ← → verschieben. Bis zu 20 Teile.', beitrag_link: 'Link zum Beitrag (optional)', beitrag_gepostet: 'Gepostet ✓', geplant: 'geplant', gepostet: 'gepostet',
+    aus_skript: 'aus Skript', ohne_skript: 'ohne Skript', reel: 'Reel', story: 'Story', foto: 'Foto', karussell: 'Karussell',
+    ablage: 'Content · noch nicht verplant', ablage_text: 'Antippen = markieren (mehrere möglich). Auf einen Tag ziehen oder danach den Tag antippen.', content_hoch: '⬆ Content hochladen (mehrere)',
+    auch_verplante: 'auch verplante zeigen', verplant: 'schon verplant', verwerfen: 'aus der Ablage nehmen', verwerfen_frage: 'Diesen Content aus der Ablage nehmen? (Die Datei bleibt erhalten, bis aufgeräumt wird.)',
+    falsches_model: (m) => `Dieser Content gehört nicht zu ${m}.`, teils_falsch: (m) => `Content anderer Models wurde weggelassen, nur ${m} eingeplant.`,
+    kopiert_auf: (x) => `✓ Kopie angelegt: ${x}`, nur_gleicher_account: 'Verschieben geht nur innerhalb desselben Accounts. Für einen anderen Account: Kopieren.',
+    kopiermodus: (x) => `Kopieren: „${x}“ · Tippe auf jeden Tag, an dem er nochmal rausgehen soll.`, auswahl_text: (n) => `${n} markiert · auf einen Tag ziehen oder den Tag antippen (mehrere → Story oder Karussell)`,
+    fertig: 'Fertig', auswahl_weg: 'Auswahl aufheben', hier_einfuegen: '⧉ hier einfügen', hier_einplanen: '⤵ hier einplanen', kopieren_knopf: '⧉ Kopieren',
+    zieh_tipp: 'Tipp: Content oder Beiträge per Ziehen auf einen Tag legen. Ein Beitrag lässt sich so auch verschieben.', karussell_n: (n) => `Karussell · ${n}`, hoch_foto: '⬆ Foto hochladen', hoch_karussell: '⬆ Fotos/Videos hinzufügen (auch mehrere)', karussell_tipp: 'Reihenfolge = wie hier von links nach rechts (1 kommt zuerst). Mit ← → verschieben. Bis zu 20 Teile.', beitrag_link: 'Link zum Beitrag (optional)', beitrag_gepostet: 'Gepostet ✓', geplant: 'geplant', gepostet: 'gepostet',
     neu: '+ Beitrag', einplanen: 'Einplanen', speichern: 'Speichern', abbrechen: 'Abbrechen', loeschen: 'Löschen',
     loeschen_frage: 'Diesen Eintrag aus dem Plan löschen?', art: 'Art', account: 'Account', wann: 'Wann', titel: 'Titel',
     video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', hoch_frames: '⬆ Fotos/Videos hinzufügen (auch mehrere)', story_tipp: 'Jede Datei wird ein eigener Frame, in der Reihenfolge der Auswahl.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
@@ -47,7 +54,14 @@ const TX = {
   en: {
     plan: 'Posting calendar', woche: 'Week', heute: 'Today', alle: 'All accounts', material: 'Material · not scheduled yet',
     material_text: 'Tap to schedule.', material_neu: '+ Add material', kein_material: 'No open material.',
-    aus_skript: 'from script', ohne_skript: 'no script', reel: 'Reel', story: 'Story', foto: 'Photo', karussell: 'Carousel', karussell_n: (n) => `Carousel · ${n}`, hoch_foto: '⬆ Upload photo', hoch_karussell: '⬆ Add photos/videos (several at once)', karussell_tipp: 'Order = left to right as shown (1 comes first). Move with ← →. Up to 20 items.', beitrag_link: 'Link to the post (optional)', beitrag_gepostet: 'Posted ✓', geplant: 'scheduled', gepostet: 'posted',
+    aus_skript: 'from script', ohne_skript: 'no script', reel: 'Reel', story: 'Story', foto: 'Photo', karussell: 'Carousel',
+    ablage: 'Content · not scheduled yet', ablage_text: 'Tap = select (several possible). Drag onto a day or tap the day afterwards.', content_hoch: '⬆ Upload content (several)',
+    auch_verplante: 'show scheduled too', verplant: 'already scheduled', verwerfen: 'remove from library', verwerfen_frage: 'Remove this content from the library?',
+    falsches_model: (m) => `This content does not belong to ${m}.`, teils_falsch: (m) => `Content of other creators was skipped, only ${m} scheduled.`,
+    kopiert_auf: (x) => `✓ Copy created: ${x}`, nur_gleicher_account: 'Moving only works within the same account. For another account: copy.',
+    kopiermodus: (x) => `Copy: “${x}” · Tap every day it should go out again.`, auswahl_text: (n) => `${n} selected · drag onto a day or tap the day (several → story or carousel)`,
+    fertig: 'Done', auswahl_weg: 'Clear selection', hier_einfuegen: '⧉ paste here', hier_einplanen: '⤵ schedule here', kopieren_knopf: '⧉ Copy',
+    zieh_tipp: 'Tip: drag content or posts onto a day. Posts can be moved that way too.', karussell_n: (n) => `Carousel · ${n}`, hoch_foto: '⬆ Upload photo', hoch_karussell: '⬆ Add photos/videos (several at once)', karussell_tipp: 'Order = left to right as shown (1 comes first). Move with ← →. Up to 20 items.', beitrag_link: 'Link to the post (optional)', beitrag_gepostet: 'Posted ✓', geplant: 'scheduled', gepostet: 'posted',
     neu: '+ Post', einplanen: 'Schedule', speichern: 'Save', abbrechen: 'Cancel', loeschen: 'Delete',
     loeschen_frage: 'Delete this entry from the calendar?', art: 'Type', account: 'Account', wann: 'When', titel: 'Title',
     video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', hoch_frames: '⬆ Add photos/videos (several at once)', story_tipp: 'Each file becomes its own frame, in the order selected.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
@@ -163,12 +177,20 @@ export function usePlan(accounts, von, bis) {
 export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de', darfPlanen = true, userDisplayName }) {
   const T = TX[sprache] || TX.de
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
+  const vorschau = useVorschau()
   const [start, setStart] = useState(() => wocheStart(new Date()))
   const [filter, setFilter] = useState('')
   const [offen, setOffen] = useState(null) // Entwurf/Zeile im Fenster
   const [material, setMaterial] = useState([])
-  const [verplant, setVerplant] = useState(new Set())
+  const [benutzt, setBenutzt] = useState({ ids: new Set(), links: new Set() })
   const [neuMaterial, setNeuMaterial] = useState(false)
+  const [auswahl, setAuswahl] = useState([])        // v5.12.0: markierter Content (Reihenfolge = Auswahl)
+  const [alleZeigen, setAlleZeigen] = useState(false)
+  const [kopie, setKopie] = useState(null)           // v5.12.0: Beitrag im Kopiermodus
+  const [ziehen, setZiehen] = useState(null)         // { art: 'content' } | { art: 'eintrag', z }
+  const [ueber, setUeber] = useState('')             // Zelle, über der gerade gezogen wird
+  const [hinweis, setHinweis] = useState('')
+  const [ablageModel, setAblageModel] = useState('')
   const ende = useMemo(() => plusTage(start, 7), [start])
   const { zeilen, fehlt, laden } = usePlan(accounts, start, ende)
   const models = [...new Set(accounts.map(a => a.model))]
@@ -176,12 +198,17 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const ladenMaterial = useCallback(async () => {
     if (!models.length) { setMaterial([]); return }
     const [m, v] = await Promise.all([
-      supabase.from('social_material').select('*').eq('verworfen', false).in('model_name', models).order('erstellt_am', { ascending: false }).limit(200),
-      supabase.from('social_plan').select('material_id, skript_id').in('model_name', models),
+      supabase.from('social_material').select('*').eq('verworfen', false).in('model_name', models).order('erstellt_am', { ascending: false }).limit(300),
+      supabase.from('social_plan').select('material_id, skript_id, video_link, frames').in('model_name', models),
     ])
-    const vp = new Set()
-    for (const z of v.data || []) { if (z.material_id) vp.add('m' + z.material_id); if (z.skript_id) vp.add('s' + z.skript_id) }
-    setVerplant(vp)
+    // v5.12.0: verplant = Material/Skript steht in einem Plan-Eintrag ODER seine Datei wird dort benutzt (Story/Karussell)
+    const ids = new Set(), links = new Set()
+    for (const z of v.data || []) {
+      if (z.material_id) ids.add('m' + z.material_id); if (z.skript_id) ids.add('s' + z.skript_id)
+      if (z.video_link) links.add(z.video_link)
+      for (const f of Array.isArray(z.frames) ? z.frames : []) if (f?.link) links.add(f.link)
+    }
+    setBenutzt({ ids, links })
     setMaterial(m.error ? [] : (m.data || []))
   }, [models.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { ladenMaterial() }, [ladenMaterial])
@@ -189,47 +216,163 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const neuLaden = () => { laden(); ladenMaterial() }
   const sichtbar = accounts.filter(a => !filter || (a.model + '|' + a.handle) === filter)
   const tage = [...Array(7)].map((_, i) => plusTage(start, i))
+  const istVerplant = (x) => benutzt.ids.has(x.key) || (x.link && benutzt.links.has(x.link))
 
-  // Material-Liste: eigenes Material + Skript-Reels, die noch nicht im Plan stehen und nicht gepostet sind
-  const materialListe = [
-    ...material.filter(m => !verplant.has('m' + m.id)).map(m => ({ key: 'm' + m.id, art: m.art, titel: m.titel, model: m.model_name, link: m.link, quelle: T.ohne_skript, material_id: m.id, notiz: m.notiz })),
-    ...skripte.filter(s => !s.verworfen && !s.reel_url && !verplant.has('s' + s.id) && models.includes(s.model_name) && statusVon(s) !== 'gepostet')
+  // Content-Ablage: eigenes Material + Skript-Reels (nicht gepostet)
+  const alles = [
+    ...material.map(m => ({ key: 'm' + m.id, art: m.art, titel: m.titel, model: m.model_name, link: m.link, quelle: m.erstellt_von || T.ohne_skript, material_id: m.id, notiz: m.notiz, von: m.erstellt_von })),
+    ...skripte.filter(s => !s.verworfen && !s.reel_url && models.includes(s.model_name) && statusVon(s) !== 'gepostet')
       .map(s => ({ key: 's' + s.id, art: 'reel', titel: `${s.nr} ${s.titel}`, model: s.model_name, link: endVideo(s), quelle: `${T.aus_skript} · ${s.nr}`, skript_id: s.id, ziel: s.ziel_account })),
   ].filter(x => !filter || x.model === filter.split('|')[0])
+  const materialListe = alles.filter(x => alleZeigen || !istVerplant(x))
+  const gewaehlt = auswahl.map(k => alles.find(x => x.key === k)).filter(Boolean)
+  const markieren = (x) => setAuswahl(a => a.includes(x.key) ? a.filter(k => k !== x.key) : [...a, x.key])
+  const istVideoLink = (l) => !!l && !istBild(l)
 
-  const einplanen = (x) => {
+  // Eintrag aus Content füllen. Ein Teil → Reel (Video) bzw. Foto. Mehrere → Story (umschaltbar auf Karussell).
+  const ausContent = (acc, isoZeit, teile) => {
+    const ein = teile.length === 1 ? teile[0] : null
+    const art = ein ? (ein.art === 'story' ? 'story' : istVideoLink(ein.link) || !ein.link ? 'reel' : 'foto') : 'story'
+    return {
+      model_name: acc.model, account: acc.handle, art, titel: ein ? ein.titel : '', geplant_am: isoZeit,
+      video_link: ein && art !== 'story' ? (ein.link || '') : '',
+      frames: ein ? (art === 'story' && ein.link ? [{ link: ein.link, text: '', sticker: '' }] : []) : teile.filter(x => x.link).map(x => ({ link: x.link, text: '', sticker: '' })),
+      material_id: ein?.material_id || null, skript_id: ein?.skript_id || null,
+      caption: '', hashtags: '', overlays: [], hinweis: '', status: 'geplant',
+    }
+  }
+  const einplanenAuf = (acc, tag, teile) => {
+    const passend = teile.filter(x => x.model === acc.model)
+    if (!passend.length) { setHinweis(T.falsches_model(acc.model)); return }
+    if (passend.length < teile.length) setHinweis(T.teils_falsch(acc.model))
+    setOffen(ausContent(acc, vonInput(`${lokalerTag(tag)}T18:00`, acc.zone || STANDARD), passend))
+    setAuswahl([])
+  }
+  const einplanen = (x) => {   // ohne Ziehen: nächster Tag beim passenden Account
     const accs = accounts.filter(a => a.model === x.model)
     const acc = x.ziel ? accs.find(a => a.handle.toLowerCase() === String(x.ziel).toLowerCase()) : (accs.length === 1 ? accs[0] : null)
     const zone = acc?.zone || STANDARD
     const morgen = plusTage(new Date(), 1)
-    setOffen({ model_name: x.model, account: acc?.handle || '', art: x.art, titel: x.titel, video_link: x.link || '', material_id: x.material_id || null, skript_id: x.skript_id || null, geplant_am: vonInput(`${tagIn(morgen.toISOString(), zone)}T18:00`, zone), caption: '', hashtags: '', overlays: [], frames: [], hinweis: '', status: 'geplant' })
+    setOffen(ausContent(acc || { model: x.model, handle: '' }, vonInput(`${tagIn(morgen.toISOString(), zone)}T18:00`, zone), [x]))
   }
   const neuInZelle = (acc, tag) => {
     setOffen({ model_name: acc.model, account: acc.handle, art: 'reel', titel: '', video_link: '', geplant_am: vonInput(`${lokalerTag(tag)}T18:00`, acc.zone || STANDARD), caption: '', hashtags: '', overlays: [], frames: [], hinweis: '', status: 'geplant' })
   }
 
+  // v5.12.0: Kopie eines Beitrags auf einen Tag (gleiche Uhrzeit in der Zeit des Ziel-Accounts)
+  const zeitAuf = (z, acc, tag) => vonInput(`${lokalerTag(tag)}T${uhrIn(z.geplant_am, zoneVon(accounts, z.model_name, z.account))}`, acc.zone || STANDARD)
+  const kopieAuf = async (acc, tag) => {
+    if (vorschau) return vorschauSperre()
+    const z = kopie
+    const neu = {
+      model_name: acc.model, account: acc.handle, art: z.art, geplant_am: zeitAuf(z, acc, tag), titel: z.titel || null,
+      video_link: z.video_link || null, caption: z.caption || null, hashtags: z.hashtags || null, hinweis: z.hinweis || null,
+      overlays: z.overlays || [], frames: z.frames || [], status: 'geplant',
+    }
+    const { error } = await supabase.from('social_plan').insert(neu)
+    if (error) { setHinweis(T.nicht_gespeichert + error.message); return }
+    setHinweis(T.kopiert_auf(`${acc.handle} · ${tag.toLocaleDateString(loc, { weekday: 'short', day: '2-digit', month: '2-digit' })}`))
+    laden()
+  }
+  // v5.12.0: Beitrag auf einen anderen Tag ziehen (nur innerhalb desselben Accounts, nicht wenn gepostet)
+  const verschiebenAuf = async (z, acc, tag) => {
+    if (vorschau) return vorschauSperre()
+    if (z.status === 'gepostet') return
+    if (z.model_name !== acc.model || String(z.account).toLowerCase() !== acc.handle.toLowerCase()) { setHinweis(T.nur_gleicher_account); return }
+    const { error } = await supabase.from('social_plan').update({ geplant_am: zeitAuf(z, acc, tag) }).eq('id', z.id)
+    if (error) { setHinweis(T.nicht_gespeichert + error.message); return }
+    laden()
+  }
+  const abwerfen = (acc, tag) => {
+    const zg = ziehen; setZiehen(null); setUeber('')
+    if (!zg || !darfPlanen) return
+    if (zg.art === 'eintrag') return verschiebenAuf(zg.z, acc, tag)
+    if (zg.art === 'content') return einplanenAuf(acc, tag, zg.teile)
+  }
+  // Zelle antippen (Handy): Kopiermodus → einfügen; Content markiert → einplanen; sonst neuer Beitrag
+  const zelleTippen = (acc, tag) => {
+    if (kopie) return kopieAuf(acc, tag)
+    if (gewaehlt.length) return einplanenAuf(acc, tag, gewaehlt)
+    return neuInZelle(acc, tag)
+  }
+
+  // v5.12.0: Content-Ablage hochladen (mehrere Dateien; jede wird ein eigener Eintrag)
+  const ablageZiel = ablageModel || (filter ? filter.split('|')[0] : models.length === 1 ? models[0] : '')
+  const contentRein = async (link) => {
+    if (vorschau) return vorschauSperre()
+    const jetzt = new Date().toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    const foto = istBild(link)
+    const { error } = await supabase.from('social_material').insert({ model_name: ablageZiel, art: foto ? 'foto' : 'reel', titel: `${foto ? T.foto : T.video} ${jetzt}`, link, erstellt_von: userDisplayName || null })
+    if (error) { setHinweis(T.nicht_gespeichert + error.message); return }
+    ladenMaterial()
+  }
+  const verwerfen = async (x) => {
+    if (vorschau) return vorschauSperre()
+    if (!x.material_id || !window.confirm(T.verwerfen_frage)) return
+    const { error } = await supabase.from('social_material').update({ verworfen: true }).eq('id', x.material_id)
+    if (error) { setHinweis(T.nicht_gespeichert + error.message); return }
+    setAuswahl(a => a.filter(k => k !== x.key)); ladenMaterial()
+  }
+
   if (fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>{T.tabelle_fehlt}</div>
 
+  const modus = kopie ? 'kopie' : gewaehlt.length ? 'auswahl' : ''
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`.plan-raster { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: 1fr; } .plan-material { order: 2; } }`}</style>
+      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: 1fr; } }`}</style>
+
+      {/* Hinweisleiste: Kopiermodus / Auswahl */}
+      {modus && (
+        <div style={{ ...card, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', border: `1px solid ${modus === 'kopie' ? A : C}` }}>
+          <b style={{ color: modus === 'kopie' ? A : C, fontSize: 13.5 }}>{modus === 'kopie' ? `⧉ ${T.kopiermodus(artText(kopie, T))}` : T.auswahl_text(gewaehlt.length)}</b>
+          <span style={{ flex: 1 }} />
+          <button type="button" onClick={() => { setKopie(null); setAuswahl([]) }} style={knopf('var(--text-secondary)', false)}>{modus === 'kopie' ? T.fertig : T.auswahl_weg}</button>
+        </div>
+      )}
+      {hinweis && <div style={{ fontSize: 12.5, color: hinweis.startsWith('✓') ? G : A }} onClick={() => setHinweis('')}>{hinweis}</div>}
+
       <div className="plan-raster">
-        {/* Material */}
-        <div className="plan-material" style={{ ...card, display: 'flex', flexDirection: 'column', gap: 7 }}>
-          <div style={klein}>🎞 {T.material}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{darfPlanen ? T.material_text : T.nur_lesen}</div>
+        {/* Content-Ablage */}
+        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={klein}>🎞 {T.ablage}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{darfPlanen ? T.ablage_text : T.nur_lesen}</div>
+          {darfPlanen && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              {!filter && models.length > 1 && (
+                <select value={ablageModel} onChange={e => setAblageModel(e.target.value)} style={{ ...eingabe, width: 'auto', padding: '5px 7px', fontSize: 12 }}>
+                  <option value="">{T.model} …</option>
+                  {models.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              )}
+              <DateiHochladen model={ablageZiel} mehrere gesperrt={!ablageZiel} farbe={P} text={T.content_hoch} onFertig={contentRein} />
+            </div>
+          )}
           {!materialListe.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{T.kein_material}</div>}
-          {materialListe.slice(0, 40).map(x => (
-            <button key={x.key} type="button" disabled={!darfPlanen} onClick={() => einplanen(x)}
-              style={{ display: 'flex', gap: 8, alignItems: 'center', textAlign: 'left', padding: 8, borderRadius: 11, background: 'var(--bg-card2)', border: '1px solid var(--border)', cursor: darfPlanen ? 'pointer' : 'default', fontFamily: 'inherit', color: 'var(--text-primary)' }}>
-              {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={40} /> : <span style={{ width: 30, height: 40, borderRadius: 7, background: artFarbe(x.art) + '33', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{x.art === 'story' ? '📷' : '🎬'}</span>}
-              <span style={{ minWidth: 0 }}>
-                <b style={{ display: 'block', fontSize: 12.5 }}>{x.titel}</b>
-                <span style={pill(artFarbe(x.art))}>{x.art === 'story' ? T.story : T.reel}</span> <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{x.model} · {x.quelle}</span>
-              </span>
-            </button>
-          ))}
-          {darfPlanen && <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), marginTop: 2 }}>{T.material_neu}</button>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 6 }}>
+            {materialListe.slice(0, 120).map(x => {
+              const nr = auswahl.indexOf(x.key)
+              const an = nr >= 0
+              return (
+                <div key={x.key} draggable={darfPlanen}
+                  onDragStart={(e) => { const teile = an ? gewaehlt : [x]; setZiehen({ art: 'content', teile }); e.dataTransfer.effectAllowed = 'copy'; try { e.dataTransfer.setData('text/plain', x.key) } catch { /* egal */ } }}
+                  onDragEnd={() => { setZiehen(null); setUeber('') }}
+                  onClick={() => darfPlanen && markieren(x)}
+                  title={`${x.titel}${x.model ? ` · ${x.model}` : ''}${x.quelle ? ` · ${x.quelle}` : ''}`}
+                  style={{ position: 'relative', borderRadius: 10, padding: 4, background: an ? C + '22' : 'var(--bg-card2)', border: `2px solid ${an ? C : 'transparent'}`, cursor: darfPlanen ? 'grab' : 'default', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, opacity: istVerplant(x) ? 0.5 : 1 }}>
+                  {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={84} onClick={() => {}} />
+                    : <span style={{ width: 48, height: 84, borderRadius: 8, background: artFarbe(x.art) + '33', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.art === 'story' || x.art === 'foto' ? '📷' : '🎬'}</span>}
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.skript_id ? x.titel.split(' ')[0] : (models.length > 1 && !filter ? x.model : (x.von || ''))}</span>
+                  {an && <span style={{ position: 'absolute', top: 2, left: 2, background: C, color: '#04212a', borderRadius: 9, fontSize: 10.5, fontWeight: 800, padding: '0 6px' }}>{nr + 1}</span>}
+                  {istVerplant(x) && <span style={{ position: 'absolute', top: 2, right: 2, fontSize: 10 }} title={T.verplant}>✓</span>}
+                  {darfPlanen && x.material_id && !an && <button type="button" onClick={(e) => { e.stopPropagation(); verwerfen(x) }} title={T.verwerfen} style={{ position: 'absolute', bottom: 18, right: 2, background: 'rgba(0,0,0,0.55)', border: 'none', color: '#fff', borderRadius: 6, fontSize: 10, cursor: 'pointer', padding: '0 4px' }}>✕</button>}
+                </div>
+              )
+            })}
+          </div>
+          <label style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
+            <input type="checkbox" checked={alleZeigen} onChange={e => setAlleZeigen(e.target.checked)} /> {T.auch_verplante}
+          </label>
+          {darfPlanen && <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 10px', fontSize: 11.5 }}>{T.material_neu}</button>}
         </div>
 
         {/* Woche */}
@@ -241,7 +384,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
             <button type="button" onClick={() => setStart(wocheStart(new Date()))} style={knopf(C, false)}>{T.heute}</button>
             <span style={{ flex: 1 }} />
             {accounts.length > 1 && (
-              <select value={filter} onChange={e => setFilter(e.target.value)} style={{ ...eingabe, width: 'auto' }}>
+              <select value={filter} onChange={e => { setFilter(e.target.value); setAuswahl([]) }} style={{ ...eingabe, width: 'auto' }}>
                 <option value="">{T.alle}</option>
                 {accounts.map(a => <option key={a.model + a.handle} value={a.model + '|' + a.handle}>{a.handle} · {a.model}</option>)}
               </select>
@@ -256,18 +399,29 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                   <div style={{ fontSize: 12, fontWeight: 700, color: P, padding: '6px 2px', wordBreak: 'break-all' }}>{a.handle}<div style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</div></div>
                   {tage.map((d, i) => {
                     const drin = (zeilen || []).filter(z => z.model_name === a.model && String(z.account).toLowerCase() === a.handle.toLowerCase() && tagIn(z.geplant_am, a.zone || STANDARD) === lokalerTag(d))
+                    const zk = a.model + a.handle + i
+                    const ziel = darfPlanen && (modus || ziehen)
                     return (
-                      <div key={i} style={{ minHeight: 84, background: 'var(--bg-input)', border: '1px dashed var(--border)', borderRadius: 10, padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div key={i}
+                        onDragOver={(e) => { if (darfPlanen && ziehen) { e.preventDefault(); if (ueber !== zk) setUeber(zk) } }}
+                        onDragLeave={() => { if (ueber === zk) setUeber('') }}
+                        onDrop={(e) => { e.preventDefault(); abwerfen(a, d) }}
+                        style={{ minHeight: 84, background: ueber === zk ? C + '22' : 'var(--bg-input)', border: `1px dashed ${ziel ? (modus === 'kopie' ? A : C) : 'var(--border)'}`, borderRadius: 10, padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {drin.map(z => (
-                          <button key={z.id} type="button" onClick={() => setOffen(z)}
-                            style={{ textAlign: 'left', borderRadius: 8, padding: '5px 6px', fontSize: 11, lineHeight: 1.3, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', background: artFarbe(z.art) + '1f', border: `1px solid ${artFarbe(z.art)}55`, opacity: z.status === 'gepostet' ? 0.6 : 1 }}>
+                          <button key={z.id} type="button" onClick={() => setOffen(z)} draggable={darfPlanen && z.status !== 'gepostet'}
+                            onDragStart={(e) => { setZiehen({ art: 'eintrag', z }); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(z.id)) } catch { /* egal */ } }}
+                            onDragEnd={() => { setZiehen(null); setUeber('') }}
+                            style={{ textAlign: 'left', borderRadius: 8, padding: '5px 6px', fontSize: 11, lineHeight: 1.3, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', background: artFarbe(z.art) + '1f', border: `1px solid ${kopie?.id === z.id ? A : artFarbe(z.art) + '55'}`, opacity: z.status === 'gepostet' ? 0.6 : 1 }}>
                             <ZeitText iso={z.geplant_am} zone={a.zone || STANDARD} />
                             <b style={{ display: 'block', fontSize: 11.5 }}>{artText(z, T)}</b>
                             {z.erstellt_von && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)' }}>{T.von(z.erstellt_von)}</span>}
                             {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
                           </button>
                         ))}
-                        {darfPlanen && <button type="button" onClick={() => neuInZelle(a, d)} style={{ marginTop: 'auto', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit' }}>+</button>}
+                        {darfPlanen && <button type="button" onClick={() => zelleTippen(a, d)}
+                          style={{ marginTop: 'auto', background: modus ? (modus === 'kopie' ? A : C) + '22' : 'none', border: 'none', borderRadius: 7, color: modus ? (modus === 'kopie' ? A : C) : 'var(--text-muted)', cursor: 'pointer', fontSize: modus ? 11 : 14, fontWeight: modus ? 800 : 400, fontFamily: 'inherit', padding: modus ? '3px 0' : 0 }}>
+                          {modus === 'kopie' ? T.hier_einfuegen : modus === 'auswahl' ? T.hier_einplanen : '+'}
+                        </button>}
                       </div>
                     )
                   })}
@@ -275,9 +429,12 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               ))}
             </div>
           </div>
+          {darfPlanen && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{T.zieh_tipp}</div>}
         </div>
       </div>
-      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen} userDisplayName={userDisplayName} onZu={(neu) => { setOffen(null); if (neu) neuLaden() }} />}
+      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen} userDisplayName={userDisplayName}
+        onKopieren={(z) => { setOffen(null); setAuswahl([]); setKopie(z); setHinweis('') }}
+        onZu={(neu) => { setOffen(null); if (neu) neuLaden() }} />}
       {neuMaterial && <MaterialFenster models={models} T={T} userDisplayName={userDisplayName} onZu={(neu) => { setNeuMaterial(false); if (neu) ladenMaterial() }} />}
     </div>
   )
@@ -315,7 +472,7 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
 }
 
 // ── Beitrag bearbeiten / posten ────────────────────────────────────────────
-function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
+function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onKopieren = null }) {
   const vorschau = useVorschau()
   const [f, setF] = useState(() => ({ ...start, overlays: Array.isArray(start.overlays) ? start.overlays : [], frames: Array.isArray(start.frames) ? start.frames : [] }))
   const zone = zoneVon(accounts, start.model_name, start.account)
@@ -514,6 +671,8 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
         {darf && (
           <div style={{ display: 'flex', gap: 8 }}>
             {f.id && <button type="button" onClick={loeschen} style={knopf(ROT, false)}>{T.loeschen}</button>}
+            {/* v5.12.0: auf weitere Tage kopieren */}
+            {f.id && onKopieren && <button type="button" onClick={() => onKopieren({ ...f, geplant_am: vonInput(zeit, zoneJetzt) || f.geplant_am })} style={knopf(A, false)}>{T.kopieren_knopf}</button>}
             <span style={{ flex: 1 }} />
             <button type="button" onClick={() => onZu(false)} style={knopf('var(--text-secondary)', false)}>{T.abbrechen}</button>
             <button type="button" disabled={arbeitet} onClick={() => speichern()} style={knopf(P, true)}>{arbeitet ? '…' : (f.id ? T.speichern : T.einplanen)}</button>
@@ -625,7 +784,7 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
     const von = tagStart(new Date())
     const [p, m] = await Promise.all([
       supabase.from('social_plan').select('*').eq('model_name', displayName).gte('geplant_am', von.toISOString()).lt('geplant_am', plusTage(von, 14).toISOString()).order('geplant_am'),
-      supabase.from('social_material').select('*').eq('model_name', displayName).eq('verworfen', false).order('erstellt_am', { ascending: false }).limit(10),
+      supabase.from('social_material').select('*').eq('model_name', displayName).eq('verworfen', false).order('erstellt_am', { ascending: false }).limit(40),
     ])
     setZeilen(p.error ? null : (p.data || []))
     setMaterial(m.error ? [] : (m.data || []))
@@ -638,7 +797,13 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 20 }}>📅</span>
         <b style={{ flex: 1, fontSize: 14.5, color: 'var(--text-primary)' }}>Dein Posting-Plan · 14 Tage</b>
-        {!isPreview && <button type="button" onClick={() => setNeu(true)} style={knopf(P, false)}>+ Eigenes Material</button>}
+        {/* v5.12.0: Content auf Vorrat hochladen (mehrere), das Team verplant ihn */}
+        {!isPreview && <DateiHochladen model={displayName} mehrere farbe={P} text="⬆ Content hochladen" onFertig={async (link) => {
+          const foto = istBild(link)
+          const jetzt = new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+          await supabase.from('social_material').insert({ model_name: displayName, art: foto ? 'foto' : 'reel', titel: `${foto ? 'Foto' : 'Video'} ${jetzt}`, link, erstellt_von: displayName })
+          laden()
+        }} />}
       </div>
       {!zeilen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Noch nichts geplant.</div>}
       {tage.map(t => (
@@ -656,7 +821,12 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
         </div>
       ))}
       {material.length > 0 && (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Dein Material: {material.map(m => `${m.art === 'story' ? '📷' : '🎬'} ${m.titel}`).join(' · ')}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Dein Content ({material.length}) · wir verplanen ihn für dich:</span>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {material.map(m => istSpeicher(m.link) ? <VideoBild key={m.id} href={m.link} hoehe={56} /> : <span key={m.id} style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{m.art === 'reel' ? '🎬' : '📷'} {m.titel}</span>)}
+          </div>
+        </div>
       )}
       {neu && <MaterialFenster festesModel={displayName} T={T} userDisplayName={displayName} onZu={(x) => { setNeu(false); if (x) laden() }} />}
     </div>
