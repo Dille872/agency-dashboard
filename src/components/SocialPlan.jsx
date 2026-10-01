@@ -5,6 +5,7 @@ import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks' // v5.4.0
 import { useVorschau, vorschauSperre } from '../vorschau'
 import { VideoLink, VideoBild, DateiHochladen } from './VideoLink' // v5.7.0 / v5.9.0
 import { istSpeicher } from '../videoSpeicher'
+import { STANDARD, zoneKurz, geraeteZone, tagIn, uhrIn, inputWert, vonInput, lokalerTag, wochentagIn } from '../planZeit' // v5.10.0
 
 // ── Posting-Plan (v5.3.0) ──────────────────────────────────────────────────
 // Kalender pro Account und Tag für Reels und Stories. Links das Material
@@ -20,8 +21,9 @@ import { istSpeicher } from '../videoSpeicher'
 //   denselben Kalender und darf auf ihren betreuten Accounts alles wie ein
 //   Poster. Im Beitrag steht, wer ihn eingetragen hat (erstellt_von).
 //
-// Zeiten: gespeichert als Zeitpunkt, angezeigt in der Zeit des Geräts — die
-// Posterin in New York sieht also automatisch ihre Uhrzeit.
+// Zeiten (v5.10.0): gespeichert als Zeitpunkt, angezeigt und eingegeben in
+// der Zeit des ACCOUNTS (accounts[].zone, Standard Deutschland). US-Account
+// → „18:00 LA“ für alle; daneben klein die deutsche Zeit (planZeit.js).
 // Posten eines Reels (Link eintragen) → automatisch gemessen (Trigger).
 
 const TX = {
@@ -37,7 +39,7 @@ const TX = {
     laden: '⬇ Video laden', posten_titel: 'Posten', reel_link: 'Link zum Reel (Instagram: ⋯ → Link kopieren)', gepostet_knopf: 'Gepostet ✓',
     story_gepostet: 'Story gepostet ✓', gemessen: 'Wird automatisch gemessen.', zurueck: 'Doch nicht gepostet',
     fehler_account: 'Bitte einen Account wählen.', fehler_zeit: 'Bitte Datum und Uhrzeit angeben.', fehler_reel: 'Bitte den Instagram-Link zum Reel einfügen.',
-    nicht_gespeichert: 'Nicht gespeichert: ', leer_tag: '', deine_zeit: 'deine Zeit', heute_nichts: 'Heute ist nichts geplant.',
+    nicht_gespeichert: 'Nicht gespeichert: ', leer_tag: '', deine_zeit: 'deine Zeit', zeit_von: (k) => `Zeit ${k}`, de_zeit: 'deutsche Zeit', heute_nichts: 'Heute ist nichts geplant.',
     heute_titel: '📅 Heute geplant', oeffnen: 'Öffnen', model: 'Model', notiz: 'Notiz', tabelle_fehlt: 'Posting-Plan: Datenbank noch nicht eingerichtet (sql/posting-plan.sql).',
     tage: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], nur_lesen: 'Nur ansehen', frames_n: (n) => `Story · ${n} Frame${n === 1 ? '' : 's'}`,
     von: (w) => `von ${w}`, eingetragen: 'Eingetragen', dein_plan: 'Dein Posting-Plan', dein_plan_text: 'Hier planst du zusammen mit uns: Beiträge eintragen, ändern und als gepostet markieren.',
@@ -54,7 +56,7 @@ const TX = {
     laden: '⬇ Download video', posten_titel: 'Post', reel_link: 'Link to the reel (Instagram: ⋯ → Copy link)', gepostet_knopf: 'Posted ✓',
     story_gepostet: 'Story posted ✓', gemessen: 'Gets measured automatically.', zurueck: 'Not posted after all',
     fehler_account: 'Please choose an account.', fehler_zeit: 'Please set date and time.', fehler_reel: 'Please paste the Instagram link to the reel.',
-    nicht_gespeichert: 'Not saved: ', leer_tag: '', deine_zeit: 'your time', heute_nichts: 'Nothing scheduled today.',
+    nicht_gespeichert: 'Not saved: ', leer_tag: '', deine_zeit: 'your time', zeit_von: (k) => `${k} time`, de_zeit: 'German time', heute_nichts: 'Nothing scheduled today.',
     von: (w) => `by ${w}`, eingetragen: 'Added', dein_plan: 'Your posting calendar', dein_plan_text: 'Plan together with us: add posts, edit them and mark them as posted.',
     heute_titel: '📅 Scheduled today', oeffnen: 'Open', model: 'Creator', notiz: 'Note', tabelle_fehlt: 'Posting calendar: database not set up yet.',
     tage: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], nur_lesen: 'View only', frames_n: (n) => `Story · ${n} frame${n === 1 ? '' : 's'}`,
@@ -117,14 +119,28 @@ function KopierKnopf({ text, T }) {
     style={{ background: 'none', border: 'none', color: ok ? G : C, fontWeight: 700, fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>📋 {ok ? T.kopiert : T.kopieren}</button>
 }
 
+// Zeitzone eines Plan-Eintrags/Accounts
+const zoneVon = (accounts, model, handle) => accounts.find(a => a.model === model && String(a.handle).toLowerCase() === String(handle || '').toLowerCase())?.zone || STANDARD
+// „18:00 LA“ (+ „· 03:00 DE“, wenn die Zone nicht Deutschland ist)
+function ZeitText({ iso, zone, gross = false }) {
+  const fremd = zone !== STANDARD
+  return (
+    <span>
+      <b style={{ color: 'var(--text-primary)', fontSize: gross ? 13 : undefined }}>{uhrIn(iso, zone)}</b>
+      {fremd && <span style={{ color: 'var(--text-muted)', fontSize: 10.5 }}> {zoneKurz(zone)} · {uhrIn(iso, STANDARD)} DE</span>}
+    </span>
+  )
+}
+
 // ── Daten laden (gemeinsam für Plan und „Heute“) ───────────────────────────
 export function usePlan(accounts, von, bis) {
   const [zeilen, setZeilen] = useState(null)
   const [fehlt, setFehlt] = useState(false)
   const schluessel = accounts.map(a => a.model + '|' + a.handle.toLowerCase()).join(',')
   const laden = useCallback(async () => {
+    // ±1 Tag mehr laden: Tage werden je Account in dessen Zeitzone gezählt
     const { data, error } = await supabase.from('social_plan').select('*')
-      .gte('geplant_am', von.toISOString()).lt('geplant_am', bis.toISOString()).order('geplant_am')
+      .gte('geplant_am', plusTage(von, -1).toISOString()).lt('geplant_am', plusTage(bis, 1).toISOString()).order('geplant_am')
     if (error) { setFehlt(true); setZeilen([]); return }
     const erlaubt = new Set(schluessel.split(','))
     setZeilen((data || []).filter(z => erlaubt.has(z.model_name + '|' + String(z.account).toLowerCase())))
@@ -176,12 +192,12 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const einplanen = (x) => {
     const accs = accounts.filter(a => a.model === x.model)
     const acc = x.ziel ? accs.find(a => a.handle.toLowerCase() === String(x.ziel).toLowerCase()) : (accs.length === 1 ? accs[0] : null)
-    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(18, 0, 0, 0)
-    setOffen({ model_name: x.model, account: acc?.handle || '', art: x.art, titel: x.titel, video_link: x.link || '', material_id: x.material_id || null, skript_id: x.skript_id || null, geplant_am: d.toISOString(), caption: '', hashtags: '', overlays: [], frames: [], hinweis: '', status: 'geplant' })
+    const zone = acc?.zone || STANDARD
+    const morgen = plusTage(new Date(), 1)
+    setOffen({ model_name: x.model, account: acc?.handle || '', art: x.art, titel: x.titel, video_link: x.link || '', material_id: x.material_id || null, skript_id: x.skript_id || null, geplant_am: vonInput(`${tagIn(morgen.toISOString(), zone)}T18:00`, zone), caption: '', hashtags: '', overlays: [], frames: [], hinweis: '', status: 'geplant' })
   }
   const neuInZelle = (acc, tag) => {
-    const d = new Date(tag); d.setHours(18, 0, 0, 0)
-    setOffen({ model_name: acc.model, account: acc.handle, art: 'reel', titel: '', video_link: '', geplant_am: d.toISOString(), caption: '', hashtags: '', overlays: [], frames: [], hinweis: '', status: 'geplant' })
+    setOffen({ model_name: acc.model, account: acc.handle, art: 'reel', titel: '', video_link: '', geplant_am: vonInput(`${lokalerTag(tag)}T18:00`, acc.zone || STANDARD), caption: '', hashtags: '', overlays: [], frames: [], hinweis: '', status: 'geplant' })
   }
 
   if (fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>{T.tabelle_fehlt}</div>
@@ -229,15 +245,15 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               {tage.map((d, i) => <div key={i} style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 800, color: gleicherTag(d, new Date()) ? P : 'var(--text-secondary)', padding: '3px 0' }}>{T.tage[i]} {d.getDate()}.</div>)}
               {sichtbar.map(a => (
                 <React.Fragment key={a.model + a.handle}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: P, padding: '6px 2px', wordBreak: 'break-all' }}>{a.handle}<div style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{a.model}</div></div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: P, padding: '6px 2px', wordBreak: 'break-all' }}>{a.handle}<div style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</div></div>
                   {tage.map((d, i) => {
-                    const drin = (zeilen || []).filter(z => z.model_name === a.model && String(z.account).toLowerCase() === a.handle.toLowerCase() && gleicherTag(z.geplant_am, d))
+                    const drin = (zeilen || []).filter(z => z.model_name === a.model && String(z.account).toLowerCase() === a.handle.toLowerCase() && tagIn(z.geplant_am, a.zone || STANDARD) === lokalerTag(d))
                     return (
                       <div key={i} style={{ minHeight: 84, background: 'var(--bg-input)', border: '1px dashed var(--border)', borderRadius: 10, padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {drin.map(z => (
                           <button key={z.id} type="button" onClick={() => setOffen(z)}
                             style={{ textAlign: 'left', borderRadius: 8, padding: '5px 6px', fontSize: 11, lineHeight: 1.3, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', background: artFarbe(z.art) + '1f', border: `1px solid ${artFarbe(z.art)}55`, opacity: z.status === 'gepostet' ? 0.6 : 1 }}>
-                            <span style={{ color: 'var(--text-muted)' }}>{uhr(z.geplant_am, loc)}</span>
+                            <ZeitText iso={z.geplant_am} zone={a.zone || STANDARD} />
                             <b style={{ display: 'block', fontSize: 11.5 }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || T.reel)}</b>
                             {z.erstellt_von && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)' }}>{T.von(z.erstellt_von)}</span>}
                             {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
@@ -268,7 +284,8 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
   const { zeilen, fehlt, laden } = usePlan(accounts, von, bis)
   const [offen, setOffen] = useState(null)
   if (fehlt || !zeilen) return null
-  const liste = zeilen.filter(z => z.status !== 'gepostet')
+  // „Heute“ = heute in der Zeit des jeweiligen Accounts
+  const liste = zeilen.filter(z => { const zo = zoneVon(accounts, z.model_name, z.account); return z.status !== 'gepostet' && tagIn(z.geplant_am, zo) === tagIn(new Date().toISOString(), zo) })
   return (
     <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{T.heute_titel}</div>
@@ -276,8 +293,7 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
       {liste.map(z => (
         <div key={z.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 11, background: 'var(--bg-card2)', border: `1px solid ${artFarbe(z.art)}44` }}>
           <span style={pill(artFarbe(z.art))}>{z.art === 'story' ? T.story : T.reel}</span>
-          <b style={{ fontSize: 13, color: 'var(--text-primary)' }}>{uhr(z.geplant_am, loc)}</b>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({T.deine_zeit})</span>
+          <ZeitText iso={z.geplant_am} zone={zoneVon(accounts, z.model_name, z.account)} gross />
           <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1, minWidth: 120 }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || '')} · <span style={{ color: P, fontWeight: 700 }}>{z.account}</span></span>
           {z.video_link && <VideoLink href={mitHttps(z.video_link)} laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{T.laden}</VideoLink>}
           <KopierKnopf text={z.caption} T={{ ...T, kopieren: T.caption }} />
@@ -294,17 +310,19 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
 function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
   const vorschau = useVorschau()
   const [f, setF] = useState(() => ({ ...start, overlays: Array.isArray(start.overlays) ? start.overlays : [], frames: Array.isArray(start.frames) ? start.frames : [] }))
-  const [zeit, setZeit] = useState(zuLokalInput(start.geplant_am))
+  const zone = zoneVon(accounts, start.model_name, start.account)
+  const [zeit, setZeit] = useState(inputWert(start.geplant_am, zone))
   const [reel, setReel] = useState(start.reel_url || '')
   const [fehler, setFehler] = useState('')
   const [arbeitet, setArbeitet] = useState(false)
   const [uebernommen, setUebernommen] = useState(start.vorschlag_uebernommen === 'geaendert') // v5.3.1: „übernehmen“ geklickt?
   const set = (k, v) => setF(x => ({ ...x, [k]: v }))
+  const zoneJetzt = zoneVon(accounts, f.model_name, f.account) // Account gewechselt → Uhrzeit gilt in dessen Zone
   const accWert = f.model_name && f.account ? f.model_name + '|' + f.account : ''
   const nurLesen = !darf
 
   const felder = () => ({
-    model_name: f.model_name, account: f.account, art: f.art, geplant_am: new Date(zeit).toISOString(),
+    model_name: f.model_name, account: f.account, art: f.art, geplant_am: vonInput(zeit, zoneJetzt),
     titel: (f.titel || '').trim() || null, video_link: (f.video_link || '').trim() ? mitHttps(f.video_link) : null,
     caption: f.caption || null, hashtags: f.hashtags || null, hinweis: f.hinweis || null,
     overlays: (f.overlays || []).filter(o => (o.text || '').trim()), frames: (f.frames || []).filter(x => (x.text || x.link || x.sticker || '').trim()),
@@ -321,7 +339,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
   const speichern = async (extra = {}) => {
     if (vorschau) return vorschauSperre()
     if (!f.model_name || !f.account) { setFehler(T.fehler_account); return false }
-    if (!zeit || isNaN(new Date(zeit))) { setFehler(T.fehler_zeit); return false }
+    if (!zeit || !vonInput(zeit, zoneJetzt)) { setFehler(T.fehler_zeit); return false }
     setArbeitet(true); setFehler('')
     const daten = { ...felder(), ...extra }
     const r = f.id ? await supabase.from('social_plan').update(daten).eq('id', f.id) : await supabase.from('social_plan').insert(daten)
@@ -367,7 +385,18 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
             <option value="">—</option>
             {accounts.map(a => <option key={a.model + a.handle} value={a.model + '|' + a.handle}>{a.handle} · {a.model}</option>)}
           </select>)}
-          {zeile(`${T.wann} (${T.deine_zeit})`, <input disabled={nurLesen} type="datetime-local" value={zeit} onChange={e => setZeit(e.target.value)} style={eingabe} />)}
+          {zeile(`${T.wann} (${zoneJetzt === STANDARD ? T.de_zeit : T.zeit_von(zoneKurz(zoneJetzt))})`, <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <input disabled={nurLesen} type="datetime-local" value={zeit} onChange={e => setZeit(e.target.value)} style={eingabe} />
+            {/* v5.10.0: Zeit des Accounts; zur Orientierung die deutsche Zeit bzw. die eigene */}
+            {(() => {
+              const iso = vonInput(zeit, zoneJetzt); if (!iso) return null
+              const teile = []
+              if (zoneJetzt !== STANDARD) teile.push(`= ${wochentagIn(iso, STANDARD, loc)} ${uhrIn(iso, STANDARD)} ${T.de_zeit}`)
+              const g = geraeteZone()
+              if (g !== zoneJetzt && g !== STANDARD) teile.push(`= ${wochentagIn(iso, g, loc)} ${uhrIn(iso, g)} ${T.deine_zeit}`)
+              return teile.length ? <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{teile.join(' · ')}</span> : null
+            })()}
+          </div>)}
         </div>
         {zeile(T.titel, <input disabled={nurLesen} value={f.titel || ''} onChange={e => set('titel', e.target.value.slice(0, 120))} style={eingabe} />)}
         {zeile(T.video, <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={T.hoch_video} />)}
@@ -490,7 +519,7 @@ export function MaterialFenster({ models = [], T: Taus, sprache = 'de', userDisp
 export function PlanModel({ displayName, isPreview = false, cardS = {}, service = null }) {
   // v5.4.0: Schalter „Model plant mit“ an → gemeinsamer Kalender
   if (service?.service_aktiv && service?.model_plant) return <PlanModelVoll displayName={displayName} isPreview={isPreview} cardS={cardS} service={service} />
-  return <PlanModelLesen displayName={displayName} isPreview={isPreview} cardS={cardS} />
+  return <PlanModelLesen displayName={displayName} isPreview={isPreview} cardS={cardS} service={service} />
 }
 
 // v5.4.0: voller Kalender im Model-Portal — dieselbe Ansicht wie beim Team,
@@ -515,7 +544,7 @@ function PlanModelVoll({ displayName, isPreview, cardS, service }) {
         if (resolvePlatform(x.title).key !== 'instagram' || !String(x.content || '').trim()) continue
         const h = instaHandle(x.content)
         if (!h || aus.has(h) || acc.some(a => a.handle === h)) continue
-        acc.push({ model: displayName, handle: h, notiz: service?.account_notizen?.[h] || '' })
+        acc.push({ model: displayName, handle: h, notiz: service?.account_notizen?.[h] || '', zone: service?.account_modus?.[h]?.zeitzone || null })
       }
       setAccounts(acc)
       setSkripte(s.error ? [] : (s.data || []))
@@ -538,7 +567,7 @@ function PlanModelVoll({ displayName, isPreview, cardS, service }) {
   )
 }
 
-function PlanModelLesen({ displayName, isPreview = false, cardS = {} }) {
+function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = null }) {
   const T = TX.de
   const [zeilen, setZeilen] = useState(null)
   const [material, setMaterial] = useState([])
@@ -570,7 +599,7 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {} }) {
           {zeilen.filter(z => tagStart(z.geplant_am).getTime() === t).map(z => (
             <div key={z.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
               <span style={pill(artFarbe(z.art))}>{z.art === 'story' ? 'Story' : 'Reel'}</span>
-              <b style={{ color: 'var(--text-primary)' }}>{uhr(z.geplant_am, 'de-DE')}</b>
+              <ZeitText iso={z.geplant_am} zone={service?.account_modus?.[z.account]?.zeitzone || STANDARD} />
               <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{z.art === 'story' ? T.frames_n((z.frames || []).length) : (z.titel || '')}</span>
               <span style={{ color: P, fontSize: 12 }}>{z.account}</span>
               {z.status === 'gepostet' && <span style={pill(G)}>gepostet</span>}

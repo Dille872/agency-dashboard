@@ -179,7 +179,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   const woche = skripte.filter(s => s.gepostet_am && tageSeit(s.gepostet_am + 'T12:00:00') <= 7)
   const notiz = (m, h) => tr(m?.account_notizen?.[h] || '')
   // v5.3.0: Accounts für den Plan (Poster/Vorschau: schon auf die eigenen gefiltert)
-  const planAccounts = Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: m.account_notizen?.[a.handle] || '' })))
+  const planAccounts = Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: m.account_notizen?.[a.handle] || '', zone: m.account_modus?.[a.handle]?.zeitzone || null })))
 
   const erinnere = async (s) => {
     const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', s.model_name).maybeSingle()

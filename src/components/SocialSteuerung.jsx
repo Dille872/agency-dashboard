@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import ReelsOhneSkript from './ReelsOhneSkript' // v4.109.0
 import WirkungKurven from './WirkungKurven' // v5.5.0
 import SpeicherAnzeige from './SpeicherAnzeige' // v5.8.0
+import { ZONEN, STANDARD } from '../planZeit' // v5.10.0
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
@@ -185,6 +186,19 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
     laden()
   }
 
+  // v5.10.0: Zeitzone des Accounts (Posting-Plan zeigt/nimmt Zeiten darin)
+  const zoneSetzen = async (m, account, zone) => {
+    setHinweis('')
+    const modus = { ...(m.account_modus || {}) }
+    const x = { ...(modus[account] || {}) }
+    if (zone === STANDARD) delete x.zeitzone; else x.zeitzone = zone
+    if (Object.keys(x).length) modus[account] = x; else delete modus[account]
+    const err = await serviceSpeichern(m.model_name, { account_modus: modus }, userDisplayName)
+    if (err) { setHinweis('Nicht gespeichert: ' + err.message); return }
+    logActivity('social.account', { entity: `${m.model_name} ${account}`, detail: `Zeitzone ${zone}` })
+    laden()
+  }
+
   // v4.106.0: Cutter pro Account
   const cutterZuteilen = async (model, account, name) => {
     if (!name) return
@@ -298,6 +312,11 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
                           {acc.url ? <a href={acc.url} target="_blank" rel="noreferrer" style={{ color: P, fontWeight: 700 }}>{acc.handle}</a> : <span style={{ color: P, fontWeight: 700 }}>{acc.handle}</span>}
                           {acc.agentur && <span style={{ ...pill(L), marginLeft: 6 }}>Agentur</span>}
                           {notiz && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{notiz}</div>}
+                          {/* v5.10.0: Zeitzone für den Posting-Plan */}
+                          <select value={m.account_modus?.[acc.handle]?.zeitzone || STANDARD} onChange={e => zoneSetzen(m, acc.handle, e.target.value)} title="Zeitzone im Posting-Plan"
+                            style={{ marginTop: 3, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 7, fontSize: 11, padding: '1px 4px', fontFamily: 'inherit' }}>
+                            {ZONEN.map(z => <option key={z.id} value={z.id}>🕒 {z.name}</option>)}
+                          </select>
                           {!acc.imBoard && <div style={{ fontSize: 11, color: A }}>nicht mehr im Board</div>}
                         </td>
                         <td style={td}>
