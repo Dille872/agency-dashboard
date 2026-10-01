@@ -20,7 +20,8 @@ const feld = { background: 'var(--bg-input)', border: '1px solid var(--border)',
 //   Model postet selbst → nur Reel-Link eintragen (kein Video, kein Schnitt, keine Freigabe)
 //   Account mit Cutter  → „Rohmaterial reicht, wir schneiden“
 //   sonst               → „Bitte fertig geschnitten hochladen“
-function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
+// v5.14.0: zugeklappt nur Kopfzeile + Account; antippen klappt auf/zu
+function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = true, onKlapp }) {
   const selbst = postetModel(s)
   const [reel, setReel] = useState('')
   const [datum, setDatum] = useState(new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }))
@@ -67,11 +68,16 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
 
   return (
     <div style={{ border: `1px solid ${status === 'freigegeben' ? 'rgba(245,158,11,0.45)' : 'var(--border)'}`, borderRadius: 14, padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div onClick={onKlapp} role="button" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: onKlapp ? 'pointer' : 'default' }}>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: R, fontFamily: 'ui-monospace, monospace' }}>{s.nr}</span>
         <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 0 }}>{s.titel}</span>
         <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: st.f + '22', color: st.f, whiteSpace: 'nowrap' }}>{status === 'freigegeben' ? 'zu drehen' : st.t}</span>
+        {onKlapp && <span style={{ color: 'var(--text-muted)', fontSize: 13, width: 14, textAlign: 'center', transform: auf ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>}
       </div>
+      {!auf && s.ziel_account && status !== 'gepostet' && (
+        <div onClick={onKlapp} style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4, cursor: 'pointer' }}>für <b style={{ color: '#ec4899' }}>{s.ziel_account}</b></div>
+      )}
+      {auf && <>
       {s.ziel_account && status !== 'gepostet' && (
         <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--bg-card2)', borderRadius: 10, padding: '7px 9px' }}>
           Für <b style={{ color: '#ec4899' }}>{s.ziel_account}</b>{notizen[s.ziel_account] ? ` · ${notizen[s.ziel_account]}` : ''}
@@ -140,6 +146,7 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
         </div>
       )}
       {fehler && <div role="alert" style={{ fontSize: 12.5, color: 'var(--ton-rot)' }}>{fehler}</div>}
+      </>}
     </div>
   )
 }
@@ -147,6 +154,9 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {} }) {
 export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '' }) {
   const [liste, setListe] = useState(null)
   const [alleGepostet, setAlleGepostet] = useState(false)
+  // v5.14.0: aufklappbar. null = Standard (erstes „zu drehen“ offen), sonst die offene Skript-ID ('' = alle zu)
+  const [offenId, setOffenId] = useState(null)
+  const [zu, setZu] = useState(false)   // ganze Karte eingeklappt
   const laden = async () => {
     if (!displayName) return
     modusSetzen(service ? [service] : [])   // v4.108.0: postet das Model selbst?
@@ -170,16 +180,22 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
   const offen = liste.filter(s => statusVon(s) !== 'gepostet')
   const gepostet = liste.filter(s => statusVon(s) === 'gepostet')
   const zuDrehen = liste.filter(s => statusVon(s) === 'freigegeben').length
+  const standardOffen = (offen.find(s => statusVon(s) === 'freigegeben') || offen[0])?.id
+  const aktiv = offenId === null ? standardOffen : offenId
 
   return (
     <div data-help="drehzettel" style={{ ...cardS, padding: '14px 15px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 22 }}>🎬</span>
-        <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>Drehzettel</span>
+        <span onClick={() => setZu(z => !z)} style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1, cursor: 'pointer' }}>Drehzettel{zu ? ` (${offen.length})` : ''}</span>
         {HelpDot && <HelpDot topic="drehzettel" />}
         {zuDrehen > 0 && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: 'rgba(245,158,11,0.15)', color: 'var(--ton-amber)' }}>{zuDrehen} zu drehen</span>}
+        <button type="button" onClick={() => setZu(z => !z)} title={zu ? 'Aufklappen' : 'Einklappen'}
+          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: '3px 8px', fontFamily: 'inherit' }}>{zu ? '▾' : '▴'}</button>
       </div>
-      {offen.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen} />)}
+      {zu ? null : <>
+      {offen.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen}
+        auf={aktiv === s.id} onKlapp={() => setOffenId(aktiv === s.id ? '' : s.id)} />)}
       {!offen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Alles gedreht und gepostet. Danke! 💛</div>}
       {gepostet.length > 0 && (
         <>
@@ -196,6 +212,7 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
           ))}
         </>
       )}
+      </>}
     </div>
   )
 }

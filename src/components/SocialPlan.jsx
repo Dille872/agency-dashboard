@@ -49,6 +49,8 @@ const TX = {
     nicht_gespeichert: 'Nicht gespeichert: ', leer_tag: '', deine_zeit: 'deine Zeit', zeit_von: (k) => `Zeit ${k}`, de_zeit: 'deutsche Zeit', heute_nichts: 'Heute ist nichts geplant.',
     heute_titel: '📅 Heute geplant', oeffnen: 'Öffnen', model: 'Model', notiz: 'Notiz', tabelle_fehlt: 'Posting-Plan: Datenbank noch nicht eingerichtet (sql/posting-plan.sql).',
     tage: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], nur_lesen: 'Nur ansehen', frames_n: (n) => `Story · ${n} Frame${n === 1 ? '' : 's'}`,
+    vorschau_hoch: 'Vorschau: Hochladen kann nur das Model selbst.', hoch_titel: '📤 Content hochladen', hoch_text: 'Fotos und Videos auf Vorrat. Mehrere auf einmal gehen. Danach landen sie unten in der Ablage und werden eingeplant.', nichts_tag: 'Nichts geplant.',
+    tipp_handy: 'Tipp: Content oben antippen (mehrere möglich), dann beim Account „hier einplanen“.',
     fuer: 'Für', fuer_beitrag: 'Beitrag', fuer_tipp: 'Vor dem Hochladen wählen: Story-Content oder Beitrags-Content (Reel, Foto, Karussell). Lässt sich am Bild später umschalten.', sicht_alle: 'Alle', umschalten: 'Antippen = zwischen Story und Beitrag umschalten',
     von: (w) => `von ${w}`, eingetragen: 'Eingetragen', dein_plan: 'Dein Posting-Plan', dein_plan_text: 'Hier planst du zusammen mit uns: Beiträge eintragen, ändern und als gepostet markieren.',
   },
@@ -72,6 +74,8 @@ const TX = {
     story_gepostet: 'Story posted ✓', gemessen: 'Gets measured automatically.', zurueck: 'Not posted after all',
     fehler_account: 'Please choose an account.', fehler_zeit: 'Please set date and time.', fehler_reel: 'Please paste the Instagram link to the reel.',
     nicht_gespeichert: 'Not saved: ', leer_tag: '', deine_zeit: 'your time', zeit_von: (k) => `${k} time`, de_zeit: 'German time', heute_nichts: 'Nothing scheduled today.',
+    vorschau_hoch: 'Preview: only the creator can upload here.', hoch_titel: '📤 Upload content', hoch_text: 'Photos and videos in advance, several at once. They land in the library below and get scheduled.', nichts_tag: 'Nothing scheduled.',
+    tipp_handy: 'Tip: tap content above (several possible), then “schedule here” at the account.',
     fuer: 'For', fuer_beitrag: 'Post', fuer_tipp: 'Choose before uploading: story content or post content (reel, photo, carousel). Can be switched later on the tile.', sicht_alle: 'All', umschalten: 'Tap = switch between story and post',
     von: (w) => `by ${w}`, eingetragen: 'Added', dein_plan: 'Your posting calendar', dein_plan_text: 'Plan together with us: add posts, edit them and mark them as posted.',
     heute_titel: '📅 Scheduled today', oeffnen: 'Open', model: 'Creator', notiz: 'Note', tabelle_fehlt: 'Posting calendar: database not set up yet.',
@@ -103,7 +107,7 @@ function FuerWahl({ wert, onChange, T, klein: k = false }) {
   return (
     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} title={T.fuer_tipp}>
       <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 700 }}>{T.fuer}:</span>
-      {b('beitrag', P, '🎬 ' + T.fuer_beitrag)}{b('story', V, '◐ ' + T.story)}
+      {b('beitrag', P, '🎬 ' + T.fuer_beitrag)}{b('story', V, '📱 ' + T.story)}
     </span>
   )
 }
@@ -173,6 +177,19 @@ function ZeitText({ iso, zone, gross = false }) {
   )
 }
 
+// v5.14.0: Handy-Breite (wie die Mobil-Regeln in index.css)
+function useSchmal(max = 768) {
+  const frage = `(max-width: ${max}px)`
+  const [schmal, setSchmal] = useState(() => { try { return window.matchMedia(frage).matches } catch { return false } })
+  useEffect(() => {
+    let mq; try { mq = window.matchMedia(frage) } catch { return }
+    const f = () => setSchmal(mq.matches)
+    mq.addEventListener ? mq.addEventListener('change', f) : mq.addListener(f)
+    return () => { mq.removeEventListener ? mq.removeEventListener('change', f) : mq.removeListener(f) }
+  }, [frage])
+  return schmal
+}
+
 // ── Daten laden (gemeinsam für Plan und „Heute“) ───────────────────────────
 export function usePlan(accounts, von, bis) {
   const [zeilen, setZeilen] = useState(null)
@@ -193,7 +210,9 @@ export function usePlan(accounts, von, bis) {
 // ── Hauptansicht ───────────────────────────────────────────────────────────
 // accounts: [{ model, handle, notiz }] — schon gefiltert (Poster: nur eigene)
 // skripte: Skripte aus dem Social Manager (für „aus Skript“-Material)
-export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de', darfPlanen = true, userDisplayName }) {
+// v5.14.0: hochladenVorschau → in der Admin-Vorschau des Model-Portals den
+// Hochladen-Bereich zeigen (ausgegraut), damit man sieht, wo das Model hochlädt.
+export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de', darfPlanen = true, userDisplayName, hochladenVorschau = false }) {
   const T = TX[sprache] || TX.de
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const vorschau = useVorschau()
@@ -212,6 +231,8 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const [ablageModel, setAblageModel] = useState('')
   const [ablageFuer, setAblageFuer] = useState('beitrag')   // v5.13.0: für Story oder Beitrag hochladen
   const [ablageSicht, setAblageSicht] = useState('')         // v5.13.0: '' | 'story' | 'beitrag'
+  const schmal = useSchmal()                                  // v5.14.0: Handy → Tagesansicht statt Wochenraster
+  const [tagWahl, setTagWahl] = useState(() => { const h = tagStart(new Date()); const w = wocheStart(h); return Math.round((h - w) / 864e5) })
   const ende = useMemo(() => plusTage(start, 7), [start])
   const { zeilen, fehlt, laden } = usePlan(accounts, start, ende)
   const models = [...new Set(accounts.map(a => a.model))]
@@ -351,9 +372,53 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   if (fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>{T.tabelle_fehlt}</div>
 
   const modus = kopie ? 'kopie' : gewaehlt.length ? 'auswahl' : ''
+  // Eine Zelle (Account × Tag): Beiträge + „+“ / „hier einplanen“. Am Handy breit, am Rechner im Wochenraster.
+  const zelle = (a, d, i) => {
+    const drin = (zeilen || []).filter(z => z.model_name === a.model && String(z.account).toLowerCase() === a.handle.toLowerCase() && tagIn(z.geplant_am, a.zone || STANDARD) === lokalerTag(d))
+    const zk = a.model + a.handle + i
+    const ziel = darfPlanen && (modus || ziehen)
+    return (
+      <div
+        onDragOver={(e) => { if (darfPlanen && ziehen) { e.preventDefault(); if (ueber !== zk) setUeber(zk) } }}
+        onDragLeave={() => { if (ueber === zk) setUeber('') }}
+        onDrop={(e) => { e.preventDefault(); abwerfen(a, d) }}
+        style={{ minHeight: schmal ? 0 : 84, background: ueber === zk ? C + '22' : 'var(--bg-input)', border: `1px dashed ${ziel ? (modus === 'kopie' ? A : C) : 'var(--border)'}`, borderRadius: 10, padding: schmal ? 6 : 4, display: 'flex', flexDirection: 'column', gap: schmal ? 6 : 4 }}>
+        {schmal && !drin.length && <span style={{ fontSize: 12, color: 'var(--text-muted)', padding: '2px 2px' }}>{T.nichts_tag}</span>}
+        {drin.map(z => (
+          <button key={z.id} type="button" onClick={() => setOffen(z)} draggable={darfPlanen && z.status !== 'gepostet'}
+            onDragStart={(e) => { setZiehen({ art: 'eintrag', z }); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(z.id)) } catch { /* egal */ } }}
+            onDragEnd={() => { setZiehen(null); setUeber('') }}
+            className={schmal ? 'plan-eintrag' : undefined}
+            style={{ textAlign: 'left', borderRadius: 8, padding: schmal ? '8px 10px' : '5px 6px', fontSize: schmal ? 12.5 : 11, lineHeight: 1.3, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', background: artFarbe(z.art) + '1f', border: `1px solid ${kopie?.id === z.id ? A : artFarbe(z.art) + '55'}`, borderLeft: schmal ? `4px solid ${artFarbe(z.art)}` : undefined, opacity: z.status === 'gepostet' ? 0.6 : 1, display: schmal ? 'flex' : 'block', alignItems: 'center', gap: 8 }}>
+            {schmal ? (
+              <>
+                <span style={{ flexShrink: 0 }}><ZeitText iso={z.geplant_am} zone={a.zone || STANDARD} /></span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ display: 'block', fontSize: 13 }}>{artText(z, T)}</b>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{artName(z.art, T)}{z.erstellt_von ? ` · ${T.von(z.erstellt_von)}` : ''}</span>
+                </span>
+                {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
+              </>
+            ) : (
+              <>
+                <ZeitText iso={z.geplant_am} zone={a.zone || STANDARD} />
+                <b style={{ display: 'block', fontSize: 11.5 }}>{artText(z, T)}</b>
+                {z.erstellt_von && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)' }}>{T.von(z.erstellt_von)}</span>}
+                {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
+              </>
+            )}
+          </button>
+        ))}
+        {darfPlanen && <button type="button" onClick={() => zelleTippen(a, d)} className={schmal ? 'plan-plus' : undefined}
+          style={{ marginTop: 'auto', background: modus ? (modus === 'kopie' ? A : C) + '22' : 'none', border: schmal && !modus ? '1px solid var(--border)' : 'none', borderRadius: 7, color: modus ? (modus === 'kopie' ? A : C) : 'var(--text-muted)', cursor: 'pointer', fontSize: modus ? 11 : 14, fontWeight: modus ? 800 : 400, fontFamily: 'inherit', padding: modus ? '3px 0' : 0 }}>
+          {modus === 'kopie' ? T.hier_einfuegen : modus === 'auswahl' ? T.hier_einplanen : schmal ? T.neu : '+'}
+        </button>}
+      </div>
+    )
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: 1fr; } }`}</style>
+      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: minmax(0, 1fr); } } .plan-raster > * { min-width: 0; } .plan-check input { width: auto !important; flex-shrink: 0; } .plan-raster > .plan-ablage.plan-ablage { flex-wrap: nowrap !important; } @media (max-width: 768px) { .plan-tage button { padding: 5px 0 3px !important; } .plan-eintrag { padding: 8px 10px !important; font-size: 12.5px !important; } .plan-plus { padding: 8px 0 !important; font-size: 13px !important; } .plan-gross { padding: 12px 14px !important; font-size: 14.5px !important; } }`}</style>
 
       {/* Hinweisleiste: Kopiermodus / Auswahl */}
       {modus && (
@@ -367,11 +432,14 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
 
       <div className="plan-raster">
         {/* Content-Ablage */}
-        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="plan-ablage" style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={klein}>🎞 {T.ablage}</div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{darfPlanen ? T.ablage_text : T.nur_lesen}</div>
-          {darfPlanen && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {(darfPlanen || hochladenVorschau) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '10px 10px', borderRadius: 12, border: `1px dashed ${ablageFuer === 'story' ? V : P}`, background: (ablageFuer === 'story' ? V : P) + '0d' }}>
+              <b style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{T.hoch_titel}</b>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.4 }}>{T.hoch_text}</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               {!filter && models.length > 1 && (
                 <select value={ablageModel} onChange={e => setAblageModel(e.target.value)} style={{ ...eingabe, width: 'auto', padding: '5px 7px', fontSize: 12 }}>
                   <option value="">{T.model} …</option>
@@ -379,7 +447,9 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                 </select>
               )}
               <FuerWahl wert={ablageFuer} onChange={setAblageFuer} T={T} />
-              <DateiHochladen model={ablageZiel} mehrere gesperrt={!ablageZiel} farbe={ablageFuer === 'story' ? V : P} text={T.content_hoch} onFertig={contentRein} />
+              </div>
+              <DateiHochladen model={ablageZiel} mehrere gross gesperrt={!ablageZiel || !darfPlanen} farbe={ablageFuer === 'story' ? V : P} text={T.content_hoch} onFertig={contentRein} />
+              {!darfPlanen && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{T.vorschau_hoch}</span>}
             </div>
           )}
           {/* v5.13.0: nur Story- oder nur Beitrags-Content zeigen */}
@@ -392,7 +462,8 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
             ))}
           </div>
           {!materialListe.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{T.kein_material}</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 6 }}>
+          {/* v5.14.0: Flex statt Raster (die Mobil-Regel stapelt sonst jede Kachel in eine Zeile); am Handy eine wischbare Reihe */}
+          <div style={{ display: 'flex', flexWrap: schmal ? 'nowrap' : 'wrap', overflowX: schmal ? 'auto' : 'visible', gap: 6, paddingBottom: schmal ? 4 : 0, WebkitOverflowScrolling: 'touch' }}>
             {materialListe.slice(0, 120).map(x => {
               const nr = auswahl.indexOf(x.key)
               const an = nr >= 0
@@ -402,7 +473,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                   onDragEnd={() => { setZiehen(null); setUeber('') }}
                   onClick={() => darfPlanen && markieren(x)}
                   title={`${x.titel}${x.model ? ` · ${x.model}` : ''}${x.quelle ? ` · ${x.quelle}` : ''}`}
-                  style={{ position: 'relative', borderRadius: 10, padding: 4, background: an ? C + '22' : 'var(--bg-card2)', border: `2px solid ${an ? C : 'transparent'}`, cursor: darfPlanen ? 'grab' : 'default', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, opacity: istVerplant(x) ? 0.5 : 1 }}>
+                  style={{ position: 'relative', width: 72, flexShrink: 0, boxSizing: 'border-box', borderRadius: 10, padding: 4, background: an ? C + '22' : 'var(--bg-card2)', border: `2px solid ${an ? C : 'transparent'}`, cursor: darfPlanen ? 'grab' : 'default', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, opacity: istVerplant(x) ? 0.5 : 1 }}>
                   {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={84} onClick={() => {}} />
                     : <span style={{ width: 48, height: 84, borderRadius: 8, background: artFarbe(x.art) + '33', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.art === 'story' || x.art === 'foto' ? '📷' : '🎬'}</span>}
                   <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.skript_id ? x.titel.split(' ')[0] : (models.length > 1 && !filter ? x.model : (x.von || ''))}</span>
@@ -418,7 +489,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               )
             })}
           </div>
-          <label style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
+          <label className="plan-check" style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={alleZeigen} onChange={e => setAlleZeigen(e.target.checked)} /> {T.auch_verplante}
           </label>
           {darfPlanen && <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 10px', fontSize: 11.5 }}>{T.material_neu}</button>}
@@ -430,15 +501,42 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
             <button type="button" onClick={() => setStart(plusTage(start, -7))} style={knopf('var(--text-secondary)', false)}>‹</button>
             <b style={{ color: 'var(--text-primary)' }}>{start.toLocaleDateString(loc, { day: '2-digit', month: '2-digit' })} – {plusTage(start, 6).toLocaleDateString(loc, { day: '2-digit', month: '2-digit' })}</b>
             <button type="button" onClick={() => setStart(plusTage(start, 7))} style={knopf('var(--text-secondary)', false)}>›</button>
-            <button type="button" onClick={() => setStart(wocheStart(new Date()))} style={knopf(C, false)}>{T.heute}</button>
+            <button type="button" onClick={() => { const h = tagStart(new Date()); const w = wocheStart(h); setStart(w); setTagWahl(Math.round((h - w) / 864e5)) }} style={knopf(C, false)}>{T.heute}</button>
             <span style={{ flex: 1 }} />
             {accounts.length > 1 && (
-              <select value={filter} onChange={e => { setFilter(e.target.value); setAuswahl([]) }} style={{ ...eingabe, width: 'auto' }}>
+              <select value={filter} onChange={e => { setFilter(e.target.value); setAuswahl([]) }} style={{ ...eingabe, width: schmal ? '100%' : 'auto' }}>
                 <option value="">{T.alle}</option>
                 {accounts.map(a => <option key={a.model + a.handle} value={a.model + '|' + a.handle}>{a.handle} · {a.model}</option>)}
               </select>
             )}
           </div>
+          {schmal ? (
+            // v5.14.0: Handy — Tagesleiste oben, darunter der gewählte Tag mit allen Accounts untereinander
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="plan-tage" style={{ display: 'flex', gap: 4 }}>
+                {tage.map((d, i) => {
+                  const n = (zeilen || []).filter(z => sichtbar.some(a => z.model_name === a.model && String(z.account).toLowerCase() === a.handle.toLowerCase() && tagIn(z.geplant_am, a.zone || STANDARD) === lokalerTag(d))).length
+                  const an = i === tagWahl
+                  const heute = gleicherTag(d, new Date())
+                  return (
+                    <button key={i} type="button" onClick={() => setTagWahl(i)}
+                      style={{ flex: '1 1 0', minWidth: 0, borderRadius: 10, border: `1px solid ${an ? P : 'var(--border)'}`, background: an ? P + '22' : 'transparent', color: an ? P : heute ? P : 'var(--text-secondary)', fontFamily: 'inherit', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1.15 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700 }}>{T.tage[i]}</span>
+                      <span style={{ fontSize: 15, fontWeight: 800 }}>{d.getDate()}</span>
+                      <span style={{ fontSize: 9.5, minHeight: 11, color: n ? G : 'transparent', fontWeight: 800 }}>{n ? '●'.repeat(Math.min(n, 3)) : '·'}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <b style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{tage[tagWahl].toLocaleDateString(loc, { weekday: 'long', day: '2-digit', month: '2-digit' })}</b>
+              {sichtbar.map(a => (
+                <div key={a.model + a.handle} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: P }}>{a.handle}<span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> · {a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</span></div>
+                  {zelle(a, tage[tagWahl], tagWahl)}
+                </div>
+              ))}
+            </div>
+          ) : (
           <div style={{ overflowX: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: `110px repeat(7, minmax(92px, 1fr))`, gap: 5, minWidth: 760 }}>
               <div />
@@ -446,39 +544,13 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               {sichtbar.map(a => (
                 <React.Fragment key={a.model + a.handle}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: P, padding: '6px 2px', wordBreak: 'break-all' }}>{a.handle}<div style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</div></div>
-                  {tage.map((d, i) => {
-                    const drin = (zeilen || []).filter(z => z.model_name === a.model && String(z.account).toLowerCase() === a.handle.toLowerCase() && tagIn(z.geplant_am, a.zone || STANDARD) === lokalerTag(d))
-                    const zk = a.model + a.handle + i
-                    const ziel = darfPlanen && (modus || ziehen)
-                    return (
-                      <div key={i}
-                        onDragOver={(e) => { if (darfPlanen && ziehen) { e.preventDefault(); if (ueber !== zk) setUeber(zk) } }}
-                        onDragLeave={() => { if (ueber === zk) setUeber('') }}
-                        onDrop={(e) => { e.preventDefault(); abwerfen(a, d) }}
-                        style={{ minHeight: 84, background: ueber === zk ? C + '22' : 'var(--bg-input)', border: `1px dashed ${ziel ? (modus === 'kopie' ? A : C) : 'var(--border)'}`, borderRadius: 10, padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {drin.map(z => (
-                          <button key={z.id} type="button" onClick={() => setOffen(z)} draggable={darfPlanen && z.status !== 'gepostet'}
-                            onDragStart={(e) => { setZiehen({ art: 'eintrag', z }); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(z.id)) } catch { /* egal */ } }}
-                            onDragEnd={() => { setZiehen(null); setUeber('') }}
-                            style={{ textAlign: 'left', borderRadius: 8, padding: '5px 6px', fontSize: 11, lineHeight: 1.3, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-primary)', background: artFarbe(z.art) + '1f', border: `1px solid ${kopie?.id === z.id ? A : artFarbe(z.art) + '55'}`, opacity: z.status === 'gepostet' ? 0.6 : 1 }}>
-                            <ZeitText iso={z.geplant_am} zone={a.zone || STANDARD} />
-                            <b style={{ display: 'block', fontSize: 11.5 }}>{artText(z, T)}</b>
-                            {z.erstellt_von && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)' }}>{T.von(z.erstellt_von)}</span>}
-                            {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
-                          </button>
-                        ))}
-                        {darfPlanen && <button type="button" onClick={() => zelleTippen(a, d)}
-                          style={{ marginTop: 'auto', background: modus ? (modus === 'kopie' ? A : C) + '22' : 'none', border: 'none', borderRadius: 7, color: modus ? (modus === 'kopie' ? A : C) : 'var(--text-muted)', cursor: 'pointer', fontSize: modus ? 11 : 14, fontWeight: modus ? 800 : 400, fontFamily: 'inherit', padding: modus ? '3px 0' : 0 }}>
-                          {modus === 'kopie' ? T.hier_einfuegen : modus === 'auswahl' ? T.hier_einplanen : '+'}
-                        </button>}
-                      </div>
-                    )
-                  })}
+                  {tage.map((d, i) => <React.Fragment key={i}>{zelle(a, d, i)}</React.Fragment>)}
                 </React.Fragment>
               ))}
             </div>
           </div>
-          {darfPlanen && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{T.zieh_tipp}</div>}
+          )}
+          {darfPlanen && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{schmal ? T.tipp_handy : T.zieh_tipp}</div>}
         </div>
       </div>
       {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen} userDisplayName={userDisplayName}
@@ -817,7 +889,7 @@ function PlanModelVoll({ displayName, isPreview, cardS, service }) {
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.dein_plan_text}</div>
         </div>
       </div>
-      {accounts.length ? <SocialPlan accounts={accounts} skripte={skripte} sprache="de" darfPlanen={!isPreview} userDisplayName={displayName} />
+      {accounts.length ? <SocialPlan accounts={accounts} skripte={skripte} sprache="de" darfPlanen={!isPreview} hochladenVorschau={isPreview} userDisplayName={displayName} />
         : <div style={{ ...cardS, padding: '12px 15px', fontSize: 12.5, color: 'var(--text-muted)' }}>Noch kein Instagram-Account in deinem Board.</div>}
     </div>
   )
@@ -850,16 +922,17 @@ function PlanModelLesen({ displayName, isPreview = false, cardS = {}, service = 
         {/* v5.12.0: Content auf Vorrat hochladen (mehrere), das Team verplant ihn */}
       </div>
       {/* v5.12.0: Content auf Vorrat hochladen (mehrere), das Team verplant ihn. v5.13.0: vorher Story oder Beitrag wählen */}
-      {!isPreview && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      {(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 10, borderRadius: 12, border: `1px dashed ${fuer === 'story' ? V : P}` }}>
           <FuerWahl wert={fuer} onChange={setFuer} T={T} />
-          <DateiHochladen model={displayName} mehrere farbe={fuer === 'story' ? V : P} text="⬆ Content hochladen" onFertig={async (link) => {
+          <DateiHochladen model={displayName} mehrere gross gesperrt={isPreview} farbe={fuer === 'story' ? V : P} text="⬆ Content hochladen" onFertig={async (link) => {
             const foto = istBild(link)
             const art = artFuerDatei(fuer, link)
             const jetzt = new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
             await supabase.from('social_material').insert({ model_name: displayName, art, titel: `${art === 'story' ? 'Story · ' : ''}${foto ? 'Foto' : 'Video'} ${jetzt}`, link, erstellt_von: displayName })
             laden()
           }} />
+          {isPreview && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{T.vorschau_hoch}</span>}
         </div>
       )}
       {!zeilen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Noch nichts geplant.</div>}
