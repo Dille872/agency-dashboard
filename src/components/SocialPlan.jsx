@@ -33,7 +33,7 @@ const TX = {
     aus_skript: 'aus Skript', ohne_skript: 'ohne Skript', reel: 'Reel', story: 'Story', foto: 'Foto', karussell: 'Karussell',
     ablage: 'Content · noch nicht verplant', ablage_text: 'Antippen = markieren (mehrere möglich). Auf einen Tag ziehen oder danach den Tag antippen.', content_hoch: '⬆ Content hochladen (mehrere)',
     auch_verplante: 'auch verplante zeigen', verplant: 'schon verplant', verwerfen: 'aus der Ablage nehmen', verwerfen_frage: 'Diesen Content aus der Ablage nehmen? (Die Datei bleibt erhalten, bis aufgeräumt wird.)',
-    falsches_model: (m) => `Dieser Content gehört nicht zu ${m}.`, teils_falsch: (m) => `Content anderer Models wurde weggelassen, nur ${m} eingeplant.`,
+    falsches_model: (m) => `Dieser Content gehört nicht zu ${m}.`, falsches_ziel: (nr, z) => `${nr} ist für ${z} geschrieben. Bitte dort einplanen.`, teils_falsch: (m) => `Content anderer Models wurde weggelassen, nur ${m} eingeplant.`,
     kopiert_auf: (x) => `✓ Kopie angelegt: ${x}`, nur_gleicher_account: 'Verschieben geht nur innerhalb desselben Accounts. Für einen anderen Account: Kopieren.',
     kopiermodus: (x) => `Kopieren: „${x}“ · Tippe auf jeden Tag, an dem er nochmal rausgehen soll.`, auswahl_text: (n) => `${n} markiert · auf einen Tag ziehen oder den Tag antippen (mehrere → Story oder Karussell)`,
     fertig: 'Fertig', auswahl_weg: 'Auswahl aufheben', hier_einfuegen: '⧉ hier einfügen', hier_einplanen: '⤵ hier einplanen', kopieren_knopf: '⧉ Kopieren',
@@ -50,7 +50,8 @@ const TX = {
     heute_titel: '📅 Heute geplant', oeffnen: 'Öffnen', model: 'Model', notiz: 'Notiz', tabelle_fehlt: 'Posting-Plan: Datenbank noch nicht eingerichtet (sql/posting-plan.sql).',
     tage: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], nur_lesen: 'Nur ansehen', frames_n: (n) => `Story · ${n} Frame${n === 1 ? '' : 's'}`,
     vorschau_hoch: 'Vorschau: Hochladen kann nur das Model selbst.', hoch_titel: '📤 Content hochladen', hoch_text: 'Fotos und Videos auf Vorrat. Mehrere auf einmal gehen. Danach landen sie unten in der Ablage und werden eingeplant.', nichts_tag: 'Nichts geplant.',
-    ohne_video: 'auch Skripte ohne Video (noch nicht gedreht)',
+    platzhalter: (n) => `Noch nicht gedreht (${n})`, platzhalter_text: 'Skripte ohne Video. Du kannst sie schon einplanen: Sobald das Model das Video hochlädt, steht es automatisch im Beitrag.',
+    wartet: '⏳ wartet auf Video', vom_skript: (nr) => `kommt automatisch vom Skript ${nr}`, wartet_lang: (nr) => `⏳ Wartet auf das Video von ${nr}. Sobald das Model es hochlädt, steht es automatisch hier.`, konto: 'Account',
     tipp_handy: 'Tipp: Content oben antippen (mehrere möglich), dann beim Account „hier einplanen“.',
     fuer: 'Für', fuer_beitrag: 'Beitrag', fuer_tipp: 'Vor dem Hochladen wählen: Story-Content oder Beitrags-Content (Reel, Foto, Karussell). Lässt sich am Bild später umschalten.', sicht_alle: 'Alle', umschalten: 'Antippen = zwischen Story und Beitrag umschalten',
     von: (w) => `von ${w}`, eingetragen: 'Eingetragen', dein_plan: 'Dein Posting-Plan', dein_plan_text: 'Hier planst du zusammen mit uns: Beiträge eintragen, ändern und als gepostet markieren.',
@@ -61,7 +62,7 @@ const TX = {
     aus_skript: 'from script', ohne_skript: 'no script', reel: 'Reel', story: 'Story', foto: 'Photo', karussell: 'Carousel',
     ablage: 'Content · not scheduled yet', ablage_text: 'Tap = select (several possible). Drag onto a day or tap the day afterwards.', content_hoch: '⬆ Upload content (several)',
     auch_verplante: 'show scheduled too', verplant: 'already scheduled', verwerfen: 'remove from library', verwerfen_frage: 'Remove this content from the library?',
-    falsches_model: (m) => `This content does not belong to ${m}.`, teils_falsch: (m) => `Content of other creators was skipped, only ${m} scheduled.`,
+    falsches_model: (m) => `This content does not belong to ${m}.`, falsches_ziel: (nr, z) => `${nr} was written for ${z}. Please schedule it there.`, teils_falsch: (m) => `Content of other creators was skipped, only ${m} scheduled.`,
     kopiert_auf: (x) => `✓ Copy created: ${x}`, nur_gleicher_account: 'Moving only works within the same account. For another account: copy.',
     kopiermodus: (x) => `Copy: “${x}” · Tap every day it should go out again.`, auswahl_text: (n) => `${n} selected · drag onto a day or tap the day (several → story or carousel)`,
     fertig: 'Done', auswahl_weg: 'Clear selection', hier_einfuegen: '⧉ paste here', hier_einplanen: '⤵ schedule here', kopieren_knopf: '⧉ Copy',
@@ -76,7 +77,8 @@ const TX = {
     fehler_account: 'Please choose an account.', fehler_zeit: 'Please set date and time.', fehler_reel: 'Please paste the Instagram link to the reel.',
     nicht_gespeichert: 'Not saved: ', leer_tag: '', deine_zeit: 'your time', zeit_von: (k) => `${k} time`, de_zeit: 'German time', heute_nichts: 'Nothing scheduled today.',
     vorschau_hoch: 'Preview: only the creator can upload here.', hoch_titel: '📤 Upload content', hoch_text: 'Photos and videos in advance, several at once. They land in the library below and get scheduled.', nichts_tag: 'Nothing scheduled.',
-    ohne_video: 'also scripts without video (not shot yet)',
+    platzhalter: (n) => `Not shot yet (${n})`, platzhalter_text: 'Scripts without video. You can schedule them already: once the creator uploads the video, it appears in the post automatically.',
+    wartet: '⏳ waiting for video', vom_skript: (nr) => `comes automatically from script ${nr}`, wartet_lang: (nr) => `⏳ Waiting for the video of ${nr}. Once the creator uploads it, it appears here automatically.`, konto: 'Account',
     tipp_handy: 'Tip: tap content above (several possible), then “schedule here” at the account.',
     fuer: 'For', fuer_beitrag: 'Post', fuer_tipp: 'Choose before uploading: story content or post content (reel, photo, carousel). Can be switched later on the tile.', sicht_alle: 'All', umschalten: 'Tap = switch between story and post',
     von: (w) => `by ${w}`, eingetragen: 'Added', dein_plan: 'Your posting calendar', dein_plan_text: 'Plan together with us: add posts, edit them and mark them as posted.',
@@ -96,6 +98,10 @@ const artFarbe = (a) => a === 'story' ? V : a === 'foto' ? A : a === 'karussell'
 const ARTEN = ['reel', 'foto', 'karussell', 'story']
 const artName = (a, T) => T[a] || T.reel
 const artText = (z, T) => z.art === 'story' ? T.frames_n((z.frames || []).length) : z.art === 'karussell' ? (z.titel || T.karussell_n((z.frames || []).length)) : (z.titel || artName(z.art, T))
+
+// v5.17.0: Video eines Plan-Eintrags — eigenes oder automatisch vom Skript
+const videoVon = (z) => (z && (z.video_link || z._skript?.video)) || ''
+const wartetAufVideo = (z) => !!(z && !z.video_link && z._skript && !z._skript.video && z.art !== 'story' && z.art !== 'karussell')
 
 // v5.13.0: Content ist entweder für Stories oder für Beiträge (Reel/Foto/Karussell) gedacht.
 // Gespeichert in social_material.art: 'story' bzw. 'reel'/'foto' (je nach Datei).
@@ -203,7 +209,16 @@ export function usePlan(accounts, von, bis) {
       .gte('geplant_am', plusTage(von, -1).toISOString()).lt('geplant_am', plusTage(bis, 1).toISOString()).order('geplant_am')
     if (error) { setFehlt(true); setZeilen([]); return }
     const erlaubt = new Set(schluessel.split(','))
-    setZeilen((data || []).filter(z => erlaubt.has(z.model_name + '|' + String(z.account).toLowerCase())))
+    const rows = (data || []).filter(z => erlaubt.has(z.model_name + '|' + String(z.account).toLowerCase()))
+    // v5.17.0: Platzhalter aus einem Skript (noch ohne eigenes Video) → Video kommt automatisch vom Skript,
+    // sobald das Model es hochlädt. Nur angezeigt, nicht in social_plan geschrieben.
+    const ids = [...new Set(rows.filter(z => z.skript_id && !z.video_link).map(z => z.skript_id))]
+    if (ids.length) {
+      const { data: sk } = await supabase.from('reel_skripte').select('*').in('id', ids)
+      const m = Object.fromEntries((sk || []).map(x => [x.id, x]))
+      for (const z of rows) if (z.skript_id && !z.video_link && m[z.skript_id]) z._skript = { nr: m[z.skript_id].nr, video: endVideo(m[z.skript_id]) }
+    }
+    setZeilen(rows)
   }, [schluessel, von.getTime(), bis.getTime()]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { laden() }, [laden])
   return { zeilen, fehlt, laden }
@@ -219,14 +234,17 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const vorschau = useVorschau()
   const [start, setStart] = useState(() => wocheStart(new Date()))
-  const [filter, setFilter] = useState('')
+  // v5.17.0: immer genau EIN Account gewählt (Ablage + Kalender nur dafür) — kein „Alle Accounts“ mehr,
+  // damit Content nicht beim falschen Account landet.
+  const [filterWahl, setFilter] = useState('')
+  const filter = accounts.some(a => a.model + '|' + a.handle === filterWahl) ? filterWahl : (accounts[0] ? accounts[0].model + '|' + accounts[0].handle : '')
   const [offen, setOffen] = useState(null) // Entwurf/Zeile im Fenster
   const [material, setMaterial] = useState([])
   const [benutzt, setBenutzt] = useState({ ids: new Set(), links: new Set() })
   const [neuMaterial, setNeuMaterial] = useState(false)
   const [auswahl, setAuswahl] = useState([])        // v5.12.0: markierter Content (Reihenfolge = Auswahl)
   const [alleZeigen, setAlleZeigen] = useState(false)
-  const [ohneVideo, setOhneVideo] = useState(false)   // v5.16.0: auch noch nicht gedrehte Skripte zeigen
+  const [platzhalterAuf, setPlatzhalterAuf] = useState(false)   // v5.17.0: noch nicht gedrehte Skripte (aufklappbar)
   const [kopie, setKopie] = useState(null)           // v5.12.0: Beitrag im Kopiermodus
   const [ziehen, setZiehen] = useState(null)         // { art: 'content' } | { art: 'eintrag', z }
   const [ueber, setUeber] = useState('')             // Zelle, über der gerade gezogen wird
@@ -263,16 +281,21 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   const tage = [...Array(7)].map((_, i) => plusTage(start, i))
   const istVerplant = (x) => benutzt.ids.has(x.key) || (x.link && benutzt.links.has(x.link))
 
-  // Content-Ablage: eigenes Material + Skript-Reels (nicht gepostet)
+  // Content-Ablage: eigenes Material + Skript-Reels (nicht gepostet). Skripte mit Ziel-Account nur bei diesem Account.
+  const wahlAcc = filter.split('|')[1] || ''
+  const skriptOffen = skripte.filter(s => !s.verworfen && !s.reel_url && models.includes(s.model_name) && statusVon(s) !== 'gepostet'
+    && (!filter || (s.model_name === filter.split('|')[0] && (!s.ziel_account || String(s.ziel_account).toLowerCase() === wahlAcc.toLowerCase()))))
+  const alsTeil = (s) => ({ key: 's' + s.id, art: 'reel', titel: `${s.nr} ${s.titel}`, model: s.model_name, link: endVideo(s), quelle: `${T.aus_skript} · ${s.nr}`, skript_id: s.id, ziel: s.ziel_account })
+  const platzhalter = skriptOffen.filter(s => !endVideo(s)).map(alsTeil).filter(x => alleZeigen || !benutzt.ids.has(x.key))
   const alles = [
     ...material.map(m => ({ key: 'm' + m.id, art: m.art, titel: m.titel, model: m.model_name, link: m.link, quelle: m.erstellt_von || T.ohne_skript, material_id: m.id, notiz: m.notiz, von: m.erstellt_von })),
-    // v5.16.0: Skripte ohne Video (noch nicht gedreht) nur auf Wunsch — sonst füllen sie die Ablage mit leeren Kacheln
-    ...skripte.filter(s => !s.verworfen && !s.reel_url && models.includes(s.model_name) && statusVon(s) !== 'gepostet' && (ohneVideo || !!endVideo(s)))
+    // v5.17.0: Skript-Reels nur mit Video hier; ungedrehte unten als aufklappbare Platzhalter
+    ...skriptOffen.filter(s => !!endVideo(s))
       .map(s => ({ key: 's' + s.id, art: 'reel', titel: `${s.nr} ${s.titel}`, model: s.model_name, link: endVideo(s), quelle: `${T.aus_skript} · ${s.nr}`, skript_id: s.id, ziel: s.ziel_account })),
   ].filter(x => !filter || x.model === filter.split('|')[0])
   const materialListe = alles.filter(x => alleZeigen || !istVerplant(x))
     .filter(x => !ablageSicht || (ablageSicht === 'story') === istStoryContent(x))
-  const gewaehlt = auswahl.map(k => alles.find(x => x.key === k)).filter(Boolean)
+  const gewaehlt = auswahl.map(k => alles.find(x => x.key === k) || platzhalter.find(x => x.key === k)).filter(Boolean)
   const markieren = (x) => setAuswahl(a => a.includes(x.key) ? a.filter(k => k !== x.key) : [...a, x.key])
   const istVideoLink = (l) => !!l && !istBild(l)
 
@@ -284,13 +307,18 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
       : (teile.every(x => !istStoryContent(x)) ? 'karussell' : 'story')
     return {
       model_name: acc.model, account: acc.handle, art, titel: ein ? ein.titel : '', geplant_am: isoZeit,
-      video_link: ein && art !== 'story' ? (ein.link || '') : '',
+      // v5.17.0: Skript-Reels behalten kein eigenes Video — es kommt immer aktuell vom Skript (auch der spätere Schnitt)
+      video_link: ein && art !== 'story' && !ein.skript_id ? (ein.link || '') : '',
       frames: ein ? (art === 'story' && ein.link ? [{ link: ein.link, text: '', sticker: '' }] : []) : teile.filter(x => x.link).map(x => ({ link: x.link, text: '', sticker: '' })),
       material_id: ein?.material_id || null, skript_id: ein?.skript_id || null,
+      ...(ein?.skript_id ? { _skript: { nr: ein.titel.split(' ')[0], video: ein.link || '' } } : {}),
       caption: '', hashtags: '', overlays: [], hinweis: '', status: 'geplant',
     }
   }
   const einplanenAuf = (acc, tag, teile) => {
+    // v5.17.0: Skript mit festem Ziel-Account nur dort einplanen
+    const falschesZiel = teile.find(x => x.ziel && String(x.ziel).toLowerCase() !== acc.handle.toLowerCase())
+    if (falschesZiel) { setHinweis(T.falsches_ziel(falschesZiel.titel.split(' ')[0], falschesZiel.ziel)); return }
     const passend = teile.filter(x => x.model === acc.model)
     if (!passend.length) { setHinweis(T.falsches_model(acc.model)); return }
     if (passend.length < teile.length) setHinweis(T.teils_falsch(acc.model))
@@ -315,7 +343,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
     const z = kopie
     const neu = {
       model_name: acc.model, account: acc.handle, art: z.art, geplant_am: zeitAuf(z, acc, tag), titel: z.titel || null,
-      video_link: z.video_link || null, caption: z.caption || null, hashtags: z.hashtags || null, hinweis: z.hinweis || null,
+      video_link: videoVon(z) || null, skript_id: z.video_link ? null : (z.skript_id || null), caption: z.caption || null, hashtags: z.hashtags || null, hinweis: z.hinweis || null,
       overlays: z.overlays || [], frames: z.frames || [], status: 'geplant',
     }
     const { error } = await supabase.from('social_plan').insert(neu)
@@ -375,6 +403,31 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
 
   if (fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>{T.tabelle_fehlt}</div>
 
+  // Eine Kachel der Ablage (auch für die Platzhalter ungedrehter Skripte)
+  const kachel = (x) => {
+              const nr = auswahl.indexOf(x.key)
+              const an = nr >= 0
+              return (
+                <div key={x.key} draggable={darfPlanen}
+                  onDragStart={(e) => { const teile = an ? gewaehlt : [x]; setZiehen({ art: 'content', teile }); e.dataTransfer.effectAllowed = 'copy'; try { e.dataTransfer.setData('text/plain', x.key) } catch { /* egal */ } }}
+                  onDragEnd={() => { setZiehen(null); setUeber('') }}
+                  onClick={() => darfPlanen && markieren(x)}
+                  title={`${x.titel}${x.model ? ` · ${x.model}` : ''}${x.quelle ? ` · ${x.quelle}` : ''}`}
+                  style={{ position: 'relative', width: 72, flexShrink: 0, boxSizing: 'border-box', borderRadius: 10, padding: 4, background: an ? C + '22' : 'var(--bg-card2)', border: `2px solid ${an ? C : 'transparent'}`, cursor: darfPlanen ? 'grab' : 'default', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, opacity: istVerplant(x) ? 0.5 : 1 }}>
+                  {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={84} onClick={darfPlanen ? () => {} : undefined} knopf={darfPlanen} />
+                    : <span style={{ width: 48, height: 84, borderRadius: 8, background: x.skript_id && !x.link ? 'transparent' : artFarbe(x.art) + '33', border: x.skript_id && !x.link ? '1px dashed var(--border)' : 'none', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.skript_id && !x.link ? '⏳' : x.art === 'story' || x.art === 'foto' ? '📷' : '🎬'}</span>}
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.skript_id ? x.titel.split(' ')[0] : (models.length > 1 && !filter ? x.model : (x.von || ''))}</span>
+                  {an && <span style={{ position: 'absolute', top: 2, left: 2, background: C, color: '#04212a', borderRadius: 9, fontSize: 10.5, fontWeight: 800, padding: '0 6px' }}>{nr + 1}</span>}
+                  {istVerplant(x) && <span style={{ position: 'absolute', top: 2, right: 2, fontSize: 10 }} title={T.verplant}>✓</span>}
+                  {/* v5.13.0: Story/Beitrag-Marke, antippen schaltet um */}
+                  <span onClick={(e) => { if (darfPlanen && x.material_id) { e.stopPropagation(); umschalten(x) } }} title={darfPlanen && x.material_id ? T.umschalten : undefined}
+                    style={{ position: 'absolute', top: 70, left: 2, fontSize: 9.5, fontWeight: 800, padding: '0 5px', borderRadius: 6, background: istStoryContent(x) ? V : P, color: '#fff', cursor: darfPlanen && x.material_id ? 'pointer' : 'default' }}>
+                    {istStoryContent(x) ? T.story : T.fuer_beitrag}
+                  </span>
+                  {darfPlanen && x.material_id && !an && <button type="button" onClick={(e) => { e.stopPropagation(); verwerfen(x) }} title={T.verwerfen} style={{ position: 'absolute', bottom: 18, right: 2, background: 'rgba(0,0,0,0.55)', border: 'none', color: '#fff', borderRadius: 6, fontSize: 10, cursor: 'pointer', padding: '0 4px' }}>✕</button>}
+                </div>
+              )
+  }
   const modus = kopie ? 'kopie' : gewaehlt.length ? 'auswahl' : ''
   // Eine Zelle (Account × Tag): Beiträge + „+“ / „hier einplanen“. Am Handy breit, am Rechner im Wochenraster.
   const zelle = (a, d, i) => {
@@ -400,6 +453,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <b style={{ display: 'block', fontSize: 13 }}>{artText(z, T)}</b>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{artName(z.art, T)}{z.erstellt_von ? ` · ${T.von(z.erstellt_von)}` : ''}</span>
+                  {wartetAufVideo(z) && <span style={{ display: 'block', fontSize: 11, color: A, fontWeight: 700 }}>{T.wartet}</span>}
                 </span>
                 {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
               </>
@@ -408,6 +462,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
                 <ZeitText iso={z.geplant_am} zone={a.zone || STANDARD} />
                 <b style={{ display: 'block', fontSize: 11.5 }}>{artText(z, T)}</b>
                 {z.erstellt_von && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-muted)' }}>{T.von(z.erstellt_von)}</span>}
+                {wartetAufVideo(z) && <span style={{ display: 'block', fontSize: 10, color: A, fontWeight: 700 }}>{T.wartet}</span>}
                 {z.status === 'gepostet' && <span style={pill(G)}>{T.gepostet}</span>}
               </>
             )}
@@ -422,7 +477,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: minmax(0, 1fr); } } .plan-raster > * { min-width: 0; } .plan-check input { width: auto !important; flex-shrink: 0; } .abspiel-knopf.abspiel-knopf { padding: 0 !important; font-size: 12px !important; } .plan-raster > .plan-ablage.plan-ablage { flex-wrap: nowrap !important; } @media (max-width: 768px) { .plan-tage button { padding: 5px 0 3px !important; } .plan-eintrag { padding: 8px 10px !important; font-size: 12.5px !important; } .plan-plus { padding: 8px 0 !important; font-size: 13px !important; } .plan-gross { padding: 12px 14px !important; font-size: 14.5px !important; } }`}</style>
+      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: minmax(0, 1fr); } } .plan-raster > * { min-width: 0; } .plan-check input { width: auto !important; flex-shrink: 0; } .abspiel-knopf.abspiel-knopf { padding: 0 !important; font-size: 12px !important; } .plan-konten button { padding: 7px 12px !important; font-size: 13px !important; } .plan-raster > .plan-ablage.plan-ablage { flex-wrap: nowrap !important; } @media (max-width: 768px) { .plan-tage button { padding: 5px 0 3px !important; } .plan-eintrag { padding: 8px 10px !important; font-size: 12.5px !important; } .plan-plus { padding: 8px 0 !important; font-size: 13px !important; } .plan-gross { padding: 12px 14px !important; font-size: 14.5px !important; } }`}</style>
 
       {/* Hinweisleiste: Kopiermodus / Auswahl */}
       {modus && (
@@ -434,6 +489,23 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
       )}
       {hinweis && <div style={{ fontSize: 12.5, color: hinweis.startsWith('✓') ? G : A }} onClick={() => setHinweis('')}>{hinweis}</div>}
 
+      {/* v5.17.0: Account-Wahl oben — Ablage und Kalender zeigen nur diesen Account */}
+      {accounts.length > 1 && (
+        <div className="plan-konten" style={{ ...card, padding: '10px 12px', display: 'flex', gap: 6, alignItems: 'center', flexWrap: schmal ? 'nowrap' : 'wrap', overflowX: schmal ? 'auto' : 'visible' }}>
+          <span style={{ ...klein, flexShrink: 0, marginRight: 4 }}>{T.konto}</span>
+          {accounts.map(a => {
+            const k = a.model + '|' + a.handle
+            const an = k === filter
+            return (
+              <button key={k} type="button" onClick={() => { if (!an) { setFilter(k); setAuswahl([]); setPlatzhalterAuf(false) } }}
+                style={{ flexShrink: 0, padding: '7px 12px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${an ? P : 'var(--border)'}`, background: an ? P : 'transparent', color: an ? '#fff' : 'var(--text-secondary)', fontSize: 13, fontWeight: 800, whiteSpace: 'nowrap', textAlign: 'left', lineHeight: 1.2 }}>
+                {a.handle}
+                <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: 0.8 }}>{a.model}{(a.zone || STANDARD) !== STANDARD ? ` · 🕒 ${zoneKurz(a.zone)}` : ''}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
       <div className="plan-raster">
         {/* Content-Ablage */}
         <div className="plan-ablage" style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -468,37 +540,27 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
           {!materialListe.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{T.kein_material}</div>}
           {/* v5.14.0: Flex statt Raster (die Mobil-Regel stapelt sonst jede Kachel in eine Zeile); am Handy eine wischbare Reihe */}
           <div style={{ display: 'flex', flexWrap: schmal ? 'nowrap' : 'wrap', overflowX: schmal ? 'auto' : 'hidden', overflowY: schmal ? 'hidden' : 'auto', maxHeight: schmal ? undefined : 470, alignContent: 'flex-start', gap: 6, padding: schmal ? '0 0 4px' : '0 4px 0 0', WebkitOverflowScrolling: 'touch' }}>
-            {materialListe.slice(0, 120).map(x => {
-              const nr = auswahl.indexOf(x.key)
-              const an = nr >= 0
-              return (
-                <div key={x.key} draggable={darfPlanen}
-                  onDragStart={(e) => { const teile = an ? gewaehlt : [x]; setZiehen({ art: 'content', teile }); e.dataTransfer.effectAllowed = 'copy'; try { e.dataTransfer.setData('text/plain', x.key) } catch { /* egal */ } }}
-                  onDragEnd={() => { setZiehen(null); setUeber('') }}
-                  onClick={() => darfPlanen && markieren(x)}
-                  title={`${x.titel}${x.model ? ` · ${x.model}` : ''}${x.quelle ? ` · ${x.quelle}` : ''}`}
-                  style={{ position: 'relative', width: 72, flexShrink: 0, boxSizing: 'border-box', borderRadius: 10, padding: 4, background: an ? C + '22' : 'var(--bg-card2)', border: `2px solid ${an ? C : 'transparent'}`, cursor: darfPlanen ? 'grab' : 'default', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, opacity: istVerplant(x) ? 0.5 : 1 }}>
-                  {istSpeicher(x.link) ? <VideoBild href={x.link} hoehe={84} onClick={darfPlanen ? () => {} : undefined} knopf={darfPlanen} />
-                    : <span style={{ width: 48, height: 84, borderRadius: 8, background: artFarbe(x.art) + '33', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.art === 'story' || x.art === 'foto' ? '📷' : '🎬'}</span>}
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.skript_id ? x.titel.split(' ')[0] : (models.length > 1 && !filter ? x.model : (x.von || ''))}</span>
-                  {an && <span style={{ position: 'absolute', top: 2, left: 2, background: C, color: '#04212a', borderRadius: 9, fontSize: 10.5, fontWeight: 800, padding: '0 6px' }}>{nr + 1}</span>}
-                  {istVerplant(x) && <span style={{ position: 'absolute', top: 2, right: 2, fontSize: 10 }} title={T.verplant}>✓</span>}
-                  {/* v5.13.0: Story/Beitrag-Marke, antippen schaltet um */}
-                  <span onClick={(e) => { if (darfPlanen && x.material_id) { e.stopPropagation(); umschalten(x) } }} title={darfPlanen && x.material_id ? T.umschalten : undefined}
-                    style={{ position: 'absolute', top: 70, left: 2, fontSize: 9.5, fontWeight: 800, padding: '0 5px', borderRadius: 6, background: istStoryContent(x) ? V : P, color: '#fff', cursor: darfPlanen && x.material_id ? 'pointer' : 'default' }}>
-                    {istStoryContent(x) ? T.story : T.fuer_beitrag}
-                  </span>
-                  {darfPlanen && x.material_id && !an && <button type="button" onClick={(e) => { e.stopPropagation(); verwerfen(x) }} title={T.verwerfen} style={{ position: 'absolute', bottom: 18, right: 2, background: 'rgba(0,0,0,0.55)', border: 'none', color: '#fff', borderRadius: 6, fontSize: 10, cursor: 'pointer', padding: '0 4px' }}>✕</button>}
-                </div>
-              )
-            })}
+            {materialListe.slice(0, 120).map(kachel)}
           </div>
           <label className="plan-check" style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={alleZeigen} onChange={e => setAlleZeigen(e.target.checked)} /> {T.auch_verplante}
           </label>
-          <label className="plan-check" style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', marginTop: -4 }}>
-            <input type="checkbox" checked={ohneVideo} onChange={e => setOhneVideo(e.target.checked)} /> {T.ohne_video}
-          </label>
+          {/* v5.17.0: ungedrehte Skripte als Platzhalter, eingeklappt. Einplanen geht schon jetzt — das Video kommt automatisch, sobald das Model es hochlädt. */}
+          {platzhalter.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button type="button" onClick={() => setPlatzhalterAuf(v => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 800, textAlign: 'left' }}>
+                <span style={{ display: 'inline-block', transform: platzhalterAuf ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
+                ⏳ {T.platzhalter(platzhalter.length)}
+              </button>
+              {platzhalterAuf && <>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{T.platzhalter_text}</span>
+                <div style={{ display: 'flex', flexWrap: schmal ? 'nowrap' : 'wrap', overflowX: schmal ? 'auto' : 'hidden', overflowY: schmal ? 'hidden' : 'auto', maxHeight: schmal ? undefined : 260, alignContent: 'flex-start', gap: 6 }}>
+                  {platzhalter.map(kachel)}
+                </div>
+              </>}
+            </div>
+          )}
           {darfPlanen && <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 10px', fontSize: 11.5 }}>{T.material_neu}</button>}
         </div>
 
@@ -510,12 +572,6 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
             <button type="button" onClick={() => setStart(plusTage(start, 7))} style={knopf('var(--text-secondary)', false)}>›</button>
             <button type="button" onClick={() => { const h = tagStart(new Date()); const w = wocheStart(h); setStart(w); setTagWahl(Math.round((h - w) / 864e5)) }} style={knopf(C, false)}>{T.heute}</button>
             <span style={{ flex: 1 }} />
-            {accounts.length > 1 && (
-              <select value={filter} onChange={e => { setFilter(e.target.value); setAuswahl([]) }} style={{ ...eingabe, width: schmal ? '100%' : 'auto' }}>
-                <option value="">{T.alle}</option>
-                {accounts.map(a => <option key={a.model + a.handle} value={a.model + '|' + a.handle}>{a.handle} · {a.model}</option>)}
-              </select>
-            )}
           </div>
           {schmal ? (
             // v5.14.0: Handy — Tagesleiste oben, darunter der gewählte Tag mit allen Accounts untereinander
@@ -588,7 +644,8 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
           <span style={pill(artFarbe(z.art))}>{artName(z.art, T)}</span>
           <ZeitText iso={z.geplant_am} zone={zoneVon(accounts, z.model_name, z.account)} gross />
           <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1, minWidth: 120 }}>{artText(z, T)} · <span style={{ color: P, fontWeight: 700 }}>{z.account}</span></span>
-          {z.video_link && <VideoLink href={mitHttps(z.video_link)} laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{T.laden}</VideoLink>}
+          {videoVon(z) && <VideoLink href={mitHttps(videoVon(z))} laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>{T.laden}</VideoLink>}
+          {wartetAufVideo(z) && <span style={{ fontSize: 12, color: A, fontWeight: 700 }}>{T.wartet}</span>}
           <KopierKnopf text={z.caption} T={{ ...T, kopieren: T.caption }} />
           <KopierKnopf text={z.hashtags} T={{ ...T, kopieren: T.hashtags }} />
           <button type="button" onClick={() => setOffen(z)} style={knopf(P, true)}>{T.oeffnen}</button>
@@ -698,7 +755,15 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onK
         </div>
         {zeile(T.titel, <input disabled={nurLesen} value={f.titel || ''} onChange={e => set('titel', e.target.value.slice(0, 120))} style={eingabe} />)}
         {/* v5.10.1: Bei Stories kommt das Material in die Frames (Foto oder Video), kein eigenes Video-Feld */}
-        {(f.art === 'reel' || f.art === 'foto' || (f.video_link && f.art !== 'karussell')) && zeile(f.art === 'foto' ? T.foto : T.video, <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={f.art === 'foto' ? T.hoch_foto : T.hoch_video} nurFoto={f.art === 'foto'} />)}
+        {(f.art === 'reel' || f.art === 'foto' || (f.video_link && f.art !== 'karussell')) && zeile(f.art === 'foto' ? T.foto : T.video,
+          // v5.17.0: Platzhalter-Skript → Video kommt automatisch vom Skript
+          !f.video_link && f._skript ? (f._skript.video
+            ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <VideoLink href={f._skript.video} bild laden style={{ color: C, fontWeight: 700, fontSize: 12.5 }}>⬇ laden</VideoLink>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{T.vom_skript(f._skript.nr)}</span>
+              </div>
+            : <div style={{ fontSize: 12.5, color: A, fontWeight: 700, lineHeight: 1.45 }}>{T.wartet_lang(f._skript.nr)}</div>)
+          : <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={f.art === 'foto' ? T.hoch_foto : T.hoch_video} nurFoto={f.art === 'foto'} />)}
 
         {/* v5.11.0: Karussell – mehrere Fotos/Videos in fester Reihenfolge (frames[].link) */}
         {f.art === 'karussell' && zeile(T.karussell, <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
