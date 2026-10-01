@@ -33,7 +33,7 @@ const TX = {
     aus_skript: 'aus Skript', ohne_skript: 'ohne Skript', reel: 'Reel', story: 'Story', geplant: 'geplant', gepostet: 'gepostet',
     neu: '+ Beitrag', einplanen: 'Einplanen', speichern: 'Speichern', abbrechen: 'Abbrechen', loeschen: 'Löschen',
     loeschen_frage: 'Diesen Eintrag aus dem Plan löschen?', art: 'Art', account: 'Account', wann: 'Wann', titel: 'Titel',
-    video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
+    video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', hoch_frames: '⬆ Fotos/Videos hinzufügen (auch mehrere)', story_tipp: 'Jede Datei wird ein eigener Frame, in der Reihenfolge der Auswahl.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
     frames: 'Story-Frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (Umfrage, Link …)', frame_link: 'Material-Link',
     hinweis: 'Musik / Hinweis', vorschlag: 'Vorschlag von Lyra', uebernehmen: 'übernehmen', kopieren: 'kopieren', kopiert: 'kopiert ✓',
     laden: '⬇ Video laden', posten_titel: 'Posten', reel_link: 'Link zum Reel (Instagram: ⋯ → Link kopieren)', gepostet_knopf: 'Gepostet ✓',
@@ -50,7 +50,7 @@ const TX = {
     aus_skript: 'from script', ohne_skript: 'no script', reel: 'Reel', story: 'Story', geplant: 'scheduled', gepostet: 'posted',
     neu: '+ Post', einplanen: 'Schedule', speichern: 'Save', abbrechen: 'Cancel', loeschen: 'Delete',
     loeschen_frage: 'Delete this entry from the calendar?', art: 'Type', account: 'Account', wann: 'When', titel: 'Title',
-    video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
+    video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', hoch_frames: '⬆ Add photos/videos (several at once)', story_tipp: 'Each file becomes its own frame, in the order selected.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
     frames: 'Story frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (poll, link …)', frame_link: 'Material link',
     hinweis: 'Music / note', vorschlag: 'Suggestion from Lyra', uebernehmen: 'use', kopieren: 'copy', kopiert: 'copied ✓',
     laden: '⬇ Download video', posten_titel: 'Post', reel_link: 'Link to the reel (Instagram: ⋯ → Copy link)', gepostet_knopf: 'Posted ✓',
@@ -399,7 +399,8 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
           </div>)}
         </div>
         {zeile(T.titel, <input disabled={nurLesen} value={f.titel || ''} onChange={e => set('titel', e.target.value.slice(0, 120))} style={eingabe} />)}
-        {zeile(T.video, <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={T.hoch_video} />)}
+        {/* v5.10.1: Bei Stories kommt das Material in die Frames (Foto oder Video), kein eigenes Video-Feld */}
+        {(f.art === 'reel' || f.video_link) && zeile(T.video, <LinkFeld value={f.video_link} onChange={v => set('video_link', v)} model={f.model_name} account={f.account} nurLesen={nurLesen} placeholder={T.hoch_video} />)}
 
         {f.art === 'reel' && (<>
           {zeile(T.caption, <textarea disabled={nurLesen} rows={3} value={f.caption || ''} onChange={e => set('caption', e.target.value.slice(0, 2200))} style={{ ...eingabe, resize: 'vertical' }} />,
@@ -441,7 +442,15 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu }) {
               </div>
             </div>
           ))}
-          {!nurLesen && <button type="button" onClick={() => set('frames', [...(f.frames || []), { link: '', text: '', sticker: '' }])} style={{ ...knopf('var(--text-secondary)', false), alignSelf: 'flex-start', padding: '4px 10px' }}>{T.frame_neu}</button>}
+          {!nurLesen && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* v5.10.1: mehrere Fotos/Videos auf einmal → je ein Frame */}
+              <DateiHochladen model={f.model_name} account={f.account} gesperrt={!f.model_name || !f.account} mehrere farbe={V} text={T.hoch_frames}
+                onFertig={(link) => setF(x => ({ ...x, frames: [...(x.frames || []).filter(y => (y.link || y.text || y.sticker || '').trim()), { link, text: '', sticker: '' }] }))} />
+              <button type="button" onClick={() => set('frames', [...(f.frames || []), { link: '', text: '', sticker: '' }])} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 10px' }}>{T.frame_neu}</button>
+            </div>
+          )}
+          {!nurLesen && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{T.story_tipp}</span>}
         </div>)}
 
         {zeile(T.hinweis, <input disabled={nurLesen} value={f.hinweis || ''} onChange={e => set('hinweis', e.target.value.slice(0, 300))} style={eingabe} />)}

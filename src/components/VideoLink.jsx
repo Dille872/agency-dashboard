@@ -82,25 +82,31 @@ export function VideoHochladen({ skriptId, art = 'roh', onFertig, text = '🎬 V
 // v5.9.0: kleiner Knopf „⬆ Hochladen“ für Plan-Einträge (Reel-Video,
 // Story-Frame) und Material. Fotos oder Videos. onFertig(link) setzt nur das
 // Feld im Formular, gespeichert wird mit dem Eintrag.
-export function DateiHochladen({ model, account = null, onFertig, text = '⬆ Hochladen', nurVideo = false, farbe = '#06b6d4', gesperrt = false }) {
+// v5.10.1: mehrere → mehrere Dateien auf einmal, onFertig wird je Datei aufgerufen (Story: ein Frame pro Datei)
+export function DateiHochladen({ model, account = null, onFertig, text = '⬆ Hochladen', nurVideo = false, farbe = '#06b6d4', gesperrt = false, mehrere = false }) {
   const input = useRef(null)
   const [stand, setStand] = useState(null)
   const [fehler, setFehler] = useState('')
-  const los = async (datei) => {
-    if (!datei) return
-    setFehler(''); setStand(0)
-    const r = await planDateiHochladen({ datei, model, account, onFortschritt: setStand })
-    setStand(null)
-    if (r.fehler) { setFehler(r.fehler); return }
-    onFertig(r.link)
+  const [nr, setNr] = useState('')
+  const los = async (dateien) => {
+    const liste = [...(dateien || [])]
+    if (!liste.length) return
+    setFehler('')
+    for (let i = 0; i < liste.length; i++) {
+      setNr(liste.length > 1 ? `${i + 1}/${liste.length} · ` : ''); setStand(0)
+      const r = await planDateiHochladen({ datei: liste[i], model, account, onFortschritt: setStand })
+      if (r.fehler) { setFehler(`${liste.length > 1 ? (liste[i].name || `Datei ${i + 1}`) + ': ' : ''}${r.fehler}`); continue }
+      onFertig(r.link)
+    }
+    setStand(null); setNr('')
   }
   const laeuft = stand !== null
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
-      <input ref={input} type="file" accept={nurVideo ? 'video/*' : 'image/*,video/*'} style={{ display: 'none' }} onChange={e => { const d = e.target.files?.[0]; e.target.value = ''; los(d) }} />
+      <input ref={input} type="file" multiple={mehrere} accept={nurVideo ? 'video/*' : 'image/*,video/*'} style={{ display: 'none' }} onChange={e => { const d = [...(e.target.files || [])]; e.target.value = ''; los(d) }} />
       <button type="button" disabled={laeuft || gesperrt || !model} onClick={() => input.current?.click()}
         style={{ padding: '6px 10px', borderRadius: 9, fontSize: 12, fontWeight: 800, cursor: laeuft || gesperrt ? 'not-allowed' : 'pointer', fontFamily: 'inherit', border: `1px solid ${farbe}`, background: 'transparent', color: farbe, whiteSpace: 'nowrap', opacity: gesperrt ? 0.45 : 1 }}>
-        {laeuft ? `${Math.round(stand * 100)} %` : text}
+        {laeuft ? `${nr}${Math.round(stand * 100)} %` : text}
       </button>
       {fehler && <span style={{ fontSize: 11.5, color: '#ef4444', maxWidth: 260 }}>{fehler}</span>}
     </span>
