@@ -54,6 +54,74 @@ function baueZuordnung(personen, aliasListe, aliasFeld) {
   }
 }
 
+// v5.22.0: Verteilung der CSV-Zeilen auf Personen (vorher inline im useMemo)
+function modelVerteilen(models, aliases, snaps) {
+  const finde = baueZuordnung(models.map(m => m.name), aliases, 'model_name')
+  const proPerson = {}
+  const offen = {}
+  for (const snap of snaps) {
+    for (const row of snap.rows || []) {
+      const roh = row.creator || row.name || ''
+      const werte = {
+        subs: (row.newSubsRevenue || 0) + (row.recurringSubsRevenue || 0),
+        chat: row.messageRevenue || 0,
+        tips: row.tipsRevenue || 0,
+        total: row.revenue || 0,
+      }
+      const { person, grund } = finde(roh)
+      const ziel = person
+        ? (proPerson[person] ||= { subs: 0, chat: 0, tips: 0, total: 0 })
+        : (offen[String(roh).trim() || '(leer)'] ||= { subs: 0, chat: 0, tips: 0, total: 0, grund })
+      for (const k of ['subs', 'chat', 'tips', 'total']) ziel[k] += werte[k]
+    }
+  }
+  return { proPerson, offen }
+}
+function chatterVerteilen(chatters, chatterAliases, chatSnaps) {
+  const finde = baueZuordnung(chatters.map(c => c.name), chatterAliases, 'chatter_name')
+  const proPerson = {}
+  const offen = {}
+  for (const snap of chatSnaps) {
+    for (const row of snap.rows || []) {
+      const roh = row.name || row.chatter || ''
+      // Summen-/Aggregatzeilen (Name enthält '*') nicht verteilen — wie in PerformanceTab
+      if (String(roh).includes('*')) continue
+      const rev = row.revenue || 0
+      const { person, grund } = finde(roh)
+      const ziel = person
+        ? (proPerson[person] ||= { chat: 0, total: 0 })
+        : (offen[String(roh).trim() || '(leer)'] ||= { chat: 0, total: 0, grund })
+      ziel.chat += rev
+      ziel.total += rev
+    }
+  }
+  return { proPerson, offen }
+}
+// Anteile aus Einstellung + Umsatz
+function modelRechnung(s, rev) {
+  if (!s) return null
+  let base = 0
+  if (s.include_subs) base += rev.subs
+  if (s.include_chat) base += rev.chat
+  if (s.include_tips) base += rev.tips
+  const agentur = base * (s.percentage / 100)
+  return { base, agentur, model: rev.total - agentur }
+}
+function chatterRechnung(s, rev) {
+  if (!s) return null
+  const base = s.include_chat ? rev.chat : rev.total
+  return { base, auszahlung: base * (s.percentage / 100) }
+}
+const monatGrenzen = (month) => {
+  const [y, m] = month.split('-').map(Number)
+  const nextY = m === 12 ? y + 1 : y
+  const nextM = m === 12 ? 1 : m + 1
+  return [month + '-01', nextY + '-' + String(nextM).padStart(2, '0') + '-01']
+}
+const euroText = (v) => Number(v || 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
+const kurz = (v) => '$' + Math.round(Number(v || 0)).toLocaleString('de-DE')
+const kurzEuro = (v) => Math.round(Number(v || 0)).toLocaleString('de-DE') + ' €'
+
 function CheckBox({ checked, onChange, label }) {
   return (
     <label onClick={onChange} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -81,8 +149,59 @@ export default function BillingTab() {
   const [editing, setEditing] = useState(null)
   const [editVals, setEditVals] = useState({})
   const [saving, setSaving] = useState(false)
+  // v5.22.0: Kurs $→€ je Monat, Filter, Verdienst je Monat
+  const [kurse, setKurse] = useState([])
+  const [kursFehlt, setKursFehlt] = useState(false)
+  const [kursEingabe, setKursEingabe] = useState('')
+  const [filter, setFilter] = useState('umsatz')   // 'umsatz' | 'alle' | 'ohne'
+  const [suche, setSuche] = useState('')
+  const [verlauf, setVerlauf] = useState(null)
 
   useEffect(() => { load() }, [month])
+  useEffect(() => { ladeKurse() }, [])
+  useEffect(() => { setFilter('umsatz'); setSuche('') }, [section])
+
+  const ladeKurse = async () => {
+    const { data, error } = await supabase.from('billing_kurse').select('*').order('monat', { ascending: false })
+    if (error) { setKursFehlt(true); return }
+    setKurse(data || [])
+  }
+  const kursVon = (m) => kurse.find(k => k.monat === m) || null
+  useEffect(() => { const k = kursVon(month); setKursEingabe(k ? String(k.usd_eur).replace('.', ',') : '') }, [month, kurse]) // eslint-disable-line react-hooks/exhaustive-deps
+  const kursSpeichern = async () => {
+    const wert = parseFloat(String(kursEingabe).replace(',', '.'))
+    const alt = kursVon(month)
+    if (!kursEingabe.trim()) return
+    if (!(wert > 0 && wert < 10)) { alert('Bitte den Kurs als Zahl eingeben, z. B. 0,9184 (1 $ = … €).'); return }
+    if (alt && Number(alt.usd_eur) === wert) return
+    if (alt && !window.confirm(`Kurs für ${monthLabel} von ${String(alt.usd_eur).replace('.', ',')} auf ${String(wert).replace('.', ',')} ändern?`)) { setKursEingabe(String(alt.usd_eur).replace('.', ',')); return }
+    const { data: u } = await supabase.auth.getUser()
+    const { data: ur } = u?.user ? await supabase.from('user_roles').select('display_name').eq('user_id', u.user.id).maybeSingle() : { data: null }
+    const { error } = await supabase.from('billing_kurse').upsert({ monat: month, usd_eur: wert, eingetragen_am: new Date().toISOString(), eingetragen_von: ur?.display_name || null }, { onConflict: 'monat' })
+    if (error) { alert('Kurs NICHT gespeichert: ' + error.message); return }
+    ladeKurse()
+  }
+
+  // Verdienst je Monat: die letzten 6 Monate mit denselben Einstellungen durchrechnen
+  const ladeVerlauf = async () => {
+    setVerlauf('laedt')
+    const zeilen = []
+    for (const m of months) {
+      const [von, bis] = monatGrenzen(m)
+      const [ms, cs] = await Promise.all([
+        supabase.from('model_snapshots').select('rows,business_date').gte('business_date', von).lt('business_date', bis),
+        supabase.from('chatter_snapshots').select('rows,business_date').gte('business_date', von).lt('business_date', bis),
+      ])
+      const ma = modelVerteilen(models, aliases, ms.data || [])
+      const ca = chatterVerteilen(chatters, chatterAliases, cs.data || [])
+      let agentur = 0, auszahlung = 0, umsatz = 0
+      for (const [name, rev] of Object.entries(ma.proPerson)) { umsatz += rev.total; const x = modelRechnung(getSetting(name, 'model'), rev); if (x) agentur += x.agentur }
+      for (const [name, rev] of Object.entries(ca.proPerson)) { const x = chatterRechnung(getSetting(name, 'chatter'), rev); if (x) auszahlung += x.auszahlung }
+      zeilen.push({ monat: m, umsatz, agentur, auszahlung, tage: (ms.data || []).length })
+    }
+    setVerlauf(zeilen)
+  }
+  useEffect(() => { if (section === 'verlauf' && models.length) ladeVerlauf() }, [section, models.length, settings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
     const monthStart = month + '-01'
@@ -144,49 +263,9 @@ export default function BillingTab() {
   }
 
   // v4.49.0: einmal pro Monat alle Zeilen verteilen, statt je Person zu suchen.
-  const modelAuswertung = useMemo(() => {
-    const finde = baueZuordnung(models.map(m => m.name), aliases, 'model_name')
-    const proPerson = {}
-    const offen = {}
-    for (const snap of snaps) {
-      for (const row of snap.rows || []) {
-        const roh = row.creator || row.name || ''
-        const werte = {
-          subs: (row.newSubsRevenue || 0) + (row.recurringSubsRevenue || 0),
-          chat: row.messageRevenue || 0,
-          tips: row.tipsRevenue || 0,
-          total: row.revenue || 0,
-        }
-        const { person, grund } = finde(roh)
-        const ziel = person
-          ? (proPerson[person] ||= { subs: 0, chat: 0, tips: 0, total: 0 })
-          : (offen[String(roh).trim() || '(leer)'] ||= { subs: 0, chat: 0, tips: 0, total: 0, grund })
-        for (const k of ['subs', 'chat', 'tips', 'total']) ziel[k] += werte[k]
-      }
-    }
-    return { proPerson, offen }
-  }, [models, aliases, snaps])
-
-  const chatterAuswertung = useMemo(() => {
-    const finde = baueZuordnung(chatters.map(c => c.name), chatterAliases, 'chatter_name')
-    const proPerson = {}
-    const offen = {}
-    for (const snap of chatSnaps) {
-      for (const row of snap.rows || []) {
-        const roh = row.name || row.chatter || ''
-        // Summen-/Aggregatzeilen (Name enthält '*') nicht verteilen — wie in PerformanceTab
-        if (String(roh).includes('*')) continue
-        const rev = row.revenue || 0
-        const { person, grund } = finde(roh)
-        const ziel = person
-          ? (proPerson[person] ||= { chat: 0, total: 0 })
-          : (offen[String(roh).trim() || '(leer)'] ||= { chat: 0, total: 0, grund })
-        ziel.chat += rev
-        ziel.total += rev
-      }
-    }
-    return { proPerson, offen }
-  }, [chatters, chatterAliases, chatSnaps])
+  // v5.22.0: als Funktion, damit „Verdienst je Monat“ dieselbe Rechnung für ältere Monate nutzt.
+  const modelAuswertung = useMemo(() => modelVerteilen(models, aliases, snaps), [models, aliases, snaps])
+  const chatterAuswertung = useMemo(() => chatterVerteilen(chatters, chatterAliases, chatSnaps), [chatters, chatterAliases, chatSnaps])
 
   const modelRev = (modelName) => modelAuswertung.proPerson[modelName] || { subs: 0, chat: 0, tips: 0, total: 0 }
   const chatterRev = (chatterName) => chatterAuswertung.proPerson[chatterName] || { chat: 0, total: 0 }
@@ -201,41 +280,100 @@ export default function BillingTab() {
 
   const card = { background: 'var(--bg-card)', border: '1px solid #1e1e3a', borderRadius: 16, padding: '16px 18px' } // v4.84.0
   const inp = { background: 'var(--bg-input)', border: '1px solid #2e2e5a', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none' }
+  // v5.22.0: kompakte Tabelle statt einer Karte pro Person
+  const kurs = kursVon(month)
+  const k = kurs ? Number(kurs.usd_eur) : null
+  const eur = (v) => k ? <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>{euroText(v * k)}</span> : null
+  const th = { fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', textAlign: 'right', padding: '8px 12px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }
+  const td = { padding: '9px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, textAlign: 'right', fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', verticalAlign: 'top' }
+  const tdName = { ...td, textAlign: 'left', fontFamily: 'inherit', fontWeight: 700, color: 'var(--text-primary)' }
+  const kpi = (wert, euro, label, farbe) => (
+    <div style={{ ...card, padding: '12px 14px' }}>
+      <div style={{ fontSize: 21, fontWeight: 800, fontFamily: 'ui-monospace, monospace', color: farbe }}>{wert}</div>
+      {euro && <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontFamily: 'ui-monospace, monospace' }}>{euro}</div>}
+      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>{label}</div>
+    </div>
+  )
+  const satzKnopf = (name, type, text, farbe) => (
+    <button type="button" onClick={() => startEdit(name, type)}
+      style={{ fontFamily: 'inherit', fontSize: 12, padding: '3px 9px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap',
+        border: `1px ${text ? 'solid' : 'dashed'} ${text ? 'var(--border)' : 'rgba(245,158,11,0.5)'}`, background: 'transparent', color: text ? farbe : '#f59e0b', fontWeight: 700 }}>
+      {text || '+ Satz festlegen'}
+    </button>
+  )
+  const chip = (key, label) => (
+    <button key={key} type="button" onClick={() => setFilter(key)}
+      style={{ fontSize: 12, padding: '5px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+        border: `1px solid ${filter === key ? '#06b6d4' : 'var(--border)'}`, background: filter === key ? 'rgba(6,182,212,0.1)' : 'transparent', color: filter === key ? '#06b6d4' : 'var(--text-secondary)' }}>{label}</button>
+  )
+  const passt = (name, umsatz, s) => {
+    if (suche.trim() && !name.toLowerCase().includes(suche.trim().toLowerCase())) return false
+    if (filter === 'umsatz') return umsatz > 0.004
+    if (filter === 'ohne') return !s
+    return true
+  }
+
+  // Zeilen der beiden Tabellen
+  const modelZeilen = models.filter(m => m.active !== false || modelRev(m.name).total > 0).map(m => {
+    const s = getSetting(m.name, 'model'); const rev = modelRev(m.name)
+    return { name: m.name, s, rev, x: modelRechnung(s, rev) }
+  })
+  const chatterZeilen = chatters.filter(c => c.active !== false || chatterRev(c.name).total > 0).map(c => {
+    const s = getSetting(c.name, 'chatter'); const rev = chatterRev(c.name)
+    return { name: c.name, s, rev, x: chatterRechnung(s, rev) }
+  })
+  const summe = (liste, f) => liste.reduce((t, z) => t + (f(z) || 0), 0)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {['models', 'chatters'].map(s => (
-            <button key={s} onClick={() => setSection(s)} style={{
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[['models', 'Models'], ['chatters', 'Chatters'], ['verlauf', 'Verdienst je Monat']].map(([key, label]) => (
+            <button key={key} onClick={() => setSection(key)} style={{
               padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13,
-              background: section === s ? '#7c3aed' : 'var(--bg-card)',
-              color: section === s ? '#fff' : 'var(--text-secondary)',
-              border: '1px solid ' + (section === s ? '#7c3aed' : 'var(--border)'),
-            }}>{s === 'models' ? 'Models' : 'Chatters'}</button>
+              background: section === key ? '#7c3aed' : 'var(--bg-card)',
+              color: section === key ? '#fff' : 'var(--text-secondary)',
+              border: '1px solid ' + (section === key ? '#7c3aed' : 'var(--border)'),
+            }}>{label}</button>
           ))}
         </div>
-        <select value={month} onChange={e => setMonth(e.target.value)} style={{ ...inp, marginLeft: 'auto' }}>
-          {months.map(m => (
-            <option key={m} value={m}>{new Date(m + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</option>
-          ))}
-        </select>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {section !== 'verlauf' && (
+            <select value={month} onChange={e => setMonth(e.target.value)} style={inp}>
+              {months.map(m => (
+                <option key={m} value={m}>{new Date(m + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</option>
+              ))}
+            </select>
+          )}
+          {/* Kurs des Monats */}
+          {section !== 'verlauf' && !kursFehlt && (
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--text-secondary)', padding: '4px 8px', borderRadius: 9,
+              border: `1px solid ${kurs ? 'rgba(16,185,129,0.5)' : 'rgba(245,158,11,0.6)'}`, background: kurs ? 'transparent' : 'rgba(245,158,11,0.08)' }}>
+              Kurs {new Date(month + '-15').toLocaleDateString('de-DE', { month: 'short' })}: 1 $ =
+              <input value={kursEingabe} onChange={e => setKursEingabe(e.target.value.replace(/[^0-9.,]/g, '').slice(0, 8))} onBlur={kursSpeichern}
+                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }} placeholder="0,92" inputMode="decimal"
+                style={{ ...inp, width: 64, fontFamily: 'ui-monospace, monospace', fontSize: 13 }} /> €
+              <span style={{ fontSize: 10.5, color: kurs ? 'var(--text-muted)' : '#f59e0b' }}>
+                {kurs ? `${new Date(kurs.eingetragen_am).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}${kurs.eingetragen_von ? ' · ' + kurs.eingetragen_von : ''}` : 'fehlt'}
+              </span>
+            </span>
+          )}
+        </div>
       </div>
+      {kursFehlt && <div style={{ fontSize: 12, color: '#f59e0b' }}>Euro-Kurs: Datenbank noch nicht eingerichtet (sql/billing-kurse.sql).</div>}
 
-      {(() => {
+      {section !== 'verlauf' && (() => {
         // v4.49.0: Umsatz, der niemandem eindeutig gehört, sichtbar machen
         const offen = section === 'models' ? modelAuswertung.offen : chatterAuswertung.offen
         const liste = Object.entries(offen).filter(([, v]) => Math.abs(v.total) > 0.004).sort((a, b) => b[1].total - a[1].total)
         if (!liste.length) return null
-        const summe = liste.reduce((t, [, v]) => t + v.total, 0)
+        const summeOffen = liste.reduce((t, [, v]) => t + v.total, 0)
         return (
-          <div style={{ ...card, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.06)' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
-              ⚠ Nicht zugeordnet: {money(summe)}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
-              Diese CSV-Namen gehören keiner {section === 'models' ? 'Model' : 'Chatter'}-Abrechnung eindeutig und sind oben NICHT enthalten.
+          <details style={{ ...card, padding: '10px 14px', border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.06)' }}>
+            <summary style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', cursor: 'pointer' }}>⚠ Nicht zugeordnet: {money(summeOffen)} ({liste.length})</summary>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0' }}>
+              Diese CSV-Namen gehören keiner {section === 'models' ? 'Model' : 'Chatter'}-Abrechnung eindeutig und sind unten NICHT enthalten.
               In den Einstellungen einen Alias anlegen, dann zählen sie automatisch mit.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -246,164 +384,178 @@ export default function BillingTab() {
                 </div>
               ))}
             </div>
-          </div>
+          </details>
         )
       })()}
 
-      {section === 'models' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {models.filter(model => model.active !== false || modelRev(model.name).total > 0).map(model => {
-            const s = getSetting(model.name, 'model')
-            const rev = modelRev(model.name)
-            const isEdit = editing && editing.name === model.name && editing.type === 'model'
-            let base = 0
-            if (s) {
-              if (s.include_subs) base += rev.subs
-              if (s.include_chat) base += rev.chat
-              if (s.include_tips) base += rev.tips
-            }
-            const agencyShare = s ? base * (s.percentage / 100) : 0
-            const modelShare = base - agencyShare
-
-            return (
-              <div key={model.name} style={card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>{model.name[0]}</div>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{model.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthLabel}</div>
-                    </div>
-                  </div>
-                  <button onClick={() => isEdit ? setEditing(null) : startEdit(model.name, 'model')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEdit ? '#7c3aed' : 'transparent', border: '1px solid ' + (isEdit ? '#7c3aed' : 'var(--border)'), color: isEdit ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {isEdit ? 'Schliessen' : s ? 'Bearbeiten' : '+ Prozente'}
-                  </button>
-                </div>
-
-                <div className="kpi-mini-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
-                  {[['Gesamt', rev.total, 'var(--text-primary)'], ['Subs', rev.subs, '#a78bfa'], ['Chat', rev.chat, '#06b6d4'], ['Tips', rev.tips, '#f59e0b']].map(item => (
-                    <div key={item[0]} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item[0]}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: item[2], fontFamily: 'monospace' }}>{money(item[1])}</div>
-                    </div>
+      {section === 'models' && (() => {
+        const mitSatz = modelZeilen.filter(z => z.x)
+        const gezeigt = modelZeilen.filter(z => passt(z.name, z.rev.total, z.s)).sort((a, b) => b.rev.total - a.rev.total)
+        const umsatz = summe(modelZeilen, z => z.rev.total)
+        const agentur = summe(mitSatz, z => z.x.agentur)
+        const anModels = summe(mitSatz, z => z.x.model)
+        return (<>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }} className="kpi-mini-grid">
+            {kpi(money(umsatz), k ? euroText(umsatz * k) : null, 'Revenue gesamt (alle Models)', 'var(--text-primary)')}
+            {kpi(money(agentur), k ? euroText(agentur * k) : null, 'Agentur-Anteil', '#a78bfa')}
+            {kpi(money(anModels), k ? euroText(anModels * k) : null, 'an die Models', '#10b981')}
+            {kpi(String(modelZeilen.filter(z => !z.s && z.rev.total > 0).length), null, 'Models mit Umsatz, ohne Satz', '#f59e0b')}
+          </div>
+          <div style={{ ...card, padding: '6px 0' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px 10px', flexWrap: 'wrap' }}>
+              {chip('umsatz', 'nur mit Umsatz')}{chip('alle', `alle (${modelZeilen.length})`)}{chip('ohne', `ohne Satz (${modelZeilen.filter(z => !z.s).length})`)}
+              <input value={suche} onChange={e => setSuche(e.target.value)} placeholder="Model suchen …" style={{ ...inp, flex: 1, minWidth: 150, fontSize: 13, padding: '7px 10px' }} />
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="billing-tabelle" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820, display: 'table' }}>
+                <thead><tr>{['Model', 'Satz (Agentur)', 'Subs', 'Chat', 'Tips', 'Gesamt', 'Basis', 'Agentur', 'Model'].map((h, i) => <th key={h + i} style={{ ...th, textAlign: i < 2 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {gezeigt.map(z => (
+                    <tr key={z.name}>
+                      <td style={tdName}>{z.name}</td>
+                      <td style={{ ...td, textAlign: 'left' }}>{satzKnopf(z.name, 'model', z.s ? `${z.s.percentage} % · ${[z.s.include_subs && 'S', z.s.include_chat && 'C', z.s.include_tips && 'T'].filter(Boolean).join('+') || '—'}` : '', '#a78bfa')}</td>
+                      <td style={td}>{kurz(z.rev.subs)}</td>
+                      <td style={td}>{kurz(z.rev.chat)}</td>
+                      <td style={td}>{kurz(z.rev.tips)}</td>
+                      <td style={td}>{kurz(z.rev.total)}</td>
+                      <td style={{ ...td, color: z.x ? 'var(--text-primary)' : 'var(--text-muted)' }}>{z.x ? kurz(z.x.base) : '—'}</td>
+                      <td style={{ ...td, color: '#a78bfa', fontWeight: 800 }}>{z.x ? <>{money(z.x.agentur)}{eur(z.x.agentur)}</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                      <td style={{ ...td, color: '#10b981', fontWeight: 800 }}>{z.x ? <>{money(z.x.model)}{eur(z.x.model)}</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                    </tr>
                   ))}
-                </div>
+                  {!gezeigt.length && <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'inherit' }}>Keine Models für diesen Filter.</td></tr>}
+                  {gezeigt.length > 0 && (() => {
+                    const g = gezeigt.filter(z => z.x)
+                    return (
+                      <tr style={{ background: 'var(--bg-card2)' }}>
+                        <td style={{ ...tdName, borderBottom: 'none' }}>Summe ({gezeigt.length})</td><td style={{ ...td, borderBottom: 'none' }} />
+                        {[summe(gezeigt, z => z.rev.subs), summe(gezeigt, z => z.rev.chat), summe(gezeigt, z => z.rev.tips), summe(gezeigt, z => z.rev.total), summe(g, z => z.x.base)].map((v, i) => <td key={i} style={{ ...td, borderBottom: 'none', fontWeight: 800 }}>{kurz(v)}</td>)}
+                        <td style={{ ...td, borderBottom: 'none', color: '#a78bfa', fontWeight: 800 }}>{money(summe(g, z => z.x.agentur))}{eur(summe(g, z => z.x.agentur))}</td>
+                        <td style={{ ...td, borderBottom: 'none', color: '#10b981', fontWeight: 800 }}>{money(summe(g, z => z.x.model))}{eur(summe(g, z => z.x.model))}</td>
+                      </tr>
+                    )
+                  })()}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', padding: '8px 12px 4px', lineHeight: 1.5 }}>
+              Satz antippen = Agentur-Prozent und was zählt (S = Subs, C = Chat, T = Tips). Gilt dauerhaft für alle Monate. Was nicht zählt, geht voll ans Model.{k ? '' : ' Euro erscheint, sobald oben der Kurs des Monats eingetragen ist.'}
+            </div>
+          </div>
+        </>)
+      })()}
 
-                {s && (
-                  <div className="raster-2" style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
-                    <div style={{ background: 'rgba(16,185,129,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#10b981', marginBottom: 3 }}>Model ({100 - s.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{money(modelShare)}</div>
-                    </div>
-                    <div style={{ background: 'rgba(124,58,237,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(124,58,237,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#a78bfa', marginBottom: 3 }}>Agentur ({s.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace' }}>{money(agencyShare)}</div>
-                    </div>
-                    <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--text-muted)' }}>
-                      Basis: {money(base)} · {[s.include_subs && 'Subs', s.include_chat && 'Chat', s.include_tips && 'Tips'].filter(Boolean).join(' + ')}
-                    </div>
-                  </div>
-                )}
+      {section === 'chatters' && (() => {
+        const mitSatz = chatterZeilen.filter(z => z.x)
+        const gezeigt = chatterZeilen.filter(z => passt(z.name, z.rev.total, z.s)).sort((a, b) => b.rev.total - a.rev.total)
+        const umsatz = summe(chatterZeilen, z => z.rev.total)
+        const aus = summe(mitSatz, z => z.x.auszahlung)
+        return (<>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }} className="kpi-mini-grid">
+            {kpi(money(umsatz), k ? euroText(umsatz * k) : null, 'Umsatz aller Chatter', '#06b6d4')}
+            {kpi(money(aus), k ? euroText(aus * k) : null, 'Auszahlung Chatter', '#10b981')}
+            {kpi(String(chatterZeilen.filter(z => z.rev.total > 0.004).length), null, 'Chatter mit Umsatz', 'var(--text-primary)')}
+            {kpi(String(chatterZeilen.filter(z => !z.s && z.rev.total > 0).length), null, 'mit Umsatz, ohne Satz', '#f59e0b')}
+          </div>
+          <div style={{ ...card, padding: '6px 0' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px 10px', flexWrap: 'wrap' }}>
+              {chip('umsatz', 'nur mit Umsatz')}{chip('alle', `alle (${chatterZeilen.length})`)}{chip('ohne', `ohne Satz (${chatterZeilen.filter(z => !z.s).length})`)}
+              <input value={suche} onChange={e => setSuche(e.target.value)} placeholder="Chatter suchen …" style={{ ...inp, flex: 1, minWidth: 150, fontSize: 13, padding: '7px 10px' }} />
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="billing-tabelle" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560, display: 'table' }}>
+                <thead><tr>{['Chatter', 'Satz', 'Umsatz', 'Auszahlung'].map((h, i) => <th key={h} style={{ ...th, textAlign: i < 2 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {gezeigt.map(z => (
+                    <tr key={z.name}>
+                      <td style={tdName}>{z.name}</td>
+                      <td style={{ ...td, textAlign: 'left' }}>{satzKnopf(z.name, 'chatter', z.s ? `${z.s.percentage} %` : '', '#06b6d4')}</td>
+                      <td style={td}>{money(z.rev.total)}</td>
+                      <td style={{ ...td, color: '#10b981', fontWeight: 800 }}>{z.x ? <>{money(z.x.auszahlung)}{eur(z.x.auszahlung)}</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                    </tr>
+                  ))}
+                  {!gezeigt.length && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'inherit' }}>Keine Chatter für diesen Filter.</td></tr>}
+                  {gezeigt.length > 0 && (
+                    <tr style={{ background: 'var(--bg-card2)' }}>
+                      <td style={{ ...tdName, borderBottom: 'none' }}>Summe ({gezeigt.length})</td><td style={{ ...td, borderBottom: 'none' }} />
+                      <td style={{ ...td, borderBottom: 'none', fontWeight: 800 }}>{money(summe(gezeigt, z => z.rev.total))}</td>
+                      <td style={{ ...td, borderBottom: 'none', color: '#10b981', fontWeight: 800 }}>{money(summe(gezeigt.filter(z => z.x), z => z.x.auszahlung))}{eur(summe(gezeigt.filter(z => z.x), z => z.x.auszahlung))}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', padding: '8px 12px 4px', lineHeight: 1.5 }}>
+              Satz antippen = Prozent ändern. Gilt dauerhaft für alle Monate. Umsatz = Revenue aus der Chatter-Datei.{k ? '' : ' Euro erscheint, sobald oben der Kurs des Monats eingetragen ist.'}
+            </div>
+          </div>
+        </>)
+      })()}
 
-                {isEdit && (
-                  <div style={{ marginTop: s ? 0 : 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
-                      <div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Agentur-Anteil %</div>
-                        <input type="number" min="0" max="100" value={editVals.percentage} onChange={e => setEditVals(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))} style={{ ...inp, width: 80 }} />
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Model: {100 - (editVals.percentage || 0)}%</div>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Einberechnen:</div>
-                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
-                      <CheckBox checked={editVals.include_subs} onChange={() => setEditVals(p => ({ ...p, include_subs: !p.include_subs }))} label="Subs" />
-                      <CheckBox checked={editVals.include_chat} onChange={() => setEditVals(p => ({ ...p, include_chat: !p.include_chat }))} label="Chat Revenue" />
-                      <CheckBox checked={editVals.include_tips} onChange={() => setEditVals(p => ({ ...p, include_tips: !p.include_tips }))} label="Tips" />
-                    </div>
-                    <button onClick={save} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {saving ? '...' : 'Speichern'}
-                    </button>
-                  </div>
-                )}
+      {section === 'verlauf' && (
+        <div style={{ ...card, padding: '6px 0' }}>
+          <div style={{ padding: '10px 12px 2px', fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>Verdienst der Agentur je Monat</div>
+          <div style={{ padding: '2px 12px 8px', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Agentur-Anteil (Models) minus Auszahlung an die Chatter. Euro mit dem Kurs, der für den Monat eingetragen ist. Gerechnet mit den heutigen Sätzen.
+          </div>
+          {verlauf === null || verlauf === 'laedt' ? <div style={{ padding: 14, color: 'var(--text-muted)', fontSize: 13 }}>Rechnet …</div> : (() => {
+            const max = Math.max(1, ...verlauf.map(z => z.agentur - z.auszahlung))
+            return (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="billing-tabelle" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, display: 'table' }}>
+                  <thead><tr>{['Monat', 'Kurs', 'Revenue', 'Agentur-Anteil', 'Chatter', 'Verdienst $', 'Verdienst €', ''].map((h, i) => <th key={h + i} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {verlauf.map((z, i) => {
+                      const kk = kursVon(z.monat)
+                      const v = z.agentur - z.auszahlung
+                      return (
+                        <tr key={z.monat}>
+                          <td style={tdName}>{new Date(z.monat + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}{i === 0 && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> (läuft)</span>}</td>
+                          <td style={td}>{kk ? String(kk.usd_eur).replace('.', ',') : (
+                            <button type="button" onClick={() => { setMonth(z.monat); setSection('models') }} style={{ fontFamily: 'inherit', fontSize: 11.5, padding: '2px 8px', borderRadius: 7, border: '1px dashed rgba(245,158,11,0.6)', background: 'transparent', color: '#f59e0b', cursor: 'pointer' }}>fehlt ✎</button>)}</td>
+                          <td style={td}>{kurz(z.umsatz)}</td>
+                          <td style={{ ...td, color: '#a78bfa' }}>{kurz(z.agentur)}</td>
+                          <td style={td}>{kurz(z.auszahlung)}</td>
+                          <td style={{ ...td, color: '#10b981', fontWeight: 800 }}>{kurz(v)}</td>
+                          <td style={{ ...td, color: '#10b981', fontWeight: 800 }}>{kk ? kurzEuro(v * Number(kk.usd_eur)) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                          <td style={{ ...td, width: 130 }}><span style={{ display: 'inline-block', height: 8, borderRadius: 4, background: '#10b981', width: Math.max(0, Math.round(110 * v / max)) }} /></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )
-          })}
+          })()}
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', padding: '8px 12px 4px' }}>„fehlt ✎“ antippen → Monat öffnet sich, oben den Kurs eintragen.</div>
         </div>
       )}
 
-      {section === 'chatters' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {chatters.filter(chatter => chatter.active !== false || chatterRev(chatter.name).total > 0).map(chatter => {
-            const s = getSetting(chatter.name, 'chatter')
-            const rev = chatterRev(chatter.name)
-            const isEdit = editing && editing.name === chatter.name && editing.type === 'chatter'
-            const base = s && s.include_chat ? rev.chat : rev.total
-            const chatterShare = s ? base * (s.percentage / 100) : 0
-
-            return (
-              <div key={chatter.name} style={card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(6,182,212,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#06b6d4' }}>{chatter.name[0]}</div>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{chatter.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{monthLabel}</div>
-                    </div>
-                  </div>
-                  <button onClick={() => isEdit ? setEditing(null) : startEdit(chatter.name, 'chatter')} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: isEdit ? '#7c3aed' : 'transparent', border: '1px solid ' + (isEdit ? '#7c3aed' : 'var(--border)'), color: isEdit ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {isEdit ? 'Schliessen' : s ? 'Bearbeiten' : '+ Prozente'}
-                  </button>
-                </div>
-
-                <div className="kpi-mini-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: s ? 14 : 0 }}>
-                  {[['Chat Revenue', rev.chat, '#06b6d4'], ['Gesamt', rev.total, 'var(--text-primary)']].map(item => (
-                    <div key={item[0]} style={{ background: 'var(--bg-card2)', borderRadius: 7, padding: '8px 10px', border: '1px solid #1e1e3a' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{item[0]}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: item[2], fontFamily: 'monospace' }}>{money(item[1])}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {s && (
-                  <div className="raster-2" style={{ borderTop: '1px solid #1e1e3a', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isEdit ? 14 : 0 }}>
-                    <div style={{ background: 'rgba(6,182,212,0.08)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(6,182,212,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#06b6d4', marginBottom: 3 }}>Chatter ({s.percentage}%)</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#06b6d4', fontFamily: 'monospace' }}>{money(chatterShare)}</div>
-                    </div>
-                    <div style={{ background: 'rgba(16,185,129,0.06)', borderRadius: 7, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
-                      <div style={{ fontSize: 10, color: '#10b981', marginBottom: 3 }}>Basis</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{money(base)}</div>
-                    </div>
-                    <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--text-muted)' }}>
-                      {s.include_chat ? 'Basis: Chat Revenue' : 'Basis: Gesamt'}
-                    </div>
-                  </div>
-                )}
-
-                {!s && !isEdit && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Noch keine Prozente eingestellt</div>
-                )}
-
-                {isEdit && (
-                  <div style={{ marginTop: s ? 0 : 14, paddingTop: 14, borderTop: '1px solid #1e1e3a' }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
-                      <div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>Chatter-Anteil %</div>
-                        <input type="number" min="0" max="100" value={editVals.percentage} onChange={e => setEditVals(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))} style={{ ...inp, width: 80 }} />
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Basis:</div>
-                    <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
-                      <CheckBox checked={editVals.include_chat} onChange={() => setEditVals(p => ({ ...p, include_chat: !p.include_chat }))} label="Nur Chat Revenue" />
-                    </div>
-                    <button onClick={save} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {saving ? '...' : 'Speichern'}
-                    </button>
-                  </div>
-                )}
+      {/* Satz ändern (Fenster) */}
+      {editing && (
+        <div onClick={() => !saving && setEditing(null)} style={{ position: 'fixed', inset: 0, zIndex: 100100, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+          <div onClick={e => e.stopPropagation()} style={{ ...card, width: 'min(380px, 100%)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>{editing.name} · Satz</div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{editing.type === 'model' ? 'Agentur-Anteil' : 'Chatter-Anteil'}</span>
+              <input type="number" min="0" max="100" autoFocus value={editVals.percentage} onChange={e => setEditVals(p => ({ ...p, percentage: parseFloat(e.target.value) || 0 }))} style={{ ...inp, width: 80, fontSize: 14 }} />
+              <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>%</span>
+              {editing.type === 'model' && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Model: {100 - (editVals.percentage || 0)} %</span>}
+            </div>
+            {editing.type === 'model' ? (<>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Einberechnen:</div>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <CheckBox checked={editVals.include_subs} onChange={() => setEditVals(p => ({ ...p, include_subs: !p.include_subs }))} label="Subs" />
+                <CheckBox checked={editVals.include_chat} onChange={() => setEditVals(p => ({ ...p, include_chat: !p.include_chat }))} label="Chat Revenue" />
+                <CheckBox checked={editVals.include_tips} onChange={() => setEditVals(p => ({ ...p, include_tips: !p.include_tips }))} label="Tips" />
               </div>
-            )
-          })}
+            </>) : null}
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Gilt dauerhaft, für alle Monate.</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setEditing(null)} disabled={saving} style={{ flex: 1, padding: '9px', borderRadius: 9, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Abbrechen</button>
+              <button onClick={save} disabled={saving} style={{ flex: 2, padding: '9px', borderRadius: 9, background: '#7c3aed', color: '#fff', border: 'none', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? '…' : 'Speichern'}</button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -170,6 +170,7 @@ export default function App() {
   const [unreadModelChanges, setUnreadModelChanges] = useState(0)
   const [openSwaps, setOpenSwaps] = useState(0)
   const [unreadCustomContent, setUnreadCustomContent] = useState(0)
+  const [kursOffen, setKursOffen] = useState(false) // v5.22.0: Euro-Kurs für den laufenden Monat fehlt
   const [openTodos, setOpenTodos] = useState(0)
   const [unreadChat, setUnreadChat] = useState(0)
   const fab = useFabPanels()   // v4.1.0: nur ein schwebendes Fenster gleichzeitig
@@ -279,6 +280,13 @@ export default function App() {
 
   const [userRoles, setUserRoles] = useState([])
 
+  // v5.22.0: am Monatsanfang an den Euro-Kurs erinnern (nur wer Billing sieht)
+  useEffect(() => {
+    if (!userRole || !darfAufTab(userRole, userRoles, 'billing')) return
+    const n = new Date(); const monat = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0')
+    supabase.from('billing_kurse').select('monat').eq('monat', monat).maybeSingle()
+      .then(({ data, error }) => setKursOffen(!error && !data))
+  }, [userRole, activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
   // ── Adresszeile ⇄ Ansicht (v4.68.0) ───────────────────────────────────────
   // Warum Query statt Hash und was ziel/id bedeuten: src/route.js.
   useEffect(() => {
@@ -863,6 +871,15 @@ export default function App() {
               }}>
               <Database size={13} strokeWidth={2.4} />
               <span className="hide-sm">{datenHeuteOk ? 'Daten aktuell' : `Daten fehlen: ${fehlenderTag.slice(8, 10)}.${fehlenderTag.slice(5, 7)}.`}</span>
+            </button>
+          )}
+          {/* v5.22.0: Euro-Kurs des Monats fehlt → ein Klick ins Billing */}
+          {kursOffen && canAccess('billing') && (
+            <button onClick={() => oeffneTab('billing')} title="Für diesen Monat ist noch kein Kurs $ → € eingetragen"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', color: '#f59e0b' }}>
+              <DollarSign size={13} strokeWidth={2.4} />
+              <span className="hide-sm">€-Kurs fehlt</span>
             </button>
           )}
           {/* v4.69.0: Bereichszeile. Die Unterpunkte des offenen Bereichs
