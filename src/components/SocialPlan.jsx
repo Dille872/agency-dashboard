@@ -40,6 +40,7 @@ const TX = {
     fertig: 'Fertig', auswahl_weg: 'Auswahl aufheben', hier_einfuegen: '⧉ hier einfügen', hier_einplanen: '⤵ hier einplanen', kopieren_knopf: '⧉ Kopieren',
     zieh_tipp: 'Tipp: Content oder Beiträge per Ziehen auf einen Tag legen. Ein Beitrag lässt sich so auch verschieben.', karussell_n: (n) => `Karussell · ${n}`, hoch_foto: '⬆ Foto hochladen', hoch_karussell: '⬆ Fotos/Videos hinzufügen (auch mehrere)', karussell_tipp: 'Reihenfolge = wie hier von links nach rechts (1 kommt zuerst). Mit ← → verschieben. Bis zu 20 Teile.', beitrag_link: 'Link zum Beitrag (optional)', beitrag_gepostet: 'Gepostet ✓', geplant: 'geplant', gepostet: 'gepostet',
     neu: '+ Beitrag', einplanen: 'Einplanen', speichern: 'Speichern', abbrechen: 'Abbrechen', loeschen: 'Löschen',
+    nur_hochladen: 'Du kannst hier Content hochladen. Einplanen macht das Team.',
     richtwert: '⏰ Richtwert: etwas früher oder später ist okay.', schliessen: 'Schließen', platzhalter_info: '🚧 Der Account wird gerade erst angelegt. Posten geht, sobald der echte Account eingetragen ist (Steuerung → „Echten Account eintragen“).',
     loeschen_frage: 'Diesen Eintrag aus dem Plan löschen?', art: 'Art', account: 'Account', wann: 'Wann', titel: 'Titel',
     video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', hoch_frames: '⬆ Fotos/Videos hinzufügen (auch mehrere)', story_tipp: 'Jede Datei wird ein eigener Frame, in der Reihenfolge der Auswahl.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
@@ -70,6 +71,7 @@ const TX = {
     fertig: 'Done', auswahl_weg: 'Clear selection', hier_einfuegen: '⧉ paste here', hier_einplanen: '⤵ schedule here', kopieren_knopf: '⧉ Copy',
     zieh_tipp: 'Tip: drag content or posts onto a day. Posts can be moved that way too.', karussell_n: (n) => `Carousel · ${n}`, hoch_foto: '⬆ Upload photo', hoch_karussell: '⬆ Add photos/videos (several at once)', karussell_tipp: 'Order = left to right as shown (1 comes first). Move with ← →. Up to 20 items.', beitrag_link: 'Link to the post (optional)', beitrag_gepostet: 'Posted ✓', geplant: 'scheduled', gepostet: 'posted',
     neu: '+ Post', einplanen: 'Schedule', speichern: 'Save', abbrechen: 'Cancel', loeschen: 'Delete',
+    nur_hochladen: 'You can upload content here. The team schedules it.',
     richtwert: '⏰ Guideline: a bit earlier or later is fine.', schliessen: 'Close', platzhalter_info: '🚧 This account is still being set up. Posting works once the real account is added.',
     loeschen_frage: 'Delete this entry from the calendar?', art: 'Type', account: 'Account', wann: 'When', titel: 'Title',
     video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', hoch_frames: '⬆ Add photos/videos (several at once)', story_tipp: 'Each file becomes its own frame, in the order selected.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
@@ -236,8 +238,8 @@ export function usePlan(accounts, von, bis) {
 // v5.14.0: hochladenVorschau → in der Admin-Vorschau des Model-Portals den
 // Hochladen-Bereich zeigen (ausgegraut), damit man sieht, wo das Model hochlädt.
 // v5.19.0: darfPosten → nur ansehen, laden und „gepostet“ markieren (Poster). darfPlanen → alles (Team, Model „plant mit“).
-export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de', darfPlanen = true, darfPosten = null, userDisplayName, hochladenVorschau = false }) {
-  const posten = darfPosten === null ? darfPlanen : darfPosten
+// v5.21.0: Einzelrechte pro Account (Reiter „Rechte“): accounts[].planen / .hochladen gelten zusätzlich.
+export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de', darfPlanen: darfPlanenAlle = true, darfPosten = null, userDisplayName, hochladenVorschau = false }) {
   const T = TX[sprache] || TX.de
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const vorschau = useVorschau()
@@ -246,6 +248,10 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   // damit Content nicht beim falschen Account landet.
   const [filterWahl, setFilter] = useState('')
   const filter = accounts.some(a => a.model + '|' + a.handle === filterWahl) ? filterWahl : (accounts[0] ? accounts[0].model + '|' + accounts[0].handle : '')
+  const aktAcc = accounts.find(a => a.model + '|' + a.handle === filter)
+  const darfPlanen = darfPlanenAlle || !!aktAcc?.planen                 // v5.21.0
+  const darfHochladen = darfPlanen || !!aktAcc?.hochladen
+  const posten = darfPosten === null ? darfPlanen : darfPosten
   const [offen, setOffen] = useState(null) // Entwurf/Zeile im Fenster
   const [material, setMaterial] = useState([])
   const [benutzt, setBenutzt] = useState({ ids: new Set(), links: new Set() })
@@ -514,13 +520,13 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
           })}
         </div>
       )}
-      <div className={darfPlanen || hochladenVorschau ? 'plan-raster' : 'plan-raster plan-ohne-ablage'}>
+      <div className={darfHochladen || hochladenVorschau ? 'plan-raster' : 'plan-raster plan-ohne-ablage'}>
         {/* Content-Ablage */}
         {/* v5.19.0: Poster brauchen die Ablage nicht (sie planen nicht) */}
-        {(darfPlanen || hochladenVorschau) && <div className="plan-ablage" style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {(darfHochladen || hochladenVorschau) && <div className="plan-ablage" style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={klein}>🎞 {T.ablage}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{darfPlanen ? T.ablage_text : T.nur_lesen}</div>
-          {(darfPlanen || hochladenVorschau) && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{darfPlanen ? T.ablage_text : darfHochladen ? T.nur_hochladen : T.nur_lesen}</div>
+          {(darfHochladen || hochladenVorschau) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '10px 10px', borderRadius: 12, border: `1px dashed ${ablageFuer === 'story' ? V : P}`, background: (ablageFuer === 'story' ? V : P) + '0d' }}>
               <b style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{T.hoch_titel}</b>
               <span style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.4 }}>{T.hoch_text}</span>
@@ -533,8 +539,8 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
               )}
               <FuerWahl wert={ablageFuer} onChange={setAblageFuer} T={T} />
               </div>
-              <DateiHochladen model={ablageZiel} mehrere gross gesperrt={!ablageZiel || !darfPlanen} farbe={ablageFuer === 'story' ? V : P} text={T.content_hoch} onFertig={contentRein} />
-              {!darfPlanen && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{T.vorschau_hoch}</span>}
+              <DateiHochladen model={ablageZiel} mehrere gross gesperrt={!ablageZiel || !darfHochladen} farbe={ablageFuer === 'story' ? V : P} text={T.content_hoch} onFertig={contentRein} />
+              {!darfHochladen && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{T.vorschau_hoch}</span>}
             </div>
           )}
           {/* v5.13.0: nur Story- oder nur Beitrags-Content zeigen */}
@@ -660,7 +666,7 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName, darf
           <button type="button" onClick={() => setOffen(z)} style={knopf(P, true)}>{T.oeffnen}</button>
         </div>
       ))}
-      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen} darfPosten userDisplayName={userDisplayName} onZu={(neu) => { setOffen(null); if (neu) laden() }} />}
+      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen || !!accounts.find(a => a.model === offen.model_name && a.handle.toLowerCase() === String(offen.account).toLowerCase())?.planen} darfPosten userDisplayName={userDisplayName} onZu={(neu) => { setOffen(null); if (neu) laden() }} />}
     </div>
   )
 }

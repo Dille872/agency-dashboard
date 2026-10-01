@@ -39,6 +39,7 @@ from (values
   ('rls-stufe7-content-und-schichtlogs.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='meine_model_namen'))),
   ('rollen-social-erlauben.sql', (not exists(select 1 from pg_constraint where conrelid='public.user_roles'::regclass and contype='c' and pg_get_constraintdef(oid) ~ '\mchatter\M' and pg_get_constraintdef(oid) !~ '\msocial_leitung\M'))),
   ('schichtuebergabe-abschnitte.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='shift_logs' and column_name='handover_parts'))),
+  ('social-rechte.sql', (to_regclass('public.social_rechte') is not null)),
   ('platzhalter-accounts.sql', (exists(select 1 from pg_proc where proname='platzhalter_umstellen'))),
   ('poster-nur-posten.sql', (exists(select 1 from pg_trigger where tgname='a_social_plan_poster_nur_posten'))),
   ('schichtuebergabe-empfaenger.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='shift_logs' and column_name='handover_for'))),

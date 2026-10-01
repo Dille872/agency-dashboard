@@ -6,7 +6,7 @@ import SuggestionsAdmin from './components/SuggestionsAdmin'
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard,
+  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard, KeyRound,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import { SkelSeite, SkelAdmin } from './components/Skeleton' // v4.92.0
@@ -87,6 +87,7 @@ const BEREICHE = [
     { key: 'social-ueberblick', label: 'Überblick', Icon: Eye },
     { key: 'social-wirkung', label: 'Wirkung', Icon: TrendingUp },
     { key: 'social-models', label: 'Models', Icon: Users },
+    { key: 'social-rechte', label: 'Rechte', Icon: KeyRound }, // v5.21.0
   ] },
   { key: 'zeit', label: 'Zeit', Icon: Calendar, tabs: [
     { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
@@ -1075,7 +1076,7 @@ export default function App() {
           // v4.108.0: Admins steuern die Reiter über die Unterreiter oben; alle
           // anderen Social-Rollen bekommen ihre Ansicht mit eigenen Reitern.
           <SocialManager key={activeTab} userDisplayName={userDisplayName} kannErinnern={isManager} istAdmin={isManager || istLeitung} darfBoard={isManager}
-            festerReiter={(isManager || istLeitung) ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-plan': 'plan', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin' }[activeTab] || 'steuerung') : null} />
+            festerReiter={(isManager || istLeitung) ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-plan': 'plan', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin', 'social-rechte': 'rechte' }[activeTab] || 'steuerung') : null} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (
