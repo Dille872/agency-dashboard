@@ -16,7 +16,7 @@ import { STANDARD, zoneKurz, geraeteZone, tagIn, uhrIn, inputWert, vonInput, lok
 //
 // Wer darf was (sql/posting-plan.sql):
 //   Admin / Social-Leitung: alles, alle Accounts (Filter oben)
-//   Poster: plant und postet auf seinen zugeteilten Accounts
+//   Poster: v5.19.0 nur ansehen, laden und „gepostet“ markieren (sql/poster-nur-posten.sql)
 //   Model: sieht ihren Plan und trägt Material ein (PlanModel unten)
 //   v5.4.0: Model mit Schalter „plant mit“ (sql/plan-model.sql) bekommt
 //   denselben Kalender und darf auf ihren betreuten Accounts alles wie ein
@@ -40,7 +40,7 @@ const TX = {
     fertig: 'Fertig', auswahl_weg: 'Auswahl aufheben', hier_einfuegen: '⧉ hier einfügen', hier_einplanen: '⤵ hier einplanen', kopieren_knopf: '⧉ Kopieren',
     zieh_tipp: 'Tipp: Content oder Beiträge per Ziehen auf einen Tag legen. Ein Beitrag lässt sich so auch verschieben.', karussell_n: (n) => `Karussell · ${n}`, hoch_foto: '⬆ Foto hochladen', hoch_karussell: '⬆ Fotos/Videos hinzufügen (auch mehrere)', karussell_tipp: 'Reihenfolge = wie hier von links nach rechts (1 kommt zuerst). Mit ← → verschieben. Bis zu 20 Teile.', beitrag_link: 'Link zum Beitrag (optional)', beitrag_gepostet: 'Gepostet ✓', geplant: 'geplant', gepostet: 'gepostet',
     neu: '+ Beitrag', einplanen: 'Einplanen', speichern: 'Speichern', abbrechen: 'Abbrechen', loeschen: 'Löschen',
-    richtwert: '⏰ Richtwert: etwas früher oder später ist okay.',
+    richtwert: '⏰ Richtwert: etwas früher oder später ist okay.', schliessen: 'Schließen',
     loeschen_frage: 'Diesen Eintrag aus dem Plan löschen?', art: 'Art', account: 'Account', wann: 'Wann', titel: 'Titel',
     video: 'Video', hoch_video: '⬆ Video hochladen', hoch_datei: '⬆ Foto/Video hochladen', hoch_frames: '⬆ Fotos/Videos hinzufügen (auch mehrere)', story_tipp: 'Jede Datei wird ein eigener Frame, in der Reihenfolge der Auswahl.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text-Overlays', overlay_neu: '+ Overlay',
     frames: 'Story-Frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (Umfrage, Link …)', frame_link: 'Material-Link',
@@ -70,7 +70,7 @@ const TX = {
     fertig: 'Done', auswahl_weg: 'Clear selection', hier_einfuegen: '⧉ paste here', hier_einplanen: '⤵ schedule here', kopieren_knopf: '⧉ Copy',
     zieh_tipp: 'Tip: drag content or posts onto a day. Posts can be moved that way too.', karussell_n: (n) => `Carousel · ${n}`, hoch_foto: '⬆ Upload photo', hoch_karussell: '⬆ Add photos/videos (several at once)', karussell_tipp: 'Order = left to right as shown (1 comes first). Move with ← →. Up to 20 items.', beitrag_link: 'Link to the post (optional)', beitrag_gepostet: 'Posted ✓', geplant: 'scheduled', gepostet: 'posted',
     neu: '+ Post', einplanen: 'Schedule', speichern: 'Save', abbrechen: 'Cancel', loeschen: 'Delete',
-    richtwert: '⏰ Guideline: a bit earlier or later is fine.',
+    richtwert: '⏰ Guideline: a bit earlier or later is fine.', schliessen: 'Close',
     loeschen_frage: 'Delete this entry from the calendar?', art: 'Type', account: 'Account', wann: 'When', titel: 'Title',
     video: 'Video', hoch_video: '⬆ Upload video', hoch_datei: '⬆ Upload photo/video', hoch_frames: '⬆ Add photos/videos (several at once)', story_tipp: 'Each file becomes its own frame, in the order selected.', caption: 'Caption', hashtags: 'Hashtags', overlays: 'Text overlays', overlay_neu: '+ Overlay',
     frames: 'Story frames', frame_neu: '+ Frame', frame_text: 'Text', frame_sticker: 'Sticker (poll, link …)', frame_link: 'Material link',
@@ -235,7 +235,9 @@ export function usePlan(accounts, von, bis) {
 // skripte: Skripte aus dem Social Manager (für „aus Skript“-Material)
 // v5.14.0: hochladenVorschau → in der Admin-Vorschau des Model-Portals den
 // Hochladen-Bereich zeigen (ausgegraut), damit man sieht, wo das Model hochlädt.
-export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de', darfPlanen = true, userDisplayName, hochladenVorschau = false }) {
+// v5.19.0: darfPosten → nur ansehen, laden und „gepostet“ markieren (Poster). darfPlanen → alles (Team, Model „plant mit“).
+export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de', darfPlanen = true, darfPosten = null, userDisplayName, hochladenVorschau = false }) {
+  const posten = darfPosten === null ? darfPlanen : darfPosten
   const T = TX[sprache] || TX.de
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const vorschau = useVorschau()
@@ -483,7 +485,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: minmax(0, 1fr); } } .plan-raster > * { min-width: 0; } .plan-check input { width: auto !important; flex-shrink: 0; } .abspiel-knopf.abspiel-knopf { padding: 0 !important; font-size: 12px !important; } .plan-konten button { padding: 7px 12px !important; font-size: 13px !important; } .plan-raster > .plan-ablage.plan-ablage { flex-wrap: nowrap !important; } @media (max-width: 768px) { .plan-tage button { padding: 5px 0 3px !important; } .plan-eintrag { padding: 8px 10px !important; font-size: 12.5px !important; } .plan-plus { padding: 8px 0 !important; font-size: 13px !important; } .plan-gross { padding: 12px 14px !important; font-size: 14.5px !important; } }`}</style>
+      <style>{`.plan-raster { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 12px; align-items: start; } @media (max-width: 900px) { .plan-raster { grid-template-columns: minmax(0, 1fr); } } .plan-raster > * { min-width: 0; } .plan-raster.plan-ohne-ablage { grid-template-columns: minmax(0, 1fr); } .plan-check input { width: auto !important; flex-shrink: 0; } .abspiel-knopf.abspiel-knopf { padding: 0 !important; font-size: 12px !important; } .plan-konten button { padding: 7px 12px !important; font-size: 13px !important; } .plan-raster > .plan-ablage.plan-ablage { flex-wrap: nowrap !important; } @media (max-width: 768px) { .plan-tage button { padding: 5px 0 3px !important; } .plan-eintrag { padding: 8px 10px !important; font-size: 12.5px !important; } .plan-plus { padding: 8px 0 !important; font-size: 13px !important; } .plan-gross { padding: 12px 14px !important; font-size: 14.5px !important; } }`}</style>
 
       {/* Hinweisleiste: Kopiermodus / Auswahl */}
       {modus && (
@@ -512,9 +514,10 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
           })}
         </div>
       )}
-      <div className="plan-raster">
+      <div className={darfPlanen || hochladenVorschau ? 'plan-raster' : 'plan-raster plan-ohne-ablage'}>
         {/* Content-Ablage */}
-        <div className="plan-ablage" style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* v5.19.0: Poster brauchen die Ablage nicht (sie planen nicht) */}
+        {(darfPlanen || hochladenVorschau) && <div className="plan-ablage" style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={klein}>🎞 {T.ablage}</div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{darfPlanen ? T.ablage_text : T.nur_lesen}</div>
           {(darfPlanen || hochladenVorschau) && (
@@ -568,7 +571,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
             </div>
           )}
           {darfPlanen && <button type="button" onClick={() => setNeuMaterial(true)} style={{ ...knopf('var(--text-secondary)', false), padding: '4px 10px', fontSize: 11.5 }}>{T.material_neu}</button>}
-        </div>
+        </div>}
 
         {/* Woche */}
         <div style={{ ...card, minWidth: 0 }}>
@@ -622,7 +625,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
           {darfPlanen && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{schmal ? T.tipp_handy : T.zieh_tipp}</div>}
         </div>
       </div>
-      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen} userDisplayName={userDisplayName}
+      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen} darfPosten={posten} userDisplayName={userDisplayName}
         onKopieren={(z) => { setOffen(null); setAuswahl([]); setKopie(z); setHinweis('') }}
         onZu={(neu) => { setOffen(null); if (neu) neuLaden() }} />}
       {neuMaterial && <MaterialFenster models={models} T={T} userDisplayName={userDisplayName} onZu={(neu) => { setNeuMaterial(false); if (neu) ladenMaterial() }} />}
@@ -631,7 +634,7 @@ export default function SocialPlan({ accounts = [], skripte = [], sprache = 'de'
 }
 
 // ── „Heute geplant“ (oben unter „Zu posten“) ───────────────────────────────
-export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
+export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName, darfPlanen = true }) {
   const T = TX[sprache] || TX.de
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
   const von = useMemo(() => tagStart(new Date()), [])
@@ -657,13 +660,14 @@ export function PlanHeute({ accounts = [], sprache = 'de', userDisplayName }) {
           <button type="button" onClick={() => setOffen(z)} style={knopf(P, true)}>{T.oeffnen}</button>
         </div>
       ))}
-      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf userDisplayName={userDisplayName} onZu={(neu) => { setOffen(null); if (neu) laden() }} />}
+      {offen && <PlanFenster start={offen} accounts={accounts} T={T} loc={loc} darf={darfPlanen} darfPosten userDisplayName={userDisplayName} onZu={(neu) => { setOffen(null); if (neu) laden() }} />}
     </div>
   )
 }
 
 // ── Beitrag bearbeiten / posten ────────────────────────────────────────────
-function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onKopieren = null }) {
+function PlanFenster({ start, accounts, T, loc, darf, darfPosten = null, userDisplayName, onZu, onKopieren = null }) {
+  const posten = darfPosten === null ? darf : darfPosten
   const vorschau = useVorschau()
   const [f, setF] = useState(() => ({ ...start, overlays: Array.isArray(start.overlays) ? start.overlays : [], frames: Array.isArray(start.frames) ? start.frames : [] }))
   const zone = zoneVon(accounts, start.model_name, start.account)
@@ -694,10 +698,11 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onK
   }
   const speichern = async (extra = {}) => {
     if (vorschau) return vorschauSperre()
-    if (!f.model_name || !f.account) { setFehler(T.fehler_account); return false }
-    if (!zeit || !vonInput(zeit, zoneJetzt)) { setFehler(T.fehler_zeit); return false }
+    if (darf && (!f.model_name || !f.account)) { setFehler(T.fehler_account); return false }
+    if (darf && (!zeit || !vonInput(zeit, zoneJetzt))) { setFehler(T.fehler_zeit); return false }
     setArbeitet(true); setFehler('')
-    const daten = { ...felder(), ...extra }
+    // v5.19.0: Poster (ohne Planungsrecht) schicken nur die Posten-Felder
+    const daten = darf ? { ...felder(), ...extra } : { ...extra }
     const r = f.id ? await supabase.from('social_plan').update(daten).eq('id', f.id) : await supabase.from('social_plan').insert(daten)
     setArbeitet(false)
     if (r.error) { setFehler(T.nicht_gespeichert + r.error.message); return false }
@@ -853,7 +858,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onK
         {zeile(T.hinweis, <input disabled={nurLesen} value={f.hinweis || ''} onChange={e => set('hinweis', e.target.value.slice(0, 300))} style={eingabe} />)}
 
         {/* Posten */}
-        {f.id && darf && f.status !== 'gepostet' && (
+        {f.id && posten && f.status !== 'gepostet' && (
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={klein}>{T.posten_titel}</div>
             {f.art !== 'story' && <input value={reel} onChange={e => setReel(e.target.value.slice(0, 500))} placeholder={f.art === 'reel' ? T.reel_link : T.beitrag_link} inputMode="url" autoCapitalize="none" style={eingabe} />}
@@ -861,7 +866,7 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onK
             {f.art === 'reel' && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{T.gemessen}</div>}
           </div>
         )}
-        {f.id && darf && f.status === 'gepostet' && (
+        {f.id && posten && f.status === 'gepostet' && (
           <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
             ✓ {T.gepostet}{f.reel_url && <> · <a href={f.reel_url} target="_blank" rel="noreferrer" style={{ color: G, fontWeight: 700 }}>{artName(f.art, T)}</a></>}
             {' · '}<button type="button" onClick={() => speichern({ status: 'geplant', reel_url: null, gepostet_am: null, gepostet_von: null })} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 }}>{T.zurueck}</button>
@@ -869,6 +874,12 @@ function PlanFenster({ start, accounts, T, loc, darf, userDisplayName, onZu, onK
         )}
 
         {fehler && <div style={{ fontSize: 12.5, color: ROT }}>{fehler}</div>}
+        {!darf && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span style={{ flex: 1 }} />
+            <button type="button" onClick={() => onZu(false)} style={knopf('var(--text-secondary)', false)}>{T.schliessen}</button>
+          </div>
+        )}
         {darf && (
           <div style={{ display: 'flex', gap: 8 }}>
             {f.id && <button type="button" onClick={loeschen} style={knopf(ROT, false)}>{T.loeschen}</button>}

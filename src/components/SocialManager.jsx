@@ -239,11 +239,11 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       {reiter === 'schnitt' && istCutter && <SchnittListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
 
       {/* v5.3.0: Posting-Plan */}
-      {reiter === 'plan' && <SocialPlan accounts={planAccounts} skripte={skripte.filter(imService)} sprache={sprache} darfPlanen={istAdmin || istPoster} userDisplayName={userDisplayName} />}
+      {reiter === 'plan' && <SocialPlan accounts={planAccounts} skripte={skripte.filter(imService)} sprache={sprache} darfPlanen={istAdmin} darfPosten={istPoster} userDisplayName={userDisplayName} />}
 
       {reiter === 'posten' && (
         <>
-          {istPoster && <PlanHeute accounts={planAccounts} sprache={sprache} userDisplayName={userDisplayName} />}
+          {istPoster && <PlanHeute accounts={planAccounts} sprache={sprache} userDisplayName={userDisplayName} darfPlanen={istAdmin} />}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
             {[[zuPosten.length, C, 'kpi_posten'], [fehlt.length, A, 'kpi_fehlt'], [woche.length, G, 'kpi_woche']].map(([n, f, k]) => (
               <div key={k} style={{ ...card, padding: '12px 14px' }}>
