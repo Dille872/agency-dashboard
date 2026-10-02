@@ -357,6 +357,7 @@ th { text-align: left; }
 }
 
 /* v5.27.0: Skripte (Storyteller / Script Builder) */
+.sk-reiter .sk-kurz { display: none; }
 .sk-mini button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 3px 5px; border-radius: 6px; font-family: inherit; }
 .sk-mini button:disabled { opacity: 0.25; cursor: default; }
 .sk-mini button:hover:not(:disabled) { background: var(--bg-card); color: var(--text-primary); }
@@ -367,6 +368,9 @@ th { text-align: left; }
   .sk-reiter.sk-reiter { position: static; }
   .sk-reiter.sk-reiter .ms-knopf.ms-knopf { flex-direction: row; gap: 4px; }
   .sk-reiter.sk-reiter .ms-badge { position: static; }
+  .sk-reiter .sk-lang { display: none; }
+  .sk-reiter .sk-kurz { display: inline; }
+  .sk-reiter.sk-reiter .ms-knopf.ms-knopf { font-size: 11.5px !important; padding: 8px 2px !important; }
 }
 
 /* v5.27.0: Team & Rechte */

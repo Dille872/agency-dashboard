@@ -188,3 +188,70 @@ export async function builderAnstupsen(eintraege, notiz, wer) {
     (String(notiz || '').trim() ? `\n\n${kurz(notiz, 300)}` : '') + linkZeile('builder', '👉 Zum Script Builder')
   return builderBenachrichtigen(text)
 }
+
+// ── v5.30.0: Bibliothek (of_vorlagen) ──────────────────────────────────────
+const VFELDER = ['titel', 'art', 'outfit', 'laenge', 'notiz_builder', 'stichworte']
+export async function vorlagenLaden() {
+  const { data, error } = await supabase.from('of_vorlagen').select('*').order('titel')
+  return { liste: data || [], fehlt: fehltTabelle(error) || /of_vorlagen/i.test(error?.message || '') }
+}
+export async function vorlageSpeichern(v, wer) {
+  const zeile = { schritte: schritteSauber(v.schritte) }
+  for (const k of VFELDER) if (k in v) zeile[k] = typeof v[k] === 'string' ? (v[k].trim() || null) : v[k]
+  zeile.titel = String(v.titel || '').trim().slice(0, 200)
+  zeile.art = v.art || 'video'
+  if (v.id) return supabase.from('of_vorlagen').update({ ...zeile, aktualisiert_am: new Date().toISOString() }).eq('id', v.id).select().maybeSingle()
+  return supabase.from('of_vorlagen').insert({ ...zeile, erstellt_von: wer }).select().maybeSingle()
+}
+export async function vorlageLoeschen(id) {
+  return supabase.from('of_vorlagen').delete().eq('id', id)
+}
+// Ein fertiges Skript in die Bibliothek übernehmen (ohne Model)
+export async function skriptAlsVorlage(s, wer) {
+  const r = await vorlageSpeichern({ titel: s.titel, art: s.art, schritte: s.schritte, outfit: s.outfit, laenge: s.laenge, notiz_builder: s.notiz_builder }, wer)
+  if (!r.error && r.data && s.id && !s.vorlage_id) await supabase.from('of_skripte').update({ vorlage_id: r.data.id }).eq('id', s.id)
+  return r
+}
+// Vorlagen an ein Model geben → gleich freigeschaltet (Bibliothek ist schon geprüft)
+export async function vorlagenZuweisen({ vorlagen, model, faellig, wer }) {
+  const zeilen = vorlagen.map(v => ({
+    model_name: model, titel: v.titel, art: v.art || 'video', schritte: v.schritte || [], outfit: v.outfit || null, laenge: v.laenge || null,
+    notiz_builder: v.notiz_builder || null, faellig: faellig || null, status: 'beim_model', vorlage_id: v.id, quelle: 'bibliothek', erstellt_von: wer, auftrag_von: wer,
+  }))
+  const { error } = await supabase.from('of_skripte').insert(zeilen)
+  if (error) return { error }
+  let info = ''
+  try {
+    const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', model).maybeSingle()
+    if (m?.telegram_id) {
+      const liste = vorlagen.slice(0, 10).map(v => `• ${kurz(v.titel, 60)}`).join('\n')
+      const r = await sendTelegramMessage(m.telegram_id,
+        `✍️ <b>${vorlagen.length === 1 ? 'Neues Skript' : `${vorlagen.length} neue Skripte`} für dich</b>\n\n${liste}` +
+        (vorlagen.length > 10 ? `\n… und ${vorlagen.length - 10} weitere` : '') +
+        (faellig ? `\n\nbis ${new Date(faellig + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}` : '') +
+        `\n\n👉 Im Dashboard auf der Startseite unter „Skripte für dich“${(() => { try { return `\n<a href="${window.location.origin}/">Dashboard öffnen</a>` } catch { return '' } })()}`)
+      info = r?.ok ? `${model} per Telegram benachrichtigt.` : `Telegram an ${model} ging nicht raus.`
+    } else info = `${model} hat keine Telegram-ID, bitte selbst Bescheid geben.`
+  } catch { info = 'Telegram ging nicht raus.' }
+  return { info }
+}
+
+// ── v5.30.0: Auftrag direkt an den Script Builder ──────────────────────────
+// z. B. „Elina hat selbst etwas online gestellt“ — ohne Storyteller, ohne Model-Schritt.
+export async function builderAuftrag({ model, titel, notiz, art = 'video', wer }) {
+  const { error } = await supabase.from('of_skripte').insert({
+    model_name: model, titel: String(titel || '').trim().slice(0, 200), art, schritte: [], notiz_builder: String(notiz || '').trim() || null,
+    status: 'hochgeladen', quelle: 'builder_auftrag', auftrag_von: wer, erstellt_von: wer, hochgeladen_am: new Date().toISOString(),
+  })
+  if (error) return { error }
+  const r = await builderBenachrichtigen(
+    `🧩 <b>Auftrag von ${wer}</b>\n\n<b>${model}</b>: ${kurz(titel, 100)}` +
+    (String(notiz || '').trim() ? `\n${kurz(notiz, 300)}` : '') + linkZeile('builder', '👉 Zum Script Builder'))
+  return { info: r.ziele ? `Telegram an ${r.gesendet} von ${r.ziele} Script Builder${r.ziele === 1 ? '' : 'n'} raus.` : 'Kein Script Builder mit Telegram-ID gefunden.' }
+}
+export const QUELLE = {
+  builder_auftrag: { t: 'Auftrag', f: '#f59e0b' },
+  bibliothek: { t: 'Bibliothek', f: '#10b981' },
+  storyteller: { t: 'Storyteller', f: '#c084fc' },
+  admin: { t: 'Skript', f: '#c084fc' },
+}
