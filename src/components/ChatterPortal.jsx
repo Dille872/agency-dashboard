@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import SkripteBereich from './SkripteBereich' // v5.27.0
 import { BookOpen, Library, Eye, UserRound } from 'lucide-react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
@@ -407,7 +408,7 @@ const leisteMerkenChatter = (el) => {
   try { document.documentElement.classList.toggle('mit-leiste', !!el) } catch { /* egal */ }
 }
 
-export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview, onSwitchToOwn, onSwitchToPreview }) {
+export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview, onSwitchToOwn, onSwitchToPreview, contentRollen = [] }) {
   const [theme, setThemeState] = useState(() => getTheme())
   const [showSocialPortal, setShowSocialPortal] = useState(false)
   const [previewChatter, setPreviewChatter] = useState('')
@@ -545,7 +546,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [tab, setTab] = useState(() => {
     try {
       const stored = localStorage.getItem(TAB_KEY)
-      if (stored && ['heute', 'models', 'content', 'orga', 'mehr'].includes(stored)) return stored
+      if (stored && ['heute', 'models', 'content', 'orga', 'mehr', ...(contentRollen.length ? ['skripte'] : [])].includes(stored)) return stored
     } catch {}
     return 'heute'
   })
@@ -2177,6 +2178,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
     { key: 'models', icon: '🎬', label: 'Models', kurz: 'Models', badge: 0 },
     { key: 'content', icon: '📥', label: 'Content', kurz: 'Content', badge: offeneContents },
     { key: 'orga', icon: '🗂️', label: 'Organisation', kurz: 'Orga', badge: 0 },
+    // v5.27.0: Storyteller / Script Builder
+    ...(contentRollen.length && !isPreview ? [{ key: 'skripte', icon: contentRollen.includes('script_builder') && !contentRollen.includes('storyteller') ? '🧩' : '✍️', label: 'Skripte', kurz: 'Skripte', badge: 0 }] : []),
     { key: 'mehr', icon: '📚', label: 'Mehr', kurz: 'Mehr', badge: 0 },
   ]
 
@@ -3197,6 +3200,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
 
         {/* v4.82.0: Mehr-Tab im neuen Look — Zahlen als Karte oben (immer offen),
             Bot-Befehle als Kacheln, darunter Guidelines, Hilfe und Pinnwand. */}
+        {tab === 'skripte' && contentRollen.length > 0 && !isPreview && (
+          <SkripteBereich userDisplayName={displayName} storyteller={contentRollen.includes('storyteller')} builder={contentRollen.includes('script_builder')} />
+        )}
         {tab === 'mehr' && (() => {
           const monat = new Date().toLocaleString('de-DE', { month: 'long' })
           const ziele = [

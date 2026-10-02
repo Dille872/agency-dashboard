@@ -1,0 +1,421 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  STATUS, ARTEN, artText, schritteSauber, skripteLaden, modelsLaden, speichern,
+  zurFreigabeGemeldet, freischalten, zurueckSchicken, alsGebaut, builderVideosLaden, videoErledigt,
+} from '../ofSkripte'
+
+// ── Skripte: Storyteller · Freigabe · Script Builder (v5.27.0) ─────────────
+// Ein Bereich für drei Sichten, je nach Rolle:
+//   ✍️ Schreiben       Storyteller (und Admins): Skript mit Schritten anlegen, eigene Liste
+//   🔓 Freigabe        Admins: alles sehen, freischalten, zurückschicken, bearbeiten
+//   🧩 Script Builder  Noa & Co.: was in CreatorHero zu bauen ist (Skripte + Model-Videos)
+// Benutzt im Admin (Kommunikation → Skripte) und im Chatter-Portal (Reiter Skripte).
+
+const P = '#ec4899', LILA = '#a855f7', C = '#06b6d4', G = '#10b981', AMB = '#f59e0b', ROT = '#ef4444'
+const card = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 15px' }
+const eingabe = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '9px 11px', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', width: '100%' }
+const label = { display: 'block', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
+const knopf = (farbe, voll = true) => ({ padding: '9px 14px', borderRadius: 10, border: voll ? 'none' : '1px solid var(--border)', background: voll ? farbe : 'transparent', color: voll ? (farbe === C ? '#04212a' : '#fff') : 'var(--text-secondary)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' })
+const pill = (f) => ({ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 20, background: f + '22', color: f, whiteSpace: 'nowrap' })
+const datumKurz = (iso) => iso ? new Date(String(iso).length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) : ''
+const vorZeit = (iso) => {
+  if (!iso) return ''
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (min < 60) return `vor ${Math.max(1, min)} Min.`
+  if (min < 60 * 24) return `vor ${Math.round(min / 60)} Std.`
+  return datumKurz(iso)
+}
+
+// ── Schritte bearbeiten ────────────────────────────────────────────────────
+export function SchritteEditor({ schritte, onChange }) {
+  const refs = useRef([])
+  const [fokus, setFokus] = useState(null)
+  useEffect(() => { if (fokus !== null) { refs.current[fokus]?.focus(); setFokus(null) } }, [fokus])
+  const setze = (i, patch) => onChange(schritte.map((s, j) => j === i ? { ...s, ...patch } : s))
+  const neuNach = (i) => { const n = [...schritte]; n.splice(i + 1, 0, { text: '' }); onChange(n); setFokus(i + 1) }
+  const weg = (i) => { const n = schritte.filter((_, j) => j !== i); onChange(n.length ? n : [{ text: '' }]); setFokus(Math.max(0, i - 1)) }
+  const schieben = (i, d) => { const j = i + d; if (j < 0 || j >= schritte.length) return; const n = [...schritte]; [n[i], n[j]] = [n[j], n[i]]; onChange(n) }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      {schritte.map((s, i) => (
+        <div key={i} className="sk-schritt" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: 11, padding: '7px 8px' }}>
+          <span style={{ flex: '0 0 auto', width: 24, height: 24, borderRadius: 12, background: P + '26', color: P, fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 6 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <input ref={el => { refs.current[i] = el }} value={s.text} placeholder={i === 0 ? 'Erster Schritt, z. B. „Kommt zur Tür rein, Blick in die Kamera“' : 'Nächster Schritt … (Enter = noch einer)'}
+              onChange={e => setze(i, { text: e.target.value.slice(0, 500) })}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); if (String(s.text).trim()) neuNach(i) }
+                if (e.key === 'Backspace' && !s.text && schritte.length > 1) { e.preventDefault(); weg(i) }
+              }}
+              style={{ ...eingabe, background: 'transparent', border: 'none', padding: '5px 4px' }} />
+            {s.tipp !== undefined && (
+              <input value={s.tipp} placeholder="💡 Tipp, z. B. „Kamera auf Hüfthöhe“" onChange={e => setze(i, { tipp: e.target.value.slice(0, 300) })}
+                style={{ ...eingabe, background: 'transparent', border: 'none', borderTop: '1px dashed var(--border)', borderRadius: 0, padding: '5px 4px', fontSize: 12.5, color: 'var(--text-secondary)' }} />
+            )}
+          </div>
+          <div className="sk-mini" style={{ display: 'flex', gap: 2, alignItems: 'center', marginTop: 3 }}>
+            <button type="button" title="Tipp" onClick={() => setze(i, { tipp: s.tipp === undefined ? '' : undefined })} style={{ opacity: s.tipp !== undefined ? 1 : 0.55 }}>💡</button>
+            <button type="button" title="nach oben" disabled={i === 0} onClick={() => schieben(i, -1)}>↑</button>
+            <button type="button" title="nach unten" disabled={i === schritte.length - 1} onClick={() => schieben(i, 1)}>↓</button>
+            <button type="button" title="Schritt löschen" onClick={() => weg(i)}>✕</button>
+          </div>
+        </div>
+      ))}
+      <button type="button" onClick={() => neuNach(schritte.length - 1)}
+        style={{ alignSelf: 'flex-start', padding: '7px 13px', borderRadius: 10, border: `1px dashed ${P}`, background: 'transparent', color: P, fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>+ Schritt</button>
+    </div>
+  )
+}
+
+// Schritte nur anzeigen (Admin-Vorschau, Builder)
+export function SchritteAnzeige({ schritte, erledigt = [] }) {
+  const liste = schritteSauber(schritte)
+  if (!liste.length) return <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Keine Schritte.</div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {liste.map((s, i) => {
+        const fertig = erledigt.includes(i)
+        return (
+          <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: 11, padding: '8px 10px', opacity: fertig ? 0.6 : 1 }}>
+            <span style={{ flex: '0 0 auto', width: 22, height: 22, borderRadius: 11, background: fertig ? G : P + '26', color: fertig ? '#fff' : P, fontWeight: 800, fontSize: 11.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{fertig ? '✓' : i + 1}</span>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.45 }}>
+              {s.text}
+              {s.tipp && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>💡 {s.tipp}</span>}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+const leer = () => ({ model_name: '', titel: '', art: 'video', schritte: [{ text: '' }], outfit: '', laenge: '', notiz_builder: '', faellig: '' })
+
+// ── Formular (neu oder bearbeiten) ─────────────────────────────────────────
+function SkriptFormular({ vorlage, models, wer, istAdmin, onFertig, onAbbrechen }) {
+  const [s, setS] = useState(() => vorlage ? { ...leer(), ...vorlage, schritte: (vorlage.schritte || []).length ? vorlage.schritte.map(x => ({ ...x })) : [{ text: '' }], faellig: vorlage.faellig || '' } : leer())
+  const [arbeitet, setArbeitet] = useState(false)
+  const [fehler, setFehler] = useState('')
+  const setze = (patch) => setS(x => ({ ...x, ...patch }))
+  const anzahl = schritteSauber(s.schritte).length
+  const bereit = !!s.model_name && !!String(s.titel).trim() && anzahl > 0
+
+  const sichern = async (status) => {
+    setFehler('')
+    if (!s.model_name || !String(s.titel).trim()) { setFehler('Bitte Model und Titel angeben.'); return }
+    if (status !== 'entwurf' && !anzahl) { setFehler('Mindestens ein Schritt, bevor es zur Freigabe geht.'); return }
+    setArbeitet(true)
+    const { data, error } = await speichern({ ...s, titel: String(s.titel).trim().slice(0, 200), status }, wer)
+    setArbeitet(false)
+    if (error) { setFehler(error.message); return }
+    if (status === 'freigabe' && !istAdmin) await zurFreigabeGemeldet(data || s, wer)
+    onFertig?.(data, status)
+  }
+
+  const neu = !s.id
+  const darfEntwurf = !s.status || ['entwurf', 'freigabe', 'zurueck'].includes(s.status)
+  return (
+    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <b style={{ flex: 1, fontSize: 16, color: 'var(--text-primary)' }}>{neu ? 'Neues Skript' : 'Skript bearbeiten'}</b>
+        {s.status && <span style={pill(STATUS[s.status]?.f || '#999')}>{STATUS[s.status]?.t || s.status}</span>}
+      </div>
+      {s.status === 'zurueck' && s.zurueck_notiz && (
+        <div style={{ fontSize: 12.5, color: ROT, background: ROT + '14', border: `1px solid ${ROT}44`, borderRadius: 10, padding: '8px 11px' }}>↩ Notiz: {s.zurueck_notiz}</div>
+      )}
+      <div className="sk-zwei" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 10 }}>
+        <div><span style={label}>Für Model</span>
+          <select value={s.model_name} onChange={e => setze({ model_name: e.target.value })} style={eingabe}>
+            <option value="">Model wählen …</option>
+            {models.map(m => <option key={m} value={m}>{m}</option>)}
+            {s.model_name && !models.includes(s.model_name) && <option value={s.model_name}>{s.model_name}</option>}
+          </select>
+        </div>
+        <div><span style={label}>Art</span>
+          <select value={s.art} onChange={e => setze({ art: e.target.value })} style={eingabe}>
+            {ARTEN.map(a => <option key={a.k} value={a.k}>{a.t}</option>)}
+          </select>
+        </div>
+      </div>
+      <div><span style={label}>Titel</span>
+        <input value={s.titel} onChange={e => setze({ titel: e.target.value.slice(0, 200) })} placeholder="z. B. Nach dem Gym – Duschszene" style={eingabe} />
+      </div>
+      <div><span style={label}>Ablauf · Schritt für Schritt</span>
+        <SchritteEditor schritte={s.schritte} onChange={v => setze({ schritte: v })} />
+      </div>
+      <div className="sk-zwei" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 10 }}>
+        <div><span style={label}>Outfit / Ort</span><input value={s.outfit || ''} onChange={e => setze({ outfit: e.target.value.slice(0, 300) })} placeholder="z. B. Sport-BH grau, Bad" style={eingabe} /></div>
+        <div><span style={label}>Länge</span><input value={s.laenge || ''} onChange={e => setze({ laenge: e.target.value.slice(0, 100) })} placeholder="z. B. ca. 4–6 Min." style={eingabe} /></div>
+      </div>
+      <div className="sk-zwei" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 10 }}>
+        <div><span style={label}>Notiz für den Script Builder (CreatorHero)</span><input value={s.notiz_builder || ''} onChange={e => setze({ notiz_builder: e.target.value.slice(0, 500) })} placeholder="z. B. als 3er-Bundle aufteilen" style={eingabe} /></div>
+        <div><span style={label}>Fällig bis (optional)</span><input type="date" value={s.faellig || ''} onChange={e => setze({ faellig: e.target.value })} style={eingabe} /></div>
+      </div>
+      {fehler && <div style={{ fontSize: 12.5, color: ROT }}>{fehler}</div>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        {onAbbrechen && <button type="button" onClick={onAbbrechen} style={knopf('', false)}>Abbrechen</button>}
+        {darfEntwurf && <button type="button" disabled={arbeitet} onClick={() => sichern('entwurf')} style={knopf('', false)}>Als Entwurf speichern</button>}
+        {istAdmin && !darfEntwurf
+          ? <button type="button" disabled={arbeitet || !bereit} onClick={() => sichern(s.status)} style={{ ...knopf(LILA), opacity: bereit ? 1 : 0.5 }}>{arbeitet ? '…' : 'Speichern'}</button>
+          : <button type="button" disabled={arbeitet || !bereit} onClick={() => sichern('freigabe')} style={{ ...knopf(P), opacity: bereit ? 1 : 0.5 }}>{arbeitet ? '…' : istAdmin ? 'Speichern (zur Freigabe)' : 'Zur Freigabe schicken'}</button>}
+      </div>
+    </div>
+  )
+}
+
+// ── Zeile in Listen ────────────────────────────────────────────────────────
+function Zeile({ s, rechts, onClick }) {
+  return (
+    <div onClick={onClick} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap', cursor: onClick ? 'pointer' : 'default' }}>
+      <span style={{ fontWeight: 800, color: P, fontSize: 13, minWidth: 64 }}>{s.model_name}</span>
+      <span style={{ flex: 1, minWidth: 150, fontSize: 13.5, color: 'var(--text-primary)' }}>{s.titel}
+        <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)' }}>{artText(s.art)} · {schritteSauber(s.schritte).length} Schritte{s.faellig ? ` · bis ${datumKurz(s.faellig)}` : ''}</span>
+      </span>
+      {rechts || <span style={pill(STATUS[s.status]?.f || '#999')}>{STATUS[s.status]?.t || s.status}</span>}
+    </div>
+  )
+}
+
+// ── ✍️ Storyteller ─────────────────────────────────────────────────────────
+function Schreiben({ liste, models, wer, istAdmin, neuLaden }) {
+  const [bearbeite, setBearbeite] = useState(null) // null = neues Formular, sonst Skript
+  const [formKey, setFormKey] = useState(0)
+  const [meldung, setMeldung] = useState('')
+  const eigene = liste.filter(s => s.erstellt_von === wer)
+  const fertig = (data, status) => {
+    setMeldung(status === 'freigabe' ? '✓ Zur Freigabe geschickt. Du siehst hier, wenn es beim Model ist.' : '✓ Gespeichert.')
+    setBearbeite(null); setFormKey(k => k + 1); neuLaden()
+    setTimeout(() => setMeldung(''), 5000)
+  }
+  return (
+    <div className="sk-schreiben" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {meldung && <div style={{ fontSize: 13, color: G, fontWeight: 700 }}>{meldung}</div>}
+        <SkriptFormular key={bearbeite ? 'b' + bearbeite.id : 'n' + formKey} vorlage={bearbeite} models={models} wer={wer} istAdmin={istAdmin}
+          onFertig={fertig} onAbbrechen={bearbeite ? () => setBearbeite(null) : null} />
+      </div>
+      <div style={card}>
+        <b style={{ fontSize: 14.5, color: 'var(--text-primary)' }}>Meine Skripte</b>
+        {!eigene.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>Noch keine. Links das erste schreiben.</div>}
+        {eigene.map(s => {
+          const editierbar = ['entwurf', 'freigabe', 'zurueck'].includes(s.status)
+          return <Zeile key={s.id} s={s} onClick={editierbar ? () => { setBearbeite(s); window.scrollTo?.({ top: 0, behavior: 'smooth' }) } : null} />
+        })}
+        {eigene.some(s => ['entwurf', 'freigabe', 'zurueck'].includes(s.status)) && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>Antippen zum Bearbeiten (geht, bis es freigeschaltet ist).</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── 🔓 Freigabe (Admin) ────────────────────────────────────────────────────
+const FILTER = [
+  { k: 'freigabe', t: 'Zur Freigabe', st: ['freigabe'] },
+  { k: 'model', t: 'Bei Models', st: ['beim_model'] },
+  { k: 'ch', t: 'Warten auf CH', st: ['hochgeladen'] },
+  { k: 'fertig', t: 'Fertig', st: ['gebaut'] },
+  { k: 'entwurf', t: 'Entwürfe & zurück', st: ['entwurf', 'zurueck'] },
+  { k: 'alle', t: 'Alle', st: null },
+]
+function Freigabe({ liste, models, wer, neuLaden }) {
+  const [filter, setFilter] = useState('freigabe')
+  const [offen, setOffen] = useState(null)
+  const [bearbeite, setBearbeite] = useState(null)
+  const [meldung, setMeldung] = useState('')
+  const [arbeitet, setArbeitet] = useState(null)
+  const zahl = (st) => liste.filter(s => st.includes(s.status)).length
+  const f = FILTER.find(x => x.k === filter)
+  const sicht = liste.filter(s => f.st ? f.st.includes(s.status) : s.status !== 'verworfen')
+  const melde = (t) => { setMeldung(t); setTimeout(() => setMeldung(''), 6000) }
+
+  const schalteFrei = async (s) => {
+    if (!window.confirm(`„${s.titel}“ für ${s.model_name} freischalten? Sie bekommt es dann in ihre Aufgaben.`)) return
+    setArbeitet(s.id)
+    const r = await freischalten(s)
+    setArbeitet(null)
+    if (r.error) return melde('⚠ ' + r.error.message)
+    melde('✓ Freigeschaltet. ' + (r.info || ''))
+    neuLaden()
+  }
+  const zurueck = async (s) => {
+    const notiz = window.prompt('Was soll geändert werden? (geht an die Storytellerin)', s.zurueck_notiz || '')
+    if (notiz === null) return
+    const { error } = await zurueckSchicken(s, notiz)
+    if (error) return melde('⚠ ' + error.message)
+    melde('✓ Zurückgeschickt.'); neuLaden()
+  }
+  const verwerfen = async (s) => {
+    if (!window.confirm(`„${s.titel}“ verwerfen? Es bleibt gespeichert, taucht aber nirgends mehr auf.`)) return
+    const { error } = await speichern({ id: s.id, status: 'verworfen', schritte: s.schritte }, wer)
+    if (error) return melde('⚠ ' + error.message)
+    neuLaden()
+  }
+
+  if (bearbeite) return <SkriptFormular vorlage={bearbeite} models={models} wer={wer} istAdmin onFertig={() => { setBearbeite(null); neuLaden() }} onAbbrechen={() => setBearbeite(null)} />
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="sk-kpis raster-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
+        {[['freigabe', AMB, 'warten auf Freigabe'], ['model', P, 'bei Models'], ['ch', C, 'warten auf CH']].map(([k, farbe, t]) => (
+          <div key={k} onClick={() => setFilter(k)} style={{ ...card, padding: '11px 13px', cursor: 'pointer', borderColor: filter === k ? farbe : 'var(--border)' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: farbe }}>{zahl(FILTER.find(x => x.k === k).st)}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {FILTER.map(x => (
+          <button key={x.k} type="button" onClick={() => setFilter(x.k)} style={{ fontSize: 12, padding: '6px 11px', borderRadius: 20, border: `1px solid ${filter === x.k ? LILA : 'var(--border)'}`, background: filter === x.k ? LILA + '22' : 'transparent', color: filter === x.k ? '#d8b4fe' : 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+            {x.t}{x.st ? ` (${zahl(x.st)})` : ''}
+          </button>
+        ))}
+      </div>
+      {meldung && <div style={{ fontSize: 13, color: meldung.startsWith('⚠') ? ROT : G, fontWeight: 700 }}>{meldung}</div>}
+      {!sicht.length && <div style={{ ...card, fontSize: 13, color: 'var(--text-muted)' }}>Hier ist gerade nichts.</div>}
+      {sicht.map(s => {
+        const auf = offen === s.id || (filter === 'freigabe' && offen === null)
+        return (
+          <div key={s.id} style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10, borderColor: s.status === 'freigabe' ? AMB + '66' : 'var(--border)' }}>
+            <div onClick={() => setOffen(auf ? -1 : s.id)} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', cursor: 'pointer' }}>
+              <span style={{ fontWeight: 800, color: P, fontSize: 13 }}>{s.model_name}</span>
+              <b style={{ flex: 1, minWidth: 150, fontSize: 14.5, color: 'var(--text-primary)' }}>{s.titel}</b>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.erstellt_von ? `von ${s.erstellt_von} · ` : ''}{vorZeit(s.aktualisiert_am)}</span>
+              <span style={pill(STATUS[s.status]?.f || '#999')}>{STATUS[s.status]?.t || s.status}</span>
+            </div>
+            {auf && <>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{artText(s.art)}{s.outfit ? ` · ${s.outfit}` : ''}{s.laenge ? ` · ${s.laenge}` : ''}{s.faellig ? ` · bis ${datumKurz(s.faellig)}` : ''}</div>
+              <SchritteAnzeige schritte={s.schritte} erledigt={s.schritte_erledigt || []} />
+              {s.notiz_builder && <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>🧩 Notiz für CH: {s.notiz_builder}</div>}
+              {s.model_frage && <div style={{ fontSize: 12.5, color: AMB }}>❓ Frage vom Model: {s.model_frage}</div>}
+              {s.of_titel && <div style={{ fontSize: 12.5, color: C }}>Titel auf OF: {s.of_titel}</div>}
+              {s.status === 'gebaut' && <div style={{ fontSize: 12, color: G }}>✓ in CH gebaut von {s.gebaut_von || '—'} · {vorZeit(s.gebaut_am)}</div>}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                {s.status !== 'verworfen' && s.status !== 'gebaut' && <button type="button" onClick={() => verwerfen(s)} style={{ ...knopf('', false), color: 'var(--text-muted)' }}>Verwerfen</button>}
+                {['freigabe', 'entwurf'].includes(s.status) && <button type="button" onClick={() => zurueck(s)} style={knopf('', false)}>↩ Zurück mit Notiz</button>}
+                <button type="button" onClick={() => setBearbeite(s)} style={knopf('', false)}>Bearbeiten</button>
+                {['freigabe', 'entwurf', 'zurueck'].includes(s.status) && (
+                  <button type="button" disabled={arbeitet === s.id} onClick={() => schalteFrei(s)} style={knopf(G)}>{arbeitet === s.id ? '…' : '🔓 Freischalten → Model'}</button>
+                )}
+              </div>
+            </>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── 🧩 Script Builder ──────────────────────────────────────────────────────
+function Builder({ liste, wer, neuLaden, onZahl }) {
+  const [videos, setVideos] = useState(null)
+  const [alleFertig, setAlleFertig] = useState(false)
+  const [arbeitet, setArbeitet] = useState(null)
+  const [fehler, setFehler] = useState('')
+  const ladeVideos = useCallback(async () => { const r = await builderVideosLaden(); setVideos(r.liste) }, [])
+  useEffect(() => { ladeVideos() }, [ladeVideos])
+
+  const eintraege = useMemo(() => {
+    const sk = liste.filter(s => ['hochgeladen', 'gebaut'].includes(s.status)).map(s => ({
+      key: 's' + s.id, quelle: 'skript', model: s.model_name, titel: s.titel, offen: s.status === 'hochgeladen',
+      zeit: s.status === 'gebaut' ? s.gebaut_am : s.hochgeladen_am, von: s.gebaut_von, s,
+      unter: [s.of_titel ? `„${s.of_titel}“` : null, s.notiz_builder ? `Notiz: ${s.notiz_builder}` : null].filter(Boolean).join(' · '),
+    }))
+    const vi = (videos || []).map(v => ({
+      key: 'v' + v.id, quelle: 'video', model: v.model_name, titel: v.title, offen: !v.erledigt_am,
+      zeit: v.erledigt_am || v.created_at, von: v.erledigt_von, v,
+      unter: ['selbst eingetragen', v.release_date ? `VÖ ${datumKurz(v.release_date)}` : null, v.description ? String(v.description).slice(0, 120) : null].filter(Boolean).join(' · '),
+    }))
+    return [...sk, ...vi].sort((a, b) => String(b.zeit || '').localeCompare(String(a.zeit || '')))
+  }, [liste, videos])
+  const offen = eintraege.filter(e => e.offen)
+  const fertig = eintraege.filter(e => !e.offen)
+  useEffect(() => { onZahl?.(offen.length) }, [offen.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const umschalten = async (e, an) => {
+    setFehler(''); setArbeitet(e.key)
+    const { error } = e.quelle === 'skript' ? await alsGebaut(e.s, an) : await videoErledigt(e.v, wer, an)
+    setArbeitet(null)
+    if (error) { setFehler(error.message); return }
+    if (e.quelle === 'skript') neuLaden(); else ladeVideos()
+  }
+  const zeile = (e) => (
+    <div key={e.key} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '11px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap', opacity: e.offen ? 1 : 0.65 }}>
+      <span style={{ fontWeight: 800, color: P, fontSize: 13, minWidth: 64 }}>{e.model}</span>
+      <span style={{ flex: 1, minWidth: 160, fontSize: 13.5, color: 'var(--text-primary)' }}>{e.titel}
+        {e.unter && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)' }}>{e.unter}</span>}
+        {e.quelle === 'skript' && e.offen && (
+          <details style={{ marginTop: 6 }}><summary style={{ fontSize: 12, color: C, cursor: 'pointer' }}>Schritte ansehen</summary><div style={{ marginTop: 6 }}><SchritteAnzeige schritte={e.s.schritte} /></div></details>
+        )}
+      </span>
+      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: e.quelle === 'skript' ? LILA + '33' : '#3b82f633', color: e.quelle === 'skript' ? '#d8b4fe' : '#93c5fd' }}>{e.quelle === 'skript' ? 'Storyteller' : 'Model-Video'}</span>
+      {e.offen
+        ? <button type="button" disabled={arbeitet === e.key} onClick={() => umschalten(e, true)} style={knopf(C)}>{arbeitet === e.key ? '…' : '🧩 In CH gebaut'}</button>
+        : <span style={{ fontSize: 11.5, color: G, display: 'flex', gap: 8, alignItems: 'center' }}>✓ {e.von || ''} · {vorZeit(e.zeit)}
+            <button type="button" onClick={() => umschalten(e, false)} title="Wieder offen" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline', fontFamily: 'inherit', padding: 0 }}>rückgängig</button></span>}
+    </div>
+  )
+  return (
+    <div style={{ ...card, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <b style={{ flex: 1, fontSize: 15, color: 'var(--text-primary)' }}>Zu skripten in CreatorHero</b>
+        <span style={pill(offen.length ? AMB : G)}>{offen.length ? `${offen.length} offen` : 'alles erledigt'}</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Hochgeladene Skripte und Videos, die Models selbst eintragen. Bei Neuem kommt eine Telegram-Nachricht.</div>
+      {fehler && <div style={{ fontSize: 12.5, color: ROT, margin: '6px 0' }}>{fehler}</div>}
+      {videos === null && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '10px 0' }}>Lädt …</div>}
+      {videos !== null && !offen.length && <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '10px 0', borderTop: '1px solid var(--border)' }}>Gerade nichts zu tun. 🎉</div>}
+      {offen.map(zeile)}
+      {fertig.length > 0 && (
+        <button type="button" onClick={() => setAlleFertig(v => !v)} style={{ alignSelf: 'flex-start', marginTop: 10, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit', padding: 0 }}>
+          {alleFertig ? '▾ Erledigte ausblenden' : `▸ ${fertig.length} erledigt anzeigen`}
+        </button>
+      )}
+      {alleFertig && fertig.slice(0, 40).map(zeile)}
+    </div>
+  )
+}
+
+// ── Hauptbereich ───────────────────────────────────────────────────────────
+export default function SkripteBereich({ userDisplayName, istAdmin = false, storyteller = false, builder = false }) {
+  const reiterListe = [
+    ...(istAdmin ? [{ k: 'freigabe', t: '🔓 Freigabe' }] : []),
+    ...(istAdmin || storyteller ? [{ k: 'schreiben', t: '✍️ Schreiben' }] : []),
+    ...(istAdmin || builder ? [{ k: 'builder', t: '🧩 Script Builder' }] : []),
+  ]
+  const [reiter, setReiter] = useState(reiterListe[0]?.k || 'schreiben')
+  const [liste, setListe] = useState(null)
+  const [fehlt, setFehlt] = useState(false)
+  const [models, setModels] = useState([])
+  const [builderZahl, setBuilderZahl] = useState(0)
+  const laden = useCallback(async () => {
+    const r = await skripteLaden()
+    setFehlt(r.fehlt); setListe(r.liste)
+  }, [])
+  useEffect(() => { laden() }, [laden])
+  useEffect(() => { if (istAdmin || storyteller) modelsLaden().then(setModels) }, [istAdmin, storyteller])
+
+  if (fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Skripte sind noch nicht eingerichtet: einmal <code>sql/storyteller-script-builder.sql</code> in Supabase ausführen.</div>
+  if (!liste) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Lädt …</div>
+  if (!reiterListe.length) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>Für Skripte brauchst du die Rolle Storyteller oder Script Builder.</div>
+  const zahlFreigabe = liste.filter(s => s.status === 'freigabe').length
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {reiterListe.length > 1 && (
+        <div className="ms-reiter sk-reiter" role="tablist">
+          {reiterListe.map(r => {
+            const badge = r.k === 'freigabe' ? zahlFreigabe : r.k === 'builder' ? builderZahl : 0
+            return (
+              <button key={r.k} type="button" className={'ms-knopf' + (reiter === r.k ? ' an' : '')} onClick={() => setReiter(r.k)}>
+                <span className="ms-text">{r.t}</span>{badge > 0 && <span className="ms-badge">{badge}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {reiter === 'freigabe' && <Freigabe liste={liste} models={models} wer={userDisplayName} neuLaden={laden} />}
+      {reiter === 'schreiben' && <Schreiben liste={liste} models={models} wer={userDisplayName} istAdmin={istAdmin} neuLaden={laden} />}
+      {/* Builder bleibt geladen (versteckt), damit die Zahl am Reiter stimmt */}
+      {(istAdmin || builder) && <div style={{ display: reiter === 'builder' ? 'block' : 'none' }}><Builder liste={liste} wer={userDisplayName} neuLaden={laden} onZahl={setBuilderZahl} /></div>}
+    </div>
+  )
+}

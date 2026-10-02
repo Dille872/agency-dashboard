@@ -34,6 +34,8 @@ import { steckbriefLaden } from '../steckbrief' // v4.95.0
 import SocialFragebogen from './SocialFragebogen' // v4.100.0
 import { socialLaden, stand as socialStand } from '../socialProfil' // v4.100.0
 import ModelSocial from './ModelSocial' // v5.26.0: Drehzettel · Plan · Wirkung · Profil als Reiter
+import ModelSkripte from './ModelSkripte' // v5.27.0: Skripte vom Storyteller
+import { videoGemeldet } from '../ofSkripte' // v5.27.0: Script Builder Bescheid geben
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -668,6 +670,8 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
       thumbnail_url: thumbnailUrl,
     })
     await logActivity('Video hinzugefügt', 'videos', videoTitle.trim())
+    // v5.27.0: Script Builder (CreatorHero) bekommt Bescheid
+    if (!isPreview) videoGemeldet(displayName, videoTitle.trim(), videoDate || null)
     setVideoTitle(''); setVideoDesc(''); setVideoDate(''); setVideoFile(null); setVideoPreview(null); setShowAddVideo(false)
     await loadVideos()
     setUploadingVideo(false)
@@ -876,6 +880,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
             </div>
           )
         })()}
+
+        {/* v5.27.0: Skripte vom Storyteller, Schritt für Schritt */}
+        <ModelSkripte displayName={displayName} isPreview={isPreview} />
 
         {/* v3.40.0: Meine Aufgaben (vom Team zugewiesen) */}
         {!todoSicht.leer && (

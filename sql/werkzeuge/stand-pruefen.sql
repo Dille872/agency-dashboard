@@ -59,6 +59,7 @@ from (values
   ('social-steuerung.sql', (to_regclass('public.social_account_poster') is not null)),
   ('speicher-aufraeumen.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='videos_zum_aufraeumen'))),
   ('sprache-kontakt.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='user_roles' and column_name='sprache'))),
+  ('storyteller-script-builder.sql', (to_regclass('public.of_skripte') is not null and exists(select 1 from pg_proc where proname='builder_videos'))),
   ('storage-loeschen-nur-staff.sql', (exists(select 1 from pg_policies where schemaname='storage' and policyname='Staff kann Chat-Anhaenge loeschen'))),
   ('team-kalender-ausbau.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='team_kalender' and column_name='model_name'))),
   ('team-kalender-folgeaufgaben.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='team_kalender' and column_name='folge_von'))),

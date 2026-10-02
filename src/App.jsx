@@ -3,10 +3,12 @@ import { supabase } from './supabase'
 import { setTheme, initTheme } from './theme'
 import { APP_VERSION } from './version'
 import SuggestionsAdmin from './components/SuggestionsAdmin'
+import SkripteBereich from './components/SkripteBereich' // v5.27.0
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
   Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard, KeyRound,
+  ScrollText,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import { SkelSeite, SkelAdmin } from './components/Skeleton' // v4.92.0
@@ -75,6 +77,7 @@ const BEREICHE = [
     // v4.73.0: nur Admin/Manager — die anderen Rollen kommen nach zugang.js ohnehin nicht hin
     { key: 'boards', label: 'Boards', Icon: LayoutDashboard },
     { key: 'vorschlaege', label: 'Vorschläge', Icon: MessageCircle },
+    { key: 'skripte', label: 'Skripte', Icon: ScrollText }, // v5.27.0: Storyteller & Script Builder
   ] },
   // v4.108.0: Social Media als eigener Bereich (vorher ein Tab unter Kommunikation).
   // Poster/Cutter/Freigeber sehen nur 'social' (ihre eigene Ansicht mit Reitern).
@@ -726,6 +729,7 @@ export default function App() {
       displayName={userDisplayName}
       onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
       isSocialMedia={isSocialMedia}
+      contentRollen={userRoles.filter(r => r === 'storyteller' || r === 'script_builder')}
       isPreview={(isAdmin || isManager) && !eigenesPortal}
       onSwitchToOwn={isManager ? () => setViewMode('mein-chatter') : null}
       onSwitchToPreview={isManager ? () => setViewMode('chatter') : null}
@@ -1084,6 +1088,9 @@ export default function App() {
           <BillingTab />
         ) : activeTab === 'vorschlaege' ? (
           <SuggestionsAdmin />
+        ) : activeTab === 'skripte' ? (
+          <SkripteBereich userDisplayName={userDisplayName} istAdmin={isManager}
+            storyteller={userRoles.includes('storyteller')} builder={userRoles.includes('script_builder')} />
         ) : activeTab === 'datenstand' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* v4.69.0: Hier ist der Upload zuhause — zusammen mit der Anzeige,

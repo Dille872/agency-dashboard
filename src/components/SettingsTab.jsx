@@ -7,9 +7,11 @@ import { logActivity } from '../activity'
 // v4.30.0: Regeln fuers Freiraeumen von Dienstplan-Zellen (rein, testbar)
 import { assignmentsOhnePerson, assignmentsOhneModels } from '../dienstplanAufraeumen'
 import { ladeInaktiveNamen, ohneInaktive } from '../people'
+import { ROLES, ROLLEN_GRUPPEN, hauptrolle } from '../rollen'
+import TeamRechte from './TeamRechte' // v5.27.0
 
 const SECTIONS = [
-  { key: 'team', label: 'Team' },
+  { key: 'team', label: 'Team & Rechte' },
   { key: 'guidelines', label: 'Guidelines' },
   { key: 'surveys', label: 'Umfragen' },
   { key: 'billing', label: 'Billing' },
@@ -19,27 +21,7 @@ const SECTIONS = [
   { key: 'chatter-aliases', label: 'Chatter CSV' },
 ]
 
-const ROLES = [
-  { key: 'admin', label: 'Admin', color: '#7c3aed', desc: 'Alles' },
-  { key: 'manager', label: 'Manager', color: '#06b6d4', desc: 'Alles außer Einstellungen & Export' },
-  { key: 'dienstplan', label: 'Dienstplan', color: '#10b981', desc: 'Nur Dienstplan & Crew' },
-  { key: 'creator_manager', label: 'Creator Mgr', color: '#f59e0b', desc: 'Nur Creator Tab' },
-  { key: 'chatter', label: 'Chatter', color: '#a78bfa', desc: 'Nur Chatter Portal' },
-  { key: 'model', label: 'Model', color: '#ef4444', desc: 'Nur Model Portal' },
-  // v5.1.0: Social-Team klar benannt. Der Schlüssel social_media bleibt (Datenbank), heißt aber „Poster“.
-  { key: 'social_media', label: '📱 Poster', color: '#ec4899', desc: 'Postet freigegebene Reels — nur die Accounts, die ihm in der Steuerung zugeteilt sind' },
-  { key: 'cutter', label: '✂️ Cutter', color: '#a855f7', desc: 'Schneidet Rohvideos — nur die Accounts, die ihm in der Steuerung zugeteilt sind' },
-  { key: 'social_leitung', label: '🧭 Social-Leitung', color: '#f97316', desc: 'Ganzer Social-Media-Bereich für alle Models (Steuerung, Freigabe, Zuteilen, Wirkung) — sonst nichts' },
-  // Altname bis v5.0.0, wird mit sql/social-leitung.sql zu social_leitung. Nicht mehr auswählbar.
-  { key: 'social_freigabe', label: 'Social-Freigabe (alt)', color: '#f97316', desc: 'veraltet, wird zur Social-Leitung', alt: true },
-]
-
-// v5.1.0: Rollen in Gruppen, damit man durchblickt
-const ROLLEN_GRUPPEN = [
-  { titel: 'Team', hinweis: 'Arbeiten im Dashboard', keys: ['admin', 'manager', 'dienstplan', 'creator_manager'] },
-  { titel: 'Portale', hinweis: 'Eigenes Portal', keys: ['chatter', 'model'] },
-  { titel: 'Social-Media-Team', hinweis: 'Zusatzrollen, auch zu Chatter kombinierbar. Welche Models: Social Media → Steuerung', keys: ['social_media', 'cutter', 'social_leitung'] },
-]
+// v5.27.0: Rollen liegen jetzt in src/rollen.js (auch für „Team & Rechte“)
 function RollenGruppen({ render, kompakt = false }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: kompakt ? 8 : 12 }}>
@@ -99,14 +81,12 @@ export default function SettingsTab() {
   const [resetCode, setResetCode] = useState(null)   // { id, code, per_telegram }
   // v4.16.0: Archiv standardmäßig zugeklappt — offboardete Leute sollen nicht
   // dauerhaft in einer Liste stehen.
-  const [archivOffen, setArchivOffen] = useState(false)
   // v4.16.0: Altlasten aus fehlgeschlagenen Offboardings
   const [kontaktProbleme, setKontaktProbleme] = useState([])
   // v4.30.0: Wer stillgelegt ist, aber noch im Dienstplan oder in den
   // Dauerschichten steht (Altbestand aus der Zeit vor dem automatischen Aufräumen)
   const [planLeichen, setPlanLeichen] = useState([])
   const [planBusy, setPlanBusy] = useState(null)
-  const [editingRole, setEditingRole] = useState(null)
   const [offboarding, setOffboarding] = useState(null)
 
   // Bot
@@ -817,36 +797,27 @@ export default function SettingsTab() {
   // - Abwählen der letzten Rolle setzte still ['chatter'] — jetzt Abbruch.
   // - role (Hauptrolle) = höchste Rolle nach Rang, nicht einfach die erste.
   // - Der letzte aktive Admin kann sich die Admin-Rolle nicht mehr nehmen.
-  const ROLLEN_RANG = ['admin', 'manager', 'dienstplan', 'creator_manager', 'model', 'chatter']
   const rollenVon = (u) => [...new Set([...(u?.roles || []), u?.role].filter(Boolean))]
   const istAktiverAdmin = (u) => rollenVon(u).includes('admin') && u.status !== 'suspended' && u.status !== 'offboarded'
 
-  const toggleRole = async (userId, currentRole, newRole) => {
-    const user = users.find(u => u.user_id === userId)
-    const currentRoles = user ? rollenVon(user) : [currentRole].filter(Boolean)
-    let updatedRoles
-    if (currentRoles.includes(newRole)) {
-      updatedRoles = currentRoles.filter(r => r !== newRole)
-      if (updatedRoles.length === 0) {
-        alert('Mindestens eine Rolle muss bleiben. Erst die neue Rolle hinzufügen, dann die alte entfernen.')
-        return
-      }
-      if (newRole === 'admin' && users.filter(istAktiverAdmin).length <= 1) {
-        alert('Das ist der letzte aktive Admin — die Admin-Rolle kann nicht entfernt werden, sonst kommt niemand mehr in die Einstellungen.')
-        return
-      }
-    } else {
-      updatedRoles = [...currentRoles, newRole]
+  // v5.27.0: mehrere Rollen auf einmal setzen (Team & Rechte). Gleiche Schutzregeln
+  // wie toggleRole: mindestens eine Rolle, der letzte aktive Admin bleibt Admin.
+  // Rückgabe { fehler } statt alert, damit die Übersicht mehrere Personen sammeln kann.
+  const rollenSetzen = async (u, neu) => {
+    const alt = rollenVon(u)
+    const liste = [...new Set(neu)].filter(Boolean)
+    if (!liste.length) return { fehler: `${u.display_name}: Mindestens eine Rolle muss bleiben.` }
+    if (alt.includes('admin') && !liste.includes('admin') && users.filter(istAktiverAdmin).length <= 1) {
+      return { fehler: `${u.display_name} ist der letzte aktive Admin, die Admin-Rolle bleibt.` }
     }
-    const primaryRole = ROLLEN_RANG.find(r => updatedRoles.includes(r)) || updatedRoles[0]
-    const { error } = await supabase.from('user_roles').update({ role: primaryRole, roles: updatedRoles }).eq('user_id', userId)
-    if (error) { alert('⚠ Rollen NICHT gespeichert: ' + error.message); return }
-    logActivity('user.roles', {
-      entity: user?.display_name || userId,
-      detail: updatedRoles.join(', '),
-    })
-    setEditingRole(null)
-    loadUsers()
+    const { error } = await supabase.from('user_roles').update({ role: hauptrolle(liste), roles: liste }).eq('user_id', u.user_id)
+    if (error) {
+      return { fehler: /check constraint|violates/i.test(error.message)
+        ? `${u.display_name}: Diese Rolle kennt die Datenbank noch nicht. Einmal sql/storyteller-script-builder.sql ausführen.`
+        : `${u.display_name}: ${error.message}` }
+    }
+    logActivity('user.roles', { entity: u.display_name || u.user_id, detail: liste.join(', ') })
+    return {}
   }
 
   // v4.110.0: Sprache pro Person + Kontaktweg (Telegram-ID) für Teammitglieder ohne Chatter-/Model-Kontakt
@@ -1225,6 +1196,12 @@ export default function SettingsTab() {
 
       {/* TEAM */}
       {activeSection === 'team' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {/* v5.27.0: Team & Rechte — Personen, Übersicht, Was darf wer? */}
+        <TeamRechte users={users} onNeu={loadUsers} rollenSetzen={rollenSetzen} profilSpeichern={profilSpeichern}
+          onStatus={startOffboarding} onReaktivieren={reactivateUser} onExport={exportUserData} statusBusy={statusBusy}
+          onEinladen={() => { try { document.getElementById('team-einladen')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch { /* egal */ } }} />
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 6 }}>Einladen & Aufräumen</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
 
           {/* v4.57.0: Login-Sperren für stillgelegte/offboardete Accounts */}
@@ -1241,17 +1218,6 @@ export default function SettingsTab() {
               </button>
               {sperrAbgleich && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{sperrAbgleich}</span>}
             </div>
-          </div>
-
-          {/* Rollen-Übersicht */}
-          <div style={cardS}>
-            <div style={labelS}>Rollen & Zugriffe</div>
-            <RollenGruppen render={r => (
-                <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg-card2)', borderRadius: 7, border: '1px solid #1e1e3a' }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: r.color, background: r.color + '22', padding: '2px 8px', borderRadius: 4, minWidth: 110, textAlign: 'center' }}>{r.label}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{r.desc}</span>
-                </div>
-              )} />
           </div>
 
           {/* v4.16.0: Altlasten — erscheint nur, wenn es welche gibt */}
@@ -1344,7 +1310,7 @@ export default function SettingsTab() {
           {/* v4.11.0: Freischalten — der empfohlene Weg.
               Kein Mailversand, kein Passwort das herumgeschickt wird: Die Person
               legt ihr Passwort auf der Anmeldeseite selbst fest. */}
-          <div style={cardS}>
+          <div id="team-einladen" style={{ ...cardS, scrollMarginTop: 80 }}>
             <div style={labelS}>E-Mail zur Registrierung freischalten</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
               Adresse und Namen eintragen, Rolle wählen. Die Person geht dann auf die
@@ -1499,130 +1465,7 @@ export default function SettingsTab() {
             </div>
           )}
 
-          {/* Mitglieder (aktiv) */}
-          <div style={cardS}>
-            <div style={labelS}>Aktuelle Mitglieder ({users.filter(u => (u.status || 'active') === 'active').length})</div>
-            {users.filter(u => (u.status || 'active') === 'active').map(u => {
-              const rc = ROLES.find(r => r.key === u.role)
-              const color = rc?.color || '#555580'
-              return (
-                <div key={u.user_id} style={{ marginBottom: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', background: 'var(--bg-card2)', borderRadius: editingRole === u.user_id ? '8px 8px 0 0' : 8, border: `1px solid ${editingRole === u.user_id ? color : '#1e1e3a'}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color }}>{(u.display_name || '?')[0]}</div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{u.display_name}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{u.user_id.slice(0, 10)}...</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                      {u.sprache === 'en' && <span title="Oberfläche auf Englisch" style={{ fontSize: 10, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.13)', padding: '2px 6px', borderRadius: 4 }}>EN</span>}
-                      {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map(r => {
-                        const rc2 = ROLES.find(x => x.key === r)
-                        return <span key={r} style={{ fontSize: 10, fontWeight: 700, color: rc2?.color || color, background: (rc2?.color || color) + '22', padding: '2px 8px', borderRadius: 4 }}>{rc2?.label || r}</span>
-                      })}
-                      <button onClick={() => setEditingRole(editingRole === u.user_id ? null : u.user_id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
-                      <button onClick={() => startOffboarding(u)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', fontFamily: 'inherit' }}>Status…</button>
-                    </div>
-                  </div>
-                  {editingRole === u.user_id && (
-                    <div style={{ background: 'var(--bg-card)', border: `1px solid ${color}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8 }}>Mehrere Rollen möglich – klicken zum an/abwählen</div>
-                      <RollenGruppen kompakt render={r => {
-                          const userRoles = u.roles || [u.role]
-                          const active = userRoles.includes(r.key)
-                          return (
-                            <button key={r.key} onClick={() => toggleRole(u.user_id, u.role, r.key)} title={r.desc} style={{
-                              padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11,
-                              background: active ? r.color + '22' : 'transparent',
-                              color: active ? r.color : 'var(--text-muted)',
-                              border: `1px solid ${active ? r.color : 'var(--border)'}`,
-                            }}>{active ? '✓ ' : ''}{r.label}</button>
-                          )
-                        }} />
-                      {(u.roles || []).includes('social_freigabe') && (
-                        <div style={{ fontSize: 11, color: '#f97316', marginTop: 8 }}>Hat noch die alte Rolle „Social-Freigabe“ — wird mit <code>sql/social-leitung.sql</code> zur Social-Leitung.</div>
-                      )}
-                      {/* v4.110.0: Sprache + Kontaktweg */}
-                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', alignItems: 'flex-end' }}>
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-                          Sprache (Anmeldung & Social Media Manager)
-                          <select value={u.sprache || ''} onChange={e => profilSpeichern(u, { sprache: e.target.value || null }, 'Sprache ' + (e.target.value || 'Gerät'))}
-                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }}>
-                            <option value="">— wie das Gerät (Standard) —</option>
-                            <option value="de">Deutsch</option>
-                            <option value="en">English</option>
-                          </select>
-                        </label>
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-                          Telegram-ID (optional, für spätere Benachrichtigungen)
-                          <input key={'tg:' + u.user_id + ':' + (u.kontakt_telegram || '')} defaultValue={u.kontakt_telegram || ''} placeholder="z. B. 123456789" inputMode="numeric"
-                            onBlur={e => { const v = e.target.value.trim(); if (v === (u.kontakt_telegram || '')) return; if (v && !/^-?\d{4,20}$/.test(v)) { alert('Telegram-ID besteht nur aus Ziffern.'); return } profilSpeichern(u, { kontakt_telegram: v || null }, v ? 'Telegram-ID gesetzt' : 'Telegram-ID entfernt') }}
-                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 8px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', width: 170 }} />
-                        </label>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* v3.18.0: History / Archiv — stillgelegte & offboardete Mitglieder. Daten bleiben erhalten. */}
-          {users.some(u => u.status && u.status !== 'active') && (
-            <div style={cardS}>
-              <button
-                onClick={() => setArchivOffen(o => !o)}
-                style={{
-                  width: '100%', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'inherit',
-                  marginBottom: archivOffen ? 10 : 0,
-                }}
-              >
-                <span style={{ ...labelS, marginBottom: 0 }}>
-                  History / Archiv ({users.filter(u => u.status && u.status !== 'active').length})
-                </span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{archivOffen ? '▼' : '▶'}</span>
-              </button>
-              {archivOffen && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
-                Login gesperrt und aus dem Dienstplan ausgeblendet. Alle Daten (Schichtnotizen, Logs, Umsätze) bleiben erhalten und können jederzeit reaktiviert werden.
-              </div>
-              )}
-              {archivOffen && users.filter(u => u.status && u.status !== 'active').map(u => {
-                const rc = ROLES.find(r => r.key === u.role)
-                const color = rc?.color || '#555580'
-                const isSuspended = u.status === 'suspended'
-                const stColor = isSuspended ? '#f59e0b' : '#ef4444'
-                const stLabel = isSuspended ? 'Stillgelegt' : 'Offboarded'
-                const changed = u.status_changed_at ? new Date(u.status_changed_at).toLocaleDateString('de-DE') : null
-                return (
-                  <div key={u.user_id} style={{ marginBottom: 6, padding: '9px 12px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a', opacity: 0.92 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color, filter: 'grayscale(0.4)' }}>{(u.display_name || '?')[0]}</div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{u.display_name}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                            {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map(r => ROLES.find(x => x.key === r)?.label || r).join(', ')}
-                            {changed ? ` · seit ${changed}` : ''}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: stColor, background: stColor + '22', padding: '2px 8px', borderRadius: 4 }}>{stLabel}</span>
-                        <button onClick={() => exportUserData(u)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>↓ Export</button>
-                        <button onClick={() => reactivateUser(u)} disabled={statusBusy} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', cursor: statusBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↺ Reaktivieren</button>
-                      </div>
-                    </div>
-                    {u.status_note && (
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6, paddingLeft: 38, fontStyle: 'italic' }}>„{u.status_note}"</div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
+        </div>
         </div>
       )}
 

@@ -10,6 +10,8 @@ export function darfAufTab(userRole, userRoles, tab) {
   const rollen = Array.isArray(userRoles) ? userRoles : []
   if (userRole === 'admin') return true
   if (userRole === 'manager') return !['settings', 'billing'].includes(tab)
+  // v5.27.0: Storyteller / Script Builder — Bereich Skripte (zusätzlich zu Social, falls vorhanden)
+  if (tab === 'skripte' && ['storyteller', 'script_builder'].some(r => rollen.includes(r))) return true
   if (userRole === 'dienstplan') return ['schedule', 'chatters-comm', 'kalender'].includes(tab)
   if (userRole === 'creator_manager') return ['models-comm', 'kalender'].includes(tab)
   // v5.1.0: Social-Leitung — der ganze Bereich Social Media (alle Unterreiter), sonst nichts
@@ -25,5 +27,6 @@ export function startTab(userRole, userRoles) {
   if (userRole === 'dienstplan') return 'schedule'
   if (userRole === 'creator_manager') return 'models-comm'
   if (userRole !== 'admin' && userRole !== 'manager' && ['social_media', 'cutter', 'social_leitung', 'social_freigabe'].some(r => rollen.includes(r))) return 'social'
+  if (userRole !== 'admin' && userRole !== 'manager' && ['storyteller', 'script_builder'].some(r => rollen.includes(r))) return 'skripte'
   return 'models'
 }
