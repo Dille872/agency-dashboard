@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   STATUS, ARTEN, artText, schritteSauber, skripteLaden, modelsLaden, speichern,
   zurFreigabeGemeldet, freischalten, zurueckSchicken, alsGebaut, builderVideosLaden, videoErledigt,
+  auftragGeben, storytellerErinnern, builderAnstupsen,
 } from '../ofSkripte'
+import { supabase } from '../supabase'
+import { nimmStartZiel } from '../route'
 
 // ── Skripte: Storyteller · Freigabe · Script Builder (v5.27.0) ─────────────
 // Ein Bereich für drei Sichten, je nach Rolle:
@@ -113,13 +116,18 @@ function SkriptFormular({ vorlage, models, wer, istAdmin, onFertig, onAbbrechen 
   }
 
   const neu = !s.id
-  const darfEntwurf = !s.status || ['entwurf', 'freigabe', 'zurueck'].includes(s.status)
+  const darfEntwurf = !s.status || ['auftrag', 'entwurf', 'freigabe', 'zurueck'].includes(s.status)
   return (
     <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <b style={{ flex: 1, fontSize: 16, color: 'var(--text-primary)' }}>{neu ? 'Neues Skript' : 'Skript bearbeiten'}</b>
         {s.status && <span style={pill(STATUS[s.status]?.f || '#999')}>{STATUS[s.status]?.t || s.status}</span>}
       </div>
+      {s.status === 'auftrag' && (
+        <div style={{ fontSize: 12.5, color: '#c4b5fd', background: '#8b5cf61a', border: '1px solid #8b5cf655', borderRadius: 10, padding: '8px 11px' }}>
+          📋 Auftrag{s.auftrag_von ? ` von ${s.auftrag_von}` : ''}{s.faellig ? ` · bis ${datumKurz(s.faellig)}` : ''}{s.auftrag_notiz ? <><br />{s.auftrag_notiz}</> : null}
+        </div>
+      )}
       {s.status === 'zurueck' && s.zurueck_notiz && (
         <div style={{ fontSize: 12.5, color: ROT, background: ROT + '14', border: `1px solid ${ROT}44`, borderRadius: 10, padding: '8px 11px' }}>↩ Notiz: {s.zurueck_notiz}</div>
       )}
@@ -181,7 +189,9 @@ function Schreiben({ liste, models, wer, istAdmin, neuLaden }) {
   const [bearbeite, setBearbeite] = useState(null) // null = neues Formular, sonst Skript
   const [formKey, setFormKey] = useState(0)
   const [meldung, setMeldung] = useState('')
-  const eigene = liste.filter(s => s.erstellt_von === wer)
+  const eigene = liste.filter(s => s.erstellt_von === wer && s.status !== 'auftrag')
+  const auftraege = liste.filter(s => s.erstellt_von === wer && s.status === 'auftrag')
+    .sort((a, b) => String(a.faellig || '9999').localeCompare(String(b.faellig || '9999')))
   const fertig = (data, status) => {
     setMeldung(status === 'freigabe' ? '✓ Zur Freigabe geschickt. Du siehst hier, wenn es beim Model ist.' : '✓ Gespeichert.')
     setBearbeite(null); setFormKey(k => k + 1); neuLaden()
@@ -191,6 +201,20 @@ function Schreiben({ liste, models, wer, istAdmin, neuLaden }) {
     <div className="sk-schreiben" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {meldung && <div style={{ fontSize: 13, color: G, fontWeight: 700 }}>{meldung}</div>}
+        {auftraege.length > 0 && (
+          <div style={{ ...card, borderColor: '#8b5cf677', background: 'linear-gradient(135deg, rgba(139,92,246,0.10), var(--bg-card) 70%)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <b style={{ fontSize: 14.5, color: 'var(--text-primary)' }}>📋 Aufträge für dich ({auftraege.length})</b>
+            {auftraege.map(a => (
+              <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--border)', background: bearbeite?.id === a.id ? '#8b5cf614' : 'transparent' }}>
+                <span style={{ fontWeight: 800, color: P, fontSize: 13, minWidth: 60 }}>{a.model_name}</span>
+                <span style={{ flex: 1, minWidth: 150, fontSize: 13.5, color: 'var(--text-primary)' }}>{a.titel}
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)' }}>{a.auftrag_von ? `von ${a.auftrag_von}` : ''}{a.faellig ? ` · bis ${datumKurz(a.faellig)}` : ''}{a.auftrag_notiz ? ` · ${a.auftrag_notiz}` : ''}</span>
+                </span>
+                <button type="button" onClick={() => { setBearbeite(a); window.scrollTo?.({ top: 0, behavior: 'smooth' }) }} style={knopf('#8b5cf6')}>{bearbeite?.id === a.id ? 'wird bearbeitet …' : '✍️ Jetzt schreiben'}</button>
+              </div>
+            ))}
+          </div>
+        )}
         <SkriptFormular key={bearbeite ? 'b' + bearbeite.id : 'n' + formKey} vorlage={bearbeite} models={models} wer={wer} istAdmin={istAdmin}
           onFertig={fertig} onAbbrechen={bearbeite ? () => setBearbeite(null) : null} />
       </div>
@@ -207,9 +231,64 @@ function Schreiben({ liste, models, wer, istAdmin, neuLaden }) {
   )
 }
 
+// ── 📋 Auftrag an die Storytellerin (Admin) ──────────────────────────────
+function AuftragFormular({ models, wer, onFertig }) {
+  const [leute, setLeute] = useState(null)
+  const [a, setA] = useState({ storyteller: '', model: '', anzahl: 1, thema: '', notiz: '', faellig: '' })
+  const [arbeitet, setArbeitet] = useState(false)
+  const [fehler, setFehler] = useState('')
+  useEffect(() => {
+    supabase.from('user_roles').select('display_name, roles, status').contains('roles', ['storyteller']).then(({ data }) => {
+      const n = [...new Set((data || []).filter(x => (x.status || 'active') === 'active').map(x => x.display_name).filter(Boolean))]
+      setLeute(n)
+      if (n.length === 1) setA(x => ({ ...x, storyteller: n[0] }))
+    })
+  }, [])
+  const setze = (p) => setA(x => ({ ...x, ...p }))
+  const los = async () => {
+    setFehler('')
+    if (!a.storyteller || !a.model) { setFehler('Bitte Storyteller und Model wählen.'); return }
+    setArbeitet(true)
+    const r = await auftragGeben({ ...a, wer })
+    setArbeitet(false)
+    if (r.error) { setFehler(r.error.message); return }
+    onFertig(r.info)
+  }
+  return (
+    <div style={{ ...card, borderColor: '#8b5cf677', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <b style={{ fontSize: 15, color: 'var(--text-primary)' }}>📋 Auftrag an Storyteller</b>
+      {leute && !leute.length && <div style={{ fontSize: 12.5, color: AMB }}>Noch niemand hat die Rolle Storyteller (Einstellungen → Team & Rechte).</div>}
+      <div className="sk-zwei" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,90px)', gap: 10 }}>
+        <div><span style={label}>Storyteller</span>
+          <select value={a.storyteller} onChange={e => setze({ storyteller: e.target.value })} style={eingabe}>
+            <option value="">wählen …</option>{(leute || []).map(n => <option key={n} value={n}>{n}</option>)}
+          </select></div>
+        <div><span style={label}>Für Model</span>
+          <select value={a.model} onChange={e => setze({ model: e.target.value })} style={eingabe}>
+            <option value="">wählen …</option>{models.map(m => <option key={m} value={m}>{m}</option>)}
+          </select></div>
+        <div><span style={label}>Anzahl</span>
+          <select value={a.anzahl} onChange={e => setze({ anzahl: Number(e.target.value) })} style={eingabe}>
+            {[1, 2, 3, 4, 5, 6, 8, 10].map(n => <option key={n} value={n}>{n}</option>)}
+          </select></div>
+      </div>
+      <div><span style={label}>Thema / Idee (optional)</span><input value={a.thema} onChange={e => setze({ thema: e.target.value.slice(0, 150) })} placeholder="z. B. Gym, Morgenroutine, Rollenspiel …" style={eingabe} /></div>
+      <div className="sk-zwei" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 10 }}>
+        <div><span style={label}>Hinweis (optional)</span><input value={a.notiz} onChange={e => setze({ notiz: e.target.value.slice(0, 400) })} placeholder="z. B. Es fehlen Videos mit Dessous, eher kurz halten" style={eingabe} /></div>
+        <div><span style={label}>Bis wann (optional)</span><input type="date" value={a.faellig} onChange={e => setze({ faellig: e.target.value })} style={eingabe} /></div>
+      </div>
+      {fehler && <div style={{ fontSize: 12.5, color: ROT }}>{fehler}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" disabled={arbeitet} onClick={los} style={knopf('#8b5cf6')}>{arbeitet ? '…' : `Auftrag geben${a.anzahl > 1 ? ` (${a.anzahl} Skripte)` : ''} + Telegram`}</button>
+      </div>
+    </div>
+  )
+}
+
 // ── 🔓 Freigabe (Admin) ────────────────────────────────────────────────────
 const FILTER = [
   { k: 'freigabe', t: 'Zur Freigabe', st: ['freigabe'] },
+  { k: 'auftrag', t: 'Aufträge offen', st: ['auftrag'] },
   { k: 'model', t: 'Bei Models', st: ['beim_model'] },
   { k: 'ch', t: 'Warten auf CH', st: ['hochgeladen'] },
   { k: 'fertig', t: 'Fertig', st: ['gebaut'] },
@@ -218,6 +297,7 @@ const FILTER = [
 ]
 function Freigabe({ liste, models, wer, neuLaden }) {
   const [filter, setFilter] = useState('freigabe')
+  const [auftragAuf, setAuftragAuf] = useState(false)
   const [offen, setOffen] = useState(null)
   const [bearbeite, setBearbeite] = useState(null)
   const [meldung, setMeldung] = useState('')
@@ -250,10 +330,19 @@ function Freigabe({ liste, models, wer, neuLaden }) {
     neuLaden()
   }
 
+  const erinnern = async (s) => {
+    const r = await storytellerErinnern(s, wer)
+    melde((r.info || '').startsWith('Erinnerung') ? '✓ ' + r.info : '⚠ ' + r.info)
+  }
+
   if (bearbeite) return <SkriptFormular vorlage={bearbeite} models={models} wer={wer} istAdmin onFertig={() => { setBearbeite(null); neuLaden() }} onAbbrechen={() => setBearbeite(null)} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" onClick={() => setAuftragAuf(v => !v)} style={auftragAuf ? knopf('', false) : knopf('#8b5cf6')}>{auftragAuf ? 'Schließen' : '📋 Auftrag an Storyteller'}</button>
+      </div>
+      {auftragAuf && <AuftragFormular models={models} wer={wer} onFertig={(info) => { setAuftragAuf(false); melde('✓ Auftrag gegeben. ' + (info || '')); setFilter('auftrag'); neuLaden() }} />}
       <div className="sk-kpis raster-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
         {[['freigabe', AMB, 'warten auf Freigabe'], ['model', P, 'bei Models'], ['ch', C, 'warten auf CH']].map(([k, farbe, t]) => (
           <div key={k} onClick={() => setFilter(k)} style={{ ...card, padding: '11px 13px', cursor: 'pointer', borderColor: filter === k ? farbe : 'var(--border)' }}>
@@ -284,15 +373,17 @@ function Freigabe({ liste, models, wer, neuLaden }) {
             {auf && <>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{artText(s.art)}{s.outfit ? ` · ${s.outfit}` : ''}{s.laenge ? ` · ${s.laenge}` : ''}{s.faellig ? ` · bis ${datumKurz(s.faellig)}` : ''}</div>
               <SchritteAnzeige schritte={s.schritte} erledigt={s.schritte_erledigt || []} />
+              {s.status === 'auftrag' && <div style={{ fontSize: 12.5, color: '#c4b5fd' }}>📋 Auftrag an {s.erstellt_von}{s.auftrag_von ? ` von ${s.auftrag_von}` : ''}{s.auftrag_notiz ? ` · ${s.auftrag_notiz}` : ''}</div>}
               {s.notiz_builder && <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>🧩 Notiz für CH: {s.notiz_builder}</div>}
               {s.model_frage && <div style={{ fontSize: 12.5, color: AMB }}>❓ Frage vom Model: {s.model_frage}</div>}
               {s.of_titel && <div style={{ fontSize: 12.5, color: C }}>Titel auf OF: {s.of_titel}</div>}
               {s.status === 'gebaut' && <div style={{ fontSize: 12, color: G }}>✓ in CH gebaut von {s.gebaut_von || '—'} · {vorZeit(s.gebaut_am)}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 {s.status !== 'verworfen' && s.status !== 'gebaut' && <button type="button" onClick={() => verwerfen(s)} style={{ ...knopf('', false), color: 'var(--text-muted)' }}>Verwerfen</button>}
+                {s.status === 'auftrag' && <button type="button" onClick={() => erinnern(s)} style={knopf('', false)}>🔔 Erinnern</button>}
                 {['freigabe', 'entwurf'].includes(s.status) && <button type="button" onClick={() => zurueck(s)} style={knopf('', false)}>↩ Zurück mit Notiz</button>}
                 <button type="button" onClick={() => setBearbeite(s)} style={knopf('', false)}>Bearbeiten</button>
-                {['freigabe', 'entwurf', 'zurueck'].includes(s.status) && (
+                {['freigabe', 'entwurf', 'zurueck'].includes(s.status) && schritteSauber(s.schritte).length > 0 && (
                   <button type="button" disabled={arbeitet === s.id} onClick={() => schalteFrei(s)} style={knopf(G)}>{arbeitet === s.id ? '…' : '🔓 Freischalten → Model'}</button>
                 )}
               </div>
@@ -305,7 +396,8 @@ function Freigabe({ liste, models, wer, neuLaden }) {
 }
 
 // ── 🧩 Script Builder ──────────────────────────────────────────────────────
-function Builder({ liste, wer, neuLaden, onZahl }) {
+function Builder({ liste, wer, neuLaden, onZahl, istAdmin }) {
+  const [stups, setStups] = useState('')
   const [videos, setVideos] = useState(null)
   const [alleFertig, setAlleFertig] = useState(false)
   const [arbeitet, setArbeitet] = useState(null)
@@ -337,6 +429,15 @@ function Builder({ liste, wer, neuLaden, onZahl }) {
     if (error) { setFehler(error.message); return }
     if (e.quelle === 'skript') neuLaden(); else ladeVideos()
   }
+  const anstupsen = async (auswahl) => {
+    if (!auswahl.length) return
+    const notiz = window.prompt(auswahl.length === 1 ? `Script Builder Bescheid geben: „${auswahl[0].titel}“ (${auswahl[0].model})\n\nOptional noch ein Satz dazu:` : `Script Builder Bescheid geben (${auswahl.length} offen).\n\nOptional noch ein Satz dazu:`, '')
+    if (notiz === null) return
+    setStups('…')
+    const r = await builderAnstupsen(auswahl, notiz, wer)
+    setStups(r.ziele ? `✓ Telegram an ${r.gesendet} von ${r.ziele} Script Builder${r.ziele === 1 ? '' : 'n'} raus.` : '⚠ Kein Script Builder mit Telegram-ID gefunden (Team & Rechte).')
+    setTimeout(() => setStups(''), 7000)
+  }
   const zeile = (e) => (
     <div key={e.key} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '11px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap', opacity: e.offen ? 1 : 0.65 }}>
       <span style={{ fontWeight: 800, color: P, fontSize: 13, minWidth: 64 }}>{e.model}</span>
@@ -347,6 +448,7 @@ function Builder({ liste, wer, neuLaden, onZahl }) {
         )}
       </span>
       <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: e.quelle === 'skript' ? LILA + '33' : '#3b82f633', color: e.quelle === 'skript' ? '#d8b4fe' : '#93c5fd' }}>{e.quelle === 'skript' ? 'Storyteller' : 'Model-Video'}</span>
+      {e.offen && istAdmin && <button type="button" title="Script Builder per Telegram Bescheid geben" onClick={() => anstupsen([e])} style={{ ...knopf('', false), padding: '9px 10px' }}>📣</button>}
       {e.offen
         ? <button type="button" disabled={arbeitet === e.key} onClick={() => umschalten(e, true)} style={knopf(C)}>{arbeitet === e.key ? '…' : '🧩 In CH gebaut'}</button>
         : <span style={{ fontSize: 11.5, color: G, display: 'flex', gap: 8, alignItems: 'center' }}>✓ {e.von || ''} · {vorZeit(e.zeit)}
@@ -358,7 +460,9 @@ function Builder({ liste, wer, neuLaden, onZahl }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <b style={{ flex: 1, fontSize: 15, color: 'var(--text-primary)' }}>Zu skripten in CreatorHero</b>
         <span style={pill(offen.length ? AMB : G)}>{offen.length ? `${offen.length} offen` : 'alles erledigt'}</span>
+        {istAdmin && offen.length > 0 && <button type="button" onClick={() => anstupsen(offen)} style={{ ...knopf('', false), padding: '6px 11px', fontSize: 12.5 }}>📣 Bescheid geben</button>}
       </div>
+      {stups && <div style={{ fontSize: 12.5, fontWeight: 700, color: stups.startsWith('⚠') ? ROT : G, marginBottom: 4 }}>{stups}</div>}
       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Hochgeladene Skripte und Videos, die Models selbst eintragen. Bei Neuem kommt eine Telegram-Nachricht.</div>
       {fehler && <div style={{ fontSize: 12.5, color: ROT, margin: '6px 0' }}>{fehler}</div>}
       {videos === null && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '10px 0' }}>Lädt …</div>}
@@ -381,7 +485,11 @@ export default function SkripteBereich({ userDisplayName, istAdmin = false, stor
     ...(istAdmin || storyteller ? [{ k: 'schreiben', t: '✍️ Schreiben' }] : []),
     ...(istAdmin || builder ? [{ k: 'builder', t: '🧩 Script Builder' }] : []),
   ]
-  const [reiter, setReiter] = useState(reiterListe[0]?.k || 'schreiben')
+  // v5.28.0: Telegram-Links (?tab=skripte&ziel=builder) öffnen gleich den richtigen Reiter
+  const [reiter, setReiter] = useState(() => {
+    const z = nimmStartZiel('skripte')
+    return reiterListe.some(r => r.k === z) ? z : (reiterListe[0]?.k || 'schreiben')
+  })
   const [liste, setListe] = useState(null)
   const [fehlt, setFehlt] = useState(false)
   const [models, setModels] = useState([])
@@ -403,7 +511,7 @@ export default function SkripteBereich({ userDisplayName, istAdmin = false, stor
       {reiterListe.length > 1 && (
         <div className="ms-reiter sk-reiter" role="tablist">
           {reiterListe.map(r => {
-            const badge = r.k === 'freigabe' ? zahlFreigabe : r.k === 'builder' ? builderZahl : 0
+            const badge = r.k === 'freigabe' ? zahlFreigabe : r.k === 'builder' ? builderZahl : r.k === 'schreiben' ? liste.filter(s => s.status === 'auftrag' && s.erstellt_von === userDisplayName).length : 0
             return (
               <button key={r.k} type="button" className={'ms-knopf' + (reiter === r.k ? ' an' : '')} onClick={() => setReiter(r.k)}>
                 <span className="ms-text">{r.t}</span>{badge > 0 && <span className="ms-badge">{badge}</span>}
@@ -415,7 +523,7 @@ export default function SkripteBereich({ userDisplayName, istAdmin = false, stor
       {reiter === 'freigabe' && <Freigabe liste={liste} models={models} wer={userDisplayName} neuLaden={laden} />}
       {reiter === 'schreiben' && <Schreiben liste={liste} models={models} wer={userDisplayName} istAdmin={istAdmin} neuLaden={laden} />}
       {/* Builder bleibt geladen (versteckt), damit die Zahl am Reiter stimmt */}
-      {(istAdmin || builder) && <div style={{ display: reiter === 'builder' ? 'block' : 'none' }}><Builder liste={liste} wer={userDisplayName} neuLaden={laden} onZahl={setBuilderZahl} /></div>}
+      {(istAdmin || builder) && <div style={{ display: reiter === 'builder' ? 'block' : 'none' }}><Builder liste={liste} wer={userDisplayName} neuLaden={laden} onZahl={setBuilderZahl} istAdmin={istAdmin} /></div>}
     </div>
   )
 }

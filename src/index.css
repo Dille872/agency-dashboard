@@ -365,6 +365,8 @@ th { text-align: left; }
   .sk-mini.sk-mini { flex-wrap: nowrap !important; }
   .sk-mini.sk-mini button { padding: 3px 4px !important; font-size: 12.5px !important; }
   .sk-reiter.sk-reiter { position: static; }
+  .sk-reiter.sk-reiter .ms-knopf.ms-knopf { flex-direction: row; gap: 4px; }
+  .sk-reiter.sk-reiter .ms-badge { position: static; }
 }
 
 /* v5.27.0: Team & Rechte */

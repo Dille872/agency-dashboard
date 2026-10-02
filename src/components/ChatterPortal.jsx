@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import SkripteBereich from './SkripteBereich' // v5.27.0
+import { routeAmStart } from '../route' // v5.28.0
 import { BookOpen, Library, Eye, UserRound } from 'lucide-react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
@@ -546,6 +547,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
   const [tab, setTab] = useState(() => {
     try {
       const stored = localStorage.getItem(TAB_KEY)
+      // v5.28.0: Telegram-Link ?tab=skripte öffnet gleich den Skripte-Reiter
+      if (contentRollen.length && routeAmStart.tab === 'skripte') return 'skripte'
       if (stored && ['heute', 'models', 'content', 'orga', 'mehr', ...(contentRollen.length ? ['skripte'] : [])].includes(stored)) return stored
     } catch {}
     return 'heute'

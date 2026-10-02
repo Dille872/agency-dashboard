@@ -76,3 +76,15 @@ export function linkZu({ tab = null, ziel = null, id = null }, basis) {
   const such = p.toString()
   return wurzel + '/' + (such ? '?' + such : '')
 }
+
+// v5.28.0: Die Adresse beim Öffnen der Seite — einmal festgehalten, bevor
+// App.jsx sie umschreibt (im Chatter-/Model-Portal wird ?tab=… sofort
+// entfernt). Telegram-Links wie ?tab=skripte&ziel=builder kommen so trotzdem
+// an der richtigen Stelle an. nimmStartZiel() gibt das Ziel genau einmal her.
+export const routeAmStart = routeLesen()
+let startZielVerbraucht = false
+export function nimmStartZiel(tab) {
+  if (startZielVerbraucht || routeAmStart.tab !== tab) return null
+  startZielVerbraucht = true
+  return routeAmStart.ziel
+}
