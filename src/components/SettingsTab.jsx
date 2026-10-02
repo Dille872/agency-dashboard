@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { BookOpen } from 'lucide-react'
 import { supabase, FUNCTIONS_URL } from '../supabase'
-import BillingTab from './BillingTab'
 import ExportTab from './ExportTab'
 import { logActivity } from '../activity'
 // v4.30.0: Regeln fuers Freiraeumen von Dienstplan-Zellen (rein, testbar)
@@ -14,7 +13,6 @@ const SECTIONS = [
   { key: 'team', label: 'Team & Rechte' },
   { key: 'guidelines', label: 'Guidelines' },
   { key: 'surveys', label: 'Umfragen' },
-  { key: 'billing', label: 'Billing' },
   { key: 'export', label: 'Export' },
   { key: 'bot', label: 'Bot Nachrichten' },
   { key: 'model-aliases', label: 'Model CSV' },
@@ -908,7 +906,6 @@ export default function SettingsTab() {
         ))}
       </div>
 
-      {activeSection === 'billing' && <BillingTab />}
       {activeSection === 'export' && <ExportTab />}
 
       {/* GUIDELINES — Admin-Editor (v3.2.0) */}

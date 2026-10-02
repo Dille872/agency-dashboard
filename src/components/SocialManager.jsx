@@ -294,9 +294,10 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
           </div>
           {!zuPosten.length && <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13.5 }}>{t('nichts_zu_posten')}</div>}
           {zuPosten.map(s => <PostenKarte key={s.id + ':' + s.aktualisiert_am} s={s} m={models[s.model_name]} t={t} tr={tr} datum={datum} seitText={seitText} notiz={notiz} userDisplayName={userDisplayName} onNeu={laden} />)}
-          {/* v4.109.0: Reels ohne Skript — Poster sehen hier nur ihre eigenen Accounts (RLS) */}
-          <ReelsOhneSkript t={t} sprache={sprache} userDisplayName={userDisplayName} istAdmin={istAdmin}
-            accounts={Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: notiz(m, a.handle) })))} />
+          {/* v4.109.0: Reels ohne Skript — Poster sehen hier nur ihre eigenen Accounts (RLS).
+              v5.31.0: Admins haben das schon unter Wirkung, hier nicht doppelt. */}
+          {!istAdmin && <ReelsOhneSkript t={t} sprache={sprache} userDisplayName={userDisplayName} istAdmin={istAdmin}
+            accounts={Object.values(models).flatMap(m => m.instagram.filter(a => !(m.nicht_betreut || []).includes(a.handle)).map(a => ({ model: m.model_name, handle: a.handle, notiz: notiz(m, a.handle) })))} />}
         </>
       )}
 
