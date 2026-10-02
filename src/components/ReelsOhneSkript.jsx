@@ -21,7 +21,9 @@ const eingabe = { background: 'var(--bg-input)', border: '1px solid var(--border
 const heuteISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 const codeVon = (url) => String(url || '').match(/instagram\.com\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/i)?.[1] || null
 
-export default function ReelsOhneSkript({ accounts = [], t: tAussen, userDisplayName, istAdmin = false, sprache = 'de' }) {
+// v5.24.0: einklappbar → nur ein Knopf „+ Reel eintragen“, Formular und Liste erst beim Antippen
+export default function ReelsOhneSkript({ accounts = [], t: tAussen, userDisplayName, istAdmin = false, sprache = 'de', einklappbar = false }) {
+  const [auf, setAuf] = useState(!einklappbar)
   const t = useMemo(() => tAussen || macheT(sprache), [tAussen, sprache])
   const vorschau = useVorschau()
   const loc = sprache === 'en' ? 'en-US' : 'de-DE'
@@ -81,13 +83,23 @@ export default function ReelsOhneSkript({ accounts = [], t: tAussen, userDisplay
   }
 
   if (fehltDb) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 12.5 }}>{t('os_fehlt_db')}</div>
+  if (!auf) return (
+    <div style={{ ...card, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text-primary)' }}>{t('os_titel')}</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{t('os_text')}</div>
+      </div>
+      <button type="button" onClick={() => setAuf(true)} style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${P}`, background: 'transparent', color: P, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>{t('os_eintragen')}</button>
+    </div>
+  )
   const datum = (iso) => iso ? new Date(iso.length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString(loc, { day: '2-digit', month: '2-digit' }) : ''
   const zahl = (n) => Number(n).toLocaleString(loc)
   const bereit = !!wahl && !!String(link).trim() && !arbeitet
 
   return (
     <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div>
+      <div style={{ position: 'relative' }}>
+        {einklappbar && <button type="button" onClick={() => setAuf(false)} style={{ position: 'absolute', right: 0, top: 0, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>▴ zu</button>}
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{t('os_titel')}</div>
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>{t('os_text')}</div>
       </div>

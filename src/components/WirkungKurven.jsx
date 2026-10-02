@@ -21,6 +21,13 @@ import { logActivity } from '../activity'
 // kamen manche Reels mehrere Nächte mit altem Stand an. Aufeinanderfolgende
 // Messpunkte mit exakt gleichen Aufrufen/Likes/Kommentaren zählen als einer.
 //
+// v5.24.0 Umbau (Wunsch Chris 02.10.: „unübersichtlich“): oben ein Urteil in
+// einem Satz (unsere gegen die eigenen Reels des Models bei gleichem Alter),
+// drei Zahlen, eine ruhige Kurve mit zwei Mittel-Linien (eigene Reels nur,
+// wenn sie ab Tag 0/1 gemessen wurden — sonst schwebten Stücke im Bild), die
+// Einzel-Linien eingeklappt. Eine Liste „Unsere Reels“ mit Filter Skript/ohne
+// Skript und Sortierung Neueste/Beste/Schwächste ersetzt „Zuletzt gepostet“.
+//
 // Messfenster (sql/reel-messfenster.sql): 30 Tage ab Posten, danach
 // abgeschlossen. „+30 Tage“ verlängert, beliebig oft. Die Pipeline misst nur,
 // was in lyra.reel_messplan noch_messen = true hat.
@@ -53,6 +60,18 @@ function wertAm(r, t) {
   return a + (b - a) * (t - vor) / (nach - vor)
 }
 
+function useSchmal(max = 768) {
+  const q = `(max-width: ${max}px)`
+  const [s, setS] = useState(() => { try { return window.matchMedia(q).matches } catch { return false } })
+  useEffect(() => {
+    let mq; try { mq = window.matchMedia(q) } catch { return }
+    const f = () => setS(mq.matches)
+    mq.addEventListener ? mq.addEventListener('change', f) : mq.addListener(f)
+    return () => { mq.removeEventListener ? mq.removeEventListener('change', f) : mq.removeListener(f) }
+  }, [q])
+  return s
+}
+
 function Mini({ punkte, f }) {
   if (!punkte.length) return <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
   // x = Tag im Messfenster (0 … 30 bzw. länger), damit man auch das Alter sieht
@@ -79,6 +98,12 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
   const [wahl, setWahl] = useState(null)       // shortcode, dessen Kurve dick gezeigt wird
   const [alle, setAlle] = useState(false)      // abgeschlossene zeigen
   const [hinweis, setHinweis] = useState('')
+  const [einzeln, setEinzeln] = useState(false)  // v5.24.0: Einzel-Linien zeigen
+  const [filterArt, setFilterArt] = useState('') // '' | 'skript' | 'ohne_skript'
+  const [sortierung, setSortierung] = useState('neu') // 'neu' | 'beste' | 'schwach'
+  const [mehr, setMehr] = useState(false)
+  const [infos, setInfos] = useState({ skript: {}, ohne: {} }) // Titel / wer gepostet hat
+  const schmal = useSchmal()
   useEffect(() => { if (!liste.includes(acc)) setAcc(liste[0] || '') }, [liste.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const laden = useCallback(async () => {
@@ -90,6 +115,13 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
     if (m.error) { setFehlt(x => ({ ...x, mess: true })); setZeilen([]); return }
     setZeilen(m.data || [])
     const codes = [...new Set((m.data || []).map(x => x.shortcode))]
+    // v5.24.0: Titel und „von wem“ für die Liste
+    const nrs = [...new Set((m.data || []).map(x => x.skript_nr).filter(Boolean))]
+    const [sk, os] = await Promise.all([
+      nrs.length ? supabase.from('reel_skripte').select('nr, titel, gepostet_von').in('nr', nrs) : Promise.resolve({ data: [] }),
+      codes.length ? supabase.from('reel_ohne_skript').select('shortcode, eingetragen_von, notiz').in('shortcode', codes) : Promise.resolve({ data: [] }),
+    ])
+    setInfos({ skript: Object.fromEntries((sk.data || []).map(x => [x.nr, x])), ohne: Object.fromEntries((os.data || []).map(x => [x.shortcode, x])) })
     if (codes.length) {
       const f = await supabase.from('reel_messfenster').select('shortcode, messen_bis, verlaengert_von').in('shortcode', codes)
       if (f.error) setFehlt(x => ({ ...x, fenster: true }))
@@ -179,127 +211,235 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
     laden()
   }
 
+  // ── v5.24.0: Urteil, Mittel-Kurven, Liste ─────────────────────────────────
+  const unsere30 = unsere.filter(r => r.offen || letzte30(r))
+  // eigene nur, wenn ab dem Anfang gemessen (sonst fehlt der Anfang der Kurve)
+  const eigeneSauber = eigene.filter(r => r.ts.length && r.ts[0] <= 1)
+  // Vergleichstag: der späteste Tag (höchstens 7), den genug unserer Reels schon erreicht haben —
+  // sonst hängt das Urteil an einem einzigen Reel
+  const genugUns = Math.min(3, unsere30.length)
+  const anzahlAm = (rs, t) => rs.filter(r => r.alter >= t && wertAm(r, t) !== null).length
+  let tVgl = 0
+  for (let t = 1; t <= 7; t++) if (genugUns && anzahlAm(unsere30, t) >= genugUns) tVgl = t
+  const medUns = median(unsere30.filter(r => r.alter >= tVgl).map(r => wertAm(r, tVgl)))
+  const medEig = median(eigeneSauber.map(r => wertAm(r, tVgl)))
+  const nEig = eigeneSauber.filter(r => wertAm(r, tVgl) !== null).length
+  const verhaeltnis = medUns && medEig && nEig >= 2 && tVgl >= 1 ? medUns / medEig : null
+  const urteilText = verhaeltnis === null ? null : verhaeltnis >= 1.15 ? 'Unsere Reels laufen besser als die eigenen' : verhaeltnis <= 0.85 ? 'Unsere Reels laufen schwächer als die eigenen' : 'Unsere Reels laufen etwa so gut wie die eigenen'
+  const urteilFarbe = verhaeltnis === null ? 'var(--text-muted)' : verhaeltnis >= 1.15 ? G : verhaeltnis <= 0.85 ? ROT : 'var(--text-primary)'
+  const aufrufeSumme = unsere.filter(letzte30).reduce((t, r) => t + (r.plays || 0), 0)
+
+  const mittelTage = Math.min(maxTag, Math.max(10, ...unsere30.map(r => r.ts[r.ts.length - 1] ?? 0)) + 2)
+  // Mittel nur an Tagen zeigen, die genug Reels erreicht haben (sonst springt die Linie,
+  // weil plötzlich nur noch ein, zwei Reels drin sind)
+  const genugEig = Math.min(2, eigeneSauber.length)
+  const mittelDaten = [...Array(mittelTage + 1)].map((_, t) => {
+    const uw = unsere30.filter(r => (r.ts[r.ts.length - 1] ?? -1) >= t).map(r => wertAm(r, t)).filter(v => v !== null)
+    const ew = eigeneSauber.filter(r => (r.ts[r.ts.length - 1] ?? -1) >= t).map(r => wertAm(r, t)).filter(v => v !== null)
+    return { tag: t, u: t === 0 ? 0 : (genugUns && uw.length >= genugUns ? median(uw) : null), e: t === 0 ? 0 : (genugEig && ew.length >= genugEig ? median(ew) : null) }
+  })
+
+  const titelVon = (r) => r.nr ? (infos.skript[r.nr]?.titel || '') : (infos.ohne[r.code]?.notiz || '')
+  const vonWem = (r) => r.nr ? infos.skript[r.nr]?.gepostet_von : infos.ohne[r.code]?.eingetragen_von
+  const wann = (r) => {
+    if (!r.gepostet) return ''
+    const d = new Date(r.gepostet)
+    const hatZeit = String(r.gepostet).length > 10 && !(d.getHours() === 0 && d.getMinutes() === 0)
+    return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) + (hatZeit ? ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '')
+  }
+  let sichtbar = unsere.filter(r => (alle || r.offen || letzte30(r)) && (!filterArt || r.art === filterArt))
+  if (sortierung === 'beste') sichtbar = [...sichtbar].sort((a, b) => (b.faktor ?? -1) - (a.faktor ?? -1) || b.plays - a.plays)
+  if (sortierung === 'schwach') sichtbar = [...sichtbar].sort((a, b) => (a.faktor ?? 999) - (b.faktor ?? 999) || a.plays - b.plays)
+  const gezeigt = mehr ? sichtbar : sichtbar.slice(0, 8)
+  const pillFarbe = (r) => r.faktor === null || r.faktor === undefined ? ['var(--bg-card2)', 'var(--text-muted)'] : r.faktor >= 1.15 ? ['rgba(16,185,129,0.14)', G] : r.faktor <= 0.85 ? ['rgba(239,68,68,0.14)', ROT] : ['rgba(150,150,180,0.12)', 'var(--text-secondary)']
+  const chip = (an, text, onClick, f = C) => (
+    <button type="button" onClick={onClick} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${an ? f : 'var(--border)'}`, background: an ? f + '1f' : 'transparent', color: an ? f : 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{text}</button>
+  )
+
   if (!liste.length) return null
-  const sichtbar = unsere.filter(r => alle || r.offen || letzte30(r))
   const tipp = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     const namen = {}
     for (const r of linien) namen['r_' + r.code] = `${r.nr || 'ohne Skript'} · ${new Date(r.start + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`
+    namen.u = 'Unsere (Mittel)'; namen.e = 'Model selbst (Mittel)'
     return (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 11px', fontSize: 12 }}>
         <div style={{ fontWeight: 800, marginBottom: 3 }}>Tag {label}</div>
-        {[...payload].filter(p => String(p.dataKey).startsWith('r_')).sort((a, b) => b.value - a.value).slice(0, 8).map(p => <div key={p.dataKey} style={{ color: p.stroke }}>{namen[p.dataKey]}: {Number(p.value).toLocaleString('de-DE')} Aufrufe</div>)}
+        {[...payload].filter(p => p.value !== null && p.value !== undefined && (String(p.dataKey).startsWith('r_') || p.dataKey === 'u' || p.dataKey === 'e')).sort((a, b) => b.value - a.value).slice(0, 8).map(p => <div key={p.dataKey} style={{ color: p.stroke }}>{namen[p.dataKey]}: {Math.round(Number(p.value)).toLocaleString('de-DE')} Aufrufe</div>)}
       </div>
     )
   }
 
   return (
-    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', flex: 1 }}>Wirkung</div>
-        <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Jedes Reel wird {FENSTER} Tage beobachtet, verlängerbar um je {FENSTER} Tage.</div>
-      </div>
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Account wählen */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: schmal ? 'nowrap' : 'wrap', overflowX: schmal ? 'auto' : 'visible', paddingBottom: 2 }}>
         {liste.map(a => (
-          <button key={a} type="button" onClick={() => setAcc(a)}
-            style={{ padding: '5px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${a === acc ? P : 'var(--border)'}`, background: a === acc ? 'rgba(236,72,153,0.14)' : 'transparent', color: a === acc ? P : 'var(--text-secondary)' }}>{a}</button>
+          <button key={a} type="button" onClick={() => { setAcc(a); setMehr(false) }}
+            style={{ flexShrink: 0, padding: '7px 13px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${a === acc ? P : 'var(--border)'}`, background: a === acc ? P : 'transparent', color: a === acc ? '#fff' : 'var(--text-secondary)' }}>{a}</button>
         ))}
       </div>
 
-      {fehlt.mess && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Messwerte: Datenbank noch nicht eingerichtet.</div>}
-      {zeilen && !fehlt.mess && !reels.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', border: '1px dashed var(--border)', borderRadius: 10, padding: '9px 11px' }}>Für {acc} gibt es noch keine Messwerte. Das Sammel-Skript trägt sie jede Nacht ein.</div>}
+      {fehlt.mess && <div style={{ ...card, fontSize: 12.5, color: 'var(--text-muted)' }}>Messwerte: Datenbank noch nicht eingerichtet.</div>}
+      {zeilen && !fehlt.mess && !reels.length && <div style={{ ...card, fontSize: 12.5, color: 'var(--text-muted)' }}>Für {acc} gibt es noch keine Messwerte. Das Sammel-Skript trägt sie jede Nacht ein.</div>}
 
       {reels.length > 0 && (<>
-        {/* Kennzahlen */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+        {/* 1. Urteil */}
+        <div style={{ ...card, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ fontSize: schmal ? 34 : 40, fontWeight: 800, color: urteilFarbe, fontFamily: 'ui-monospace, monospace', lineHeight: 1 }}>{verhaeltnis === null ? '—' : faktorText(verhaeltnis)}</div>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text-primary)' }}>{urteilText || 'Noch zu wenig Daten für einen Vergleich'}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.45 }}>
+              {verhaeltnis === null
+                ? `Wir brauchen mindestens ein Reel von uns mit einem Tag Verlauf und zwei eigene Reels des Models, die ab dem ersten Tag gemessen wurden (gerade: ${nEig}).`
+                : `Verglichen nach ${tVgl} ${tVgl === 1 ? 'Tag' : 'Tagen'}${tVgl < 7 ? ' (mehr haben unsere Reels noch nicht, ab Tag 7 wird es genauer)' : ''}. Grundlage: ${anzahlAm(unsere30, tVgl)} ${anzahlAm(unsere30, tVgl) === 1 ? 'Reel' : 'Reels'} von uns, ${nEig} eigene.`}
+            </div>
+          </div>
+          {verhaeltnis !== null && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 240, flex: 1 }}>
+              {[['Unsere (Mittel)', medUns, V], ['Model selbst', medEig, GR]].map(([l, v, f]) => (
+                <div key={l} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 56px', gap: 8, alignItems: 'center', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                  <span>{l}</span>
+                  <div style={{ height: 12, borderRadius: 6, background: 'var(--bg-card2)', overflow: 'hidden' }}><div style={{ height: '100%', borderRadius: 6, background: f, width: `${Math.round(100 * v / Math.max(medUns, medEig))}%` }} /></div>
+                  <b style={{ textAlign: 'right', fontFamily: 'ui-monospace, monospace', color: 'var(--text-primary)' }}>{kurz(Math.round(v))}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 2. Drei Zahlen */}
+        <div className="wirkung-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: schmal ? 6 : 10 }}>
           {[
-            ['Unsere Reels, 30 Tage', kpi.anzahl, 'var(--text-primary)'],
-            ['Faktor an Tag 7 · unsere', faktorText(kpi.fUns), faktorFarbe(kpi.fUns)],
-            ['Faktor an Tag 7 · Model selbst', faktorText(kpi.fEigen), faktorFarbe(kpi.fEigen)],
-            ['Bestes Reel, 30 Tage', kpi.bestes ? `${kpi.bestes.nr || 'ohne Skript'} · ${kurz(kpi.bestes.plays)}` : '—', 'var(--text-primary)'],
-          ].map(([l, v, f]) => (
-            <div key={l} style={{ background: 'var(--bg-card2)', borderRadius: 12, padding: '10px 12px' }}>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{l}</div>
-              <div style={{ fontSize: 21, fontWeight: 800, color: f, marginTop: 2 }}>{v}</div>
+            [kpi.anzahl, 'Reels, 30 Tage', 'var(--text-primary)'],
+            [kurz(aufrufeSumme), 'Aufrufe gesamt', 'var(--text-primary)'],
+            [kpi.bestes ? kurz(kpi.bestes.plays) : '—', kpi.bestes ? `bestes Reel · ${kpi.bestes.nr || 'ohne Skript'}` : 'bestes Reel', G],
+          ].map(([v, l, f]) => (
+            <div key={l} style={{ ...card, padding: '11px 13px' }}>
+              <div style={{ fontSize: schmal ? 17 : 21, fontWeight: 800, color: f, fontFamily: 'ui-monospace, monospace' }}>{v}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{l}</div>
             </div>
           ))}
         </div>
 
-        {/* Kurve */}
-        <div>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
-            <span style={{ fontWeight: 800, color: 'var(--text-primary)', flex: 1, minWidth: 200 }}>Aufrufe nach Tagen seit dem Posten</span>
-            {hat('skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: P, verticalAlign: 'middle' }} /> Reel mit Skript</span>}
-            {hat('ohne_skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: V, verticalAlign: 'middle' }} /> Reel ohne Skript (von uns)</span>}
-            {hat('vergleich') && <span><span style={{ display: 'inline-block', width: 12, height: 2, background: GR, opacity: 0.6, verticalAlign: 'middle' }} /> Model selbst (je Reel)</span>}
-            {gewaehlt && <span style={{ color: C }}>{gewaehlt.nr || 'ohne Skript'} hervorgehoben <button type="button" onClick={() => setWahl(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button></span>}
+        {/* 3. Kurve: zwei Mittel-Linien, Einzel-Linien auf Wunsch */}
+        <div style={card}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--text-secondary)' }}>
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text-primary)', flex: 1, minWidth: 180 }}>So entwickeln sich die Aufrufe</span>
+            {!einzeln && <><span><span style={{ display: 'inline-block', width: 14, height: 3, background: V, verticalAlign: 'middle', marginRight: 5 }} />unsere (Mittel)</span>
+              {eigeneSauber.length > 0 && <span><span style={{ display: 'inline-block', width: 14, height: 0, borderTop: `2px dashed ${GR}`, verticalAlign: 'middle', marginRight: 5 }} />Model selbst (Mittel)</span>}</>}
+            {einzeln && <>{hat('skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: P, verticalAlign: 'middle' }} /> mit Skript</span>}
+              {hat('ohne_skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: V, verticalAlign: 'middle' }} /> ohne Skript</span>}
+              {hat('vergleich') && <span><span style={{ display: 'inline-block', width: 12, height: 2, background: GR, opacity: 0.6, verticalAlign: 'middle' }} /> Model selbst</span>}
+              {gewaehlt && <span style={{ color: C }}>{gewaehlt.nr || 'ohne Skript'} hervorgehoben <button type="button" onClick={() => setWahl(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button></span>}</>}
           </div>
-          <div style={{ height: 250 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '3px 0 8px' }}>
+            {einzeln ? 'Jede Linie ist ein Reel. Ein Reel in der Liste antippen hebt es hervor.' : 'Mittelwert pro Tag nach dem Posten. Eigene Reels des Models zählen nur, wenn sie ab dem ersten Tag gemessen wurden.'}
+          </div>
+          <div style={{ height: schmal ? 180 : 230 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={daten} margin={{ top: 6, right: 12, left: 0, bottom: 2 }}>
-                <CartesianGrid stroke="rgba(128,128,160,0.15)" vertical={false} />
-                <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `Tag ${t}`} interval="preserveStartEnd" minTickGap={24} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={kurz} width={48} />
-                <Tooltip content={tipp} />
-                {eigenLinien.map(r => (
-                  <Line key={'e' + r.code} type="monotone" dataKey={'e_' + r.code} stroke={GR} strokeWidth={1.2} strokeOpacity={0.4} connectNulls isAnimationActive={false}
-                    dot={r.ts.length === 1 ? { r: 2, fill: GR, stroke: 'none', fillOpacity: 0.5 } : false} activeDot={false} />
-                ))}
-                {[...linien].sort((a, b) => (a.code === wahl) - (b.code === wahl)).map(r => (
-                  <Line key={r.code} type="monotone" dataKey={'r_' + r.code} stroke={farbe(r.art)} dot={r.code === wahl || r.ts.length <= 2 ? { r: r.code === wahl ? 3.5 : 3, fill: farbe(r.art), stroke: 'none' } : false} connectNulls isAnimationActive={false}
-                    strokeWidth={r.code === wahl ? 4 : 2} strokeOpacity={wahl && r.code !== wahl ? 0.25 : 0.9} />
-                ))}
-              </LineChart>
+              {einzeln ? (
+                <LineChart data={daten} margin={{ top: 6, right: 12, left: 0, bottom: 2 }}>
+                  <CartesianGrid stroke="rgba(128,128,160,0.15)" vertical={false} />
+                  <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `Tag ${t}`} interval="preserveStartEnd" minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={kurz} width={44} />
+                  <Tooltip content={tipp} />
+                  {eigenLinien.map(r => (
+                    <Line key={'e' + r.code} type="monotone" dataKey={'e_' + r.code} stroke={GR} strokeWidth={1.2} strokeOpacity={0.4} connectNulls isAnimationActive={false}
+                      dot={r.ts.length === 1 ? { r: 2, fill: GR, stroke: 'none', fillOpacity: 0.5 } : false} activeDot={false} />
+                  ))}
+                  {[...linien].sort((a, b) => (a.code === wahl) - (b.code === wahl)).map(r => (
+                    <Line key={r.code} type="monotone" dataKey={'r_' + r.code} stroke={farbe(r.art)} dot={r.code === wahl || r.ts.length <= 2 ? { r: r.code === wahl ? 3.5 : 3, fill: farbe(r.art), stroke: 'none' } : false} connectNulls isAnimationActive={false}
+                      strokeWidth={r.code === wahl ? 4 : 2} strokeOpacity={wahl && r.code !== wahl ? 0.25 : 0.9} />
+                  ))}
+                </LineChart>
+              ) : (
+                <LineChart data={mittelDaten} margin={{ top: 6, right: 12, left: 0, bottom: 2 }}>
+                  <CartesianGrid stroke="rgba(128,128,160,0.15)" vertical={false} />
+                  <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `Tag ${t}`} interval="preserveStartEnd" minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={kurz} width={44} />
+                  <Tooltip content={tipp} />
+                  <Line type="monotone" dataKey="e" stroke={GR} strokeWidth={2.2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="u" stroke={V} strokeWidth={3.2} dot={false} connectNulls={false} isAnimationActive={false} />
+                </LineChart>
+              )}
             </ResponsiveContainer>
           </div>
+          <button type="button" onClick={() => setEinzeln(e => !e)} style={{ marginTop: 6, background: 'none', border: 'none', padding: 0, color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {einzeln ? '▴ zurück zum Mittel' : '▸ Alle Reels einzeln zeigen'}
+          </button>
         </div>
 
-        {/* Reels */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ ...klein, flex: 1 }}>Unsere Reels · antippen zeigt die Kurve</span>
-            <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
-              <input type="checkbox" checked={alle} onChange={e => setAlle(e.target.checked)} /> auch ältere abgeschlossene
+        {/* 4. Unsere Reels */}
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text-primary)' }}>Unsere Reels</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{sichtbar.length} {alle ? 'insgesamt' : 'in den letzten 30 Tagen'}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '8px 0 10px', alignItems: 'center' }}>
+            {chip(sortierung === 'neu', 'Neueste', () => setSortierung('neu'))}
+            {chip(sortierung === 'beste', 'Beste', () => setSortierung('beste'))}
+            {chip(sortierung === 'schwach', 'Schwächste', () => setSortierung('schwach'))}
+            <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+            {chip(!filterArt, 'Alle', () => setFilterArt(''), P)}
+            {chip(filterArt === 'skript', 'Mit Skript', () => setFilterArt('skript'), P)}
+            {chip(filterArt === 'ohne_skript', 'Ohne Skript', () => setFilterArt('ohne_skript'), V)}
+            <label style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }} className="wirkung-check">
+              <input type="checkbox" checked={alle} onChange={e => setAlle(e.target.checked)} /> auch ältere
             </label>
           </div>
-          {!sichtbar.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '6px 0' }}>Noch keine Reels von uns auf {acc}.</div>}
-          <div style={{ overflowX: 'auto' }}>
-            {sichtbar.map(r => {
-              const f = r.faktor
+          {!sichtbar.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '6px 0' }}>Keine Reels {filterArt === 'skript' ? 'mit Skript ' : filterArt === 'ohne_skript' ? 'ohne Skript ' : ''}auf {acc}.</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {gezeigt.map(r => {
               const an = wahl === r.code
+              const [pb, pf] = pillFarbe(r)
+              const titel = titelVon(r)
+              const wer = vonWem(r)
               return (
-                <div key={r.code} onClick={() => setWahl(an ? null : r.code)}
-                  style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 280px) 120px 110px 80px 90px minmax(120px, 1fr)', gap: 10, alignItems: 'center', padding: '8px 6px', borderTop: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', minWidth: 720, background: an ? 'rgba(6,182,212,0.08)' : 'transparent', borderRadius: an ? 8 : 0, opacity: r.offen ? 1 : 0.65 }}>
-                  <span>
-                    <b style={{ color: farbe(r.art) }}>{r.nr || 'ohne Skript'}</b>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}> · {new Date(r.start + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
-                    {r.url && <a href={r.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: C, fontSize: 11.5, marginLeft: 6 }}>ansehen</a>}
+                <div key={r.code} onClick={() => { setWahl(an ? null : r.code); if (!an) setEinzeln(true) }}
+                  style={{ display: 'grid', gridTemplateColumns: schmal ? '1fr auto' : 'minmax(0, 1fr) 120px 90px 76px auto', gap: schmal ? 6 : 12, alignItems: 'center', padding: '9px 11px', borderRadius: 12, cursor: 'pointer',
+                    background: an ? 'rgba(6,182,212,0.08)' : 'var(--bg-card2)', border: `1px solid ${an ? C : 'var(--border)'}`, borderLeft: `4px solid ${farbe(r.art)}`, opacity: r.offen ? 1 : 0.7 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 8, marginRight: 7, background: farbe(r.art) + '22', color: farbe(r.art) }}>{r.nr || 'ohne Skript'}</span>
+                      {titel || wann(r)}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {titel ? wann(r) + ' · ' : ''}{r.offen ? `Tag ${Math.min(r.alter, r.laenge)} von ${r.laenge}` : 'abgeschlossen'}{wer ? ` · von ${wer}` : ''}
+                      {r.verlaengert && <span style={{ color: C }}> · verlängert</span>}
+                      {r.url && <> · <a href={r.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: C }}>ansehen</a></>}
+                    </div>
+                  </div>
+                  {!schmal && <Mini punkte={r.punkte} f={farbe(r.art)} />}
+                  <div style={{ textAlign: 'right', fontFamily: 'ui-monospace, monospace', fontWeight: 800, fontSize: 15, color: kpi.bestes?.code === r.code ? G : 'var(--text-primary)', gridColumn: schmal ? 2 : undefined, gridRow: schmal ? 1 : undefined }}>
+                    {kurz(r.plays)}<div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 500 }}>Aufrufe</div>
+                  </div>
+                  <span title={r.fArt === 'grob' ? 'Grob: noch zu wenig Verlauf für den Vergleich bei gleichem Alter' : r.vorlaeufig ? `Noch keine 7 Tage alt: verglichen an Tag ${r.fTag}, vorläufig` : 'An Tag 7 verglichen mit den früheren Reels des Accounts an Tag 7'}
+                    style={{ textAlign: 'center', fontSize: 12.5, fontWeight: 800, padding: '4px 8px', borderRadius: 10, fontFamily: 'ui-monospace, monospace', background: pb, color: pf, opacity: r.vorlaeufig || r.fArt === 'grob' ? 0.65 : 1, gridColumn: schmal ? 2 : undefined, justifySelf: schmal ? 'end' : undefined }}>
+                    {r.fArt === 'grob' && r.faktor !== null && r.faktor !== undefined ? '~' : ''}{faktorText(r.faktor)}
                   </span>
-                  <Mini punkte={r.punkte} f={farbe(r.art)} />
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                    {r.offen ? <>Tag {Math.min(r.alter, r.laenge)} / {r.laenge}</> : <span>abgeschlossen</span>}
-                    {r.verlaengert && <span title={fenster[r.code]?.verlaengert_von ? `verlängert von ${fenster[r.code].verlaengert_von}` : ''} style={{ color: C }}> · verl.</span>}
-                  </span>
-                  <b>{kurz(r.plays)}</b>
-                  <span title={r.fArt === 'grob' ? 'Grob (Pipeline): gegen den Endstand früherer Reels, noch zu wenig Verlauf für den Vergleich bei gleichem Alter' : r.vorlaeufig ? `Noch keine 7 Tage alt: verglichen an Tag ${r.fTag}, vorläufig` : 'An Tag 7 verglichen mit den früheren Reels des Accounts an Tag 7'}
-                    style={{ fontWeight: 800, color: r.vorlaeufig || r.fArt === 'grob' ? 'var(--text-muted)' : faktorFarbe(f) }}>{r.fArt === 'grob' && f !== null && f !== undefined ? '~' : ''}{faktorText(f)}{r.vorlaeufig && f !== null && f !== undefined ? ' *' : ''}</span>
-                  <span style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
-                    {r.waechst && (r.laenge - r.alter <= 5 || !r.offen) && <span style={{ fontSize: 11, fontWeight: 800, color: A }}>↗ wächst noch</span>}
-                    {darfVerlaengern && !fehlt.fenster && (r.laenge - r.alter <= 5 || !r.offen) && (
-                      <button type="button" onClick={e => { e.stopPropagation(); verlaengern(r) }} style={knopf(C, false)}>+30 Tage</button>
-                    )}
-                  </span>
+                  {(r.waechst && (r.laenge - r.alter <= 5 || !r.offen)) || (darfVerlaengern && !fehlt.fenster && (r.laenge - r.alter <= 5 || !r.offen)) ? (
+                    <span style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', gridColumn: schmal ? '1 / -1' : undefined }}>
+                      {r.waechst && (r.laenge - r.alter <= 5 || !r.offen) && <span style={{ fontSize: 11, fontWeight: 800, color: A }}>↗ wächst noch</span>}
+                      {darfVerlaengern && !fehlt.fenster && (r.laenge - r.alter <= 5 || !r.offen) && (
+                        <button type="button" onClick={e => { e.stopPropagation(); verlaengern(r) }} style={knopf(C, false)}>+30 Tage</button>
+                      )}
+                    </span>
+                  ) : (!schmal && <span />)}
                 </div>
               )
             })}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>Faktor = Aufrufe an Tag 7 im Vergleich zu den früheren Reels des Accounts an Tag 7. * noch keine 7 Tage alt, vorläufig. ~ grob, noch zu wenig Verlauf zum Vergleichen. „+30 Tage“ erscheint in den letzten 5 Tagen des Fensters und bei abgeschlossenen Reels.</div>
+          {sichtbar.length > 8 && <button type="button" onClick={() => setMehr(m => !m)} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: C, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{mehr ? 'weniger zeigen' : `alle ${sichtbar.length} zeigen`}</button>}
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+            Faktor = Aufrufe im Vergleich zu den früheren Reels des Accounts bei gleichem Alter (Tag 7). Grün = besser, rot = schwächer, blass = noch keine 7 Tage alt (vorläufig), ~ = grob.
+            Antippen hebt das Reel in der Kurve hervor. Jedes Reel wird {FENSTER} Tage beobachtet, „+30 Tage“ verlängert.
+          </div>
           {fehlt.fenster && <div style={{ fontSize: 11.5, color: A, marginTop: 4 }}>Verlängern geht erst, wenn <code>sql/reel-messfenster.sql</code> ausgeführt ist.</div>}
           {hinweis && <div style={{ fontSize: 12.5, color: ROT, marginTop: 4 }}>{hinweis}</div>}
         </div>
       </>)}
+      <style>{`.wirkung-check input { width: auto !important; } .wirkung-kpis.wirkung-kpis[style] { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }`}</style>
     </div>
   )
 }

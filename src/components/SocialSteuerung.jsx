@@ -510,52 +510,9 @@ export default function SocialSteuerung({ userDisplayName, ansicht = 'steuerung'
       {/* v5.5.0: Wirkung als Kurve je Account, oben */}
       {ansicht === 'wirkung' && <WirkungKurven accounts={zeilenEcht.map(({ acc }) => acc.handle)} userDisplayName={userDisplayName} />}
 
-      {/* Zuletzt gepostet */}
+      {/* v5.24.0: „Zuletzt gepostet“ steckt jetzt in „Unsere Reels“ (WirkungKurven); Eintragen eingeklappt */}
       {ansicht === 'wirkung' && (
-      <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8 }}>Zuletzt gepostet</div>
-        {(() => {
-          const liste = skripte.filter(s => statusVon(s) === 'gepostet').sort((a, b) => String(b.gepostet_am).localeCompare(String(a.gepostet_am)) || String(b.aktualisiert_am).localeCompare(String(a.aktualisiert_am))).slice(0, 30)
-          if (!liste.length) return <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Noch nichts gepostet.</div>
-          return (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Datum', 'Nr', 'Titel', 'Model', 'Account', 'Poster', 'Aufrufe', 'Faktor', 'Reel'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {liste.map(s => (
-                    <tr key={s.id}>
-                      <td style={td}>{datum(s.gepostet_am)}</td>
-                      <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontWeight: 800, color: C }}>{s.nr}</td>
-                      <td style={td}>{s.titel}</td>
-                      <td style={td}>{s.model_name}</td>
-                      <td style={td}><span style={{ color: P, fontWeight: 700 }}>{s.account}</span>{s.ziel_account && s.account !== s.ziel_account && <span style={{ ...pill(A), marginLeft: 6 }}>Ziel war {s.ziel_account}</span>}</td>
-                      <td style={td}>{s.gepostet_von || '—'}</td>
-                      {(() => {
-                        const m = messwerte[shortcodeVon(s.reel_url)]
-                        return (
-                          <>
-                            <td style={td} title={m ? `gemessen ${datum(m.gemessen_am)}${m.alter_std !== null ? `, nach ${Math.round(m.alter_std)} h` : ''} · ${zahl(m.likes)} Likes · ${zahl(m.comments)} Kommentare` : 'noch nicht gemessen'}>
-                              {m ? <b>{zahl(m.plays)}</b> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                              {m?.alter_std !== null && m?.alter_std !== undefined && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}> · {Math.round(m.alter_std)} h</span>}
-                            </td>
-                            <td style={{ ...td, fontWeight: 800, color: faktorFarbe(m?.faktor) }}>{m?.faktor !== null && m?.faktor !== undefined ? `${Number(m.faktor).toFixed(1)}×` : '—'}</td>
-                          </>
-                        )
-                      })()}
-                      <td style={td}><a href={s.reel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700 }}>ansehen</a></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        })()}
-        {/* v4.109.0: Reels ohne Skript eintragen */}
-        <div style={{ marginTop: 14 }}>
-          <ReelsOhneSkript userDisplayName={userDisplayName} istAdmin accounts={zeilenEcht.map(({ model, acc }) => ({ model: model.model_name, handle: acc.handle, notiz: (model.account_notizen || {})[acc.handle] || '' }))} />
-        </div>
-        {/* v5.5.0: Tabelle „Wirkung, letzte 30 Tage“ ersetzt durch WirkungKurven oben */}
-      </div>
+        <ReelsOhneSkript userDisplayName={userDisplayName} istAdmin einklappbar accounts={zeilenEcht.map(({ model, acc }) => ({ model: model.model_name, handle: acc.handle, notiz: (model.account_notizen || {})[acc.handle] || '' }))} />
       )}
 
       {neuAccount !== null && <AccountFenster models={models} startModel={neuAccount} wer={userDisplayName} platzhalterDa={platzhalterDa}
