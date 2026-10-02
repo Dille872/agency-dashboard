@@ -60,6 +60,58 @@ function wertAm(r, t) {
   return a + (b - a) * (t - vor) / (nach - vor)
 }
 
+
+// v5.25.0: Texte DE/EN (Poster mit Englisch) und eine Fassung fürs Model („deine eigenen“)
+const TXT = {
+  de: {
+    loc: 'de-DE', besser: 'Unsere Reels laufen besser als die eigenen', schwaecher: 'Unsere Reels laufen schwächer als die eigenen', gleich: 'Unsere Reels laufen etwa so gut wie die eigenen',
+    zu_wenig: 'Noch zu wenig Daten für einen Vergleich',
+    zu_wenig_text: (n) => `Wir brauchen mindestens ein Reel von uns mit einem Tag Verlauf und zwei eigene Reels, die ab dem ersten Tag gemessen wurden (gerade: ${n}).`,
+    verglichen: (t, u, e) => `Verglichen nach ${t} ${t === 1 ? 'Tag' : 'Tagen'}${t < 7 ? ' (mehr haben unsere Reels noch nicht, ab Tag 7 wird es genauer)' : ''}. Grundlage: ${u} ${u === 1 ? 'Reel' : 'Reels'} von uns, ${e} eigene.`,
+    uns_mittel: 'Unsere (Mittel)', eigene: 'Model selbst', eigene_mittel: 'Model selbst (Mittel)', uns_mittel_k: 'unsere (Mittel)',
+    reels30: 'Reels, 30 Tage', aufrufe_ges: 'Aufrufe gesamt', bestes: 'bestes Reel', ohne: 'ohne Skript', mit: 'mit Skript',
+    kurve: 'So entwickeln sich die Aufrufe', hervor: 'hervorgehoben',
+    einzeln_text: 'Jede Linie ist ein Reel. Ein Reel in der Liste antippen hebt es hervor.',
+    mittel_text: 'Mittelwert pro Tag nach dem Posten. Eigene Reels zählen nur, wenn sie ab dem ersten Tag gemessen wurden.',
+    tag: 'Tag', zurueck: '▴ zurück zum Mittel', einzeln: '▸ Alle Reels einzeln zeigen',
+    liste: 'Unsere Reels', insgesamt: 'insgesamt', letzte30: 'in den letzten 30 Tagen',
+    neueste: 'Neueste', beste: 'Beste', schwach: 'Schwächste', alle: 'Alle', chip_mit: 'Mit Skript', chip_ohne: 'Ohne Skript', aeltere: 'auch ältere',
+    keine: (a) => `Keine Reels auf ${a}.`, tag_von: (a, b) => `Tag ${a} von ${b}`, fertig: 'abgeschlossen', von: (w) => `von ${w}`, verlaengert: 'verlängert',
+    ansehen: 'ansehen', aufrufe: 'Aufrufe', waechst: '↗ wächst noch', alle_zeigen: (n) => `alle ${n} zeigen`, weniger: 'weniger zeigen',
+    fuss: 'Faktor = Aufrufe im Vergleich zu den früheren Reels des Accounts bei gleichem Alter (Tag 7). Grün = besser, rot = schwächer, blass = noch keine 7 Tage alt (vorläufig), ~ = grob. Antippen hebt das Reel in der Kurve hervor.',
+    fuss_fenster: 'Jedes Reel wird 30 Tage beobachtet, „+30 Tage“ verlängert.',
+    keine_mess: (a) => `Für ${a} gibt es noch keine Messwerte. Sie werden jede Nacht eingetragen.`, db_fehlt: 'Messwerte: Datenbank noch nicht eingerichtet.',
+    tip_grob: 'Grob: noch zu wenig Verlauf für den Vergleich bei gleichem Alter', tip_vorl: (t) => `Noch keine 7 Tage alt: verglichen an Tag ${t}, vorläufig`, tip_ok: 'An Tag 7 verglichen mit den früheren Reels des Accounts an Tag 7',
+  },
+  en: {
+    loc: 'en-US', besser: 'Our reels are doing better than the creator’s own', schwaecher: 'Our reels are doing worse than the creator’s own', gleich: 'Our reels are doing about as well as the creator’s own',
+    zu_wenig: 'Not enough data to compare yet',
+    zu_wenig_text: (n) => `We need at least one of our reels with a day of history and two of the creator’s own reels measured from day one (currently: ${n}).`,
+    verglichen: (t, u, e) => `Compared after ${t} ${t === 1 ? 'day' : 'days'}${t < 7 ? ' (our reels aren’t older yet, it gets more accurate from day 7)' : ''}. Based on ${u} ${u === 1 ? 'reel' : 'reels'} by us, ${e} own.`,
+    uns_mittel: 'Ours (average)', eigene: 'Creator’s own', eigene_mittel: 'Creator’s own (average)', uns_mittel_k: 'ours (average)',
+    reels30: 'Reels, 30 days', aufrufe_ges: 'Total views', bestes: 'best reel', ohne: 'no script', mit: 'with script',
+    kurve: 'How the views develop', hervor: 'highlighted',
+    einzeln_text: 'Each line is one reel. Tap a reel in the list to highlight it.',
+    mittel_text: 'Average per day after posting. Own reels only count if they were measured from day one.',
+    tag: 'Day', zurueck: '▴ back to average', einzeln: '▸ Show every reel',
+    liste: 'Our reels', insgesamt: 'in total', letzte30: 'in the last 30 days',
+    neueste: 'Newest', beste: 'Best', schwach: 'Weakest', alle: 'All', chip_mit: 'With script', chip_ohne: 'No script', aeltere: 'older ones too',
+    keine: (a) => `No reels on ${a}.`, tag_von: (a, b) => `Day ${a} of ${b}`, fertig: 'finished', von: (w) => `by ${w}`, verlaengert: 'extended',
+    ansehen: 'view', aufrufe: 'views', waechst: '↗ still growing', alle_zeigen: (n) => `show all ${n}`, weniger: 'show less',
+    fuss: 'Factor = views compared to earlier reels of the account at the same age (day 7). Green = better, red = weaker, faded = not 7 days old yet (preliminary), ~ = rough. Tap to highlight the reel in the chart.',
+    fuss_fenster: 'Every reel is tracked for 30 days.',
+    keine_mess: (a) => `No measurements for ${a} yet. They are added every night.`, db_fehlt: 'Measurements: database not set up yet.',
+    tip_grob: 'Rough: not enough history yet to compare at the same age', tip_vorl: (t) => `Not 7 days old yet: compared on day ${t}, preliminary`, tip_ok: 'Compared on day 7 with earlier reels of the account on day 7',
+  },
+}
+// Fürs Model: „deine eigenen“ statt „Model selbst“
+const MODEL_TXT = {
+  besser: 'Unsere Reels laufen besser als deine eigenen', schwaecher: 'Unsere Reels laufen schwächer als deine eigenen', gleich: 'Unsere Reels laufen etwa so gut wie deine eigenen',
+  eigene: 'Deine eigenen', eigene_mittel: 'Deine eigenen (Mittel)', liste: 'Unsere Reels für dich',
+  mittel_text: 'Mittelwert pro Tag nach dem Posten. Deine eigenen Reels zählen nur, wenn sie ab dem ersten Tag gemessen wurden.',
+  zu_wenig_text: (n) => `Wir brauchen mindestens ein Reel von uns mit einem Tag Verlauf und zwei deiner eigenen Reels, die ab dem ersten Tag gemessen wurden (gerade: ${n}).`,
+}
+
 function useSchmal(max = 768) {
   const q = `(max-width: ${max}px)`
   const [s, setS] = useState(() => { try { return window.matchMedia(q).matches } catch { return false } })
@@ -88,7 +140,8 @@ function Mini({ punkte, f }) {
   )
 }
 
-export default function WirkungKurven({ accounts = [], darfVerlaengern = true, userDisplayName }) {
+export default function WirkungKurven({ accounts = [], darfVerlaengern = true, userDisplayName, sprache = 'de', modelSicht = false, ohneRahmen = false }) {
+  const T = { ...(TXT[sprache] || TXT.de), ...(modelSicht && sprache !== 'en' ? MODEL_TXT : {}) }
   // accounts: ['@handle', …] — betreute Accounts aus der Steuerung
   const liste = useMemo(() => [...new Set(accounts.map(a => String(a).toLowerCase()))].sort(), [accounts.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
   const [acc, setAcc] = useState(liste[0] || '')
@@ -225,7 +278,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
   const medEig = median(eigeneSauber.map(r => wertAm(r, tVgl)))
   const nEig = eigeneSauber.filter(r => wertAm(r, tVgl) !== null).length
   const verhaeltnis = medUns && medEig && nEig >= 2 && tVgl >= 1 ? medUns / medEig : null
-  const urteilText = verhaeltnis === null ? null : verhaeltnis >= 1.15 ? 'Unsere Reels laufen besser als die eigenen' : verhaeltnis <= 0.85 ? 'Unsere Reels laufen schwächer als die eigenen' : 'Unsere Reels laufen etwa so gut wie die eigenen'
+  const urteilText = verhaeltnis === null ? null : verhaeltnis >= 1.15 ? T.besser : verhaeltnis <= 0.85 ? T.schwaecher : T.gleich
   const urteilFarbe = verhaeltnis === null ? 'var(--text-muted)' : verhaeltnis >= 1.15 ? G : verhaeltnis <= 0.85 ? ROT : 'var(--text-primary)'
   const aufrufeSumme = unsere.filter(letzte30).reduce((t, r) => t + (r.plays || 0), 0)
 
@@ -245,7 +298,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
     if (!r.gepostet) return ''
     const d = new Date(r.gepostet)
     const hatZeit = String(r.gepostet).length > 10 && !(d.getHours() === 0 && d.getMinutes() === 0)
-    return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) + (hatZeit ? ' · ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '')
+    return d.toLocaleDateString(T.loc, { weekday: 'short', day: '2-digit', month: '2-digit' }) + (hatZeit ? ' · ' + d.toLocaleTimeString(T.loc, { hour: '2-digit', minute: '2-digit' }) : '')
   }
   let sichtbar = unsere.filter(r => (alle || r.offen || letzte30(r)) && (!filterArt || r.art === filterArt))
   if (sortierung === 'beste') sichtbar = [...sichtbar].sort((a, b) => (b.faktor ?? -1) - (a.faktor ?? -1) || b.plays - a.plays)
@@ -260,12 +313,12 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
   const tipp = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     const namen = {}
-    for (const r of linien) namen['r_' + r.code] = `${r.nr || 'ohne Skript'} · ${new Date(r.start + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`
-    namen.u = 'Unsere (Mittel)'; namen.e = 'Model selbst (Mittel)'
+    for (const r of linien) namen['r_' + r.code] = `${r.nr || T.ohne} · ${new Date(r.start + 'T12:00:00').toLocaleDateString(T.loc, { day: '2-digit', month: '2-digit' })}`
+    namen.u = T.uns_mittel; namen.e = T.eigene_mittel
     return (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 11px', fontSize: 12 }}>
-        <div style={{ fontWeight: 800, marginBottom: 3 }}>Tag {label}</div>
-        {[...payload].filter(p => p.value !== null && p.value !== undefined && (String(p.dataKey).startsWith('r_') || p.dataKey === 'u' || p.dataKey === 'e')).sort((a, b) => b.value - a.value).slice(0, 8).map(p => <div key={p.dataKey} style={{ color: p.stroke }}>{namen[p.dataKey]}: {Math.round(Number(p.value)).toLocaleString('de-DE')} Aufrufe</div>)}
+        <div style={{ fontWeight: 800, marginBottom: 3 }}>{T.tag} {label}</div>
+        {[...payload].filter(p => p.value !== null && p.value !== undefined && (String(p.dataKey).startsWith('r_') || p.dataKey === 'u' || p.dataKey === 'e')).sort((a, b) => b.value - a.value).slice(0, 8).map(p => <div key={p.dataKey} style={{ color: p.stroke }}>{namen[p.dataKey]}: {Math.round(Number(p.value)).toLocaleString(T.loc)} {T.aufrufe}</div>)}
       </div>
     )
   }
@@ -280,24 +333,24 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
         ))}
       </div>
 
-      {fehlt.mess && <div style={{ ...card, fontSize: 12.5, color: 'var(--text-muted)' }}>Messwerte: Datenbank noch nicht eingerichtet.</div>}
-      {zeilen && !fehlt.mess && !reels.length && <div style={{ ...card, fontSize: 12.5, color: 'var(--text-muted)' }}>Für {acc} gibt es noch keine Messwerte. Das Sammel-Skript trägt sie jede Nacht ein.</div>}
+      {fehlt.mess && <div style={{ ...card, fontSize: 12.5, color: 'var(--text-muted)' }}>{T.db_fehlt}</div>}
+      {zeilen && !fehlt.mess && !reels.length && <div style={{ ...card, fontSize: 12.5, color: 'var(--text-muted)' }}>{T.keine_mess(acc)}</div>}
 
       {reels.length > 0 && (<>
         {/* 1. Urteil */}
         <div style={{ ...card, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ fontSize: schmal ? 34 : 40, fontWeight: 800, color: urteilFarbe, fontFamily: 'ui-monospace, monospace', lineHeight: 1 }}>{verhaeltnis === null ? '—' : faktorText(verhaeltnis)}</div>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text-primary)' }}>{urteilText || 'Noch zu wenig Daten für einen Vergleich'}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text-primary)' }}>{urteilText || T.zu_wenig}</div>
             <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.45 }}>
               {verhaeltnis === null
-                ? `Wir brauchen mindestens ein Reel von uns mit einem Tag Verlauf und zwei eigene Reels des Models, die ab dem ersten Tag gemessen wurden (gerade: ${nEig}).`
-                : `Verglichen nach ${tVgl} ${tVgl === 1 ? 'Tag' : 'Tagen'}${tVgl < 7 ? ' (mehr haben unsere Reels noch nicht, ab Tag 7 wird es genauer)' : ''}. Grundlage: ${anzahlAm(unsere30, tVgl)} ${anzahlAm(unsere30, tVgl) === 1 ? 'Reel' : 'Reels'} von uns, ${nEig} eigene.`}
+                ? T.zu_wenig_text(nEig)
+                : T.verglichen(tVgl, anzahlAm(unsere30, tVgl), nEig)}
             </div>
           </div>
           {verhaeltnis !== null && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 240, flex: 1 }}>
-              {[['Unsere (Mittel)', medUns, V], ['Model selbst', medEig, GR]].map(([l, v, f]) => (
+              {[[T.uns_mittel, medUns, V], [T.eigene, medEig, GR]].map(([l, v, f]) => (
                 <div key={l} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 56px', gap: 8, alignItems: 'center', fontSize: 12.5, color: 'var(--text-secondary)' }}>
                   <span>{l}</span>
                   <div style={{ height: 12, borderRadius: 6, background: 'var(--bg-card2)', overflow: 'hidden' }}><div style={{ height: '100%', borderRadius: 6, background: f, width: `${Math.round(100 * v / Math.max(medUns, medEig))}%` }} /></div>
@@ -311,9 +364,9 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
         {/* 2. Drei Zahlen */}
         <div className="wirkung-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: schmal ? 6 : 10 }}>
           {[
-            [kpi.anzahl, 'Reels, 30 Tage', 'var(--text-primary)'],
-            [kurz(aufrufeSumme), 'Aufrufe gesamt', 'var(--text-primary)'],
-            [kpi.bestes ? kurz(kpi.bestes.plays) : '—', kpi.bestes ? `bestes Reel · ${kpi.bestes.nr || 'ohne Skript'}` : 'bestes Reel', G],
+            [kpi.anzahl, T.reels30, 'var(--text-primary)'],
+            [kurz(aufrufeSumme), T.aufrufe_ges, 'var(--text-primary)'],
+            [kpi.bestes ? kurz(kpi.bestes.plays) : '—', kpi.bestes ? `${T.bestes} · ${kpi.bestes.nr || T.ohne}` : T.bestes, G],
           ].map(([v, l, f]) => (
             <div key={l} style={{ ...card, padding: '11px 13px' }}>
               <div style={{ fontSize: schmal ? 17 : 21, fontWeight: 800, color: f, fontFamily: 'ui-monospace, monospace' }}>{v}</div>
@@ -325,23 +378,23 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
         {/* 3. Kurve: zwei Mittel-Linien, Einzel-Linien auf Wunsch */}
         <div style={card}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--text-secondary)' }}>
-            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text-primary)', flex: 1, minWidth: 180 }}>So entwickeln sich die Aufrufe</span>
-            {!einzeln && <><span><span style={{ display: 'inline-block', width: 14, height: 3, background: V, verticalAlign: 'middle', marginRight: 5 }} />unsere (Mittel)</span>
-              {eigeneSauber.length > 0 && <span><span style={{ display: 'inline-block', width: 14, height: 0, borderTop: `2px dashed ${GR}`, verticalAlign: 'middle', marginRight: 5 }} />Model selbst (Mittel)</span>}</>}
-            {einzeln && <>{hat('skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: P, verticalAlign: 'middle' }} /> mit Skript</span>}
-              {hat('ohne_skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: V, verticalAlign: 'middle' }} /> ohne Skript</span>}
-              {hat('vergleich') && <span><span style={{ display: 'inline-block', width: 12, height: 2, background: GR, opacity: 0.6, verticalAlign: 'middle' }} /> Model selbst</span>}
-              {gewaehlt && <span style={{ color: C }}>{gewaehlt.nr || 'ohne Skript'} hervorgehoben <button type="button" onClick={() => setWahl(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button></span>}</>}
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text-primary)', flex: 1, minWidth: 180 }}>{T.kurve}</span>
+            {!einzeln && <><span><span style={{ display: 'inline-block', width: 14, height: 3, background: V, verticalAlign: 'middle', marginRight: 5 }} />{T.uns_mittel_k}</span>
+              {eigeneSauber.length > 0 && <span><span style={{ display: 'inline-block', width: 14, height: 0, borderTop: `2px dashed ${GR}`, verticalAlign: 'middle', marginRight: 5 }} />{T.eigene_mittel}</span>}</>}
+            {einzeln && <>{hat('skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: P, verticalAlign: 'middle' }} /> {T.mit}</span>}
+              {hat('ohne_skript') && <span><span style={{ display: 'inline-block', width: 12, height: 3, background: V, verticalAlign: 'middle' }} /> {T.ohne}</span>}
+              {hat('vergleich') && <span><span style={{ display: 'inline-block', width: 12, height: 2, background: GR, opacity: 0.6, verticalAlign: 'middle' }} /> {T.eigene}</span>}
+              {gewaehlt && <span style={{ color: C }}>{gewaehlt.nr || T.ohne} {T.hervor} <button type="button" onClick={() => setWahl(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button></span>}</>}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '3px 0 8px' }}>
-            {einzeln ? 'Jede Linie ist ein Reel. Ein Reel in der Liste antippen hebt es hervor.' : 'Mittelwert pro Tag nach dem Posten. Eigene Reels des Models zählen nur, wenn sie ab dem ersten Tag gemessen wurden.'}
+            {einzeln ? T.einzeln_text : T.mittel_text}
           </div>
           <div style={{ height: schmal ? 180 : 230 }}>
             <ResponsiveContainer width="100%" height="100%">
               {einzeln ? (
                 <LineChart data={daten} margin={{ top: 6, right: 12, left: 0, bottom: 2 }}>
                   <CartesianGrid stroke="rgba(128,128,160,0.15)" vertical={false} />
-                  <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `Tag ${t}`} interval="preserveStartEnd" minTickGap={24} />
+                  <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `${T.tag} ${t}`} interval="preserveStartEnd" minTickGap={24} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={kurz} width={44} />
                   <Tooltip content={tipp} />
                   {eigenLinien.map(r => (
@@ -356,7 +409,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
               ) : (
                 <LineChart data={mittelDaten} margin={{ top: 6, right: 12, left: 0, bottom: 2 }}>
                   <CartesianGrid stroke="rgba(128,128,160,0.15)" vertical={false} />
-                  <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `Tag ${t}`} interval="preserveStartEnd" minTickGap={24} />
+                  <XAxis dataKey="tag" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={t => `${T.tag} ${t}`} interval="preserveStartEnd" minTickGap={24} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={kurz} width={44} />
                   <Tooltip content={tipp} />
                   <Line type="monotone" dataKey="e" stroke={GR} strokeWidth={2.2} strokeDasharray="6 4" dot={false} connectNulls={false} isAnimationActive={false} />
@@ -366,29 +419,29 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
             </ResponsiveContainer>
           </div>
           <button type="button" onClick={() => setEinzeln(e => !e)} style={{ marginTop: 6, background: 'none', border: 'none', padding: 0, color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {einzeln ? '▴ zurück zum Mittel' : '▸ Alle Reels einzeln zeigen'}
+            {einzeln ? T.zurueck : T.einzeln}
           </button>
         </div>
 
         {/* 4. Unsere Reels */}
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text-primary)' }}>Unsere Reels</span>
-            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{sichtbar.length} {alle ? 'insgesamt' : 'in den letzten 30 Tagen'}</span>
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text-primary)' }}>{T.liste}</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{sichtbar.length} {alle ? T.insgesamt : T.letzte30}</span>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '8px 0 10px', alignItems: 'center' }}>
-            {chip(sortierung === 'neu', 'Neueste', () => setSortierung('neu'))}
-            {chip(sortierung === 'beste', 'Beste', () => setSortierung('beste'))}
-            {chip(sortierung === 'schwach', 'Schwächste', () => setSortierung('schwach'))}
+            {chip(sortierung === 'neu', T.neueste, () => setSortierung('neu'))}
+            {chip(sortierung === 'beste', T.beste, () => setSortierung('beste'))}
+            {chip(sortierung === 'schwach', T.schwach, () => setSortierung('schwach'))}
             <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-            {chip(!filterArt, 'Alle', () => setFilterArt(''), P)}
-            {chip(filterArt === 'skript', 'Mit Skript', () => setFilterArt('skript'), P)}
-            {chip(filterArt === 'ohne_skript', 'Ohne Skript', () => setFilterArt('ohne_skript'), V)}
+            {chip(!filterArt, T.alle, () => setFilterArt(''), P)}
+            {chip(filterArt === 'skript', T.chip_mit, () => setFilterArt('skript'), P)}
+            {chip(filterArt === 'ohne_skript', T.chip_ohne, () => setFilterArt('ohne_skript'), V)}
             <label style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }} className="wirkung-check">
-              <input type="checkbox" checked={alle} onChange={e => setAlle(e.target.checked)} /> auch ältere
+              <input type="checkbox" checked={alle} onChange={e => setAlle(e.target.checked)} /> {T.aeltere}
             </label>
           </div>
-          {!sichtbar.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '6px 0' }}>Keine Reels {filterArt === 'skript' ? 'mit Skript ' : filterArt === 'ohne_skript' ? 'ohne Skript ' : ''}auf {acc}.</div>}
+          {!sichtbar.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '6px 0' }}>{T.keine(acc)}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {gezeigt.map(r => {
               const an = wahl === r.code
@@ -401,26 +454,26 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
                     background: an ? 'rgba(6,182,212,0.08)' : 'var(--bg-card2)', border: `1px solid ${an ? C : 'var(--border)'}`, borderLeft: `4px solid ${farbe(r.art)}`, opacity: r.offen ? 1 : 0.7 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 8, marginRight: 7, background: farbe(r.art) + '22', color: farbe(r.art) }}>{r.nr || 'ohne Skript'}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '1px 7px', borderRadius: 8, marginRight: 7, background: farbe(r.art) + '22', color: farbe(r.art) }}>{r.nr || T.ohne}</span>
                       {titel || wann(r)}
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {titel ? wann(r) + ' · ' : ''}{r.offen ? `Tag ${Math.min(r.alter, r.laenge)} von ${r.laenge}` : 'abgeschlossen'}{wer ? ` · von ${wer}` : ''}
-                      {r.verlaengert && <span style={{ color: C }}> · verlängert</span>}
-                      {r.url && <> · <a href={r.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: C }}>ansehen</a></>}
+                      {titel ? wann(r) + ' · ' : ''}{r.offen ? T.tag_von(Math.min(r.alter, r.laenge), r.laenge) : T.fertig}{wer ? ` · ${T.von(wer)}` : ''}
+                      {r.verlaengert && <span style={{ color: C }}> · {T.verlaengert}</span>}
+                      {r.url && <> · <a href={r.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: C }}>{T.ansehen}</a></>}
                     </div>
                   </div>
                   {!schmal && <Mini punkte={r.punkte} f={farbe(r.art)} />}
                   <div style={{ textAlign: 'right', fontFamily: 'ui-monospace, monospace', fontWeight: 800, fontSize: 15, color: kpi.bestes?.code === r.code ? G : 'var(--text-primary)', gridColumn: schmal ? 2 : undefined, gridRow: schmal ? 1 : undefined }}>
-                    {kurz(r.plays)}<div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 500 }}>Aufrufe</div>
+                    {kurz(r.plays)}<div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 500 }}>{T.aufrufe}</div>
                   </div>
-                  <span title={r.fArt === 'grob' ? 'Grob: noch zu wenig Verlauf für den Vergleich bei gleichem Alter' : r.vorlaeufig ? `Noch keine 7 Tage alt: verglichen an Tag ${r.fTag}, vorläufig` : 'An Tag 7 verglichen mit den früheren Reels des Accounts an Tag 7'}
+                  <span title={r.fArt === 'grob' ? T.tip_grob : r.vorlaeufig ? T.tip_vorl(r.fTag) : T.tip_ok}
                     style={{ textAlign: 'center', fontSize: 12.5, fontWeight: 800, padding: '4px 8px', borderRadius: 10, fontFamily: 'ui-monospace, monospace', background: pb, color: pf, opacity: r.vorlaeufig || r.fArt === 'grob' ? 0.65 : 1, gridColumn: schmal ? 2 : undefined, justifySelf: schmal ? 'end' : undefined }}>
                     {r.fArt === 'grob' && r.faktor !== null && r.faktor !== undefined ? '~' : ''}{faktorText(r.faktor)}
                   </span>
                   {(r.waechst && (r.laenge - r.alter <= 5 || !r.offen)) || (darfVerlaengern && !fehlt.fenster && (r.laenge - r.alter <= 5 || !r.offen)) ? (
                     <span style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', gridColumn: schmal ? '1 / -1' : undefined }}>
-                      {r.waechst && (r.laenge - r.alter <= 5 || !r.offen) && <span style={{ fontSize: 11, fontWeight: 800, color: A }}>↗ wächst noch</span>}
+                      {r.waechst && (r.laenge - r.alter <= 5 || !r.offen) && <span style={{ fontSize: 11, fontWeight: 800, color: A }}>{T.waechst}</span>}
                       {darfVerlaengern && !fehlt.fenster && (r.laenge - r.alter <= 5 || !r.offen) && (
                         <button type="button" onClick={e => { e.stopPropagation(); verlaengern(r) }} style={knopf(C, false)}>+30 Tage</button>
                       )}
@@ -430,16 +483,48 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
               )
             })}
           </div>
-          {sichtbar.length > 8 && <button type="button" onClick={() => setMehr(m => !m)} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: C, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{mehr ? 'weniger zeigen' : `alle ${sichtbar.length} zeigen`}</button>}
+          {sichtbar.length > 8 && <button type="button" onClick={() => setMehr(m => !m)} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: C, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>{mehr ? T.weniger : T.alle_zeigen(sichtbar.length)}</button>}
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-            Faktor = Aufrufe im Vergleich zu den früheren Reels des Accounts bei gleichem Alter (Tag 7). Grün = besser, rot = schwächer, blass = noch keine 7 Tage alt (vorläufig), ~ = grob.
-            Antippen hebt das Reel in der Kurve hervor. Jedes Reel wird {FENSTER} Tage beobachtet, „+30 Tage“ verlängert.
+            {T.fuss}{darfVerlaengern ? ' ' + T.fuss_fenster : ''}
           </div>
-          {fehlt.fenster && <div style={{ fontSize: 11.5, color: A, marginTop: 4 }}>Verlängern geht erst, wenn <code>sql/reel-messfenster.sql</code> ausgeführt ist.</div>}
+          {fehlt.fenster && darfVerlaengern && <div style={{ fontSize: 11.5, color: A, marginTop: 4 }}>Verlängern geht erst, wenn <code>sql/reel-messfenster.sql</code> ausgeführt ist.</div>}
           {hinweis && <div style={{ fontSize: 12.5, color: ROT, marginTop: 4 }}>{hinweis}</div>}
         </div>
       </>)}
       <style>{`.wirkung-check input { width: auto !important; } .wirkung-kpis.wirkung-kpis[style] { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }`}</style>
+    </div>
+  )
+}
+
+// ── v5.25.0: Wirkung im Model-Portal (Bereich „Social“) ────────────────────
+// Dieselbe Ansicht, nur die eigenen betreuten Accounts, ohne Verlängern,
+// Texte in der Du-Form („deine eigenen“).
+export function WirkungModel({ displayName, service = null, cardS = {} }) {
+  const [accounts, setAccounts] = useState(null)
+  const nb = (service?.nicht_betreut || []).join(',')
+  useEffect(() => {
+    if (!displayName) return
+    let weg = false
+    ;(async () => {
+      const [{ resolvePlatform, SOCIAL_CATEGORY }, { instaHandle }] = await Promise.all([import('./SocialLinks'), import('../reelSkripte')])
+      const { data } = await supabase.from('model_board').select('title, content').eq('model_name', displayName).eq('category', SOCIAL_CATEGORY)
+      if (weg) return
+      const aus = new Set(nb ? nb.split(',') : [])
+      setAccounts([...new Set((data || []).filter(x => resolvePlatform(x.title).key === 'instagram' && String(x.content || '').trim()).map(x => instaHandle(x.content)))].filter(h => h && !aus.has(h)))
+    })()
+    return () => { weg = true }
+  }, [displayName, nb])
+  if (!accounts || !accounts.length) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ ...cardS, padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 20 }}>📈</span>
+        <div style={{ flex: 1 }}>
+          <b style={{ fontSize: 14.5, color: 'var(--text-primary)' }}>Wie deine Reels laufen</b>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aufrufe der Reels, die wir für dich posten, im Vergleich zu deinen eigenen. Jede Nacht aktualisiert.</div>
+        </div>
+      </div>
+      <WirkungKurven accounts={accounts} darfVerlaengern={false} modelSicht userDisplayName={displayName} />
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { macheT, spracheLaden, spracheMerken, CHIPS_EN } from '../i18n/socialMan
 import SocialSteuerung from './SocialSteuerung' // v4.103.0: nur Admins
 import SocialFabs from './SocialFabs' // v5.2.0: für die Vorschau
 import SocialRechte from './SocialRechte' // v5.21.0
+import WirkungKurven from './WirkungKurven' // v5.25.0
 import SocialPlan, { PlanHeute } from './SocialPlan' // v5.3.0: Posting-Plan
 import { VorschauContext, useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 import ReelsOhneSkript from './ReelsOhneSkript' // v4.109.0
@@ -132,16 +133,18 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
     }
     // v5.21.0: eigene Einzelrechte (Reiter „Rechte“) + eigene Poster-Zuteilung
     const ich = vorschau ? vorschau.name : userDisplayName
-    let rechte = [], posterAcc = null
+    let rechte = [], posterAcc = null, cutterAcc = []
     if (ich && !istAdmin) {
-      const [re, po] = await Promise.all([
+      const [re, po, cu] = await Promise.all([
         supabase.from('social_rechte').select('model_name, account, recht').eq('person', ich),
         supabase.from('social_account_poster').select('model_name, account').eq('poster_name', ich),
+        supabase.from('social_account_cutter').select('model_name, account').eq('cutter_name', ich),
       ])
       rechte = re.error ? [] : (re.data || [])
       posterAcc = po.error ? null : (po.data || [])
+      cutterAcc = cu.error ? [] : (cu.data || [])
     }
-    setDaten({ fehlt: false, models, skripte, rechte, posterAcc })
+    setDaten({ fehlt: false, models, skripte, rechte, posterAcc, cutterAcc })
   }, [vorschau, userDisplayName, istAdmin])
   useEffect(() => { laden() }, [laden])
 
@@ -185,7 +188,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
   if (!daten) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>{t('laedt')}</div>
   if (daten.fehlt) return <div style={{ ...card, color: 'var(--text-muted)', fontSize: 13 }}>{t('tabelle_fehlt')}</div>
 
-  const { models, skripte, posterAcc } = daten
+  const { models, skripte, posterAcc, cutterAcc = [] } = daten
   const imService = (s) => !!models[s.model_name]
   const zuPosten = skripte.filter(s => imService(s) && statusVon(s) === 'bereit').sort((a, b) => String(a.freigabe_am).localeCompare(String(b.freigabe_am)))
   const zuSchneiden = skripte.filter(s => imService(s) && statusVon(s) === 'schnitt')
@@ -209,6 +212,11 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       .map(p => ({ model: m.model_name, handle: p.handle, name: p.name, platzhalter: true, notiz: m.account_notizen?.[p.handle] || '', zone: m.account_modus?.[p.handle]?.zeitzone || null }))),
   ].filter((a, i, l) => l.findIndex(b => b.model === a.model && b.handle === a.handle) === i)
     .map(a => ({ ...a, planen: rechtAuf(a.model, a.handle, 'planen'), hochladen: rechtAuf(a.model, a.handle, 'hochladen') }))
+  // v5.25.0: „Wirkung“ auch fürs Team — eigene Poster-, Cutter- und Rechte-Accounts (ohne Platzhalter)
+  const wirkungAccounts = istAdmin ? [] : [...new Set([
+    ...planAccounts.filter(a => !a.platzhalter).map(a => a.handle),
+    ...planAccountsAlle.filter(a => !a.platzhalter && cutterAcc.some(x => gleich(x, a.model, a.handle))).map(a => a.handle),
+  ])]
 
   const erinnere = async (s) => {
     const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', s.model_name).maybeSingle()
@@ -251,6 +259,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
           ...(istPoster ? [{ k: 'posten', l: '🎬 ' + t('tab_posten'), z: zuPosten.length }] : []),
           ...(darfPlanTab ? [{ k: 'plan', l: '📅 ' + t('tab_plan') }] : []), // v5.3.0 / v5.21.0
           { k: 'ueberblick', l: '📋 ' + t('tab_ueberblick') },
+          ...(!istAdmin && wirkungAccounts.length ? [{ k: 'wirkung-team', l: '📈 ' + (sprache === 'en' ? 'Performance' : 'Wirkung') }] : []), // v5.25.0
           { k: 'models', l: '👤 ' + t('tab_models') },
         ].map(x => (
           <button key={x.k} type="button" onClick={() => setReiter(x.k)}
@@ -264,6 +273,7 @@ export default function SocialManager({ userDisplayName, kannErinnern = false, i
       {reiter === 'wirkung' && istAdmin && <SocialSteuerung userDisplayName={userDisplayName} ansicht="wirkung" />}
       {reiter === 'models-admin' && istAdmin && <SocialModelsAdmin userDisplayName={userDisplayName} />}
       {reiter === 'rechte' && istAdmin && <SocialRechte userDisplayName={userDisplayName} />}
+      {reiter === 'wirkung-team' && !istAdmin && <WirkungKurven accounts={wirkungAccounts} darfVerlaengern={false} sprache={sprache} userDisplayName={userDisplayName} />}
 
       {reiter === 'freigabe' && istFreigeber && <FreigabeListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
       {reiter === 'schnitt' && istCutter && <SchnittListe skripte={skripte.filter(imService)} t={t} tr={tr} datum={datum} seitText={seitText} userDisplayName={userDisplayName} onNeu={laden} />}
