@@ -152,7 +152,9 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = tru
   )
 }
 
-export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '' }) {
+// v5.26.0: imReiter → im Social-Reiter ohne Einklappen, gruppiert nach „Zu drehen“ / „In Arbeit“;
+// onZahl(n) meldet, wie viele Skripte zu drehen sind (für die Zahl am Reiter)
+export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '', imReiter = false, onZahl = null }) {
   const [liste, setListe] = useState(null)
   const [alleGepostet, setAlleGepostet] = useState(false)
   // v5.14.0: aufklappbar. null = Standard (erstes „zu drehen“ offen), sonst die offene Skript-ID ('' = alle zu)
@@ -165,6 +167,9 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
     const d = await skripteLaden(displayName, { mitVerworfenen: false })
     setListe(d.fehlt ? [] : d.liste)
   }
+  useEffect(() => {
+    if (liste && onZahl) onZahl(liste.filter(s => statusVon(s) === 'freigegeben').length)
+  }, [liste]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [displayName, JSON.stringify(service?.account_modus || {})])
   if (!liste) return null
   if (!liste.length) {
@@ -183,20 +188,29 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
   const zuDrehen = liste.filter(s => statusVon(s) === 'freigegeben').length
   const standardOffen = (offen.find(s => statusVon(s) === 'freigegeben') || offen[0])?.id
   const aktiv = offenId === null ? standardOffen : offenId
+  const gruppen = [
+    { t: 'Zu drehen', l: offen.filter(s => statusVon(s) === 'freigegeben') },
+    { t: 'In Arbeit', l: offen.filter(s => statusVon(s) !== 'freigegeben') },
+  ].filter(g => g.l.length)
 
   return (
     <div data-help="drehzettel" style={{ ...cardS, padding: '14px 15px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 22 }}>🎬</span>
-        <span onClick={() => setZu(z => !z)} style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1, cursor: 'pointer' }}>Drehzettel{zu ? ` (${offen.length})` : ''}</span>
+        <span onClick={() => { if (!imReiter) setZu(z => !z) }} style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1, cursor: imReiter ? 'default' : 'pointer' }}>Drehzettel{zu && !imReiter ? ` (${offen.length})` : ''}</span>
         {HelpDot && <HelpDot topic="drehzettel" />}
         {zuDrehen > 0 && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: 'rgba(245,158,11,0.15)', color: 'var(--ton-amber)' }}>{zuDrehen} zu drehen</span>}
-        <button type="button" onClick={() => setZu(z => !z)} title={zu ? 'Aufklappen' : 'Einklappen'}
-          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: '3px 8px', fontFamily: 'inherit' }}>{zu ? '▾' : '▴'}</button>
+        {!imReiter && <button type="button" onClick={() => setZu(z => !z)} title={zu ? 'Aufklappen' : 'Einklappen'}
+          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: '3px 8px', fontFamily: 'inherit' }}>{zu ? '▾' : '▴'}</button>}
       </div>
-      {zu ? null : <>
-      {offen.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen} service={service}
-        auf={aktiv === s.id} onKlapp={() => setOffenId(aktiv === s.id ? '' : s.id)} />)}
+      {zu && !imReiter ? null : <>
+      {(imReiter ? gruppen : [{ t: null, l: offen }]).map(g => (
+        <React.Fragment key={g.t || 'alle'}>
+          {g.t && <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 2 }}>{g.t} ({g.l.length})</div>}
+          {g.l.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen} service={service}
+            auf={aktiv === s.id} onKlapp={() => setOffenId(aktiv === s.id ? '' : s.id)} />)}
+        </React.Fragment>
+      ))}
       {!offen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Alles gedreht und gepostet. Danke! 💛</div>}
       {gepostet.length > 0 && (
         <>

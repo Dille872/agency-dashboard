@@ -33,9 +33,7 @@ import ModelEinfuehrung, { themenStand } from './ModelEinfuehrung' // v4.95.0
 import { steckbriefLaden } from '../steckbrief' // v4.95.0
 import SocialFragebogen from './SocialFragebogen' // v4.100.0
 import { socialLaden, stand as socialStand } from '../socialProfil' // v4.100.0
-import ModelDrehzettel from './ModelDrehzettel' // v4.101.0
-import { PlanModel } from './SocialPlan' // v5.3.0
-import { WirkungModel } from './WirkungKurven' // v5.25.0
+import ModelSocial from './ModelSocial' // v5.26.0: Drehzettel · Plan · Wirkung · Profil als Reiter
 
 const CATEGORIES = [
   { key: 'preise', label: 'Preisstruktur', color: '#10b981' },
@@ -1747,16 +1745,12 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
         {/* SOCIAL */}
         {activeSection === 'social' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <SektionsKopf id="social" titel="Social" unter="Deine Reels: Drehzettel, Videos und dein Social-Media-Profil" />
-            {/* v4.102.0: Drehzettel + Fragebogen — vorher im Board */}
-            <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
-              notizen={social.service?.account_notizen || {}} service={social.service}
-              leerText="Noch keine Drehzettel. Sobald wir ein Reel für dich geschrieben haben, erscheint es hier." />
-            {/* v5.3.0: Posting-Plan (nur lesen) + eigenes Material · v5.4.0: mit Schalter voller Kalender */}
-            <PlanModel displayName={displayName} isPreview={isPreview} cardS={cardS} service={social.service} />
-            {/* v5.25.0: Aufrufe der Reels, die wir posten */}
-            <WirkungModel displayName={displayName} service={social.service} cardS={cardS} />
-            {!social.fehlt && (() => {
+            <SektionsKopf id="social" titel="Social" unter="Deine Reels: Drehzettel, Plan, Aufrufe und dein Profil" />
+            {/* v5.26.0: vier Reiter statt alles untereinander (Drehzettel · Plan · Wirkung · Profil) */}
+            <ModelSocial displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
+              service={social.service} fragebogenOffen={socialStatus === 'offen' || socialStatus === 'laeuft'}
+              onKanaele={() => oeffneBereich('board')}
+              fragebogen={social.fehlt ? null : (() => {
               const st = socialStand(social.antworten)
               const laeuft = socialStatus === 'offen' || socialStatus === 'laeuft'
               return (
@@ -1775,7 +1769,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                   )}
                 </div>
               )
-            })()}
+            })()} />
           </div>
         )}
 

@@ -499,7 +499,7 @@ export default function WirkungKurven({ accounts = [], darfVerlaengern = true, u
 // ── v5.25.0: Wirkung im Model-Portal (Bereich „Social“) ────────────────────
 // Dieselbe Ansicht, nur die eigenen betreuten Accounts, ohne Verlängern,
 // Texte in der Du-Form („deine eigenen“).
-export function WirkungModel({ displayName, service = null, cardS = {} }) {
+export function WirkungModel({ displayName, service = null, cardS = {}, leerText = '' }) {
   const [accounts, setAccounts] = useState(null)
   const nb = (service?.nicht_betreut || []).join(',')
   useEffect(() => {
@@ -514,7 +514,9 @@ export function WirkungModel({ displayName, service = null, cardS = {} }) {
     })()
     return () => { weg = true }
   }, [displayName, nb])
-  if (!accounts || !accounts.length) return null
+  if (!accounts) return null
+  // v5.26.0: im Reiter lieber ein Hinweis statt einer leeren Seite
+  if (!accounts.length) return leerText ? <div style={{ ...cardS, padding: '14px 15px', fontSize: 13, color: 'var(--text-muted)' }}>📈 {leerText}</div> : null
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ ...cardS, padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10 }}>

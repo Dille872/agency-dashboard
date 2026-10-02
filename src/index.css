@@ -332,3 +332,26 @@ th { text-align: left; }
   .einfuehrung .einf-feld { font-size: 16px !important; }
   .einfuehrung .einf-raster { grid-template-columns: 1fr 1fr !important; }
 }
+
+/* v5.26.0: Social im Model-Portal — Reiter Drehzettel · Plan · Wirkung · Profil */
+.ms-wrap { display: flex; flex-direction: column; gap: 10px; }
+.ms-reiter { display: flex; gap: 6px; padding: 5px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; }
+.ms-reiter .ms-knopf { flex: 1 1 0; min-width: 0; position: relative; display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 10px 12px; border: none; border-radius: 10px; background: transparent; color: var(--text-secondary);
+  font-weight: 700; font-size: 13.5px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.ms-reiter .ms-knopf.an { background: linear-gradient(135deg, #ec4899, #a855f7); color: #fff; box-shadow: 0 4px 14px rgba(236,72,153,0.27); }
+.ms-reiter .ms-ico { font-size: 15px; line-height: 1; }
+.ms-reiter .ms-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #f59e0b; color: #1a1200;
+  font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.ms-reiter .ms-knopf.an .ms-badge { background: #fff; color: #ec4899; }
+.ms-reiter .ms-punkt { width: 8px; height: 8px; border-radius: 4px; background: #ec4899; display: inline-block; }
+.ms-reiter .ms-knopf.an .ms-punkt { background: #fff; }
+@media (max-width: 768px) {
+  /* klebt unter der Kopfzeile, Symbol über kurzem Namen */
+  .ms-reiter { position: sticky; top: 56px; z-index: 50; gap: 4px; padding: 5px; background: var(--bg-card); box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .ms-reiter .ms-knopf.ms-knopf { flex-direction: column; gap: 2px; padding: 7px 2px !important; font-size: 11px !important; }
+  .ms-reiter .ms-ico { font-size: 18px; }
+  .ms-reiter .ms-badge { position: absolute; top: 2px; right: calc(50% - 24px); height: 16px; min-width: 16px; font-size: 10px; }
+  .ms-reiter .ms-punkt { position: absolute; top: 5px; right: calc(50% - 16px); }
+}
