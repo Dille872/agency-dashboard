@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useSprache } from '../i18n/sprache' // v4.110.0
+import { RefreshCw } from 'lucide-react' // v5.36.1: Symbol statt Emoji
 
 // ── Neue Version da? (v4.109.1) ────────────────────────────────────────────
 // Am Handy (vor allem als App auf dem Homescreen) bleibt die Seite oft tagelang
@@ -42,7 +43,8 @@ export default function NeueVersionHinweis() {
   return (
     <button type="button" onClick={() => window.location.reload()}
       style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', zIndex: 200000, display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', borderRadius: 14, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 14, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', whiteSpace: 'nowrap' }}>
-      {sprache === 'en' ? '🔄 New version available · tap to update' : '🔄 Neue Version da · tippen zum Aktualisieren'}
+      <RefreshCw size={16} strokeWidth={2.6} aria-hidden="true" />
+      {sprache === 'en' ? 'New version available · tap to update' : 'Neue Version da · tippen zum Aktualisieren'}
     </button>
   )
 }

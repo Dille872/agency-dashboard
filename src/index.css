@@ -435,14 +435,23 @@ th { text-align: left; }
 .aw-form { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .aw-form > .aw-k { align-self: flex-start; }
 .aw-in.aw-in { width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card2); color: var(--text-primary); font: inherit; font-size: 13px; resize: vertical; }
-.aw-k.aw-k { border-radius: 8px; padding: 6px 11px; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; background: var(--bg-card2); color: var(--text-primary); border: 1px solid var(--border); }
+.aw-k.aw-k { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 6px 11px; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; background: var(--bg-card2); color: var(--text-primary); border: 1px solid var(--border); }
 .aw-k.aw-p { background: #7c3aed; border-color: #7c3aed; color: #fff; }
 .aw-k:disabled { opacity: .6; cursor: wait; }
+.aw-k.aw-leise { background: transparent; color: var(--text-muted); border-color: transparent; font-weight: 500; }
+.aw-k.aw-leise:hover { color: var(--text-primary); border-color: var(--border); }
+.aw-kopf-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: rgba(245,158,11,0.15); color: #f59e0b; }
+.aw-x.aw-x { display: inline-grid; place-items: center; }
+.aw-ic svg { display: block; }
+.aw-stumm { opacity: .65; }
+.aw-link.aw-link { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.aw-leer { display: flex; align-items: center; gap: 8px; }
+.aw-code > svg { flex: none; color: #10b981; }
 .aw-hinweis { margin-top: 6px; font-size: 12.5px; color: #f59e0b; }
 .aw-code { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: rgba(16,185,129,0.1); border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-primary); }
 .aw-code code { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #10b981; }
 .aw-code .aw-x { margin-left: auto; }
-.aw-leer { padding: 18px 16px; color: #10b981; font-weight: 600; }
+.aw-leer.aw-leer { padding: 18px 16px; color: #10b981; font-weight: 600; }
 .aw-fuss { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 16px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); }
 @media (max-width: 640px) {
   .aw-ov { padding: 60px 8px 8px; }
@@ -450,5 +459,6 @@ th { text-align: left; }
   .aw-pill.aw-pill { padding: 6px 8px !important; }
   .aw-k.aw-k { padding: 7px 11px !important; font-size: 13px !important; }
   .aw-x.aw-x { padding: 2px 6px !important; font-size: 20px !important; }
+  .aw-link.aw-link { padding: 0 !important; font-size: 12px !important; }
   .aw-in.aw-in { font-size: 16px !important; }
 }
