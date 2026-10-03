@@ -19,7 +19,7 @@ const TEXTE = {
     code_text: 'Dann trag ihn hier mit deinem neuen Passwort ein. Der Code gilt 60 Minuten.', code: 'Code', pw_setzen: 'Neues Passwort setzen',
     zurueck: '← Zurück zum Anmelden', nicht_frei: 'Kommt „nicht freigeschaltet"? Dann melde dich beim Team — wir schalten deine Adresse frei, danach klappt es sofort.',
     fuss: 'Zugang nur für das Team', min: (n, akt) => `Mindestens ${n} Zeichen${akt ? ` · aktuell ${akt}` : ''}`,
-    f_login: 'Login fehlgeschlagen. E-Mail oder Passwort falsch.', f_laenge: (n) => `Das Passwort muss mindestens ${n} Zeichen haben.`,
+    f_login: 'Login fehlgeschlagen. E-Mail oder Passwort falsch.', f_gesperrt: 'Dein Konto ist gesperrt. Bitte melde dich beim Team.', f_bestaetigt: 'Deine E-Mail ist noch nicht bestätigt. Bitte melde dich beim Team.', f_zuviel: 'Zu viele Versuche. Bitte ein paar Minuten warten und dann nochmal.', f_laenge: (n) => `Das Passwort muss mindestens ${n} Zeichen haben.`,
     f_gleich: 'Die beiden Passwörter sind nicht gleich.', f_konto: 'Konto konnte nicht angelegt werden.',
     ok_konto: (n) => `Konto angelegt. Willkommen, ${n}!`, f_konto_login: 'Konto angelegt, aber die Anmeldung hat nicht geklappt. Bitte oben normal anmelden.',
     f_allg: (m) => `Es hat nicht geklappt: ${m}`, f_email: 'Bitte deine E-Mail-Adresse eintragen.', f_anfrage: 'Die Anfrage hat nicht geklappt.',
@@ -37,7 +37,7 @@ const TEXTE = {
     code_text: 'Enter it here together with your new password. The code is valid for 60 minutes.', code: 'Code', pw_setzen: 'Set new password',
     zurueck: '← Back to sign in', nicht_frei: 'Getting "not activated"? Contact the team, we will activate your address and it will work right away.',
     fuss: 'Team access only', min: (n, akt) => `At least ${n} characters${akt ? ` · currently ${akt}` : ''}`,
-    f_login: 'Sign-in failed. Wrong email or password.', f_laenge: (n) => `The password must have at least ${n} characters.`,
+    f_login: 'Sign-in failed. Wrong email or password.', f_gesperrt: 'Your account is locked. Please contact the team.', f_bestaetigt: 'Your email is not confirmed yet. Please contact the team.', f_zuviel: 'Too many attempts. Please wait a few minutes and try again.', f_laenge: (n) => `The password must have at least ${n} characters.`,
     f_gleich: 'The two passwords do not match.', f_konto: 'The account could not be created.',
     ok_konto: (n) => `Account created. Welcome, ${n}!`, f_konto_login: 'Account created, but signing in did not work. Please sign in above.',
     f_allg: (m) => `Something went wrong: ${m}`, f_email: 'Please enter your email address.', f_anfrage: 'The request did not work.',
@@ -136,8 +136,12 @@ export default function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault()
     setError(''); setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) setError(T.f_login)
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
+    // v5.35.1: Gesperrt / nicht bestätigt / zu viele Versuche nicht mehr als „Passwort falsch“ melden
+    if (error) {
+      const m = String(error.message || '') + ' ' + String(error.code || '')
+      setError(/banned/i.test(m) ? T.f_gesperrt : /not.?confirmed/i.test(m) ? T.f_bestaetigt : /rate|too many|429/i.test(m) || error.status === 429 ? T.f_zuviel : T.f_login)
+    }
     setLoading(false)
   }
 
