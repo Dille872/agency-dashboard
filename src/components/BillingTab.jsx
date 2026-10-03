@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { excelModels, excelChatter, abrechnungenDrucken } from '../billingExport' // v5.33.0
+import { excelModels, excelChatter, abrechnungenPdf, chatterNachricht } from '../billingExport' // v5.33.0 · v5.34.0
+import { sendTelegramMessage } from '../telegram'
 import { supabase } from '../supabase'
 
 function money(v) {
@@ -160,6 +161,7 @@ export default function BillingTab() {
   const [filter, setFilter] = useState('umsatz')   // 'umsatz' | 'alle' | 'ohne'
   const [suche, setSuche] = useState('')
   const [verlauf, setVerlauf] = useState(null)
+  const [nachricht, setNachricht] = useState(null) // v5.34.0: { name, text, telegram, status }
 
   useEffect(() => { load() }, [month])
   useEffect(() => { ladeKurse() }, [])
@@ -218,7 +220,7 @@ export default function BillingTab() {
 
     const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
       supabase.from('models_contact').select('name, active').order('name'),
-      supabase.from('chatters_contact').select('name, active').order('name'),
+      supabase.from('chatters_contact').select('name, active, telegram_id').order('name'),
       supabase.from('billing_settings').select('*'),
       supabase.from('model_aliases').select('*'),
       supabase.from('model_snapshots').select('rows,business_date').gte('business_date', monthStart).lt('business_date', monthEnd),
@@ -331,6 +333,28 @@ export default function BillingTab() {
   const chatterZeilen = chatterAlle.filter(z => !z.inaktiv)
   const chatterInaktiv = chatterAlle.filter(z => z.inaktiv)
   const summe = (liste, f) => liste.reduce((t, z) => t + (f(z) || 0), 0)
+  // v5.34.0: letzter Tag mit Daten im Monat (für „01.09.–30.09.“)
+  const letzterTag = [...chatSnaps, ...snaps].map(x => x.business_date).filter(Boolean).sort().pop() || null
+  const telegramVon = (name) => chatters.find(c => c.name === name)?.telegram_id || null
+  const nachrichtOeffnen = (z) => setNachricht({ name: z.name, text: chatterNachricht(z, month, k, letzterTag), telegram: telegramVon(z.name), status: '' })
+  const nachrichtSenden = async () => {
+    if (!nachricht?.telegram) return
+    setNachricht(n => ({ ...n, status: 'sendet' }))
+    const r = await sendTelegramMessage(nachricht.telegram, nachricht.text)
+    setNachricht(n => ({ ...n, status: r?.ok ? 'ok' : 'fehler' }))
+  }
+  const alleSenden = async (liste) => {
+    const mitTg = liste.filter(z => z.x && telegramVon(z.name))
+    const ohne = liste.filter(z => z.x && !telegramVon(z.name)).map(z => z.name)
+    if (!mitTg.length) { alert('Kein Chatter mit Satz und Telegram-ID gefunden.'); return }
+    if (!window.confirm(`Abrechnung ${monthLabel} per Telegram an ${mitTg.length} Chatter schicken?\n\n${mitTg.map(z => '• ' + z.name).join('\n')}${ohne.length ? `\n\nOhne Telegram-ID (bekommen nichts): ${ohne.join(', ')}` : ''}${k ? '' : '\n\n⚠ Für diesen Monat ist noch kein Euro-Kurs eingetragen.'}`)) return
+    let ok = 0; const fehl = []
+    for (const z of mitTg) {
+      const r = await sendTelegramMessage(telegramVon(z.name), chatterNachricht(z, month, k, letzterTag))
+      if (r?.ok) ok++; else fehl.push(z.name)
+    }
+    alert(`✓ ${ok} von ${mitTg.length} verschickt.${fehl.length ? `\nNicht angekommen: ${fehl.join(', ')}` : ''}`)
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -380,8 +404,9 @@ export default function BillingTab() {
                 <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, width: 280, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 6, boxShadow: '0 14px 40px rgba(0,0,0,.45)' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 12px 4px' }}>{section === 'models' ? 'Models' : 'Chatter'} · {monthLabel} · {liste.length} mit Umsatz{kursZahl ? '' : ' · ohne €-Kurs'}</div>
                   <button type="button" style={punkt} onClick={e => { e.currentTarget.closest('details').open = false; section === 'models' ? excelModels(exModels, month, kursZahl) : excelChatter(exChatter, month, kursZahl) }}>📊 Excel-Tabelle (.csv)</button>
-                  <button type="button" style={punkt} disabled={!liste.length} onClick={e => { e.currentTarget.closest('details').open = false; abrechnungenDrucken({ art: section === 'models' ? 'model' : 'chatter', zeilen: liste, monat: month, kurs: kursZahl }) }}>📄 Alle Abrechnungen als PDF ({liste.length})</button>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 12px 6px' }}>Einzelne Abrechnung: 📄 neben dem Namen in der Tabelle.</div>
+                  <button type="button" style={punkt} disabled={!liste.length} onClick={e => { e.currentTarget.closest('details').open = false; abrechnungenPdf({ bis: letzterTag,  art: section === 'models' ? 'model' : 'chatter', zeilen: liste, monat: month, kurs: kursZahl }) }}>📄 Alle Abrechnungen als PDF herunterladen ({liste.length})</button>
+                  {section === 'chatters' && <button type="button" style={punkt} disabled={!liste.length} onClick={e => { e.currentTarget.closest('details').open = false; alleSenden(liste) }}>✉️ Allen per Telegram schicken</button>}
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 12px 6px' }}>Einzeln: 📄 PDF{section === 'chatters' ? ' bzw. ✉️ Nachricht' : ''} neben dem Namen in der Tabelle.</div>
                 </div>
               </details>
             )
@@ -439,7 +464,7 @@ export default function BillingTab() {
                 <tbody>
                   {gezeigt.map(z => (
                     <tr key={z.name}>
-                      <td style={tdName}>{z.name}{z.rev.total > 0.004 && <button type="button" title="Abrechnung als PDF" onClick={() => abrechnungenDrucken({ art: 'model', zeilen: [z], monat: month, kurs: k })} className="billing-pdf">📄</button>}</td>
+                      <td style={tdName}>{z.name}{z.rev.total > 0.004 && <button type="button" title="Abrechnung als PDF herunterladen" onClick={() => abrechnungenPdf({ bis: letzterTag,  art: 'model', zeilen: [z], monat: month, kurs: k })} className="billing-pdf">📄</button>}</td>
                       <td style={{ ...td, textAlign: 'left' }}>{satzKnopf(z.name, 'model', z.s ? `${z.s.percentage} % · ${[z.s.include_subs && 'S', z.s.include_chat && 'C', z.s.include_tips && 'T'].filter(Boolean).join('+') || '—'}` : '', '#a78bfa')}</td>
                       <td style={td}>{kurz(z.rev.subs)}</td>
                       <td style={td}>{kurz(z.rev.chat)}</td>
@@ -518,7 +543,7 @@ export default function BillingTab() {
                 <tbody>
                   {gezeigt.map(z => (
                     <tr key={z.name}>
-                      <td style={tdName}>{z.name}{z.rev.total > 0.004 && <button type="button" title="Abrechnung als PDF" onClick={() => abrechnungenDrucken({ art: 'chatter', zeilen: [z], monat: month, kurs: k })} className="billing-pdf">📄</button>}{z.kontaktInaktiv && <span title="Im Kontakt als inaktiv markiert, im Billing aber noch aktiv" style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#f59e0b' }}>· Kontakt inaktiv</span>}</td>
+                      <td style={tdName}>{z.name}{z.rev.total > 0.004 && <button type="button" title="Abrechnung als PDF herunterladen" onClick={() => abrechnungenPdf({ bis: letzterTag,  art: 'chatter', zeilen: [z], monat: month, kurs: k })} className="billing-pdf">📄</button>}{z.x && <button type="button" title="Abrechnung als Nachricht schicken" onClick={() => nachrichtOeffnen(z)} className="billing-pdf">✉️</button>}{z.kontaktInaktiv && <span title="Im Kontakt als inaktiv markiert, im Billing aber noch aktiv" style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#f59e0b' }}>· Kontakt inaktiv</span>}</td>
                       <td style={{ ...td, textAlign: 'left' }}>{satzKnopf(z.name, 'chatter', z.s ? `${z.s.percentage} %` : '', '#06b6d4')}</td>
                       <td style={td}>{money(z.rev.total)}</td>
                       <td style={{ ...td, color: '#10b981', fontWeight: 800 }}>{z.x ? <>{money(z.x.auszahlung)}{eur(z.x.auszahlung)}</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
@@ -631,6 +656,29 @@ export default function BillingTab() {
         </div>
       )}
 
+      {/* v5.34.0: Abrechnung als Nachricht */}
+      {nachricht && (
+        <div onClick={() => setNachricht(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ ...card, width: 460, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <b style={{ flex: 1, fontSize: 16, color: 'var(--text-primary)' }}>✉️ Abrechnung an {nachricht.name}</b>
+              <button type="button" onClick={() => setNachricht(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Text kannst du vor dem Senden noch ändern.</div>
+            <textarea value={nachricht.text} onChange={e => setNachricht(n => ({ ...n, text: e.target.value, status: '' }))} rows={14}
+              style={{ ...inp, fontSize: 13.5, lineHeight: 1.5, padding: '10px 12px', resize: 'vertical', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }} />
+            {nachricht.status === 'ok' && <div style={{ fontSize: 13, color: '#10b981', fontWeight: 700 }}>✓ Per Telegram verschickt.</div>}
+            {nachricht.status === 'fehler' && <div style={{ fontSize: 13, color: '#ef4444', fontWeight: 700 }}>⚠ Ging nicht raus. Text kopieren und selbst schicken.</div>}
+            {!nachricht.telegram && <div style={{ fontSize: 12.5, color: '#f59e0b' }}>Keine Telegram-ID hinterlegt, nur Kopieren möglich.</div>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(nachricht.text); setNachricht(n => ({ ...n, status: n.status || 'kopiert' })) } catch { /* egal */ } }}
+                style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{nachricht.status === 'kopiert' ? '✓ Kopiert' : '📋 Kopieren'}</button>
+              <button type="button" disabled={!nachricht.telegram || nachricht.status === 'sendet' || nachricht.status === 'ok'} onClick={nachrichtSenden}
+                style={{ padding: '9px 14px', borderRadius: 10, border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: nachricht.telegram && nachricht.status !== 'ok' ? 1 : 0.5 }}>{nachricht.status === 'sendet' ? '…' : 'Per Telegram schicken'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -51,76 +51,110 @@ export function excelChatter(zeilen, monat, kurs) {
   csvLaden(`Billing-Chatter-${monat}.csv`, kopf, rows)
 }
 
-// ── PDF-Abrechnungen ───────────────────────────────────────────────────────
-function seiteModel(z, monat, k) {
-  const zeile = (l, v, fett) => `<tr${fett ? ' class="fett"' : ''}><td>${l}</td><td>${dollar(v)}</td>${k ? `<td>${euro(v * k)}</td>` : ''}</tr>`
-  return `
-  <section class="seite">
-    <div class="kopf"><div><div class="firma">Thirteen 87 Collective</div><div class="klein">Abrechnung ${esc(monatText(monat))}</div></div><div class="art">Model</div></div>
-    <h1>${esc(z.name)}</h1>
-    <table>
-      <tr><th>Umsatz</th><th>USD</th>${k ? '<th>EUR</th>' : ''}</tr>
-      ${zeile('Subscriptions', z.rev.subs)}${zeile('Chat / PPV', z.rev.chat)}${zeile('Tips', z.rev.tips)}${zeile('Umsatz gesamt', z.rev.total, true)}
-    </table>
-    ${z.x ? `<table>
-      <tr><th>Aufteilung · Agentur ${esc(satzModel(z.s))}</th><th>USD</th>${k ? '<th>EUR</th>' : ''}</tr>
-      ${zeile('Berechnungsbasis', z.x.base)}${zeile('Anteil Agentur', z.x.agentur)}${zeile('Anteil Model', z.x.model, true)}
-    </table>` : '<p class="hinweis">Für dieses Model ist noch kein Satz hinterlegt.</p>'}
-    <p class="klein">${k ? `Umrechnung: 1 $ = ${String(k).replace('.', ',')} € (Kurs ${esc(monatText(monat))}). ` : ''}Grundlage: tägliche Umsatzdaten aus CreatorHero, ${esc(monatText(monat))}.</p>
-    <div class="fuss">Erstellt am ${new Date().toLocaleDateString('de-DE')} · Thirteen 87 Collective</div>
-  </section>`
+// ── PDF-Abrechnungen (v5.34.0: echte PDF-Datei zum Herunterladen) ─────────
+// Vorher: Druckfenster. Jetzt erzeugt jsPDF direkt eine Datei, eine Seite je Person.
+const datumKurz = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
+export function zeitraumText(monat, bis) {
+  const [y, m] = monat.split('-').map(Number)
+  const letzter = new Date(y, m, 0).getDate()
+  const ende = bis && bis.startsWith(monat) ? bis : `${monat}-${String(letzter).padStart(2, '0')}`
+  return `01.${String(m).padStart(2, '0')}.–${datumKurz(ende)}`
 }
+const usd = (v) => zahl(v) + ' $'
 
-function seiteChatter(z, monat, k) {
-  const zeile = (l, v, fett) => `<tr${fett ? ' class="fett"' : ''}><td>${l}</td><td>${dollar(v)}</td>${k ? `<td>${euro(v * k)}</td>` : ''}</tr>`
-  return `
-  <section class="seite">
-    <div class="kopf"><div><div class="firma">Thirteen 87 Collective</div><div class="klein">Abrechnung ${esc(monatText(monat))}</div></div><div class="art">Chatter</div></div>
-    <h1>${esc(z.name)}</h1>
-    <table>
-      <tr><th>Umsatz</th><th>USD</th>${k ? '<th>EUR</th>' : ''}</tr>
-      ${zeile('Chat Revenue', z.rev.chat)}${zeile('Umsatz gesamt', z.rev.total)}
-    </table>
-    ${z.x ? `<table>
-      <tr><th>Auszahlung · ${esc(satzChatter(z.s))}</th><th>USD</th>${k ? '<th>EUR</th>' : ''}</tr>
-      ${zeile('Berechnungsbasis', z.x.base)}${zeile('Auszahlung', z.x.auszahlung, true)}
-    </table>` : '<p class="hinweis">Für diesen Chatter ist noch kein Satz hinterlegt.</p>'}
-    <p class="klein">${k ? `Umrechnung: 1 $ = ${String(k).replace('.', ',')} € (Kurs ${esc(monatText(monat))}). ` : ''}Grundlage: tägliche Chatter-Daten aus CreatorHero, ${esc(monatText(monat))}.</p>
-    <div class="fuss">Erstellt am ${new Date().toLocaleDateString('de-DE')} · Thirteen 87 Collective</div>
-  </section>`
-}
-
-export function abrechnungenDrucken({ art, zeilen, monat, kurs }) {
+export async function abrechnungenPdf({ art, zeilen, monat, kurs, bis }) {
+  const { jsPDF } = await import('jspdf')
   const k = kurs ? Number(kurs) : null
-  const seiten = zeilen.map(z => art === 'model' ? seiteModel(z, monat, k) : seiteChatter(z, monat, k)).join('')
-  const titel = zeilen.length === 1 ? `Abrechnung ${zeilen[0].name} ${monat}` : `Abrechnungen ${art === 'model' ? 'Models' : 'Chatter'} ${monat}`
-  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(titel)}</title><style>
-    @page { size: A4; margin: 18mm 16mm; }
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, system-ui, "Segoe UI", sans-serif; color: #1b1b2b; margin: 0; }
-    .seite { page-break-after: always; padding: 4px 2px; }
-    .seite:last-child { page-break-after: auto; }
-    .kopf { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #7c3aed; padding-bottom: 10px; margin-bottom: 18px; }
-    .firma { font-size: 15pt; font-weight: 800; color: #2a1660; }
-    .art { font-size: 9pt; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #7c3aed; border: 1px solid #c4b5fd; border-radius: 6px; padding: 3px 8px; }
-    h1 { font-size: 22pt; margin: 0 0 16px; }
-    table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 11pt; }
-    th { text-align: left; font-size: 9pt; text-transform: uppercase; letter-spacing: .05em; color: #4c1d95; background: #f5f3ff; padding: 7px 10px; }
-    th:not(:first-child), td:not(:first-child) { text-align: right; width: 22%; }
-    td { padding: 7px 10px; border-bottom: 1px solid #ece9f5; font-variant-numeric: tabular-nums; }
-    tr.fett td { font-weight: 800; font-size: 12pt; border-top: 2px solid #c4b5fd; }
-    .klein { font-size: 9pt; color: #6b6b80; }
-    .hinweis { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 9px 12px; font-size: 10pt; }
-    .fuss { margin-top: 30px; font-size: 8.5pt; color: #9a9ab0; border-top: 1px solid #eee; padding-top: 6px; }
-    .leiste { position: sticky; top: 0; background: #2a1660; color: #fff; padding: 10px 14px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
-    .leiste button { background: #fff; color: #2a1660; border: none; border-radius: 8px; padding: 7px 14px; font-weight: 800; cursor: pointer; }
-    @media print { .leiste { display: none; } }
-  </style></head><body>
-    <div class="leiste"><span style="flex:1">${esc(titel)} · ${zeilen.length} Seite${zeilen.length === 1 ? '' : 'n'} · Drucken → „Als PDF sichern“</span><button onclick="window.print()">Drucken / als PDF</button></div>
-    ${seiten}
-    <script>setTimeout(function(){ window.print() }, 400)</script>
-  </body></html>`
-  const w = window.open('', '_blank')
-  if (!w) { alert('Bitte Pop-ups für das Dashboard erlauben, dann nochmal versuchen.'); return }
-  w.document.open(); w.document.write(html); w.document.close()
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const B = 210, L = 18, R = B - 18
+  const lila = [124, 58, 237], dunkel = [42, 22, 96], grau = [110, 110, 128]
+  const zeitraum = zeitraumText(monat, bis)
+
+  const tabelle = (y, kopf, reihen) => {
+    doc.setFillColor(245, 243, 255); doc.rect(L, y - 5, R - L, 8, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(76, 29, 149)
+    doc.text(kopf.toUpperCase(), L + 3, y)
+    doc.text('USD', k ? R - 45 : R - 3, y, { align: 'right' })
+    if (k) doc.text('EUR', R - 3, y, { align: 'right' })
+    y += 8
+    for (const [label, wert, fett] of reihen) {
+      doc.setFont('helvetica', fett ? 'bold' : 'normal'); doc.setFontSize(fett ? 11.5 : 10.5); doc.setTextColor(27, 27, 43)
+      if (fett) { doc.setDrawColor(196, 181, 253); doc.setLineWidth(0.5); doc.line(L, y - 5.5, R, y - 5.5) }
+      doc.text(label, L + 3, y)
+      doc.text(usd(wert), k ? R - 45 : R - 3, y, { align: 'right' })
+      if (k) doc.text(euro(wert * k), R - 3, y, { align: 'right' })
+      doc.setDrawColor(236, 233, 245); doc.setLineWidth(0.2); doc.line(L, y + 2.5, R, y + 2.5)
+      y += 8.5
+    }
+    return y + 6
+  }
+
+  zeilen.forEach((z, i) => {
+    if (i) doc.addPage()
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...dunkel)
+    doc.text('Thirteen 87 Collective', L, 22)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...grau)
+    doc.text(`Abrechnung ${monatText(monat)} · Zeitraum ${zeitraum}`, L, 28)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...lila)
+    doc.text(art === 'model' ? 'MODEL' : 'CHATTER', R, 22, { align: 'right' })
+    doc.setDrawColor(...lila); doc.setLineWidth(0.9); doc.line(L, 32, R, 32)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(27, 27, 43)
+    doc.text(String(z.name), L, 46)
+    let y = 60
+    if (art === 'model') {
+      y = tabelle(y, 'Umsatz', [['Subscriptions', z.rev.subs], ['Chat / PPV', z.rev.chat], ['Tips', z.rev.tips], ['Umsatz gesamt', z.rev.total, true]])
+      if (z.x) y = tabelle(y, `Aufteilung · Agentur ${satzModel(z.s)}`, [['Berechnungsbasis', z.x.base], ['Anteil Agentur', z.x.agentur], ['Anteil Model', z.x.model, true]])
+    } else {
+      y = tabelle(y, 'Umsatz', [['Chat Revenue', z.rev.chat], ['Umsatz gesamt', z.rev.total]])
+      if (z.x) y = tabelle(y, `Auszahlung · ${satzChatter(z.s)}`, [['Berechnungsbasis', z.x.base], ['Auszahlung', z.x.auszahlung, true]])
+    }
+    if (!z.x) {
+      doc.setFillColor(255, 251, 235); doc.rect(L, y - 5, R - L, 10, 'F')
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(120, 90, 0)
+      doc.text(`Für ${art === 'model' ? 'dieses Model' : 'diesen Chatter'} ist noch kein Satz hinterlegt.`, L + 3, y + 1)
+      y += 14
+    }
+    if (z.x && k) {
+      const betrag = art === 'model' ? z.x.model : z.x.auszahlung
+      doc.setFillColor(236, 253, 245); doc.roundedRect(L, y - 4, R - L, 14, 2, 2, 'F')
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(6, 95, 70)
+      doc.text(art === 'model' ? 'Dein Anteil in Euro' : 'Auf die Rechnung', L + 4, y + 5)
+      doc.text(euro(betrag * k), R - 4, y + 5, { align: 'right' })
+      y += 20
+    }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...grau)
+    doc.text(`${k ? `Umrechnung: 1 $ = ${String(k).replace('.', ',')} € (Kurs ${monatText(monat)}). ` : 'Ohne Euro-Kurs: Beträge in USD. '}Grundlage: tägliche Daten aus CreatorHero.`, L, y)
+    doc.setFontSize(8); doc.setTextColor(160, 160, 176)
+    doc.text(`Erstellt am ${new Date().toLocaleDateString('de-DE')} · Thirteen 87 Collective`, L, 285)
+  })
+  const name = zeilen.length === 1
+    ? `Abrechnung-${String(zeilen[0].name).replace(/[^\wäöüÄÖÜß.-]+/g, '_')}-${monat}.pdf`
+    : `Abrechnungen-${art === 'model' ? 'Models' : 'Chatter'}-${monat}.pdf`
+  doc.save(name)
+}
+
+// ── Nachricht an den Chatter: Umsatz & was auf die Rechnung kommt ──────────
+export function chatterNachricht(z, monat, kurs, bis) {
+  const k = kurs ? Number(kurs) : null
+  const vorname = String(z.name).split(' ')[0]
+  const zeilen = [
+    `Hi ${vorname} 👋`,
+    '',
+    `deine Abrechnung für ${monatText(monat)} (${zeitraumText(monat, bis)}):`,
+    '',
+    `Chat Revenue: ${usd(z.rev.chat)}`,
+  ]
+  if (z.s && !z.s.include_chat) zeilen.push(`Umsatz gesamt: ${usd(z.rev.total)}`)
+  if (z.x) {
+    zeilen.push(`Dein Satz: ${z.s.percentage} % vom ${z.s.include_chat ? 'Chat Revenue' : 'Gesamtumsatz'}`)
+    zeilen.push(`Auszahlung: ${usd(z.x.auszahlung)}`)
+    if (k) {
+      zeilen.push(`Kurs: 1 $ = ${String(k).replace('.', ',')} €`)
+      zeilen.push('', `👉 Auf deine Rechnung: ${euro(z.x.auszahlung * k)}`)
+    } else {
+      zeilen.push('', '👉 Der Euro-Betrag folgt, sobald der Kurs feststeht.')
+    }
+  }
+  zeilen.push('', 'Bei Fragen melde dich gern. Danke für deinen Einsatz! 💜', 'Thirteen 87')
+  return zeilen.join('\n')
 }
