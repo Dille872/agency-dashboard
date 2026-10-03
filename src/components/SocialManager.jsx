@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { MImg, MA } from './Medien' // v5.33.0: private Dateien
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
@@ -478,7 +479,7 @@ function PostenKarte({ s, m, t, tr, datum, seitText, notiz, userDisplayName, onN
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
         <div style={spalte}>
           <span style={klein}>{t('sp_material')}</span>
-          {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('drehzettel')}</a>}
+          {s.drehzettel_url && <MA href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('drehzettel')}</MA>}
           <VideoLink href={endVideo(s)} laden bild style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('video_laden')}</VideoLink>
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{s.schnitt_link ? t('geschnitten_von', { wer: s.schnitt_von || '—', datum: datum(s.schnitt_am) }) : t('hochgeladen', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}</span>
         </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { MImg, MA } from './Medien' // v5.33.0: private Dateien
 import { supabase } from '../supabase'
 import { FRAGEN, BOARD_CHECK, hatWert, antwortenSpeichern, serviceSpeichern, fotoHochladen, datumKurz } from '../socialProfil'
 import { resolvePlatform, SOCIAL_CATEGORY } from './SocialLinks'
@@ -75,7 +76,7 @@ function Bilder({ f, wert, setWert, name }) {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {liste.map(url => (
           <div key={url} style={{ position: 'relative', width: 88, height: 88, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
-            <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></a>
+            <MA href={url} target="_blank" rel="noreferrer"><MImg src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></MA>
             <button type="button" aria-label="Foto entfernen" onClick={() => window.confirm('Foto aus dem Fragebogen entfernen?') && setWert(liste.filter(x => x !== url))}
               style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12, border: 'none', background: 'rgba(0,0,0,0.65)', color: '#fff', cursor: 'pointer', fontSize: 13, lineHeight: '24px', padding: 0 }}>✕</button>
           </div>

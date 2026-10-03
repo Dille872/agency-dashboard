@@ -407,3 +407,10 @@ th { text-align: left; }
   .wmw .wmw-reiter.wmw-reiter { flex-wrap: nowrap !important; }
   .wmw .wmw-reiter.wmw-reiter button { padding: 9px 12px !important; font-size: 13.5px !important; }
 }
+
+/* v5.33.0: Billing-Export */
+.billing-pdf { background: none; border: none; cursor: pointer; font-size: 12px; margin-left: 6px; opacity: .45; padding: 0 2px; vertical-align: 1px; }
+.billing-pdf:hover { opacity: 1; }
+.billing-export > summary::-webkit-details-marker { display: none; }
+.billing-export button:hover:not(:disabled) { background: var(--bg-card2) !important; }
+@media (max-width: 768px) { .billing-pdf.billing-pdf { padding: 0 2px !important; font-size: 12px !important; } }

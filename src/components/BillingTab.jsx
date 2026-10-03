@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { excelModels, excelChatter, abrechnungenDrucken } from '../billingExport' // v5.33.0
 import { supabase } from '../supabase'
 
 function money(v) {
@@ -366,6 +367,25 @@ export default function BillingTab() {
               </span>
             </span>
           )}
+          {/* v5.33.0: Export */}
+          {section !== 'verlauf' && (() => {
+            const kursZahl = kurs ? Number(kurs.usd_eur) : null
+            const exModels = modelZeilen.filter(z => z.rev.total > 0.004).sort((a, b) => b.rev.total - a.rev.total)
+            const exChatter = chatterZeilen.filter(z => z.rev.total > 0.004).sort((a, b) => b.rev.total - a.rev.total)
+            const liste = section === 'models' ? exModels : exChatter
+            const punkt = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text-primary)', padding: '9px 12px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }
+            return (
+              <details className="billing-export" style={{ position: 'relative' }}>
+                <summary style={{ listStyle: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, padding: '6px 12px', borderRadius: 9, border: '1px solid var(--border)', color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>⬇ Export</summary>
+                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, width: 280, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 6, boxShadow: '0 14px 40px rgba(0,0,0,.45)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 12px 4px' }}>{section === 'models' ? 'Models' : 'Chatter'} · {monthLabel} · {liste.length} mit Umsatz{kursZahl ? '' : ' · ohne €-Kurs'}</div>
+                  <button type="button" style={punkt} onClick={e => { e.currentTarget.closest('details').open = false; section === 'models' ? excelModels(exModels, month, kursZahl) : excelChatter(exChatter, month, kursZahl) }}>📊 Excel-Tabelle (.csv)</button>
+                  <button type="button" style={punkt} disabled={!liste.length} onClick={e => { e.currentTarget.closest('details').open = false; abrechnungenDrucken({ art: section === 'models' ? 'model' : 'chatter', zeilen: liste, monat: month, kurs: kursZahl }) }}>📄 Alle Abrechnungen als PDF ({liste.length})</button>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 12px 6px' }}>Einzelne Abrechnung: 📄 neben dem Namen in der Tabelle.</div>
+                </div>
+              </details>
+            )
+          })()}
         </div>
       </div>
       {kursFehlt && <div style={{ fontSize: 12, color: '#f59e0b' }}>Euro-Kurs: Datenbank noch nicht eingerichtet (sql/billing-kurse.sql).</div>}
@@ -419,7 +439,7 @@ export default function BillingTab() {
                 <tbody>
                   {gezeigt.map(z => (
                     <tr key={z.name}>
-                      <td style={tdName}>{z.name}</td>
+                      <td style={tdName}>{z.name}{z.rev.total > 0.004 && <button type="button" title="Abrechnung als PDF" onClick={() => abrechnungenDrucken({ art: 'model', zeilen: [z], monat: month, kurs: k })} className="billing-pdf">📄</button>}</td>
                       <td style={{ ...td, textAlign: 'left' }}>{satzKnopf(z.name, 'model', z.s ? `${z.s.percentage} % · ${[z.s.include_subs && 'S', z.s.include_chat && 'C', z.s.include_tips && 'T'].filter(Boolean).join('+') || '—'}` : '', '#a78bfa')}</td>
                       <td style={td}>{kurz(z.rev.subs)}</td>
                       <td style={td}>{kurz(z.rev.chat)}</td>
@@ -498,7 +518,7 @@ export default function BillingTab() {
                 <tbody>
                   {gezeigt.map(z => (
                     <tr key={z.name}>
-                      <td style={tdName}>{z.name}{z.kontaktInaktiv && <span title="Im Kontakt als inaktiv markiert, im Billing aber noch aktiv" style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#f59e0b' }}>· Kontakt inaktiv</span>}</td>
+                      <td style={tdName}>{z.name}{z.rev.total > 0.004 && <button type="button" title="Abrechnung als PDF" onClick={() => abrechnungenDrucken({ art: 'chatter', zeilen: [z], monat: month, kurs: k })} className="billing-pdf">📄</button>}{z.kontaktInaktiv && <span title="Im Kontakt als inaktiv markiert, im Billing aber noch aktiv" style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#f59e0b' }}>· Kontakt inaktiv</span>}</td>
                       <td style={{ ...td, textAlign: 'left' }}>{satzKnopf(z.name, 'chatter', z.s ? `${z.s.percentage} %` : '', '#06b6d4')}</td>
                       <td style={td}>{money(z.rev.total)}</td>
                       <td style={{ ...td, color: '#10b981', fontWeight: 800 }}>{z.x ? <>{money(z.x.auszahlung)}{eur(z.x.auszahlung)}</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>

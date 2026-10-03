@@ -1,5 +1,6 @@
 import { VideoLink, VideoHochladen } from './VideoLink' // v5.7.0 / v5.9.1
 import React, { useEffect, useRef, useState } from 'react'
+import { MImg, MA } from './Medien' // v5.33.0: private Dateien
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
@@ -93,7 +94,7 @@ function Karte({ s, accounts, userName, onNeu }) {
         <div style={spalte}>
           <span style={klein}>📄 Drehzettel</span>
           {s.drehzettel_url
-            ? <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>PDF öffnen</a>
+            ? <MA href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: R, fontWeight: 700 }}>PDF öffnen</MA>
             : <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>keine Datei</span>}
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tagKurz(s.erstellt_am)}{s.erstellt_von ? ` · ${s.erstellt_von}` : ''}</span>
           {!s.reel_url && !s.verworfen && (zielEdit ? (

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { MImg, MA } from './Medien' // v5.33.0: private Dateien
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
 import { logActivity } from '../activity'
@@ -47,7 +48,7 @@ function Antwort({ wert, typ }) {
   if (!hatWert(wert)) return <span style={{ color: 'var(--text-muted)' }}>—</span>
   if (typ === 'bilder') return (
     <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-      {wert.map(u => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></a>)}
+      {wert.map(u => <MA key={u} href={u} target="_blank" rel="noreferrer"><MImg src={u} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} /></MA>)}
     </span>
   )
   if (typ === 'links') return (

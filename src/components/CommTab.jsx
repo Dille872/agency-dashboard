@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { MImg, MVideo, MAudio, MA } from './Medien' // v5.33.0: private Dateien
 import { Check, CheckCheck, Clock, X as XIcon, CircleDot, Loader, Send, Bell, Lightbulb, ArrowLeftRight, CalendarDays, Pin, Megaphone } from 'lucide-react'
 import { supabase } from '../supabase'
 import { logActivity } from '../activity'
@@ -2882,7 +2883,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                   const isImage = /\.(jpg|jpeg|png|webp|gif|heic)$/.test(cleanUrl)
                                   if (isVideo) {
                                     return (
-                                      <video key={ii} src={url} controls
+                                      <MVideo key={ii} src={url} controls
                                         style={{
                                           width: isMobileChat ? '100%' : 180,
                                           maxHeight: isMobileChat ? 280 : 180,
@@ -2896,17 +2897,17 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                   if (isAudio) {
                                     return (
                                       <div key={ii} style={{ display: 'flex', flexDirection: 'column', gap: 3, width: isMobileChat ? '100%' : 220 }}>
-                                        <audio src={url} controls preload="metadata"
+                                        <MAudio src={url} controls preload="metadata"
                                           style={{ width: '100%', display: 'block' }}
                                         />
                                         {/* v4.82.1: Safari spielt .oga teils nicht ab → Download als Ausweg */}
-                                        <a href={url} target="_blank" rel="noreferrer" download style={{ fontSize: 11, color: '#a78bfa', textDecoration: 'none', fontWeight: 600 }}>↓ Herunterladen</a>
+                                        <MA href={url} target="_blank" rel="noreferrer" download style={{ fontSize: 11, color: '#a78bfa', textDecoration: 'none', fontWeight: 600 }}>↓ Herunterladen</MA>
                                       </div>
                                     )
                                   }
                                   if (isImage) {
                                     return (
-                                      <img key={ii} src={url} alt="Anhang"
+                                      <MImg key={ii} src={url} alt="Anhang"
                                         onClick={() => setLightboxImage(url)}
                                         style={{
                                           width: isMobileChat ? '100%' : 130,
@@ -2923,7 +2924,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                   // Sonstige Datei (z.B. PDF) → Download-Chip
                                   const fileName = decodeURIComponent((cleanUrl.split('/').pop() || 'Datei'))
                                   return (
-                                    <a key={ii} href={url} target="_blank" rel="noopener noreferrer"
+                                    <MA key={ii} href={url} target="_blank" rel="noopener noreferrer"
                                       style={{
                                         display: 'inline-flex', alignItems: 'center', gap: 6,
                                         padding: '8px 10px', borderRadius: 6,
@@ -2932,7 +2933,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                                       }}
                                     >
                                       📎 {fileName}
-                                    </a>
+                                    </MA>
                                   )
                                 })}
                               </div>
@@ -3920,7 +3921,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           {req.image_urls.map((url, i) => (
                             // v4.44.0: Lightbox statt neuem Tab — dieselbe wie bei Chat-Anhängen.
-                            <img key={i} src={url} alt="" onClick={e => { e.stopPropagation(); setLightboxImage(url) }}
+                            <MImg key={i} src={url} alt="" onClick={e => { e.stopPropagation(); setLightboxImage(url) }}
                               style={{ width: 76, height: 76, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-bright)', cursor: 'zoom-in' }} />
                           ))}
                         </div>
@@ -4415,7 +4416,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                           {req.image_urls?.length > 0 ? (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                               {req.image_urls.slice(0, 3).map((url, i) => (
-                                <img key={i} src={url} alt="" onClick={() => setLightboxImage(url)}
+                                <MImg key={i} src={url} alt="" onClick={() => setLightboxImage(url)}
                                   style={{ width: 26, height: 26, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border-bright)', cursor: 'zoom-in' }} />
                               ))}
                               {req.image_urls.length > 3 && (
@@ -4562,7 +4563,7 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', padding: 20,
         }}>
-          <img src={lightboxImage} alt="Vergrößert" style={{
+          <MImg src={lightboxImage} alt="Vergrößert" style={{
             maxWidth: '95%', maxHeight: '95%', objectFit: 'contain',
             borderRadius: 8, boxShadow: '0 0 40px rgba(0,0,0,0.5)',
           }} />
@@ -4738,9 +4739,9 @@ export default function CommTab({ session, section = 'nachrichten', displayName 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   {editImages.map((url, i) => (
                     <div key={i} style={{ position: 'relative' }}>
-                      <a href={url} target="_blank" rel="noreferrer">
-                        <img src={url} alt="" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid #2e2e5a', display: 'block' }} />
-                      </a>
+                      <MA href={url} target="_blank" rel="noreferrer">
+                        <MImg src={url} alt="" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '1px solid #2e2e5a', display: 'block' }} />
+                      </MA>
                       <button type="button" onClick={() => setEditImages(prev => prev.filter((_, idx) => idx !== i))} style={{
                         position: 'absolute', top: -7, right: -7, width: 20, height: 20, borderRadius: '50%',
                         background: '#ef4444', color: '#fff', border: '2px solid var(--bg-card)', fontSize: 12, lineHeight: '16px',

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { MImg, MA } from './Medien' // v5.33.0: private Dateien
 import { BookOpen } from 'lucide-react'
 import { supabase, FUNCTIONS_URL } from '../supabase'
 import ExportTab from './ExportTab'
@@ -2025,7 +2026,7 @@ function GuidelineCard({ guideline, isFirst, isLast, onUpdate, onDelete, onMoveU
                 {imageUrls.map((url, i) => (
                   <div key={i} style={{ position: 'relative', width: 96, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
                     <div style={{ position: 'relative', width: 96, height: 84 }}>
-                      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      <MImg src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                       {/* v3.53.0: Nummer-Badge zeigt, welches [bildN] gemeint ist */}
                       <div style={{
                         position: 'absolute', bottom: 3, left: 3,

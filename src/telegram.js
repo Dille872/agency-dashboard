@@ -5,6 +5,7 @@
 // Die exportierten Funktionsnamen/-signaturen sind unverändert — die Komponenten
 // (ChatterPortal, ScheduleTab, ModelPortal, TodoTab, CommTab) müssen NICHT angepasst werden.
 import { supabase } from './supabase'
+import { signiertListe } from './medien' // v5.33.0
 
 const OWNER_ID = '1538601588'
 const REY_TELEGRAM_ID = '528328429'
@@ -103,14 +104,16 @@ export async function getUpdates(offset = 0) {
 }
 
 // v2.9.8: Einzelnes Bild senden (mit optionaler Caption)
+// v5.33.0: Unsere Dateien sind privat → Telegram bekommt einen signierten Link (1 Tag gültig)
 export async function sendTelegramPhoto(chatId, photoUrl, caption = '') {
-  return callTelegram({ action: 'sendPhoto', chatId, photoUrl, caption })
+  const [url] = await signiertListe([photoUrl])
+  return callTelegram({ action: 'sendPhoto', chatId, photoUrl: url, caption })
 }
 
 // v2.9.8: Mehrere Bilder als Album senden (max 10 pro Album)
 export async function sendTelegramMediaGroup(chatId, photoUrls, caption = '') {
   if (!photoUrls || photoUrls.length === 0) return { ok: false, description: 'Keine Bilder' }
-  return callTelegram({ action: 'sendMediaGroup', chatId, photoUrls, caption })
+  return callTelegram({ action: 'sendMediaGroup', chatId, photoUrls: await signiertListe(photoUrls), caption })
 }
 
 export async function notifyAdmins(text) {

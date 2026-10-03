@@ -1,4 +1,5 @@
 import React from 'react'
+import { MImg, MVideo, MAudio, MA } from './Medien' // v5.33.0: private Dateien
 
 // v4.82.1: Ein Anhang im Chat — Bild, Video oder Sprachnachricht.
 // Vorher zeigte der Chatter-Chat jeden Anhang als <img>; eine Sprachnachricht
@@ -19,22 +20,22 @@ const link = { fontSize: 11, color: '#a78bfa', textDecoration: 'none', fontWeigh
 export default function Anhang({ url, breite = '100%' }) {
   const art = anhangArt(url)
   if (art === 'video') {
-    return <video src={url} controls playsInline preload="metadata" style={{ width: breite, maxHeight: 280, borderRadius: 8, display: 'block', background: '#000' }} />
+    return <MVideo src={url} controls playsInline preload="metadata" style={{ width: breite, maxHeight: 280, borderRadius: 8, display: 'block', background: '#000' }} />
   }
   if (art === 'audio') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: breite, maxWidth: '100%' }}>
-        <audio src={url} controls preload="metadata" style={{ width: '100%', display: 'block' }} />
-        <a href={url} target="_blank" rel="noreferrer" download style={link}>🎤 Sprachnachricht herunterladen</a>
+        <MAudio src={url} controls preload="metadata" style={{ width: '100%', display: 'block' }} />
+        <MA href={url} target="_blank" rel="noreferrer" download style={link}>🎤 Sprachnachricht herunterladen</MA>
       </div>
     )
   }
   if (art === 'bild') {
     return (
-      <a href={url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
-        <img src={url} alt="" style={{ width: breite, borderRadius: 8, display: 'block', border: '1px solid var(--border)' }} />
-      </a>
+      <MA href={url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+        <MImg src={url} alt="" style={{ width: breite, borderRadius: 8, display: 'block', border: '1px solid var(--border)' }} />
+      </MA>
     )
   }
-  return <a href={url} target="_blank" rel="noreferrer" download style={{ ...link, fontSize: 12.5 }}>📎 Datei öffnen</a>
+  return <MA href={url} target="_blank" rel="noreferrer" download style={{ ...link, fontSize: 12.5 }}>📎 Datei öffnen</MA>
 }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { MImg, MA } from './Medien' // v5.33.0: private Dateien
 import { useVorschau, vorschauSperre } from '../vorschau' // v5.2.0
 import { supabase } from '../supabase'
 import { sendTelegramMessage, zugestellt } from '../telegram'
@@ -82,7 +83,7 @@ function SchnittKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
         <div style={spalte}>
           <span style={klein}>{t('sp_material')}</span>
-          {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('drehzettel')}</a>}
+          {s.drehzettel_url && <MA href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('drehzettel')}</MA>}
           <VideoLink href={s.video_link} laden bild style={{ color: C, fontWeight: 700, fontSize: 13 }}>{t('rohvideo_laden')}</VideoLink>
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t('hochgeladen', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}</span>
         </div>
@@ -162,7 +163,7 @@ function FreigabeKarte({ s, t, tr, datum, seitText, userDisplayName, onNeu }) {
             {geschnitten ? t('geschnitten_von', { wer: s.schnitt_von || '—', datum: datum(s.schnitt_am) }) : t('ungeschnitten', { wer: s.video_von || s.model_name, datum: datum(s.video_am) })}
           </span>
           {geschnitten && <VideoLink href={s.video_link} laden style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('rohvideo_laden')}</VideoLink>}
-          {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('drehzettel')}</a>}
+          {s.drehzettel_url && <MA href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('drehzettel')}</MA>}
         </div>
         <div style={spalte}>
           <span style={klein}>{t('sp_entscheidung')}</span>

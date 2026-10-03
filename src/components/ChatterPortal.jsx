@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { MImg, MVideo, MAudio, MA } from './Medien' // v5.33.0: private Dateien
 import SkripteBereich from './SkripteBereich' // v5.27.0
 import { routeAmStart } from '../route' // v5.28.0
 import { BookOpen, Library, Eye, UserRound } from 'lucide-react'
@@ -2936,7 +2937,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     {(assignedModelVideos[selectedModelInfo] || []).map(video => (
                       <div key={video.id} style={{ display: 'flex', gap: 10, padding: '6px 8px', background: 'var(--bg-card2)', borderRadius: 8, border: '1px solid #1e1e3a', marginBottom: 5, alignItems: 'flex-start' }}>
                         {video.thumbnail_url ? (
-                          <img src={video.thumbnail_url} alt={video.title} style={{ width: 50, height: 38, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+                          <MImg src={video.thumbnail_url} alt={video.title} style={{ width: 50, height: 38, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
                         ) : (
                           <div style={{ width: 50, height: 38, borderRadius: 4, background: '#1e1e3a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>🎬</div>
                         )}
@@ -3073,9 +3074,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
                     {req.image_urls?.length > 0 && (
                       <div style={{ display: 'flex', gap: 5, marginBottom: 8, flexWrap: 'wrap' }}>
                         {req.image_urls.map((url, i) => (
-                          <a key={i} href={url} target="_blank" rel="noreferrer">
-                            <img src={url} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
-                          </a>
+                          <MA key={i} href={url} target="_blank" rel="noreferrer">
+                            <MImg src={url} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
+                          </MA>
                         ))}
                       </div>
                     )}
@@ -3414,7 +3415,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', padding: 20,
         }}>
-          <img src={guidelineLightbox.url} alt="" style={{
+          <MImg src={guidelineLightbox.url} alt="" style={{
             maxWidth: '95%', maxHeight: '95%', objectFit: 'contain',
             borderRadius: 11, boxShadow: '0 0 40px rgba(0,0,0,0.5)',
           }} />
@@ -3671,7 +3672,7 @@ function GuidelineView({ guideline, number, onImageClick }) {
         const unusedUrls = imageUrls.filter((_, i) => !usedIdx.has(i))
 
         const InlineImg = ({ url }) => (
-          <img src={url} alt="" onClick={() => onImageClick(url)}
+          <MImg src={url} alt="" onClick={() => onImageClick(url)}
             style={{
               width: '100%', maxHeight: 520, objectFit: 'contain', borderRadius: 11,
               cursor: 'pointer', border: '1px solid var(--border)',
@@ -3698,7 +3699,7 @@ function GuidelineView({ guideline, number, onImageClick }) {
             {unusedUrls.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: parts.length > 0 ? 12 : 0 }}>
                 {unusedUrls.map((url, i) => (
-                  <img key={i} src={url} alt={`Beispiel ${i + 1}`}
+                  <MImg key={i} src={url} alt={`Beispiel ${i + 1}`}
                     onClick={() => onImageClick(url)}
                     style={{
                       width: 110, height: 110, objectFit: 'cover', borderRadius: 8,

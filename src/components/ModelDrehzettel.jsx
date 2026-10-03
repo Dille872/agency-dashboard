@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { MImg, MA } from './Medien' // v5.33.0: private Dateien
 import { STATUS, statusVon, skripteLaden, skriptAendern, linkOk, mitHttps, tagKurz, modusSetzen, postetModel, cutterLaden, hatCutter, accountName } from '../reelSkripte'
 import { VideoBild, VideoHochladen, VideoLink } from './VideoLink' // v5.7.0
 import { istSpeicher } from '../videoSpeicher'
@@ -86,7 +87,7 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = tru
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        {s.drehzettel_url && <a href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 13.5, fontWeight: 700, color: R, padding: '8px 12px', borderRadius: 11, border: `1px solid ${R}`, textDecoration: 'none' }}>📄 Drehzettel öffnen</a>}
+        {s.drehzettel_url && <MA href={s.drehzettel_url} target="_blank" rel="noreferrer" style={{ fontSize: 13.5, fontWeight: 700, color: R, padding: '8px 12px', borderRadius: 11, border: `1px solid ${R}`, textDecoration: 'none' }}>📄 Drehzettel öffnen</MA>}
         {s.video_link && !edit && status !== 'freigegeben' && (
           <span style={{ fontSize: 12.5, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             {istSpeicher(s.video_link) && <VideoLink href={s.video_link} bild style={{ color: 'var(--text-muted)' }}>ansehen</VideoLink>}

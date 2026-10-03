@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { MImg, MVideo, MAudio, MA } from './Medien' // v5.33.0: private Dateien
 import { supabase } from '../supabase'
 import ModelBell from './ModelBell'
 import ChatterChat from './ChatterChat'
@@ -1505,7 +1506,7 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
           const karte = (video, alt) => (
             <div key={video.id} style={{ ...cardS, padding: 12, display: 'flex', gap: 13, alignItems: 'center', opacity: alt ? 0.75 : 1 }}>
               {video.thumbnail_url ? (
-                <img src={video.thumbnail_url} alt={video.title} style={{ width: 112, height: 63, objectFit: 'cover', borderRadius: 10, flexShrink: 0, border: '1px solid var(--border)' }} />
+                <MImg src={video.thumbnail_url} alt={video.title} style={{ width: 112, height: 63, objectFit: 'cover', borderRadius: 10, flexShrink: 0, border: '1px solid var(--border)' }} />
               ) : (
                 <div style={{ width: 112, height: 63, borderRadius: 10, background: 'var(--bg-card2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🎬</div>
               )}
@@ -1634,9 +1635,9 @@ export default function ModelPortal({ session, displayName: initialDisplayName, 
                 {req.image_urls?.length > 0 && (
                   <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
                     {req.image_urls.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noreferrer">
-                        <img src={url} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
-                      </a>
+                      <MA key={i} href={url} target="_blank" rel="noreferrer">
+                        <MImg src={url} alt="" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 5, border: '1px solid #2e2e5a' }} />
+                      </MA>
                     ))}
                   </div>
                 )}
