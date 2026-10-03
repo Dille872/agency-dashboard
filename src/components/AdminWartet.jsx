@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase, FUNCTIONS_URL } from '../supabase'
 import { heuteBerlin } from '../utils'
@@ -84,6 +84,7 @@ const FARBE = { 1: '#ef4444', 2: '#f59e0b', 3: '#94a3b8' }
 
 export default function AdminWartet({ onNavigate, daten }) {
   const [roh, setRoh] = useState(null)
+  const selbstGeoeffnet = useRef(false)
   const [offen, setOffen] = useState(false)
   const [busy, setBusy] = useState(null)
   const [hinweis, setHinweis] = useState({})       // key → Text (Ergebnis/Fehler)
@@ -251,8 +252,14 @@ export default function AdminWartet({ onNavigate, daten }) {
     const gesehen = liesGesehen()
     const neu = eintraege.some(e => !gesehen.has(e.key))
     if (offen) { eintraege.forEach(e => gesehen.add(e.key)); schreibGesehen(gesehen); return }
-    if (neu) setOffen(true)
+    if (neu) { selbstGeoeffnet.current = true; setOffen(true) }
   }, [roh, eintraege, offen])
+
+  // v5.40.2: von selbst aufgegangen, und dann ist doch nichts (mehr) da
+  // (z. B. Daten waren beim Start nur noch nicht geladen) → wieder zu.
+  useEffect(() => {
+    if (offen && selbstGeoeffnet.current && !eintraege.length && !codes.length) { selbstGeoeffnet.current = false; setOffen(false) }
+  }, [offen, eintraege, codes])
 
   const spaeter = () => {
     const gesehen = liesGesehen(); eintraege.forEach(e => gesehen.add(e.key)); schreibGesehen(gesehen)
@@ -397,11 +404,11 @@ export default function AdminWartet({ onNavigate, daten }) {
   if (!eintraege.length && !codes.length && !ausgeblendet.length && !offen) return null
 
   const knopf = eintraege.length ? (
-    <button className="aw-pill" onClick={() => setOffen(true)} title="Dinge, bei denen jemand auf euch wartet">
+    <button className="aw-pill" onClick={() => { selbstGeoeffnet.current = false; setOffen(true) }} title="Dinge, bei denen jemand auf euch wartet">
       <Zap size={14} strokeWidth={2.6} /> <span className="hide-sm">Wartet</span> <span className="aw-zahl">{eintraege.length}</span>
     </button>
   ) : ausgeblendet.length ? (
-    <button className="aw-pill aw-pill-ruhig" onClick={() => { setZeigAus(true); setOffen(true) }} title="Alles gelesen — hier findest du es wieder">
+    <button className="aw-pill aw-pill-ruhig" onClick={() => { selbstGeoeffnet.current = false; setZeigAus(true); setOffen(true) }} title="Alles gelesen — hier findest du es wieder">
       <BellOff size={14} strokeWidth={2.4} /> <span className="aw-zahl-ruhig">{ausgeblendet.length}</span>
     </button>
   ) : null

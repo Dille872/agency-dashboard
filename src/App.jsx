@@ -166,6 +166,7 @@ export default function App() {
   const [businessDate, setBusinessDate] = useState(todayISO())
   const [modelSnapshots, setModelSnapshots] = useState([])
   const [chatterSnapshots, setChatterSnapshots] = useState([])
+  const [snapshotsGeladen, setSnapshotsGeladen] = useState(false) // v5.40.2
   // v4.31.0: Zaehler, der Upload-Kachel und Datenstand-Seite zum Neuladen zwingt.
   // model_chatter_daily liegt bewusst NICHT im App-State — die Tabelle waechst
   // taeglich um ~100 Zeilen und wird nur an zwei Stellen gebraucht.
@@ -521,6 +522,7 @@ export default function App() {
 
       setModelSnapshots(parsedModels)
       setChatterSnapshots(parsedChatters)
+      setSnapshotsGeladen(true) // v5.40.2: erst ab jetzt „Daten fehlen“ melden
 
       // Auto-select latest date
       const allDates = [
@@ -859,7 +861,7 @@ export default function App() {
           {userRoles.includes('admin') && (
             <AdminWartet
               onNavigate={(tab, focus) => { setActiveTab(tab); if (focus) setCommFocus({ ...focus, ts: Date.now() }) }}
-              daten={{ fehlt: !datenHeuteOk, tag: fehlenderTag, oeffnen: () => { setBusinessDate(fehlenderTag); oeffneTab('datenstand') } }} />
+              daten={{ fehlt: snapshotsGeladen && !datenHeuteOk, tag: fehlenderTag, oeffnen: () => { setBusinessDate(fehlenderTag); oeffneTab('datenstand') } }} />
           )}
           {/* v4.69.0: still wenn alles da ist, laut wenn nicht. Ein Klick
               springt in den Upload — und stellt gleich den heutigen Tag ein. */}
