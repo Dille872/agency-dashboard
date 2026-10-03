@@ -21,6 +21,7 @@ import CommTab from './components/CommTab'
 import ChatWidget from './components/ChatWidget'
 import ActivityWidget from './components/ActivityWidget'
 import AdminBell from './components/AdminBell'
+import AdminWartet from './components/AdminWartet' // v5.36.0
 import ScheduleTab from './components/ScheduleTab'
 import ChatterPortal from './components/ChatterPortal'
 import ModelPortal from './components/ModelPortal'
@@ -851,6 +852,13 @@ export default function App() {
         </div>
         {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
+          {/* v5.36.0: ⚡ Wartet auf euch — nur Admins (Passwort-Anfragen, gesperrte
+              Konten, Freigaben …). Pop-up + Knopf, solange etwas offen ist. */}
+          {userRoles.includes('admin') && (
+            <AdminWartet
+              onNavigate={(tab, focus) => { setActiveTab(tab); if (focus) setCommFocus({ ...focus, ts: Date.now() }) }}
+              daten={{ fehlt: !datenHeuteOk, tag: fehlenderTag, oeffnen: () => { setBusinessDate(fehlenderTag); oeffneTab('datenstand') } }} />
+          )}
           {/* v4.69.0: still wenn alles da ist, laut wenn nicht. Ein Klick
               springt in den Upload — und stellt gleich den heutigen Tag ein. */}
           {canAccess('datenstand') && (

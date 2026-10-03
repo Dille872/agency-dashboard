@@ -72,6 +72,7 @@ from (values
   ('todos-frist.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='due_date'))),
   ('todos-notified-at.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='notified_at'))),
   ('wiederholung-mit-zeit.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='recurring_shifts' and column_name='time_override'))),
+  ('admin-wartet.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='admin_konten_pruefen'))),
   ('zeitzone-bestaetigt.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='online_status' and column_name='zeitzone_bestaetigt')))
 ) as t(datei, ok)
 order by ok, datei;

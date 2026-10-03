@@ -414,3 +414,41 @@ th { text-align: left; }
 .billing-export > summary::-webkit-details-marker { display: none; }
 .billing-export button:hover:not(:disabled) { background: var(--bg-card2) !important; }
 @media (max-width: 768px) { .billing-pdf.billing-pdf { padding: 0 2px !important; font-size: 12px !important; } }
+
+/* ── v5.36.0: ⚡ Wartet auf euch (AdminWartet.jsx) ───────────────────────── */
+.aw-pill.aw-pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.5); color: #f87171; }
+.aw-zahl { background: #ef4444; color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 800; line-height: 1.6; }
+.aw-ov { position: fixed; inset: 0; z-index: 10050; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 70px 16px 16px; }
+.aw-pop { width: 100%; max-width: 540px; max-height: calc(100vh - 90px); display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); overflow: hidden; }
+.aw-kopf { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.aw-kopf h3 { margin: 0; flex: 1; font-size: 16px; color: var(--text-primary); }
+.aw-kopf small { color: var(--text-muted); font-weight: 500; }
+.aw-x.aw-x { background: none; border: 0; color: var(--text-muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 6px; }
+.aw-liste { overflow-y: auto; flex: 1; }
+.aw-it { display: flex; gap: 12px; padding: 12px 16px 12px 13px; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; }
+.aw-ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; font-size: 17px; background: var(--bg-card2); }
+.aw-t { flex: 1; min-width: 0; }
+.aw-t > b { display: block; font-size: 14px; color: var(--text-primary); }
+.aw-t > span { display: block; color: var(--text-muted); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
+.aw-alt { font-size: 11px; font-weight: 700; margin-left: 8px; white-space: nowrap; }
+.aw-knopf, .aw-reihe { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.aw-form { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.aw-form > .aw-k { align-self: flex-start; }
+.aw-in.aw-in { width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card2); color: var(--text-primary); font: inherit; font-size: 13px; resize: vertical; }
+.aw-k.aw-k { border-radius: 8px; padding: 6px 11px; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; background: var(--bg-card2); color: var(--text-primary); border: 1px solid var(--border); }
+.aw-k.aw-p { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.aw-k:disabled { opacity: .6; cursor: wait; }
+.aw-hinweis { margin-top: 6px; font-size: 12.5px; color: #f59e0b; }
+.aw-code { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: rgba(16,185,129,0.1); border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-primary); }
+.aw-code code { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #10b981; }
+.aw-code .aw-x { margin-left: auto; }
+.aw-leer { padding: 18px 16px; color: #10b981; font-weight: 600; }
+.aw-fuss { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 16px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); }
+@media (max-width: 640px) {
+  .aw-ov { padding: 60px 8px 8px; }
+  .aw-pop { max-height: calc(100vh - 70px); }
+  .aw-pill.aw-pill { padding: 6px 8px !important; }
+  .aw-k.aw-k { padding: 7px 11px !important; font-size: 13px !important; }
+  .aw-x.aw-x { padding: 2px 6px !important; font-size: 20px !important; }
+  .aw-in.aw-in { font-size: 16px !important; }
+}

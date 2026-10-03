@@ -95,6 +95,25 @@ export async function freischalten(s) {
   return { info }
 }
 
+// v5.36.0: Frage vom Model beantworten (aus „⚡ Wartet auf euch“).
+// Mit Antwort → Telegram ans Model, danach ist die Frage weg.
+// Ohne Antwort (schon anders geklärt) → nur die Frage entfernen.
+export async function frageBeantworten(s, antwort) {
+  const text = String(antwort || '').trim()
+  const esc = (t) => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  let info = ''
+  if (text) {
+    const { data: m } = await supabase.from('models_contact').select('telegram_id').eq('name', s.model_name).maybeSingle()
+    if (!m?.telegram_id) return { error: { message: `${s.model_name} hat keine Telegram-ID — bitte selbst antworten und dann „Schon geklärt“ drücken.` } }
+    const r = await sendTelegramMessage(m.telegram_id,
+      `✍️ <b>Antwort zu deinem Skript</b>\n<b>${esc(kurz(s.titel, 80))}</b>\n\n❓ ${esc(kurz(s.model_frage, 300))}\n\n💬 ${esc(text)}`)
+    if (!r?.ok) return { error: { message: 'Telegram an das Model ging nicht raus.' } }
+    info = 'Antwort per Telegram geschickt'
+  }
+  const { error } = await supabase.from('of_skripte').update({ model_frage: null }).eq('id', s.id)
+  return error ? { error } : { info }
+}
+
 export async function zurueckSchicken(s, notiz) {
   return supabase.from('of_skripte').update({ status: 'zurueck', zurueck_notiz: String(notiz || '').trim() || null }).eq('id', s.id)
 }
