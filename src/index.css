@@ -490,16 +490,35 @@ th { text-align: left; }
 .bh-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .bh-chip.bh-chip { font-size: 12px; padding: 5px 11px; border-radius: 20px; cursor: pointer; font-family: inherit; font-weight: 600; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); }
 .bh-chip.an { border-color: #7c3aed; background: rgba(124,58,237,0.14); color: #c4b5fd; }
-.bh-liste { display: flex; flex-direction: column; gap: 8px; }
-.bh-zeile { display: grid; grid-template-columns: 1.1fr 1fr 1.6fr 1fr auto; gap: 14px; align-items: center; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid; border-radius: 12px; }
+.bh-info { display: flex; gap: 8px 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-muted); }
+.bh-info span { display: inline-flex; align-items: center; gap: 6px; }
+.bh-info .gut { color: #34d399; }
+.bh-info .warn { color: #f59e0b; }
+.bh-tabelle { display: flex; flex-direction: column; gap: 6px; }
+.bh-tkopf, .bh-zeile { display: grid; grid-template-columns: 1.1fr 0.9fr 0.9fr 1.4fr 0.8fr 1.3fr 1.2fr 250px; gap: 12px; align-items: center; }
+.bh-tkopf { padding: 0 14px 0 17px; font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.bh-zeile { padding: 11px 14px; background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid; border-radius: 12px; }
 .bh-zeile > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.bh-zeile > div > span { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.bh-zeile small { font-size: 11.5px; color: var(--text-muted); overflow-wrap: anywhere; }
 .bh-wer b { font-size: 14.5px; color: var(--text-primary); }
-.bh-betrag b { font-size: 14.5px; font-family: ui-monospace, monospace; color: var(--text-primary); }
+.bh-wer span { font-size: 11.5px; color: var(--text-muted); }
+.bh-zahl { font-family: ui-monospace, monospace; font-size: 13px; color: var(--text-secondary); }
+.bh-zahl small { font-family: inherit; }
+.bh-gesamt { font-family: ui-monospace, monospace; font-size: 15px; font-weight: 800; color: #34d399; }
+.bh-mobil { display: none; }
+.bh-extras { flex-direction: row !important; flex-wrap: wrap; align-items: center; gap: 5px !important; }
+.bh-extra { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; white-space: nowrap; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(16,185,129,0.13); color: #34d399; font-family: ui-monospace, monospace; }
+.bh-extra em { font-style: normal; font-family: system-ui, sans-serif; font-weight: 500; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.bh-extra.minus { background: rgba(239,68,68,0.12); color: #f87171; }
+.bh-plus.bh-plus { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--border); background: transparent; color: var(--text-muted); cursor: pointer; font-family: inherit; }
+.bh-plus:hover { color: var(--text-primary); border-color: #7c3aed; }
 .bh-tag { font-style: normal; margin-left: 6px; font-size: 10.5px; padding: 1px 6px; border-radius: 6px; background: var(--bg-card2); color: var(--text-secondary); }
 .bh-st { display: inline-flex; align-self: flex-start; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .bh-notiz { color: #f59e0b !important; }
-.bh-aktion { flex-direction: row !important; flex-wrap: wrap; justify-content: flex-end; gap: 6px !important; }
+.bh-link.warn { color: #f59e0b; font-size: 11.5px; }
+.bh-aktion { flex-direction: row !important; flex-wrap: nowrap; justify-content: flex-end; gap: 5px !important; }
+.bh-extra-zeile { display: grid; grid-template-columns: 1fr 100px auto; gap: 8px; align-items: center; }
+.bh-extra-zeile input { background: var(--bg-card2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text-primary); font: inherit; font-size: 14px; min-width: 0; }
 .bh-ov { position: fixed; inset: 0; z-index: 10060; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 90px 16px 16px; }
 .bh-fenster { width: 100%; max-width: 420px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
 .bh-fenster-kopf { display: flex; align-items: center; justify-content: space-between; color: var(--text-primary); font-size: 15px; }
@@ -529,9 +548,12 @@ th { text-align: left; }
 .bh-vz.schon { opacity: .5; cursor: default; }
 .bh-freigabe-fuss { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 900px) {
-  .bh-zeile { grid-template-columns: 1fr 1fr; gap: 10px 12px; }
-  .bh-rechnung, .bh-aktion { grid-column: 1 / -1; }
-  .bh-aktion { justify-content: flex-start; }
+  .bh-tkopf { display: none; }
+  .bh-zeile { grid-template-columns: 1fr 1fr 1fr; gap: 10px 12px; }
+  .bh-wer, .bh-extras, .bh-rechnung, .bh-aktion { grid-column: 1 / -1; }
+  .bh-aktion { justify-content: flex-start; flex-wrap: wrap; }
+  .bh-mobil { display: block; font-family: system-ui, sans-serif; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .bh-gesamt { align-self: start; }
   .bh-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
@@ -540,8 +562,10 @@ th { text-align: left; }
   .bh-chip.bh-chip { padding: 5px 11px !important; }
   .bh-umschalter button { padding: 5px 12px !important; }
   .bh-feld input, .bh-text, .bh-datum input { font-size: 16px !important; }
-  .bh-vz { grid-template-columns: auto 1fr auto; }
-  .bh-vz span:not(.bh-vz-eur), .bh-vz em { display: none; }
+  .bh-zeile { grid-template-columns: 1fr 1fr; }
+  .bh-status { grid-column: 1 / -1; }
+  .bh-extra-zeile input { font-size: 16px !important; }
+  .bh-plus.bh-plus { padding: 3px 9px !important; font-size: 12px !important; }
   .bh-ov { padding: 60px 8px 8px; }
 }
 

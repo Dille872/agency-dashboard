@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Receipt, Upload, FileText, Download, Clock, CircleCheck, MessageCircleWarning } from 'lucide-react'
-import { STATUS, euro, dollar, datum, datumZeit, abrechnungenLaden, rechnungHochladen, abrechnungPdf } from '../buchhaltung'
+import { STATUS, euro, dollar, datum, datumZeit, abrechnungenLaden, rechnungHochladen, abrechnungPdf, extrasVon, gesamtEur } from '../buchhaltung'
 import { oeffnen } from '../medien'
 
 // ── Rechnungen im Chatter-Portal (v5.37.0) ─────────────────────────────────
@@ -18,7 +18,8 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
   const lade = async () => {
     if (!displayName) { setListe([]); return }
     const { data, error } = await abrechnungenLaden(displayName)
-    setListe(error ? [] : (data || []))
+    // v5.37.1: nur mitgeteilte (in der Admin-Vorschau sieht man sonst Entwürfe)
+    setListe(error ? [] : (data || []).filter(a => a.mitgeteilt_am))
   }
   useEffect(() => { lade() }, [displayName]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -60,11 +61,13 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
             <div><span>{a.nur_chat === false ? 'Umsatz gesamt' : 'Chat Revenue'}</span><span>{dollar(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd)}</span></div>
             {a.prozent != null && <div><span>Dein Anteil ({String(a.prozent).replace('.', ',')} %)</span><span>{dollar(a.auszahlung_usd)}</span></div>}
             {a.kurs != null && <div><span>Kurs</span><span>1 $ = {String(Number(a.kurs)).replace('.', ',')} €</span></div>}
-            <div className="cr-summe"><span>Auf die Rechnung</span><span>{a.betrag_eur != null ? euro(a.betrag_eur) : dollar(a.auszahlung_usd)}</span></div>
+            {extrasVon(a).length > 0 && a.betrag_eur != null && <div><span>Anteil in Euro</span><span>{euro(a.betrag_eur)}</span></div>}
+            {extrasVon(a).map((e, n) => <div key={n}><span>{Number(e.betrag) < 0 ? '−' : '+'} {e.text}</span><span>{euro(Math.abs(Number(e.betrag)))}</span></div>)}
+            <div className="cr-summe"><span>Auf die Rechnung</span><span>{gesamtEur(a) != null ? euro(gesamtEur(a)) : dollar(a.auszahlung_usd)}</span></div>
           </div>
           <label className="cr-betrag">
             <span>Betrag auf deiner Rechnung (optional)</span>
-            <input inputMode="decimal" placeholder={a.betrag_eur != null ? String(a.betrag_eur).replace('.', ',') : ''} value={betrag[a.id] || ''} onChange={e => setBetrag(b => ({ ...b, [a.id]: e.target.value }))} disabled={isPreview} />
+            <input inputMode="decimal" placeholder={gesamtEur(a) != null ? String(gesamtEur(a)).replace('.', ',') : ''} value={betrag[a.id] || ''} onChange={e => setBetrag(b => ({ ...b, [a.id]: e.target.value }))} disabled={isPreview} />
           </label>
           <button className="cr-hoch" disabled={isPreview || busy === a.id} onClick={() => start(a)}>
             <Upload size={17} strokeWidth={2.4} /> {busy === a.id ? 'Lädt hoch …' : a.status === 'klaerung' ? 'Neue Rechnung hochladen' : 'Rechnung hochladen'}
@@ -85,7 +88,7 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
               <div key={a.id} className="cr-zeile">
                 <span className="cr-st" style={{ color: st.farbe, background: st.bg }}><Sym size={13} strokeWidth={2.4} /> {a.status === 'bezahlt' ? `Bezahlt ${datum(a.bezahlt_am)}` : a.status === 'rechnung' ? 'Wartet auf Zahlung' : st.label}</span>
                 <span className="cr-zeile-was">{a.bezeichnung || a.monat}<small>{a.rechnung_am ? `hochgeladen ${datumZeit(a.rechnung_am)}` : ''}{a.status === 'klaerung' && a.klaerung_notiz ? ` · „${a.klaerung_notiz}“` : ''}</small></span>
-                <span className="cr-zeile-betrag">{euro(a.bezahlt_betrag ?? a.betrag_eur)}</span>
+                <span className="cr-zeile-betrag">{euro(a.bezahlt_betrag ?? gesamtEur(a))}</span>
                 <span className="cr-zeile-knoepfe">
                   {a.rechnung_url && <button title="Meine Rechnung öffnen" onClick={() => oeffnen(a.rechnung_url)}><FileText size={15} strokeWidth={2.2} /></button>}
                   {a.status === 'rechnung' && !isPreview && <button title="Andere Datei hochladen" disabled={busy === a.id} onClick={() => start(a)}><Upload size={15} strokeWidth={2.2} /></button>}

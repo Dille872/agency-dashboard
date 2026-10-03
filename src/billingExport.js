@@ -123,12 +123,29 @@ export async function abrechnungenPdf({ art, zeilen, monat, kurs, bis, von = nul
       doc.text(`Für ${art === 'model' ? 'dieses Model' : 'diesen Chatter'} ist noch kein Satz hinterlegt.`, L + 3, y + 1)
       y += 14
     }
-    if (z.x && k) {
-      const betrag = art === 'model' ? z.x.model : z.x.auszahlung
+    // v5.37.1: Extras aus der Buchhaltung (z. B. Skripte, Bonus, Abzug) — nur in €
+    const extras = Array.isArray(z.extras) ? z.extras : []
+    if (extras.length) {
+      doc.setFillColor(245, 243, 255); doc.rect(L, y - 5, R - L, 8, 'F')
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(76, 29, 149)
+      doc.text('ZUSÄTZLICH', L + 3, y); doc.text('EUR', R - 3, y, { align: 'right' })
+      y += 8
+      for (const e of extras) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(27, 27, 43)
+        doc.text(String(e.text || ''), L + 3, y)
+        doc.text((Number(e.betrag) < 0 ? '− ' : '+ ') + euro(Math.abs(Number(e.betrag) || 0)), R - 3, y, { align: 'right' })
+        doc.setDrawColor(236, 233, 245); doc.setLineWidth(0.2); doc.line(L, y + 2.5, R, y + 2.5)
+        y += 8.5
+      }
+      y += 6
+    }
+    const extraSumme = extras.reduce((t, e) => t + (Number(e.betrag) || 0), 0)
+    if ((z.x && k) || (extras.length && !z.x)) {
+      const betrag = z.x ? (art === 'model' ? z.x.model : z.x.auszahlung) : 0
       doc.setFillColor(236, 253, 245); doc.roundedRect(L, y - 4, R - L, 14, 2, 2, 'F')
       doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(6, 95, 70)
       doc.text(art === 'model' ? 'Dein Anteil in Euro' : 'Auf die Rechnung', L + 4, y + 5)
-      doc.text(euro(betrag * k), R - 4, y + 5, { align: 'right' })
+      doc.text(euro(betrag * (k || 0) + extraSumme), R - 4, y + 5, { align: 'right' })
       y += 20
     }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...grau)
