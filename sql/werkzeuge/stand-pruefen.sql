@@ -72,6 +72,7 @@ from (values
   ('todos-frist.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='due_date'))),
   ('todos-notified-at.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='notified_at'))),
   ('wiederholung-mit-zeit.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='recurring_shifts' and column_name='time_override'))),
+  ('buchhaltung-team.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='betrag_manuell'))),
   ('buchhaltung-entwurf.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='mitgeteilt_am'))),
   ('buchhaltung.sql', (to_regclass('public.chatter_abrechnungen') is not null and exists(select 1 from storage.buckets where id='rechnungen'))),
   ('admin-wartet.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='admin_konten_pruefen'))),

@@ -203,7 +203,8 @@ export default function AdminWartet({ onNavigate, daten }) {
       }
     }
 
-    for (const a of roh.re || []) {
+    // nur was der Chatter selbst hochgeladen hat (eure eigenen Uploads müssen euch nicht melden)
+    for (const a of (roh.re || []).filter(x => !x.rechnung_von || x.rechnung_von === x.chatter_name)) {
       const b = a.rechnung_betrag ?? a.betrag_eur
       liste.push({
         key: 're-' + a.id + '-' + (a.rechnung_am || ''), prio: 2, zeit: a.rechnung_am, art: 'rechnung', daten: a,

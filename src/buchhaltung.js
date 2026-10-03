@@ -6,12 +6,16 @@
 // Mit „Bescheid geben“ werden die Zahlen festgeschrieben, der Chatter sieht sie
 // im Portal und bekommt eine Telegram-Nachricht.
 // Eine Zeile in chatter_abrechnungen entsteht erst, wenn ihr etwas daran tut.
+// v5.38.0: Auch Team (z. B. Alina, in $) und Rechnungen ohne Profil (ehemalige
+// Chatter wie Joel) — Einträge von Hand mit Betrag, Währung, Notiz, Datei.
+// Aus PDF-Rechnungen werden Summe und IBAN vorgeschlagen (rechnungLesen.js).
 
 import { supabase } from './supabase'
 import { sendTelegramMessage, notifyAdmins } from './telegram'
 import { chatterVerteilen, chatterRechnung, istInaktiv } from './billingRechnung'
 import { zeitraumText, abrechnungenPdf } from './billingExport'
 import { signiert } from './medien'
+import { rechnungLesen } from './rechnungLesen'
 
 export const STATUS = {
   entwurf:  { label: 'Noch nicht mitgeteilt', farbe: '#a78bfa', bg: 'rgba(167,139,250,0.14)' },
@@ -27,19 +31,33 @@ export const datum = (iso) => iso ? new Date(String(iso).length === 10 ? iso + '
 export const datumZeit = (iso) => iso ? new Date(iso).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
 export const heuteIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 export const monatName = (m) => new Date(m + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-export const fehltTabelle = (error) => !!error && /chatter_abrechnungen|extras|mitgeteilt|does not exist|schema cache/i.test(error.message || '')
+export const fehltTabelle = (error) => !!error && /chatter_abrechnungen|extras|mitgeteilt|betrag_manuell|waehrung|rechnung_iban|betrag_erkannt|\bart\b|does not exist|schema cache|no unique or exclusion/i.test(error.message || '')
 export const zahlAus = (t) => { const n = Number(String(t ?? '').trim().replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return Number.isFinite(n) ? n : null }
 export const letzterTagVon = (monat) => { const [y, m] = monat.split('-').map(Number); return `${monat}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` }
 const round = (v) => Math.round(Number(v || 0) * 100) / 100
 const escHtml = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const link = (q = '') => { try { return `${window.location.origin}/${q}` } catch { return '' } }
 
-// Status einer Zeile (ohne Zeile oder nicht mitgeteilt = Entwurf)
-export const statusVon = (row) => !row || (!row.mitgeteilt_am && row.status === 'offen') ? 'entwurf' : row.status
+export const ART = {
+  chatter: { label: 'Chatter' },
+  team:    { label: 'Team', farbe: '#22d3ee' },
+  extern:  { label: 'Ohne Profil', farbe: '#f472b6' },
+}
+export const istManuell = (row) => !!row && !!row.art && row.art !== 'chatter'
+export const geld = (v, waehrung = 'EUR') => waehrung === 'USD' ? dollar(v) : euro(v)
+
+// Status einer Zeile (Chatter ohne Zeile oder nicht mitgeteilt = Entwurf; Team/Extern nie)
+export const statusVon = (row) => istManuell(row) ? row.status : (!row || (!row.mitgeteilt_am && row.status === 'offen') ? 'entwurf' : row.status)
 export const extrasVon = (row) => Array.isArray(row?.extras) ? row.extras : []
 export const extrasSumme = (row) => extrasVon(row).reduce((t, e) => t + Number(e.betrag || 0), 0)
 // Gesamtbetrag in € (Anteil + Extras); ohne Kurs: null
-export const gesamtEur = (row) => row?.betrag_eur == null ? (extrasVon(row).length ? round(extrasSumme(row)) : null) : round(Number(row.betrag_eur) + extrasSumme(row))
+export const gesamtEur = (row) => istManuell(row)
+  ? (row.waehrung === 'USD' ? null : round(Number(row.betrag_manuell || 0) + extrasSumme(row)))
+  : row?.betrag_eur == null ? (extrasVon(row).length ? round(extrasSumme(row)) : null) : round(Number(row.betrag_eur) + extrasSumme(row))
+// Gesamt in der Währung der Zeile: { wert, waehrung }
+export const gesamt = (row) => istManuell(row)
+  ? { wert: row.betrag_manuell == null && !extrasVon(row).length ? null : round(Number(row.betrag_manuell || 0) + extrasSumme(row)), waehrung: row.waehrung || 'EUR' }
+  : { wert: gesamtEur(row), waehrung: 'EUR' }
 
 // Zeile aus der Datenbank → Form, die billingExport (PDF) erwartet
 export const alsBillingZeile = (a) => ({
@@ -94,9 +112,14 @@ export async function zeitraumLaden(p) {
     if (!x || !(x.auszahlung > 0) || istInaktiv(st, p.bezug)) continue
     live.set(ch.name, liveZeile(ch.name, st, rev, x, kurs))
   }
-  const namen = [...new Set([...live.keys(), ...gespeichert.map(r => r.chatter_name)])].sort((a, b) => a.localeCompare(b, 'de'))
+  const chatterZeilen = gespeichert.filter(r => !istManuell(r))
+  const manuell = gespeichert.filter(istManuell)
+  const namen = [...new Set([...live.keys(), ...chatterZeilen.map(r => r.chatter_name)])].sort((a, b) => a.localeCompare(b, 'de'))
   const telegram = Object.fromEntries(chatters.map(ch => [ch.name, ch.telegram_id || null]))
-  const items = namen.map(name => ({ name, live: live.get(name) || null, row: gespeichert.find(r => r.chatter_name === name) || null, telegram: telegram[name] || null }))
+  const items = [
+    ...namen.map(name => ({ name, live: live.get(name) || null, row: chatterZeilen.find(r => r.chatter_name === name) || null, telegram: telegram[name] || null })),
+    ...manuell.sort((a, b) => a.chatter_name.localeCompare(b.chatter_name, 'de')).map(row => ({ name: row.chatter_name, live: null, row, telegram: null, manuell: true })),
+  ]
   return { items, kurs, tage: tage.length, tageSoll, letzterTag: tage[tage.length - 1] || null }
 }
 
@@ -126,9 +149,9 @@ export async function zeileSichern(item, p, wer) {
     chatter_name: item.name, monat: p.bezug, von: p.ab, bis: p.ende, frei: p.frei, bezeichnung: p.bezeichnung,
     ...(item.live || {}), freigegeben_von: wer || null,
   }
-  const ins = await supabase.from('chatter_abrechnungen').upsert(neu, { onConflict: 'chatter_name,von,bis', ignoreDuplicates: true })
+  const ins = await supabase.from('chatter_abrechnungen').upsert({ ...neu, art: 'chatter' }, { onConflict: 'chatter_name,von,bis,art', ignoreDuplicates: true })
   if (ins.error) return { error: ins.error }
-  const { data, error } = await supabase.from('chatter_abrechnungen').select('*').eq('chatter_name', item.name).eq('von', p.ab).eq('bis', p.ende).maybeSingle()
+  const { data, error } = await supabase.from('chatter_abrechnungen').select('*').eq('chatter_name', item.name).eq('von', p.ab).eq('bis', p.ende).eq('art', 'chatter').maybeSingle()
   if (error || !data) return { error: error || { message: 'Zeile nicht gefunden' } }
   return { row: data }
 }
@@ -185,7 +208,7 @@ async function telegramVonChatter(name) {
 }
 
 // ── Rechnung hochladen (Chatter selbst oder Admin für ihn) ───────────────────
-export async function rechnungHochladen(a, datei, { betrag = null, durchAdmin = false } = {}) {
+export async function rechnungHochladen(a, datei, { betrag = null, iban = null, durchAdmin = false } = {}) {
   if (!datei) return { error: { message: 'Keine Datei gewählt.' } }
   if (datei.size > 15 * 1024 * 1024) return { error: { message: 'Datei ist größer als 15 MB.' } }
   const endung = (String(datei.name).match(/\.([a-z0-9]{2,5})$/i)?.[1] || 'pdf').toLowerCase()
@@ -195,13 +218,69 @@ export async function rechnungHochladen(a, datei, { betrag = null, durchAdmin = 
   const url = supabase.storage.from('rechnungen').getPublicUrl(pfad).data.publicUrl
   const felder = { rechnung_url: url, rechnung_name: String(datei.name).slice(0, 120) }
   const b = zahlAus(betrag)
-  if (betrag != null && String(betrag).trim() !== '' && b != null) felder.rechnung_betrag = b
-  const { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', a.id)
+  if (betrag != null && String(betrag).trim() !== '' && b != null) { felder.rechnung_betrag = b; felder.betrag_erkannt = false }
+  if (iban) felder.rechnung_iban = String(iban).replace(/\s/g, '').toUpperCase()
+  // v5.38.0: Summe und IBAN aus der PDF vorschlagen, wenn nichts angegeben ist
+  if (felder.rechnung_betrag == null || !felder.rechnung_iban) {
+    const g = await rechnungLesen(datei)
+    if (felder.rechnung_betrag == null) { felder.rechnung_betrag = g.betrag ?? null; felder.betrag_erkannt = g.betrag != null }
+    if (!felder.rechnung_iban && g.iban) felder.rechnung_iban = g.iban
+  }
+  let { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', a.id)
+  if (error && /rechnung_iban|betrag_erkannt/.test(error.message || '')) {
+    // Datenbank noch ohne die neuen Spalten (sql/buchhaltung-team.sql) → ohne sie speichern
+    const { rechnung_iban, betrag_erkannt, ...rest } = felder; void rechnung_iban; void betrag_erkannt
+    error = (await supabase.from('chatter_abrechnungen').update(rest).eq('id', a.id)).error
+  }
   if (error) return { error }
   if (!durchAdmin) {
     try { await notifyAdmins(`🧾 <b>${escHtml(a.chatter_name)}</b> hat die Rechnung für ${escHtml(a.bezeichnung || a.monat)} hochgeladen${felder.rechnung_betrag != null ? ` (${euro(felder.rechnung_betrag)})` : ''}.\n<a href="${link('?tab=buchhaltung')}">Zur Buchhaltung</a>`) } catch { /* nur Hinweis */ }
   }
   return {}
+}
+
+// ── Team & ohne Profil (v5.38.0) ─────────────────────────────────────────────
+// Einträge von Hand: Name frei, Monat, Betrag + Währung, Notiz, Datei optional.
+export async function manuellSpeichern(row, { name, art, monat, betrag, waehrung, notiz, iban, wer }) {
+  const n = String(name || '').trim()
+  if (!n) return { error: { message: 'Bitte einen Namen eintragen.' } }
+  const b = zahlAus(betrag)
+  const felder = {
+    chatter_name: n.slice(0, 80), art: art === 'team' ? 'team' : 'extern', waehrung: waehrung === 'USD' ? 'USD' : 'EUR',
+    betrag_manuell: b, notiz: String(notiz || '').trim() || null,
+    ...(iban !== undefined ? { rechnung_iban: iban ? String(iban).replace(/\s/g, '').toUpperCase() : null } : {}),
+  }
+  if (row) {
+    const { data, error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id).select().maybeSingle()
+    return error ? { error } : { row: data }
+  }
+  const p = periode({ monat, frei: false })
+  const { data, error } = await supabase.from('chatter_abrechnungen').insert({
+    ...felder, monat: p.bezug, von: p.ab, bis: p.ende, frei: false, bezeichnung: p.bezeichnung, freigegeben_von: wer || null, status: 'offen',
+  }).select().maybeSingle()
+  if (error && /duplicate|unique/i.test(error.message || '')) return { error: { message: `Für ${n} gibt es in ${p.bezeichnung} schon einen Eintrag dieser Art — bitte den bearbeiten.` } }
+  return error ? { error } : { row: data }
+}
+
+// Letzter Eintrag dieser Person (für Vorschläge: Art, Währung, Betrag, Notiz)
+export async function letzterEintrag(name) {
+  const n = String(name || '').trim()
+  if (!n) return null
+  const { data } = await supabase.from('chatter_abrechnungen').select('art,waehrung,betrag_manuell,notiz').ilike('chatter_name', n).neq('art', 'chatter').order('von', { ascending: false }).limit(1)
+  return data?.[0] || null
+}
+
+// Namen fürs Eingabefeld: Team-Mitglieder + Chatter-Kontakte (auch inaktive)
+export async function namenVorschlaege() {
+  const [u, c] = await Promise.all([
+    supabase.from('user_roles').select('display_name'),
+    supabase.from('chatters_contact').select('name'),
+  ])
+  return [...new Set([...(u.data || []).map(x => x.display_name), ...(c.data || []).map(x => x.name)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'))
+}
+
+export async function eintragLoeschen(row) {
+  return supabase.from('chatter_abrechnungen').delete().eq('id', row.id)
 }
 
 // ── Admin-Aktionen ─────────────────────────────────────────────────────────
@@ -264,13 +343,13 @@ function dateiName(a) {
 }
 
 function uebersichtCsv(zeilen) {
-  const kopf = ['Monat', 'Zeitraum von', 'Zeitraum bis', 'Chatter', 'Umsatz $', 'Satz %', 'Anteil $', 'Kurs', 'Anteil €', 'Extras', 'Extras €', 'Gesamt €', 'Rechnung', 'Rechnungsbetrag €', 'Rechnung hochgeladen', 'Status', 'Bezahlt am', 'Bezahlt €', 'Bezahlt von']
+  const kopf = ['Monat', 'Zeitraum von', 'Zeitraum bis', 'Name', 'Art', 'Notiz', 'Umsatz $', 'Satz %', 'Anteil $', 'Kurs', 'Anteil €', 'Betrag (Team/ohne Profil)', 'Extras', 'Extras Summe', 'Gesamt', 'Währung', 'Rechnung', 'Rechnungsbetrag', 'IBAN', 'Rechnung hochgeladen', 'Status', 'Bezahlt am', 'Bezahlt', 'Bezahlt von']
   const zelle = (v) => { const t = String(v ?? ''); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
   const rows = zeilen.map(a => [
-    a.monat, a.von, a.bis, a.chatter_name,
-    zahlCsv(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd), zahlCsv(a.prozent), zahlCsv(a.auszahlung_usd), a.kurs != null ? String(a.kurs).replace('.', ',') : '',
-    zahlCsv(a.betrag_eur), extrasVon(a).map(e => `${e.text}: ${zahlCsv(e.betrag)}`).join(' | '), zahlCsv(extrasSumme(a)), zahlCsv(gesamtEur(a)),
-    a.rechnung_url ? dateiName(a) : '', zahlCsv(a.rechnung_betrag), a.rechnung_am ? datum(a.rechnung_am) : '',
+    a.monat, a.von, a.bis, a.chatter_name, (ART[a.art] || ART.chatter).label, a.notiz || '',
+    istManuell(a) ? '' : zahlCsv(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd), istManuell(a) ? '' : zahlCsv(a.prozent), istManuell(a) ? '' : zahlCsv(a.auszahlung_usd), !istManuell(a) && a.kurs != null ? String(a.kurs).replace('.', ',') : '',
+    istManuell(a) ? '' : zahlCsv(a.betrag_eur), istManuell(a) ? zahlCsv(a.betrag_manuell) : '', extrasVon(a).map(e => `${e.text}: ${zahlCsv(e.betrag)}`).join(' | '), zahlCsv(extrasSumme(a)), zahlCsv(gesamt(a).wert), gesamt(a).waehrung,
+    a.rechnung_url ? dateiName(a) : '', zahlCsv(a.rechnung_betrag), a.rechnung_iban || '', a.rechnung_am ? datum(a.rechnung_am) : '',
     (STATUS[statusVon(a)] || STATUS.offen).label, a.bezahlt_am ? datum(a.bezahlt_am) : '', zahlCsv(a.bezahlt_betrag), a.bezahlt_von || '',
   ])
   return '\uFEFF' + [kopf, ...rows].map(r => r.map(zelle).join(';')).join('\r\n')
