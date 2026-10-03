@@ -7,7 +7,7 @@ import SkripteBereich from './components/SkripteBereich' // v5.27.0
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
-  Eye, ArrowLeftRight, DollarSign, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard, KeyRound,
+  Eye, ArrowLeftRight, DollarSign, Receipt, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard, KeyRound,
   ScrollText,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
@@ -28,6 +28,7 @@ import ModelPortal from './components/ModelPortal'
 import ExportTab from './components/ExportTab'
 import SettingsTab from './components/SettingsTab'
 import BillingTab from './components/BillingTab'
+import BuchhaltungTab from './components/BuchhaltungTab' // v5.37.0
 import PerformanceTab from './components/PerformanceTab'
 import TodoTab from './components/TodoTab'
 import SocialManager, { SocialVorschauFenster } from './components/SocialManager' // v4.102.0: ersetzt den alten SocialTab
@@ -101,6 +102,7 @@ const BEREICHE = [
   { key: 'verwaltung', label: 'Verwaltung', Icon: Database, tabs: [
     { key: 'datenstand', label: 'Daten', Icon: Database },
     { key: 'billing', label: 'Billing', Icon: DollarSign },
+    { key: 'buchhaltung', label: 'Buchhaltung', Icon: Receipt }, // v5.37.0: Rechnungen der Chatter
   ] },
   { key: 'einstellungen', label: 'Einstellungen', Icon: SettingsIcon, tabs: [
     { key: 'settings', label: 'Einstellungen', Icon: SettingsIcon },
@@ -1094,6 +1096,8 @@ export default function App() {
             festerReiter={(isManager || istLeitung) ? ({ 'social': 'steuerung', 'social-freigabe': 'freigabe', 'social-schnitt': 'schnitt', 'social-plan': 'plan', 'social-posten': 'posten', 'social-ueberblick': 'ueberblick', 'social-wirkung': 'wirkung', 'social-models': 'models-admin', 'social-rechte': 'rechte' }[activeTab] || 'steuerung') : null} />
         ) : activeTab === 'billing' ? (
           <BillingTab />
+        ) : activeTab === 'buchhaltung' ? (
+          <BuchhaltungTab userDisplayName={userDisplayName} />
         ) : activeTab === 'vorschlaege' ? (
           <SuggestionsAdmin />
         ) : activeTab === 'skripte' ? (

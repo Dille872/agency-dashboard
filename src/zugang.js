@@ -9,7 +9,7 @@
 export function darfAufTab(userRole, userRoles, tab) {
   const rollen = Array.isArray(userRoles) ? userRoles : []
   if (userRole === 'admin') return true
-  if (userRole === 'manager') return !['settings', 'billing'].includes(tab)
+  if (userRole === 'manager') return !['settings', 'billing', 'buchhaltung'].includes(tab)
   // v5.27.0: Storyteller / Script Builder — Bereich Skripte (zusätzlich zu Social, falls vorhanden)
   if (tab === 'skripte' && ['storyteller', 'script_builder'].some(r => rollen.includes(r))) return true
   if (userRole === 'dienstplan') return ['schedule', 'chatters-comm', 'kalender'].includes(tab)

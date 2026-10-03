@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { MImg, MVideo, MAudio, MA } from './Medien' // v5.33.0: private Dateien
 import SkripteBereich from './SkripteBereich' // v5.27.0
+import ChatterRechnungen from './ChatterRechnungen' // v5.37.0
 import { routeAmStart } from '../route' // v5.28.0
 import { BookOpen, Library, Eye, UserRound } from 'lucide-react'
 import { supabase } from '../supabase'
@@ -2584,6 +2585,8 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         {/* v4.75.0: Tab „Heute" zweispaltig — links die Models der Schicht,
             rechts der Rest wie bisher. In den anderen Tabs ist der Rahmen ein
             normaler Block (die Abwesenheit aus „Organisation" liegt mit drin). */}
+        {/* v5.37.0: Rechnung schreiben & hochladen, sobald die Abrechnung freigegeben ist */}
+        {tab === 'heute' && displayName && <ChatterRechnungen displayName={displayName} isPreview={isPreview} modus="karte" />}
         <div className={tab === 'heute' ? 'heute-raster' : undefined}>
         {tab === 'heute' && !plan7Geladen && !isPreview && (
           <div className="heute-links"><SkelModels anzahl={2} /></div>
@@ -3334,6 +3337,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
         </Collapsible>
 
         {/* PINNWAND VERLAUF - kollabierbar · v3.95.0: im Mehr-Tab */}
+        {tab === 'mehr' && displayName && <ChatterRechnungen displayName={displayName} isPreview={isPreview} modus="liste" />}
         {tab === 'mehr' && announcements.length > 0 && (
           <div style={{ marginBottom: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
             <button

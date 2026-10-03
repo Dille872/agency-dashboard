@@ -4,9 +4,10 @@ import { supabase, FUNCTIONS_URL } from '../supabase'
 import { heuteBerlin } from '../utils'
 import { ROLES } from '../rollen'
 import { frageBeantworten } from '../ofSkripte'
+import { oeffnen } from '../medien'
 import {
   Zap, KeyRound, Ban, UserPlus, PenLine, MessageCircleQuestion, RefreshCw, TreePalm,
-  MessageSquareText, AlarmClock, ChartColumn, Check, CheckCheck, ThumbsUp, BellOff, Bell, X,
+  MessageSquareText, AlarmClock, ChartColumn, Receipt, FileText, Check, CheckCheck, ThumbsUp, BellOff, Bell, X,
 } from 'lucide-react'
 
 // ── Wartet auf euch (v5.36.0) ────────────────────────────────────────────
@@ -50,7 +51,7 @@ const schreibAus = (set) => { try { localStorage.setItem(AUS, JSON.stringify([..
 // Lucide-Symbol je Art (statt Emoji)
 const SYMBOL = {
   pw: KeyRound, ban: Ban, rolle: UserPlus, skripte: PenLine, frage: MessageCircleQuestion,
-  swap: RefreshCw, abs: TreePalm, cr: MessageSquareText, crx: AlarmClock, csv: ChartColumn,
+  swap: RefreshCw, abs: TreePalm, cr: MessageSquareText, crx: AlarmClock, csv: ChartColumn, rechnung: Receipt,
 }
 const kurz = (t, n = 70) => { const s = String(t || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s }
 const berlinStunde = () => Number(new Date().toLocaleString('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hour12: false }))
@@ -90,17 +91,19 @@ export default function AdminWartet({ onNavigate, daten }) {
   const lade = useCallback(async () => {
     const heute = heuteBerlin()
     const sicher = (p) => p.then(r => (r?.error ? [] : (r?.data || []))).catch(() => [])
-    const [pw, konten, sk, swaps, abs, cr] = await Promise.all([
+    const [pw, konten, sk, swaps, abs, cr, re] = await Promise.all([
       sicher(supabase.from('password_resets').select('id,email,display_name,requested_at,status').eq('status', 'angefragt')),
       sicher(supabase.rpc('admin_konten_pruefen')),
       sicher(supabase.from('of_skripte').select('id,model_name,titel,erstellt_von,aktualisiert_am,status,model_frage').in('status', ['freigabe', 'beim_model'])),
       sicher(supabase.from('shift_swaps').select('*').eq('status', 'offen').gte('shift_date', heute).lte('shift_date', plusTage(heute, 2))),
       sicher(supabase.from('absences').select('id,chatter_name,date_from,date_to,reason,created_at').eq('source', 'chatter').eq('seen_by_admin', false).gte('date_to', heute)),
       sicher(supabase.from('content_requests').select('id,model_name,chatter_name,request_text,edited_text,status,deadline,deadline_date,created_at').in('status', ['neu', 'angefragt', 'bestaetigt'])),
+      // v5.37.0: hochgeladene Rechnungen, die noch nicht bezahlt sind
+      sicher(supabase.from('chatter_abrechnungen').select('id,chatter_name,bezeichnung,monat,betrag_eur,rechnung_betrag,rechnung_am,rechnung_url,rechnung_von').eq('status', 'rechnung')),
     ])
     const ids = swaps.map(s => s.id)
     const reaktionen = ids.length ? await sicher(supabase.from('swap_reactions').select('swap_id,chatter_name,reaction').in('swap_id', ids)) : []
-    setRoh({ heute, pw, konten, sk, swaps, reaktionen, abs, cr })
+    setRoh({ heute, pw, konten, sk, swaps, reaktionen, abs, cr, re })
   }, [])
 
   useEffect(() => {
@@ -198,6 +201,15 @@ export default function AdminWartet({ onNavigate, daten }) {
           text: `${r.status === 'bestaetigt' ? 'Zugesagt' : 'Angefragt'}, noch nicht erledigt: ${kurz(r.edited_text || r.request_text, 90)}`,
         })
       }
+    }
+
+    for (const a of roh.re || []) {
+      const b = a.rechnung_betrag ?? a.betrag_eur
+      liste.push({
+        key: 're-' + a.id + '-' + (a.rechnung_am || ''), prio: 2, zeit: a.rechnung_am, art: 'rechnung', daten: a,
+        titel: `Rechnung von ${a.chatter_name} ist da`,
+        text: `${a.bezeichnung || a.monat}${b != null ? ' · ' + Number(b).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €' : ''}${a.rechnung_von && a.rechnung_von !== a.chatter_name ? ' · hochgeladen von ' + a.rechnung_von : ''} — noch nicht bezahlt.`,
+      })
     }
 
     if (daten?.fehlt && daten.tag && daten.tag < heute && berlinStunde() >= 12) liste.push({
@@ -345,6 +357,10 @@ export default function AdminWartet({ onNavigate, daten }) {
         <button className="aw-k" onClick={() => geh('schedule')}>Zum Dienstplan</button>
       </>
       case 'cr': return <button className="aw-k aw-p" onClick={() => geh('models-comm', { section: 'content-requests', id: e.daten.id })}>Anfrage öffnen</button>
+      case 'rechnung': return <>
+        <button className="aw-k aw-p" onClick={() => geh('buchhaltung')}>Zur Buchhaltung</button>
+        {e.daten.rechnung_url && <button className="aw-k" onClick={() => oeffnen(e.daten.rechnung_url)}><FileText size={14} strokeWidth={2.2} /> Rechnung</button>}
+      </>
       case 'csv': return <button className="aw-k aw-p" onClick={() => { spaeter(); daten?.oeffnen && daten.oeffnen() }}>Hochladen</button>
       default: return null
     }

@@ -10,7 +10,7 @@ import { supabase } from './supabase'
 // abläuft und nur für Eingeloggte erzeugt werden kann. Fremde Links
 // (Instagram, Dropbox …) bleiben unverändert.
 
-export const PRIVATE_BUCKETS = ['model-media', 'content-requests', 'chat-attachments', 'guideline-images']
+export const PRIVATE_BUCKETS = ['model-media', 'content-requests', 'chat-attachments', 'guideline-images', 'rechnungen'] // v5.37.0: + rechnungen
 const MUSTER = /\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/?#]+)\/([^?#]+)/
 
 export function zerlege(url) {
