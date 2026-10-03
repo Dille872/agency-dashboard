@@ -6,7 +6,7 @@ import { ROLES } from '../rollen'
 import { frageBeantworten } from '../ofSkripte'
 import {
   Zap, KeyRound, Ban, UserPlus, PenLine, MessageCircleQuestion, RefreshCw, TreePalm,
-  MessageSquareText, AlarmClock, ChartColumn, Check, ThumbsUp, BellOff, Bell, X,
+  MessageSquareText, AlarmClock, ChartColumn, Check, CheckCheck, ThumbsUp, BellOff, Bell, X,
 } from 'lucide-react'
 
 // ── Wartet auf euch (v5.36.0) ────────────────────────────────────────────
@@ -21,6 +21,9 @@ import {
 // v5.36.1: „Nicht mehr erinnern“ pro Eintrag (bleibt aus, bis die Sache weg ist
 //   oder sich ändert, z. B. jemand will die Schicht doch übernehmen) · Lucide-
 //   Symbole statt Emojis · „ausgeschrieben vor …“ statt „seit …“
+// v5.36.2: „Gelesen“ pro Eintrag + „Alle gelesen“ unten: ab acta, kein
+//   stündliches Erinnern mehr. Nur NEUE Sachen holen das Pop-up wieder hoch.
+//   Der Knopf oben bleibt (gedämpft), damit man Gelesenes wiederfindet.
 // Normale Nachrichten, Board, was andere Admins tun → bleibt in den Glocken.
 
 const SPEICHER = 'admin_wartet_v1'
@@ -219,6 +222,10 @@ export default function AdminWartet({ onNavigate, daten }) {
   const eintraege = useMemo(() => alle.filter(e => !aus.has(e.key)), [alle, aus])
   const ausgeblendet = useMemo(() => alle.filter(e => aus.has(e.key)), [alle, aus])
   const nichtMehr = (e) => { const n = new Set(aus); n.add(e.key); setAus(n); schreibAus(n) }
+  const alleGelesen = () => {
+    const n = new Set(aus); eintraege.forEach(e => n.add(e.key)); setAus(n); schreibAus(n)
+    setOffen(false); setCodes([]); setZeigAus(false)
+  }
   const wiederAn = (e) => { const n = new Set(aus); n.delete(e.key); setAus(n); schreibAus(n) }
 
   // ── Automatisch öffnen ───────────────────────────────────────────────────
@@ -356,8 +363,8 @@ export default function AdminWartet({ onNavigate, daten }) {
           ) : (
             <div className="aw-knopf">
               {knoepfe(e)}
-              <button className="aw-k aw-leise" onClick={() => nichtMehr(e)} title="Gelesen — für diese Sache kein Pop-up mehr">
-                <BellOff size={14} strokeWidth={2.4} /> Nicht mehr erinnern
+              <button className="aw-k aw-leise" onClick={() => nichtMehr(e)} title="Ad acta: für diese Sache kein Pop-up und keine Erinnerung mehr">
+                <Check size={14} strokeWidth={2.6} /> Gelesen
               </button>
             </div>
           )}
@@ -367,13 +374,17 @@ export default function AdminWartet({ onNavigate, daten }) {
     )
   }
 
-  if (!eintraege.length && !codes.length && !(offen && ausgeblendet.length)) return null
+  if (!eintraege.length && !codes.length && !ausgeblendet.length && !offen) return null
 
-  const knopf = !eintraege.length ? null : (
+  const knopf = eintraege.length ? (
     <button className="aw-pill" onClick={() => setOffen(true)} title="Dinge, bei denen jemand auf euch wartet">
       <Zap size={14} strokeWidth={2.6} /> <span className="hide-sm">Wartet</span> <span className="aw-zahl">{eintraege.length}</span>
     </button>
-  )
+  ) : ausgeblendet.length ? (
+    <button className="aw-pill aw-pill-ruhig" onClick={() => { setZeigAus(true); setOffen(true) }} title="Alles gelesen — hier findest du es wieder">
+      <BellOff size={14} strokeWidth={2.4} /> <span className="aw-zahl-ruhig">{ausgeblendet.length}</span>
+    </button>
+  ) : null
 
   return <>
     {knopf}
@@ -382,7 +393,7 @@ export default function AdminWartet({ onNavigate, daten }) {
         <div className="aw-pop" role="dialog" aria-label="Wartet auf euch">
           <div className="aw-kopf">
             <span className="aw-kopf-ic"><Zap size={18} strokeWidth={2.6} /></span>
-            <h3>Wartet auf euch <small>· {eintraege.length} {eintraege.length === 1 ? 'Sache' : 'Dinge'}</small></h3>
+            <h3>Wartet auf euch <small>· {eintraege.length ? `${eintraege.length} ${eintraege.length === 1 ? 'Sache' : 'Dinge'}` : 'alles gelesen'}</small></h3>
             <button className="aw-x" onClick={spaeter} aria-label="Schließen"><X size={18} /></button>
           </div>
           <div className="aw-liste">
@@ -392,17 +403,22 @@ export default function AdminWartet({ onNavigate, daten }) {
                 <button className="aw-x" onClick={() => setCodes(l => l.filter((_, j) => j !== i))} aria-label="Weg"><X size={16} /></button>
               </div>
             ))}
-            {!eintraege.length && <div className="aw-leer"><Check size={16} strokeWidth={2.6} /> Nichts offen.</div>}
+            {!eintraege.length && <div className="aw-leer"><Check size={16} strokeWidth={2.6} /> Nichts Neues — alles gelesen.</div>}
             {eintraege.map(e => zeile(e, false))}
             {zeigAus && ausgeblendet.map(e => zeile(e, true))}
           </div>
           <div className="aw-fuss">
             {ausgeblendet.length > 0
               ? <button className="aw-link" onClick={() => setZeigAus(v => !v)}>
-                  <BellOff size={13} strokeWidth={2.4} /> {ausgeblendet.length} stumm · {zeigAus ? 'ausblenden' : 'anzeigen'}
+                  {ausgeblendet.length} gelesen · {zeigAus ? 'ausblenden' : 'anzeigen'}
                 </button>
-              : <span>Kommt wieder, solange etwas offen ist.</span>}
-            <button className="aw-k" onClick={spaeter}>Später (1 Std.)</button>
+              : <span className="aw-fuss-text">Neue Sachen melden sich wieder.</span>}
+            <div className="aw-fuss-knoepfe">
+              <button className="aw-k" onClick={spaeter}>{eintraege.length ? 'Später (1 Std.)' : 'Schließen'}</button>
+              {eintraege.length > 0 && <button className="aw-k aw-p" onClick={alleGelesen} title="Alles ad acta — nur neue Sachen holen das Pop-up wieder hoch">
+                <CheckCheck size={15} strokeWidth={2.6} /> Alle gelesen
+              </button>}
+            </div>
           </div>
         </div>
       </div>, document.body)}

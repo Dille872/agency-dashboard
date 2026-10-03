@@ -417,6 +417,9 @@ th { text-align: left; }
 
 /* ── v5.36.0: ⚡ Wartet auf euch (AdminWartet.jsx) ───────────────────────── */
 .aw-pill.aw-pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.5); color: #f87171; }
+.aw-pill.aw-pill-ruhig { background: transparent; border-color: var(--border); color: var(--text-muted); }
+.aw-zahl-ruhig { font-size: 11px; font-weight: 700; }
+.aw-fuss-knoepfe { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .aw-zahl { background: #ef4444; color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 800; line-height: 1.6; }
 .aw-ov { position: fixed; inset: 0; z-index: 10050; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 70px 16px 16px; }
 .aw-pop { width: 100%; max-width: 540px; max-height: calc(100vh - 90px); display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); overflow: hidden; }
