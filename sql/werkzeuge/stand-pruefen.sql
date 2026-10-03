@@ -72,6 +72,7 @@ from (values
   ('todos-frist.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='due_date'))),
   ('todos-notified-at.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='todos' and column_name='notified_at'))),
   ('wiederholung-mit-zeit.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='recurring_shifts' and column_name='time_override'))),
+  ('buchhaltung-upload.sql', (exists(select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relname='chatter_abrechnungen' and t.tgname='a_chatter_abrechnungen_schuetzen' and (t.tgtype & 4) = 4))),
   ('buchhaltung-team.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='betrag_manuell'))),
   ('buchhaltung-entwurf.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='mitgeteilt_am'))),
   ('buchhaltung.sql', (to_regclass('public.chatter_abrechnungen') is not null and exists(select 1 from storage.buckets where id='rechnungen'))),

@@ -5,9 +5,9 @@ import {
 } from 'lucide-react'
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
-  abrechnungenLaden, periode, zeitraumLaden, anzeige, veraltet, statusVon, extrasVon, gesamtEur, gesamt, istManuell,
+  abrechnungenLaden, periode, zeitraumLaden, anzeige, statusVon, extrasVon, gesamtEur, gesamt, istManuell,
   manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern,
-  zeileSichern, extrasSpeichern, mitteilen, zahlenAktualisieren,
+  zeileSichern, extrasSpeichern, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
 } from '../buchhaltung'
 import { oeffnen, signiert } from '../medien'
@@ -16,7 +16,8 @@ import { rechnungLesen, ibanSchoen } from '../rechnungLesen'
 // ── Buchhaltung (v5.37.0 · v5.37.1) ────────────────────────────────────────
 // Verwaltung → Buchhaltung. Die Zahlen stehen automatisch drin (wie Billing).
 // Pro Chatter: Anteil + Extras (z. B. Skripte, Bonus, Abzug) = Gesamt, daneben
-// Rechnung da / fehlt und „Bezahlt“. Mit „Bescheid geben“ sieht der Chatter
+// Rechnung da / fehlt und „Bezahlt“. (v5.39.0: kein „Bescheid geben“ mehr —
+// Chatter laden ihre Rechnung jederzeit selbst im Portal hoch.) Früher: Mit „Bescheid geben“ sah der Chatter
 // seine Abrechnung und bekommt Telegram; vorher ist alles euer Entwurf.
 // v5.38.0: „+ Team / ohne Profil“ (z. B. Alina in $, ehemalige Chatter wie Joel),
 // Summe + IBAN aus PDF-Rechnungen vorgeschlagen, Rechnung im Fenster ansehen.
@@ -58,7 +59,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
     if (modus === 'offen') {
       const { data, error } = await abrechnungenLaden()
       if (error) { setDaten({ fehler: fehltTabelle(error) ? 'Die Datenbank für die Buchhaltung fehlt noch: sql/buchhaltung.sql und sql/buchhaltung-entwurf.sql ausführen.' : error.message, items: [] }); return }
-      const items = (data || []).filter(r => (r.mitgeteilt_am || istManuell(r)) && r.status !== 'bezahlt')
+      const items = (data || []).filter(r => r.status !== 'bezahlt')
         .map(r => ({ key: 'r' + r.id, name: r.chatter_name, row: r, live: null, telegram: null, manuell: istManuell(r), p: { ab: r.von, ende: r.bis, bezug: r.monat, frei: r.frei, bezeichnung: r.bezeichnung } }))
       setDaten({ items }); return
     }
@@ -74,7 +75,6 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const sichtbar = items.filter(i => filter === 'alle' || statusVon(i.row) === filter)
   const summe = (l) => l.reduce((t, i) => t + (gesamtEur(anzeige(i)) || 0), 0)
   const summeUsd = (l) => l.filter(i => istManuell(i.row) && i.row.waehrung === 'USD').reduce((t, i) => t + (gesamt(i.row).wert || 0), 0)
-  const entwuerfe = items.filter(i => statusVon(i.row) === 'entwurf')
   const fehlen = items.filter(i => statusVon(i.row) === 'offen' && !i.manuell)
   const bezahltListe = items.filter(i => statusVon(i.row) === 'bezahlt')
 
@@ -86,21 +86,6 @@ export default function BuchhaltungTab({ userDisplayName }) {
   }
 
   // ── Aktionen ─────────────────────────────────────────────────────────────
-  const bescheid = async (liste) => {
-    if (!liste.length) return
-    const ohneKurs = liste.some(i => i.live && i.live.betrag_eur == null)
-    if (!confirm(`${liste.length === 1 ? liste[0].name : liste.length + ' Chattern'} die Abrechnung mitteilen?\n\nDie Zahlen werden damit festgeschrieben, der Chatter sieht sie im Portal und bekommt eine Telegram-Nachricht.${ohneKurs ? '\n\n⚠ Für diesen Monat ist noch kein Euro-Kurs eingetragen — dann steht nur der $-Betrag drin.' : ''}`)) return
-    setBusy('bescheid')
-    let ok = 0, tg = 0, fehler = ''
-    for (const i of liste) {
-      const r = await mitteilen(i, i.p, { wer: userDisplayName })
-      if (r.error) { fehler = r.error.message; continue }
-      ok++; if (r.gesendet) tg++
-    }
-    setBusy(null)
-    if (fehler) alert('Nicht alles ging durch: ' + fehler)
-    melde(`${ok} mitgeteilt · ${tg} per Telegram${ok > tg ? ` · ${ok - tg} ohne Telegram` : ''}`); lade()
-  }
   const hochladenStart = (i) => { ziel.current = i; datei.current?.click() }
   const hochladen = async (ev) => {
     const f = ev.target.files?.[0]; ev.target.value = ''
@@ -122,6 +107,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
     setBusy(i.key)
     const row = await sichern(i)
     if (!row) { setBusy(null); return }
+    // Zahlen in dem Moment festhalten (für Export & spätere Nachfragen)
+    if (i.live && !istManuell(row)) await zahlenAktualisieren({ ...i, row })
     const r = await alsBezahlt({ ...anzeige(i), ...row }, { am, betrag })
     setBusy(null)
     if (r.error) { alert('Nicht gespeichert: ' + r.error.message); return }
@@ -160,15 +147,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
     const { error } = await extrasSpeichern(row, sauber)
     setBusy(null)
     if (error) { alert('Nicht gespeichert: ' + (fehltTabelle(error) ? 'Datenbank fehlt noch (sql/buchhaltung-entwurf.sql).' : error.message)); return }
-    setExtras(null); melde(`${i.name}: Extras gespeichert${i.row?.mitgeteilt_am ? ' (der Chatter sieht den neuen Betrag im Portal)' : ''}.`); lade()
+    setExtras(null); melde(`${i.name}: Extras gespeichert.`); lade()
   }
-  const aktualisieren = async (i) => {
-    if (!confirm(`Die Zahlen für ${i.name} haben sich seit dem Mitteilen geändert (${dollar(i.row.auszahlung_usd)} → ${dollar(i.live.auszahlung_usd)}). Neue Zahlen übernehmen?`)) return
-    const { error } = await zahlenAktualisieren(i)
-    if (error) { alert(error.message); return }
-    lade()
-  }
-
   // ── Team / ohne Profil ───────────────────────────────────────────────────
   const handOeffnen = (row) => {
     if (row) setHand({ row, name: row.chatter_name, art: row.art, monat: row.monat, betrag: row.betrag_manuell != null ? String(row.betrag_manuell).replace('.', ',') : '', waehrung: row.waehrung || 'EUR', notiz: row.notiz || '', iban: row.rechnung_iban || '', datei: null, erkannt: null })
@@ -243,7 +223,6 @@ export default function BuchhaltungTab({ userDisplayName }) {
           <button className="bh-k" onClick={() => handOeffnen(null)} title="Team (z. B. Alina) oder Rechnung ohne Profil (z. B. ehemalige Chatter)"><UserPlus size={14} strokeWidth={2.4} /> Team / ohne Profil</button>
           <button className="bh-k" onClick={() => { const m = p ? p.bezug : letzteMonate(2)[1]; setExp({ ab: m, bis: m, nurBezahlt: false, laeuft: false, text: '' }) }} title="Rechnungen und Übersicht für eure Buchhaltung herunterladen"><FolderDown size={14} strokeWidth={2.4} /> Export</button>
           {fehlen.length > 0 && <button className="bh-k" disabled={busy === 'erinnern'} onClick={() => erinnereAlle(fehlen)}><Bell size={14} strokeWidth={2.4} /> Erinnern ({fehlen.length})</button>}
-          {entwuerfe.length > 0 && <button className="bh-k bh-p" disabled={busy === 'bescheid'} onClick={() => bescheid(entwuerfe)}><Send size={14} strokeWidth={2.4} /> {busy === 'bescheid' ? 'Läuft …' : `Allen Bescheid geben (${entwuerfe.length})`}</button>}
         </div>
       </div>
 
@@ -262,12 +241,12 @@ export default function BuchhaltungTab({ userDisplayName }) {
         <>
           <div className="bh-kpis">
             <Kpi farbe="#e5e7eb" wert={euro(summe(items))} sub={summeUsd(items) ? `+ ${dollar(summeUsd(items))}` : ''} label={`Gesamt · ${items.length} ${items.length === 1 ? 'Eintrag' : 'Einträge'}`} />
-            <Kpi farbe={STATUS.entwurf.farbe} wert={statusZahl('entwurf')} label="Noch nicht mitgeteilt" />
-            <Kpi farbe={STATUS.rechnung.farbe} wert={statusZahl('rechnung')} sub={statusZahl('offen') ? `${statusZahl('offen')} fehlen` : ''} label="Rechnung da" />
+            <Kpi farbe={STATUS.offen.farbe} wert={statusZahl('offen')} label="Rechnung fehlt" />
+            <Kpi farbe={STATUS.rechnung.farbe} wert={statusZahl('rechnung')} sub={statusZahl('klaerung') ? `${statusZahl('klaerung')} in Klärung` : ''} label="Rechnung da · zu bezahlen" />
             <Kpi farbe={STATUS.bezahlt.farbe} wert={bezahltListe.length} sub={euro(bezahltListe.reduce((t, i) => t + Number(i.row?.bezahlt_betrag ?? gesamtEur(anzeige(i)) ?? 0), 0))} label="Bezahlt" />
           </div>
           <div className="bh-chips">
-            {['alle', 'entwurf', 'offen', 'rechnung', 'klaerung', 'bezahlt'].filter(k => k === 'alle' || statusZahl(k)).map(k => (
+            {['alle', 'offen', 'rechnung', 'klaerung', 'bezahlt'].filter(k => k === 'alle' || statusZahl(k)).map(k => (
               <button key={k} className={'bh-chip' + (filter === k ? ' an' : '')} onClick={() => setFilter(k)}>{k === 'alle' ? `Alle ${items.length}` : `${STATUS[k].label} · ${statusZahl(k)}`}</button>
             ))}
           </div>
@@ -292,7 +271,6 @@ export default function BuchhaltungTab({ userDisplayName }) {
             const g = G.wert
             const abw = r?.rechnung_betrag != null && g != null && Math.abs(Number(r.rechnung_betrag) - g) >= 0.01
             const b = busy === i.key
-            const alt = veraltet(i)
             return (
               <div key={i.name + (r?.id || '')} className="bh-zeile" style={{ borderLeftColor: st.farbe }}>
                 <div className="bh-wer">
@@ -317,17 +295,14 @@ export default function BuchhaltungTab({ userDisplayName }) {
                       {r.rechnung_betrag == null && <button className="bh-link warn" onClick={() => setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: null, waehrung: G.waehrung, gesamt: g, wer: i.name })}><Pencil size={12} strokeWidth={2.4} /> Betrag fehlt — prüfen</button>}
                       {r.rechnung_iban && <button className="bh-iban" onClick={() => kopieren(r.rechnung_iban)} title="IBAN kopieren"><Copy size={12} strokeWidth={2.4} /> {ibanSchoen(r.rechnung_iban)}</button>}
                     </>
-                  ) : <small>{stKey === 'entwurf' ? '—' : `fehlt${r?.erinnert_am ? ` · erinnert ${datum(r.erinnert_am)}` : ''}`}</small>}
+                  ) : <small>{`fehlt${r?.erinnert_am ? ` · erinnert ${datum(r.erinnert_am)}` : ''}`}</small>}
                 </div>
                 <div className="bh-status">
                   <span className="bh-st" style={{ color: st.farbe, background: st.bg }}>{stKey === 'bezahlt' ? `Bezahlt ${datum(r.bezahlt_am)}` : st.label}</span>
                   {stKey === 'bezahlt' && <small>{r.bezahlt_betrag != null ? euro(r.bezahlt_betrag) + ' · ' : ''}{r.bezahlt_von || ''}</small>}
                   {stKey === 'klaerung' && r.klaerung_notiz && <small className="bh-notiz">„{r.klaerung_notiz}“</small>}
-                  {r?.mitgeteilt_am && stKey !== 'bezahlt' && <small>mitgeteilt {datum(r.mitgeteilt_am)}</small>}
-                  {alt && <button className="bh-link warn" onClick={() => aktualisieren(i)}><RefreshCw size={13} strokeWidth={2.4} /> Zahlen geändert: {dollar(i.live.auszahlung_usd)}</button>}
                 </div>
                 <div className="bh-aktion">
-                  {stKey === 'entwurf' && <button className="bh-k bh-p" disabled={busy === 'bescheid'} onClick={() => bescheid([i])} title="Chatter sieht die Abrechnung und bekommt Telegram"><Send size={14} strokeWidth={2.4} /> Bescheid</button>}
                   {stKey !== 'bezahlt' && <button className="bh-k bh-gruen" disabled={b} onClick={() => bezahltOeffnen(i)}><Check size={14} strokeWidth={2.6} /> Bezahlt</button>}
                   {stKey === 'rechnung' && !man && <button className="bh-k" disabled={b} onClick={() => setKlaer({ i, notiz: r.klaerung_notiz || '' })} title="Rückfrage an den Chatter"><MessageCircleWarning size={14} strokeWidth={2.2} /></button>}
                   {man && <button className="bh-k" onClick={() => handOeffnen(r)} title="Bearbeiten"><Pencil size={14} strokeWidth={2.2} /></button>}

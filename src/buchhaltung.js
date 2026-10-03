@@ -6,6 +6,10 @@
 // Mit „Bescheid geben“ werden die Zahlen festgeschrieben, der Chatter sieht sie
 // im Portal und bekommt eine Telegram-Nachricht.
 // Eine Zeile in chatter_abrechnungen entsteht erst, wenn ihr etwas daran tut.
+// v5.39.0: KEIN „Bescheid geben“ mehr und keine automatischen Nachrichten.
+// Chatter laden ihre Rechnung jederzeit selbst hoch (Monat wählen → Datei);
+// die Zeile legen sie dabei selbst an (meineZeile). Die Zahlen sind immer live,
+// bis „Bezahlt“ gedrückt wird — dann werden sie in der Zeile festgehalten.
 // v5.38.0: Auch Team (z. B. Alina, in $) und Rechnungen ohne Profil (ehemalige
 // Chatter wie Joel) — Einträge von Hand mit Betrag, Währung, Notiz, Datei.
 // Aus PDF-Rechnungen werden Summe und IBAN vorgeschlagen (rechnungLesen.js).
@@ -47,7 +51,7 @@ export const istManuell = (row) => !!row && !!row.art && row.art !== 'chatter'
 export const geld = (v, waehrung = 'EUR') => waehrung === 'USD' ? dollar(v) : euro(v)
 
 // Status einer Zeile (Chatter ohne Zeile oder nicht mitgeteilt = Entwurf; Team/Extern nie)
-export const statusVon = (row) => istManuell(row) ? row.status : (!row || (!row.mitgeteilt_am && row.status === 'offen') ? 'entwurf' : row.status)
+export const statusVon = (row) => !row ? 'offen' : row.status
 export const extrasVon = (row) => Array.isArray(row?.extras) ? row.extras : []
 export const extrasSumme = (row) => extrasVon(row).reduce((t, e) => t + Number(e.betrag || 0), 0)
 // Gesamtbetrag in € (Anteil + Extras); ohne Kurs: null
@@ -134,13 +138,14 @@ const ZAHLFELDER = ['umsatz_chat_usd', 'umsatz_gesamt_usd', 'basis_usd', 'prozen
 // Was angezeigt wird: Entwurf → live, mitgeteilt → festgeschrieben
 export function anzeige(item) {
   const { row, live } = item
-  const fest = row && row.mitgeteilt_am
+  // bezahlt → festgehaltene Zahlen; sonst live (wie Billing)
+  const fest = row && row.status === 'bezahlt' && row.auszahlung_usd != null
   const zahlen = fest || !live ? (row || {}) : live
   const pp = item.p || {}
   return { monat: pp.bezug, von: pp.ab, bis: pp.ende, frei: pp.frei, bezeichnung: pp.bezeichnung, ...(row || {}), ...Object.fromEntries(ZAHLFELDER.map(k => [k, zahlen[k] ?? null])), chatter_name: item.name, extras: extrasVon(row) }
 }
 // Weicht das Festgeschriebene von den aktuellen Daten ab? (z. B. CSV nachgeladen)
-export const veraltet = (item) => !!(item.row?.mitgeteilt_am && item.live && Math.abs(Number(item.row.auszahlung_usd || 0) - Number(item.live.auszahlung_usd || 0)) >= 0.01)
+export const veraltet = () => false   // v5.39.0: nichts mehr festgeschrieben vor „Bezahlt“
 
 // Zeile sicherstellen (entsteht erst bei der ersten Aktion). Gibt die Zeile zurück.
 export async function zeileSichern(item, p, wer) {
@@ -153,6 +158,18 @@ export async function zeileSichern(item, p, wer) {
   if (ins.error) return { error: ins.error }
   const { data, error } = await supabase.from('chatter_abrechnungen').select('*').eq('chatter_name', item.name).eq('von', p.ab).eq('bis', p.ende).eq('art', 'chatter').maybeSingle()
   if (error || !data) return { error: error || { message: 'Zeile nicht gefunden' } }
+  return { row: data }
+}
+
+// Chatter: eigene Zeile für einen Monat holen oder anlegen (nur Name + Monat)
+export async function meineZeile(name, monat) {
+  const p = periode({ monat, frei: false })
+  const ins = await supabase.from('chatter_abrechnungen').upsert(
+    { chatter_name: name, monat: p.bezug, von: p.ab, bis: p.ende, frei: false, bezeichnung: p.bezeichnung, art: 'chatter' },
+    { onConflict: 'chatter_name,von,bis,art', ignoreDuplicates: true })
+  if (ins.error) return { error: ins.error }
+  const { data, error } = await supabase.from('chatter_abrechnungen').select('*').eq('chatter_name', name).eq('von', p.ab).eq('bis', p.ende).eq('art', 'chatter').maybeSingle()
+  if (error || !data) return { error: error || { message: 'Konnte nicht angelegt werden' } }
   return { row: data }
 }
 
