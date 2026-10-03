@@ -19,6 +19,9 @@ export const vorZeit = (iso) => {
 }
 
 // ── Schritte bearbeiten ────────────────────────────────────────────────────
+// v5.32.0: Schritt-Felder wachsen mit (lange Schritte, z. B. aus dem PDF-Import)
+const hoehe = (el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }
+
 export function SchritteEditor({ schritte, onChange }) {
   const refs = useRef([])
   const [fokus, setFokus] = useState(null)
@@ -33,13 +36,13 @@ export function SchritteEditor({ schritte, onChange }) {
         <div key={i} className="sk-schritt" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: 11, padding: '7px 8px' }}>
           <span style={{ flex: '0 0 auto', width: 24, height: 24, borderRadius: 12, background: P + '26', color: P, fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 6 }}>{i + 1}</span>
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <input ref={el => { refs.current[i] = el }} value={s.text} placeholder={i === 0 ? 'Erster Schritt, z. B. „Kommt zur Tür rein, Blick in die Kamera“' : 'Nächster Schritt … (Enter = noch einer)'}
-              onChange={e => setze(i, { text: e.target.value.slice(0, 500) })}
+            <textarea rows={1} ref={el => { refs.current[i] = el; hoehe(el) }} value={s.text} placeholder={i === 0 ? 'Erster Schritt, z. B. „Kommt zur Tür rein, Blick in die Kamera“' : 'Nächster Schritt … (Enter = noch einer)'}
+              onChange={e => { hoehe(e.target); setze(i, { text: e.target.value.slice(0, 500) }) }}
               onKeyDown={e => {
-                if (e.key === 'Enter') { e.preventDefault(); if (String(s.text).trim()) neuNach(i) }
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (String(s.text).trim()) neuNach(i) }
                 if (e.key === 'Backspace' && !s.text && schritte.length > 1) { e.preventDefault(); weg(i) }
               }}
-              style={{ ...eingabe, background: 'transparent', border: 'none', padding: '5px 4px' }} />
+              style={{ ...eingabe, background: 'transparent', border: 'none', padding: '5px 4px', resize: 'none', overflow: 'hidden', lineHeight: 1.45, display: 'block' }} />
             {s.tipp !== undefined && (
               <input value={s.tipp} placeholder="💡 Tipp, z. B. „Kamera auf Hüfthöhe“" onChange={e => setze(i, { tipp: e.target.value.slice(0, 300) })}
                 style={{ ...eingabe, background: 'transparent', border: 'none', borderTop: '1px dashed var(--border)', borderRadius: 0, padding: '5px 4px', fontSize: 12.5, color: 'var(--text-secondary)' }} />

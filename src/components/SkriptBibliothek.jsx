@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { ARTEN, artText, schritteSauber, STATUS, vorlageSpeichern, vorlageLoeschen, vorlagenZuweisen } from '../ofSkripte'
 import { P, G, AMB, ROT, card, eingabe, label, knopf, pill, SchritteEditor, SchritteAnzeige } from './skriptUi'
+import PdfImport from './PdfImport' // v5.32.0
 
 // ── 📚 Skript-Bibliothek (v5.30.0) ─────────────────────────────────────────
 // Fertige Skripte als Vorlage, damit nichts zum hundertsten Mal geschrieben wird.
@@ -94,6 +95,7 @@ export default function SkriptBibliothek({ liste, vorlagen, models, wer, istAdmi
     neuLaden()
   }
 
+  if (form === 'pdf') return <PdfImport vorlagen={vorlagen} wer={wer} onAbbrechen={() => setForm(null)} onFertig={(n) => { setForm(null); melde(true, `✓ ${n} Vorlage${n === 1 ? '' : 'n'} aus PDF gespeichert.`); neuLaden() }} />
   if (form) return <VorlageFormular vorlage={form === 'neu' ? null : form} wer={wer} onAbbrechen={() => setForm(null)} onFertig={() => { setForm(null); neuLaden() }} />
 
   return (
@@ -101,6 +103,7 @@ export default function SkriptBibliothek({ liste, vorlagen, models, wer, istAdmi
       <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <b style={{ flex: 1, minWidth: 180, fontSize: 15, color: 'var(--text-primary)' }}>📚 Bibliothek <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-muted)' }}>· {vorlagen.length} Vorlage{vorlagen.length === 1 ? '' : 'n'}</span></b>
+          {istAdmin && <button type="button" onClick={() => setForm('pdf')} style={knopf('', false)}>📄 Aus PDF importieren</button>}
           {istAdmin && <button type="button" onClick={() => setForm('neu')} style={knopf(G)}>+ Neue Vorlage</button>}
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
