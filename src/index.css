@@ -550,6 +550,15 @@ th { text-align: left; }
 .bh-pruefen-info span { display: inline-flex; align-items: center; gap: 5px; }
 .bh-pruefen-info .gut { color: #34d399; } .bh-pruefen-info .warn { color: #f59e0b; font-weight: 700; } .bh-pruefen-info .lila { color: #c4b5fd; }
 .bh-pruefen-knoepfe { display: flex; gap: 8px; margin-left: auto; }
+.bh-suche { display: inline-flex; align-items: center; gap: 6px; background: var(--bg-card2); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; color: var(--text-muted); }
+.bh-suche input { background: transparent; border: 0; outline: none; color: var(--text-primary); font: inherit; font-size: 13px; padding: 7px 0; width: 150px; }
+.bh-suche button { background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 0; display: grid; place-items: center; }
+.bh-anz.bh-anz { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin-top: 3px; background: none; border: 0; padding: 0; cursor: pointer; font-family: system-ui, sans-serif; font-size: 11.5px; font-weight: 600; color: #f59e0b; text-align: left; }
+.bh-anz b { color: var(--text-primary); font-family: ui-monospace, monospace; font-size: 12.5px; }
+.bh-anz-liste { display: flex; flex-direction: column; gap: 6px; }
+.bh-anz-zeile { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; background: var(--bg-card2); font-size: 13px; }
+.bh-anz-zeile b { font-family: ui-monospace, monospace; color: var(--text-primary); }
+.bh-anz-zeile span { flex: 1; color: var(--text-muted); font-size: 12px; }
 .bh-extra-zeile { display: grid; grid-template-columns: 1fr 100px auto; gap: 8px; align-items: center; }
 .bh-extra-zeile input { background: var(--bg-card2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text-primary); font: inherit; font-size: 14px; min-width: 0; }
 .bh-ov { position: fixed; inset: 0; z-index: 10060; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 90px 16px 16px; }
@@ -599,6 +608,9 @@ th { text-align: left; }
   .bh-status { grid-column: 1 / -1; }
   .bh-extra-zeile input { font-size: 16px !important; }
   .bh-ov.bh-ov-gross { padding: 8px; }
+  .bh-suche { flex: 1; } .bh-suche input { width: 100% !important; font-size: 16px !important; }
+  .bh-suche button { padding: 0 !important; }
+  .bh-anz.bh-anz { padding: 0 !important; font-size: 11.5px !important; }
   .bh-pruefen .bh-feld, .bh-pruefen .bh-pruefen-iban { width: 100%; }
   .bh-pruefen input { font-size: 16px !important; }
   .bh-ansehen { height: calc(100vh - 16px); }

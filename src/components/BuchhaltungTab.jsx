@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles,
+  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles, HandCoins, Search,
 } from 'lucide-react'
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
   abrechnungenLaden, periode, zeitraumLaden, anzeige, statusVon, extrasVon, gesamtEur, gesamt, istManuell,
-  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern, rechnungEntfernen, erkanntNachtragen,
+  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern, rechnungEntfernen, erkanntNachtragen, anzahlungenVon, anzahlungSumme, anzahlungenSpeichern,
   zeileSichern, extrasSpeichern, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
 } from '../buchhaltung'
@@ -44,6 +44,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const [klaer, setKlaer] = useState(null)
   const [extras, setExtras] = useState(null)       // { item, p, liste }
   const [exp, setExp] = useState(null)             // { ab, bis, nurBezahlt, laeuft, text }
+  const [suche, setSuche] = useState('')
+  const [anz, setAnz] = useState(null)             // Anzahlung: { i, liste, betrag, am, notiz }
   const [hand, setHand] = useState(null)           // Team / ohne Profil: { row?, name, art, monat, betrag, waehrung, notiz, iban, datei, erkannt }
   const [ansehen, setAnsehen] = useState(null)     // { url, name, iban, betrag, waehrung }
   const [namen, setNamen] = useState([])
@@ -95,11 +97,14 @@ export default function BuchhaltungTab({ userDisplayName }) {
 
   const items = daten?.items || []
   const statusZahl = (st) => items.filter(i => statusVon(i.row) === st).length
-  const sichtbar = items.filter(i => filter === 'alle' || statusVon(i.row) === filter)
+  const q = suche.trim().toLowerCase()
+  const sichtbar = items.filter(i => (filter === 'alle' || statusVon(i.row) === filter)
+    && (!q || i.name.toLowerCase().includes(q) || String(i.row?.notiz || '').toLowerCase().includes(q)))
   const summe = (l) => l.reduce((t, i) => t + (gesamtEur(anzeige(i)) || 0), 0)
   const summeUsd = (l) => l.filter(i => istManuell(i.row) && i.row.waehrung === 'USD').reduce((t, i) => t + (gesamt(i.row).wert || 0), 0)
   const fehlen = items.filter(i => statusVon(i.row) === 'offen' && !i.manuell)
   const bezahltListe = items.filter(i => statusVon(i.row) === 'bezahlt')
+  const anzOffen = items.filter(i => statusVon(i.row) !== 'bezahlt' && !(istManuell(i.row) && i.row.waehrung === 'USD')).reduce((t, i) => t + anzahlungSumme(i.row), 0)
 
   const melde = (t) => { setMeldung(t); if (t) setTimeout(() => setMeldung(m => (m === t ? '' : m)), 7000) }
   const sichern = async (item) => {
@@ -121,9 +126,28 @@ export default function BuchhaltungTab({ userDisplayName }) {
     if (r.error) { alert('Rechnung NICHT hochgeladen: ' + r.error.message); return }
     melde(`Rechnung für ${i.name} hochgeladen. Summe und IBAN (falls in der PDF) sind vorgeschlagen — bitte prüfen.`); lade()
   }
+  const gesamtVon = (i) => istManuell(i.row) ? gesamt(i.row) : { wert: gesamtEur(anzeige(i)), waehrung: 'EUR' }
   const bezahltOeffnen = (i) => {
-    const a = anzeige(i)
-    setBezahlt({ i, am: heuteIso(), betrag: String(i.row?.rechnung_betrag ?? (istManuell(i.row) ? gesamt(i.row).wert : gesamtEur(a)) ?? '').replace('.', ',') })
+    const soll = i.row?.rechnung_betrag ?? gesamtVon(i).wert
+    const rest = soll != null ? Math.round((Number(soll) - anzahlungSumme(i.row)) * 100) / 100 : null
+    setBezahlt({ i, am: heuteIso(), betrag: rest != null ? String(rest).replace('.', ',') : '' })
+  }
+  // ── Anzahlung ────────────────────────────────────────────────────────────
+  const anzOeffnen = (i) => setAnz({ i, liste: anzahlungenVon(i.row), betrag: '', am: heuteIso(), notiz: '' })
+  const anzSpeichern = async (liste) => {
+    const { i } = anz
+    setBusy(i.key)
+    const row = await sichern(i)
+    if (!row) { setBusy(null); return }
+    const { error } = await anzahlungenSpeichern(row, liste, userDisplayName)
+    setBusy(null)
+    if (error) { alert('Nicht gespeichert: ' + (fehltTabelle(error) ? 'Datenbank fehlt noch (sql/buchhaltung-anzahlung.sql ausführen).' : error.message)); return }
+    setAnz(null); melde(`${i.name}: Anzahlung gespeichert (nur intern).`); lade()
+  }
+  const anzHinzu = () => {
+    const b = zahlAus(anz.betrag)
+    if (b == null || b === 0) { alert('Bitte einen Betrag eintragen, z. B. 300.'); return }
+    anzSpeichern([...anz.liste, { betrag: b, am: anz.am, notiz: anz.notiz, von: userDisplayName }])
   }
   const bezahltSpeichern = async () => {
     const { i, am, betrag } = bezahlt
@@ -242,6 +266,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         {modus === 'frei' && (
           <div className="bh-datum"><input type="date" value={von} onChange={e => setVon(e.target.value)} /><span>bis</span><input type="date" value={bis} onChange={e => setBis(e.target.value)} /></div>
         )}
+        <label className="bh-suche"><Search size={14} strokeWidth={2.4} /><input value={suche} placeholder="Name suchen" onChange={e => setSuche(e.target.value)} />{suche && <button onClick={() => setSuche('')} title="Leeren"><X size={13} /></button>}</label>
         <div className="bh-kopf-rechts">
           <button className="bh-k" onClick={() => handOeffnen(null)} title="Team (z. B. Alina) oder Rechnung ohne Profil (z. B. ehemalige Chatter)"><UserPlus size={14} strokeWidth={2.4} /> Team / ohne Profil</button>
           <button className="bh-k" onClick={() => { const m = p ? p.bezug : letzteMonate(2)[1]; setExp({ ab: m, bis: m, nurBezahlt: false, laeuft: false, text: '' }) }} title="Rechnungen und Übersicht für eure Buchhaltung herunterladen"><FolderDown size={14} strokeWidth={2.4} /> Export</button>
@@ -264,10 +289,10 @@ export default function BuchhaltungTab({ userDisplayName }) {
       {daten && items.length > 0 && (
         <>
           <div className="bh-kpis">
-            <Kpi farbe="#e5e7eb" wert={euro(summe(items))} sub={summeUsd(items) ? `+ ${dollar(summeUsd(items))}` : ''} label={`Gesamt · ${items.length} ${items.length === 1 ? 'Eintrag' : 'Einträge'}`} />
+            <Kpi farbe="#e5e7eb" wert={euro(summe(items))} sub={[summeUsd(items) ? `+ ${dollar(summeUsd(items))}` : '', anzOffen ? `${euro(anzOffen)} angezahlt` : ''].filter(Boolean).join(' · ')} label={`Gesamt · ${items.length} ${items.length === 1 ? 'Eintrag' : 'Einträge'}`} />
             <Kpi farbe={STATUS.offen.farbe} wert={statusZahl('offen')} label="Rechnung fehlt" />
             <Kpi farbe={STATUS.rechnung.farbe} wert={statusZahl('rechnung')} sub={statusZahl('klaerung') ? `${statusZahl('klaerung')} in Klärung` : ''} label="Rechnung da · zu bezahlen" />
-            <Kpi farbe={STATUS.bezahlt.farbe} wert={bezahltListe.length} sub={euro(bezahltListe.reduce((t, i) => t + Number(i.row?.bezahlt_betrag ?? gesamtEur(anzeige(i)) ?? 0), 0))} label="Bezahlt" />
+            <Kpi farbe={STATUS.bezahlt.farbe} wert={bezahltListe.length} sub={euro(bezahltListe.filter(i => !(istManuell(i.row) && i.row.waehrung === 'USD')).reduce((t, i) => t + Number(i.row?.bezahlt_betrag ?? 0) + anzahlungSumme(i.row), 0))} label="Bezahlt" />
           </div>
           <div className="bh-chips">
             {['alle', 'offen', 'rechnung', 'klaerung', 'bezahlt'].filter(k => k === 'alle' || statusZahl(k)).map(k => (
@@ -310,7 +335,14 @@ export default function BuchhaltungTab({ userDisplayName }) {
                   {extrasVon(r).map((e, n) => <span key={n} className={'bh-extra' + (Number(e.betrag) < 0 ? ' minus' : '')} title={e.text}>{Number(e.betrag) < 0 ? '−' : '+'}{geld(Math.abs(e.betrag), G.waehrung)} <em>{e.text}</em></span>)}
                   {stKey !== 'bezahlt' && <button className="bh-plus" onClick={() => setExtras({ i, liste: extrasVon(r).length ? extrasVon(r).map(e => ({ text: e.text, betrag: String(e.betrag).replace('.', ',') })) : [{ text: '', betrag: '' }] })}><Plus size={13} strokeWidth={2.6} /> {extrasVon(r).length ? 'ändern' : 'Extra'}</button>}
                 </div>
-                <div className="bh-gesamt"><span className="bh-mobil">Gesamt</span>{g != null ? geld(g, G.waehrung) : '—'}</div>
+                <div className="bh-gesamt"><span className="bh-mobil">Gesamt</span>{g != null ? geld(g, G.waehrung) : '—'}
+                  {anzahlungSumme(r) !== 0 && (
+                    <button className="bh-anz" onClick={() => anzOeffnen(i)} title={anzahlungenVon(r).map(e => `${geld(e.betrag, G.waehrung)}${e.am ? ' am ' + datum(e.am) : ''}${e.notiz ? ' · ' + e.notiz : ''}`).join('\n')}>
+                      − {geld(anzahlungSumme(r), G.waehrung)} angezahlt
+                      {stKey !== 'bezahlt' && g != null && <b>Rest {geld(g - anzahlungSumme(r), G.waehrung)}</b>}
+                    </button>
+                  )}
+                </div>
                 <div className="bh-rechnung">
                   {r?.rechnung_url ? (
                     <>
@@ -328,6 +360,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
                 </div>
                 <div className="bh-aktion">
                   {stKey !== 'bezahlt' && <button className="bh-k bh-gruen" disabled={b} onClick={() => bezahltOeffnen(i)}><Check size={14} strokeWidth={2.6} /> Bezahlt</button>}
+                  {stKey !== 'bezahlt' && <button className="bh-k" disabled={b} onClick={() => anzOeffnen(i)} title="Anzahlung eintragen (schon überwiesen, bevor die Rechnung da ist)"><HandCoins size={14} strokeWidth={2.2} /></button>}
                   {stKey === 'rechnung' && !man && <button className="bh-k" disabled={b} onClick={() => setKlaer({ i, notiz: r.klaerung_notiz || '' })} title="Rückfrage an den Chatter"><MessageCircleWarning size={14} strokeWidth={2.2} /></button>}
                   {man && <button className="bh-k" onClick={() => handOeffnen(r)} title="Bearbeiten"><Pencil size={14} strokeWidth={2.2} /></button>}
                   {stKey === 'offen' && !man && <button className="bh-k" disabled={busy === 'erinnern'} onClick={() => erinnereAlle([i])} title="Per Telegram erinnern"><Bell size={14} strokeWidth={2.2} /></button>}
@@ -345,7 +378,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget) setBezahlt(null) }}>
           <div className="bh-fenster">
             <div className="bh-fenster-kopf"><b>Bezahlt · {bezahlt.i.name}</b><button className="bh-x" onClick={() => setBezahlt(null)}><X size={18} /></button></div>
-            <div className="bh-fenster-text">{bezahlt.i.p?.bezeichnung} · Gesamt {istManuell(bezahlt.i.row) ? geld(gesamt(bezahlt.i.row).wert, gesamt(bezahlt.i.row).waehrung) : euro(gesamtEur(anzeige(bezahlt.i)))}</div>
+            <div className="bh-fenster-text">{bezahlt.i.p?.bezeichnung} · Gesamt {geld(gesamtVon(bezahlt.i).wert, gesamtVon(bezahlt.i).waehrung)}{bezahlt.i.row?.rechnung_betrag != null ? ` · Rechnung ${geld(bezahlt.i.row.rechnung_betrag, gesamtVon(bezahlt.i).waehrung)}` : ''}{anzahlungSumme(bezahlt.i.row) ? ` · schon angezahlt ${geld(anzahlungSumme(bezahlt.i.row), gesamtVon(bezahlt.i).waehrung)} → Betrag ist der Rest` : ''}</div>
             <label className="bh-feld"><span>Überwiesen am</span><input type="date" value={bezahlt.am} onChange={e => setBezahlt({ ...bezahlt, am: e.target.value })} /></label>
             <label className="bh-feld"><span>Betrag ({istManuell(bezahlt.i.row) && bezahlt.i.row.waehrung === 'USD' ? '$' : '€'})</span><input inputMode="decimal" value={bezahlt.betrag} onChange={e => setBezahlt({ ...bezahlt, betrag: e.target.value })} /></label>
             <div className="bh-fenster-text">Nur für euch intern — der Chatter bekommt keine Nachricht.</div>
@@ -400,6 +433,32 @@ export default function BuchhaltungTab({ userDisplayName }) {
         </div>, document.body)}
 
       {ansehen && <Ansehen a={ansehen} onZu={() => setAnsehen(null)} onKopieren={kopieren} onGespeichert={(t) => { setAnsehen(null); melde(t); lade() }} />}
+
+      {anz && createPortal(
+        <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget) setAnz(null) }}>
+          <div className="bh-fenster">
+            <div className="bh-fenster-kopf"><b>Anzahlung · {anz.i.name}</b><button className="bh-x" onClick={() => setAnz(null)}><X size={18} /></button></div>
+            <div className="bh-fenster-text">Was ihr schon überwiesen habt, bevor die Rechnung da ist. Nur für euch intern — der Chatter bekommt keine Nachricht.</div>
+            {anz.liste.length > 0 && (
+              <div className="bh-anz-liste">
+                {anz.liste.map((e, n) => (
+                  <div key={n} className="bh-anz-zeile">
+                    <b>{geld(e.betrag, gesamtVon(anz.i).waehrung)}</b>
+                    <span>{e.am ? datum(e.am) : ''}{e.notiz ? ` · ${e.notiz}` : ''}{e.von ? ` · ${e.von}` : ''}</span>
+                    <button className="bh-x" disabled={busy === anz.i.key} title="Entfernen" onClick={() => { if (confirm('Diese Anzahlung entfernen?')) anzSpeichern(anz.liste.filter((_, j) => j !== n)) }}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                <div className="bh-fenster-text">Gesamt {geld(gesamtVon(anz.i).wert, gesamtVon(anz.i).waehrung)} − angezahlt {geld(anzahlungSumme({ anzahlungen: anz.liste }), gesamtVon(anz.i).waehrung)} = <b style={{ color: '#34d399' }}>Rest {geld((gesamtVon(anz.i).wert || 0) - anzahlungSumme({ anzahlungen: anz.liste }), gesamtVon(anz.i).waehrung)}</b></div>
+              </div>
+            )}
+            <div className="bh-betrag-zeile">
+              <label className="bh-feld"><span>Neue Anzahlung ({gesamtVon(anz.i).waehrung === 'USD' ? '$' : '€'})</span><input inputMode="decimal" autoFocus value={anz.betrag} placeholder="z. B. 300" onChange={e => setAnz({ ...anz, betrag: e.target.value })} /></label>
+              <label className="bh-feld"><span>Überwiesen am</span><input type="date" value={anz.am} onChange={e => setAnz({ ...anz, am: e.target.value })} /></label>
+            </div>
+            <label className="bh-feld"><span>Notiz (optional)</span><input value={anz.notiz} placeholder="z. B. Vorschuss per PayPal" onChange={e => setAnz({ ...anz, notiz: e.target.value })} /></label>
+            <div className="bh-fenster-fuss"><button className="bh-k" onClick={() => setAnz(null)}>Schließen</button><button className="bh-k bh-p" disabled={busy === anz.i.key || !anz.betrag.trim()} onClick={anzHinzu}><Plus size={14} strokeWidth={2.6} /> Anzahlung speichern</button></div>
+          </div>
+        </div>, document.body)}
 
       {exp && createPortal(
         <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && !exp.laeuft) setExp(null) }}>

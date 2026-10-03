@@ -35,7 +35,7 @@ export const datum = (iso) => iso ? new Date(String(iso).length === 10 ? iso + '
 export const datumZeit = (iso) => iso ? new Date(iso).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
 export const heuteIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' })
 export const monatName = (m) => new Date(m + '-15').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-export const fehltTabelle = (error) => !!error && /chatter_abrechnungen|extras|mitgeteilt|betrag_manuell|waehrung|rechnung_iban|betrag_erkannt|\bart\b|does not exist|schema cache|no unique or exclusion/i.test(error.message || '')
+export const fehltTabelle = (error) => !!error && /chatter_abrechnungen|anzahlungen|extras|mitgeteilt|betrag_manuell|waehrung|rechnung_iban|betrag_erkannt|\bart\b|does not exist|schema cache|no unique or exclusion/i.test(error.message || '')
 export const zahlAus = (t) => { const n = Number(String(t ?? '').trim().replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return Number.isFinite(n) ? n : null }
 export const letzterTagVon = (monat) => { const [y, m] = monat.split('-').map(Number); return `${monat}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` }
 const round = (v) => Math.round(Number(v || 0) * 100) / 100
@@ -58,6 +58,15 @@ export const extrasSumme = (row) => extrasVon(row).reduce((t, e) => t + Number(e
 export const gesamtEur = (row) => istManuell(row)
   ? (row.waehrung === 'USD' ? null : round(Number(row.betrag_manuell || 0) + extrasSumme(row)))
   : row?.betrag_eur == null ? (extrasVon(row).length ? round(extrasSumme(row)) : null) : round(Number(row.betrag_eur) + extrasSumme(row))
+// v5.40.0: Anzahlungen (schon überwiesen, bevor die Rechnung da ist)
+export const anzahlungenVon = (row) => Array.isArray(row?.anzahlungen) ? row.anzahlungen : []
+export const anzahlungSumme = (row) => round(anzahlungenVon(row).reduce((t, e) => t + Number(e.betrag || 0), 0))
+export async function anzahlungenSpeichern(row, liste, wer) {
+  const sauber = (liste || []).filter(e => e && Number.isFinite(Number(e.betrag)) && Number(e.betrag) !== 0)
+    .map(e => ({ betrag: round(e.betrag), am: e.am || null, notiz: String(e.notiz || '').trim().slice(0, 120) || null, von: e.von || wer || null }))
+  return supabase.from('chatter_abrechnungen').update({ anzahlungen: sauber }).eq('id', row.id)
+}
+
 // Gesamt in der Währung der Zeile: { wert, waehrung }
 export const gesamt = (row) => istManuell(row)
   ? { wert: row.betrag_manuell == null && !extrasVon(row).length ? null : round(Number(row.betrag_manuell || 0) + extrasSumme(row)), waehrung: row.waehrung || 'EUR' }
@@ -405,12 +414,12 @@ function dateiName(a) {
 }
 
 function uebersichtCsv(zeilen) {
-  const kopf = ['Monat', 'Zeitraum von', 'Zeitraum bis', 'Name', 'Art', 'Notiz', 'Umsatz $', 'Satz %', 'Anteil $', 'Kurs', 'Anteil €', 'Betrag (Team/ohne Profil)', 'Extras', 'Extras Summe', 'Gesamt', 'Währung', 'Rechnung', 'Rechnungsbetrag', 'IBAN', 'Rechnung hochgeladen', 'Status', 'Bezahlt am', 'Bezahlt', 'Bezahlt von']
+  const kopf = ['Monat', 'Zeitraum von', 'Zeitraum bis', 'Name', 'Art', 'Notiz', 'Umsatz $', 'Satz %', 'Anteil $', 'Kurs', 'Anteil €', 'Betrag (Team/ohne Profil)', 'Extras', 'Extras Summe', 'Gesamt', 'Angezahlt', 'Rest', 'Währung', 'Rechnung', 'Rechnungsbetrag', 'IBAN', 'Rechnung hochgeladen', 'Status', 'Bezahlt am', 'Bezahlt', 'Bezahlt von']
   const zelle = (v) => { const t = String(v ?? ''); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
   const rows = zeilen.map(a => [
     a.monat, a.von, a.bis, a.chatter_name, (ART[a.art] || ART.chatter).label, a.notiz || '',
     istManuell(a) ? '' : zahlCsv(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd), istManuell(a) ? '' : zahlCsv(a.prozent), istManuell(a) ? '' : zahlCsv(a.auszahlung_usd), !istManuell(a) && a.kurs != null ? String(a.kurs).replace('.', ',') : '',
-    istManuell(a) ? '' : zahlCsv(a.betrag_eur), istManuell(a) ? zahlCsv(a.betrag_manuell) : '', extrasVon(a).map(e => `${e.text}: ${zahlCsv(e.betrag)}`).join(' | '), zahlCsv(extrasSumme(a)), zahlCsv(gesamt(a).wert), gesamt(a).waehrung,
+    istManuell(a) ? '' : zahlCsv(a.betrag_eur), istManuell(a) ? zahlCsv(a.betrag_manuell) : '', extrasVon(a).map(e => `${e.text}: ${zahlCsv(e.betrag)}`).join(' | '), zahlCsv(extrasSumme(a)), zahlCsv(gesamt(a).wert), anzahlungSumme(a) ? zahlCsv(anzahlungSumme(a)) : '', gesamt(a).wert != null ? zahlCsv(gesamt(a).wert - anzahlungSumme(a)) : '', gesamt(a).waehrung,
     a.rechnung_url ? dateiName(a) : '', zahlCsv(a.rechnung_betrag), a.rechnung_iban || '', a.rechnung_am ? datum(a.rechnung_am) : '',
     (STATUS[statusVon(a)] || STATUS.offen).label, a.bezahlt_am ? datum(a.bezahlt_am) : '', zahlCsv(a.bezahlt_betrag), a.bezahlt_von || '',
   ])
