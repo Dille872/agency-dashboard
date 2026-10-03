@@ -283,6 +283,29 @@ export async function eintragLoeschen(row) {
   return supabase.from('chatter_abrechnungen').delete().eq('id', row.id)
 }
 
+// v5.38.1: schon hochgeladene Rechnung nachträglich lesen (Summe/IBAN)
+export async function rechnungNeuLesen(row) {
+  try {
+    const url = await signiert(row.rechnung_url, 600)
+    const resp = await fetch(url)
+    if (!resp.ok) return { leer: true, grund: 'fehler' }
+    const blob = await resp.blob()
+    const name = row.rechnung_name || 'rechnung.pdf'
+    const typ = blob.type && blob.type !== 'application/octet-stream' ? blob.type : (/\.pdf$/i.test(name) ? 'application/pdf' : '')
+    return rechnungLesen(new File([blob], name, { type: typ }))
+  } catch { return { leer: true, grund: 'fehler' } }
+}
+
+// Betrag/IBAN der Rechnung von Hand setzen (von euch geprüft → nicht mehr „erkannt“)
+export async function rechnungsangabenSpeichern(row, { betrag, iban }) {
+  const b = String(betrag ?? '').trim() === '' ? null : zahlAus(betrag)
+  if (String(betrag ?? '').trim() !== '' && b == null) return { error: { message: 'Betrag bitte als Zahl, z. B. 447,48.' } }
+  const felder = { rechnung_betrag: b, betrag_erkannt: false, rechnung_iban: String(iban || '').replace(/\s/g, '').toUpperCase() || null }
+  let { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id)
+  if (error && /rechnung_iban|betrag_erkannt/.test(error.message || '')) error = (await supabase.from('chatter_abrechnungen').update({ rechnung_betrag: b }).eq('id', row.id)).error
+  return error ? { error } : {}
+}
+
 // ── Admin-Aktionen ─────────────────────────────────────────────────────────
 // v5.37.3: nur intern (damit ihr nachschauen könnt) — KEINE Nachricht an den Chatter
 export async function alsBezahlt(a, { am, betrag }) {

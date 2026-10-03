@@ -25,11 +25,22 @@ const waehrungVon = (a, b) => {
   return null
 }
 
+// v5.38.1: auch ganze Beträge MIT Währungszeichen („66 €“, „€ 1.250“, „EUR 66“)
+const GANZ = /(?:(€|eur|usd|\$)\s*(?<![\d.,])(\d{1,3}(?:[.,\s']\d{3})+|\d{1,6})(?![\d]|[.,]\d)|(?<![\d.,])(\d{1,3}(?:[.,\s']\d{3})+|\d{1,6})(?![\d]|[.,]\d)\s*(€|eur|euro|usd|\$|dollar)(?![a-z]))/gi
+const ganzZahl = (t) => { const n = Number(String(t).replace(/[.,\s']/g, '')); return Number.isFinite(n) ? n : null }
+
 function betraegeIn(zeile) {
   const out = []
-  for (const m of String(zeile).matchAll(BETRAG)) {
+  const text = String(zeile)
+  for (const m of text.matchAll(BETRAG)) {
     const wert = zahl(m[2])
     if (wert != null && wert > 0) out.push({ wert, waehrung: waehrungVon(m[1], m[3]) })
+  }
+  if (!out.length) {
+    for (const m of text.matchAll(GANZ)) {
+      const wert = ganzZahl(m[2] || m[3])
+      if (wert != null && wert > 0) out.push({ wert, waehrung: waehrungVon(m[1], m[4]) })
+    }
   }
   return out
 }
@@ -72,8 +83,9 @@ export function ausText(zeilen) {
     const stark = STARK.test(zeile), schwach = !stark && SCHWACH.test(zeile)
     if (!stark && !schwach) return
     let b = betraegeIn(zeile)
-    // Betrag steht manchmal in der nächsten Zeile
-    if (!b.length) for (let j = i + 1; j <= i + 2 && j < z.length && !b.length; j++) b = betraegeIn(z[j])
+    // Betrag steht manchmal in einer Zeile darunter (oder bei Tabellen-Layouts darüber)
+    if (!b.length) for (let j = i + 1; j <= i + 3 && j < z.length && !b.length; j++) b = betraegeIn(z[j])
+    if (!b.length && i > 0) b = betraegeIn(z[i - 1])
     for (const x of b) kandidaten.push({ ...x, gewicht: stark ? 2 : 1, pos: i })
   })
   let wahl = null

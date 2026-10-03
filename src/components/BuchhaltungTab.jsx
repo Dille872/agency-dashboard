@@ -6,7 +6,7 @@ import {
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
   abrechnungenLaden, periode, zeitraumLaden, anzeige, veraltet, statusVon, extrasVon, gesamtEur, gesamt, istManuell,
-  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen,
+  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern,
   zeileSichern, extrasSpeichern, mitteilen, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
 } from '../buchhaltung'
@@ -312,8 +312,9 @@ export default function BuchhaltungTab({ userDisplayName }) {
                 <div className="bh-rechnung">
                   {r?.rechnung_url ? (
                     <>
-                      <button className="bh-link" onClick={() => setAnsehen({ url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: G.waehrung, wer: i.name })} title="Rechnung ansehen"><FileText size={14} strokeWidth={2.2} /> {r.rechnung_name || 'Rechnung'}</button>
+                      <button className="bh-link" onClick={() => setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: G.waehrung, gesamt: g, wer: i.name })} title="Rechnung ansehen"><FileText size={14} strokeWidth={2.2} /> {r.rechnung_name || 'Rechnung'}</button>
                       <small>{r.rechnung_von && r.rechnung_von !== i.name ? `von ${r.rechnung_von} · ` : ''}{datumZeit(r.rechnung_am)}{r.rechnung_betrag != null && <span style={{ color: abw ? '#f59e0b' : undefined }} title={r.betrag_erkannt ? 'Aus der PDF erkannt — bitte prüfen' : undefined}> · {geld(r.rechnung_betrag, G.waehrung)}{r.betrag_erkannt ? ' (erkannt)' : ''}{abw ? ' ≠ Gesamt' : ''}</span>}</small>
+                      {r.rechnung_betrag == null && <button className="bh-link warn" onClick={() => setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: null, waehrung: G.waehrung, gesamt: g, wer: i.name })}><Pencil size={12} strokeWidth={2.4} /> Betrag fehlt — prüfen</button>}
                       {r.rechnung_iban && <button className="bh-iban" onClick={() => kopieren(r.rechnung_iban)} title="IBAN kopieren"><Copy size={12} strokeWidth={2.4} /> {ibanSchoen(r.rechnung_iban)}</button>}
                     </>
                   ) : <small>{stKey === 'entwurf' ? '—' : `fehlt${r?.erinnert_am ? ` · erinnert ${datum(r.erinnert_am)}` : ''}`}</small>}
@@ -399,7 +400,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
           </div>
         </div>, document.body)}
 
-      {ansehen && <Ansehen a={ansehen} onZu={() => setAnsehen(null)} onKopieren={kopieren} />}
+      {ansehen && <Ansehen a={ansehen} onZu={() => setAnsehen(null)} onKopieren={kopieren} onGespeichert={(t) => { setAnsehen(null); melde(t); lade() }} />}
 
       {exp && createPortal(
         <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && !exp.laeuft) setExp(null) }}>
@@ -457,18 +458,41 @@ export default function BuchhaltungTab({ userDisplayName }) {
 }
 
 // Rechnung direkt in der Buchhaltung ansehen (PDF im Fenster, Foto als Bild)
-function Ansehen({ a, onZu, onKopieren }) {
+// v5.38.1: unten Betrag + IBAN prüfen/eintragen, „Aus PDF lesen“, Vergleich mit Gesamt
+function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
   const [url, setUrl] = useState(null)
+  const [betrag, setBetrag] = useState(a.betrag != null ? String(a.betrag).replace('.', ',') : '')
+  const [iban, setIban] = useState(a.iban ? ibanSchoen(a.iban) : '')
+  const [lesen, setLesen] = useState('')
+  const [speichert, setSpeichert] = useState(false)
   useEffect(() => { let weg = false; signiert(a.url).then(u => { if (!weg) setUrl(u) }); return () => { weg = true } }, [a.url])
   const istBild = /\.(jpe?g|png|webp|gif|heic|heif)(\?|$)/i.test(a.name || a.url)
+  const ausPdf = async () => {
+    if (!a.row) return
+    setLesen('liest')
+    const g = await rechnungNeuLesen(a.row)
+    if (g.leer) { setLesen(g.grund === 'foto' ? 'foto' : g.grund === 'scan' ? 'scan' : 'nichts'); return }
+    if (g.betrag != null) setBetrag(String(g.betrag).replace('.', ','))
+    if (g.iban) setIban(ibanSchoen(g.iban))
+    setLesen(g.betrag != null ? 'ok' : 'ohne-summe')
+  }
+  // Fehlt der Betrag noch: beim Öffnen einmal automatisch aus der PDF lesen
+  useEffect(() => { if (a.row && a.betrag == null && !istBild) ausPdf() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const b = zahlAus(betrag)
+  const diff = b != null && a.gesamt != null ? Math.round((b - a.gesamt) * 100) / 100 : null
+  const speichern = async () => {
+    setSpeichert(true)
+    const r = await rechnungsangabenSpeichern(a.row, { betrag, iban })
+    setSpeichert(false)
+    if (r.error) { alert('Nicht gespeichert: ' + r.error.message); return }
+    onGespeichert(`${a.wer}: Rechnungsbetrag ${b != null ? geld(b, a.waehrung) : 'entfernt'} gespeichert.`)
+  }
   return createPortal(
     <div className="bh-ov bh-ov-gross" onClick={e => { if (e.target === e.currentTarget) onZu() }}>
       <div className="bh-ansehen">
         <div className="bh-fenster-kopf">
           <b><Eye size={16} strokeWidth={2.4} /> {a.wer} · {a.name || 'Rechnung'}</b>
           <span className="bh-ansehen-knoepfe">
-            {a.iban && <button className="bh-iban" onClick={() => onKopieren(a.iban)}><Copy size={12} strokeWidth={2.4} /> {ibanSchoen(a.iban)}</button>}
-            {a.betrag != null && <span className="bh-ansehen-betrag">{geld(a.betrag, a.waehrung)}</span>}
             <button className="bh-k" onClick={() => oeffnen(a.url)} title="In neuem Tab öffnen"><ExternalLink size={14} strokeWidth={2.2} /></button>
             <button className="bh-x" onClick={onZu}><X size={18} /></button>
           </span>
@@ -478,6 +502,29 @@ function Ansehen({ a, onZu, onKopieren }) {
             : istBild ? <img src={url} alt={a.name || 'Rechnung'} />
               : <iframe src={url} title={a.name || 'Rechnung'} />}
         </div>
+        {a.row && (
+          <div className="bh-pruefen">
+            <label className="bh-feld"><span>Betrag auf der Rechnung ({a.waehrung === 'USD' ? '$' : '€'})</span><input inputMode="decimal" value={betrag} placeholder="z. B. 447,48" onChange={e => setBetrag(e.target.value)} /></label>
+            <label className="bh-feld bh-pruefen-iban"><span>IBAN</span><input value={iban} placeholder="DE…" onChange={e => setIban(e.target.value)} /></label>
+            {iban.trim() && <button className="bh-k" onClick={() => onKopieren(iban)} title="IBAN kopieren"><Copy size={14} strokeWidth={2.2} /></button>}
+            <div className="bh-pruefen-info">
+              {a.gesamt != null && <span>Gesamt laut Dashboard: <b>{geld(a.gesamt, a.waehrung)}</b></span>}
+              {diff != null && (diff === 0
+                ? <span className="gut"><CircleCheck size={13} strokeWidth={2.4} /> passt</span>
+                : <span className="warn"><TriangleAlert size={13} strokeWidth={2.4} /> {diff > 0 ? '+' : '−'}{geld(Math.abs(diff), a.waehrung)} Abweichung</span>)}
+              {lesen === 'liest' && <span>liest PDF …</span>}
+              {lesen === 'ok' && <span className="lila"><Sparkles size={13} strokeWidth={2.4} /> aus der PDF vorgeschlagen</span>}
+              {lesen === 'ohne-summe' && <span>In der PDF keine Summe gefunden</span>}
+              {lesen === 'nichts' && <span>In der PDF nichts gefunden — bitte abtippen</span>}
+              {lesen === 'scan' && <span>PDF ohne Text (Scan/Bild) — bitte abtippen</span>}
+              {lesen === 'foto' && <span>Foto — bitte abtippen</span>}
+            </div>
+            <div className="bh-pruefen-knoepfe">
+              {!istBild && <button className="bh-k" disabled={lesen === 'liest'} onClick={ausPdf}><Sparkles size={14} strokeWidth={2.2} /> Aus PDF lesen</button>}
+              <button className="bh-k bh-p" disabled={speichert} onClick={speichern}><Check size={14} strokeWidth={2.6} /> Speichern</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>, document.body)
 }
