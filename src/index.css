@@ -517,6 +517,8 @@ th { text-align: left; }
 .bh-notiz { color: #f59e0b !important; }
 .bh-link.warn { color: #f59e0b; font-size: 11.5px; }
 .bh-aktion { flex-direction: row !important; flex-wrap: nowrap; justify-content: flex-end; gap: 5px !important; }
+.bh-export-monate { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.bh-export-monate .bh-sel.bh-sel { width: 100%; }
 .bh-extra-zeile { display: grid; grid-template-columns: 1fr 100px auto; gap: 8px; align-items: center; }
 .bh-extra-zeile input { background: var(--bg-card2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text-primary); font: inherit; font-size: 14px; min-width: 0; }
 .bh-ov { position: fixed; inset: 0; z-index: 10060; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 90px 16px 16px; }

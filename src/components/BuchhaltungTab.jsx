@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck,
+  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet,
 } from 'lucide-react'
 import {
   STATUS, euro, dollar, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
   abrechnungenLaden, periode, zeitraumLaden, anzeige, veraltet, statusVon, extrasVon, gesamtEur,
   zeileSichern, extrasSpeichern, mitteilen, zahlenAktualisieren,
-  rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf,
+  rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
 } from '../buchhaltung'
 import { oeffnen } from '../medien'
 
@@ -38,6 +38,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const [bezahlt, setBezahlt] = useState(null)
   const [klaer, setKlaer] = useState(null)
   const [extras, setExtras] = useState(null)       // { item, p, liste }
+  const [exp, setExp] = useState(null)             // { ab, bis, nurBezahlt, laeuft, text }
   const datei = useRef(null)
   const ziel = useRef(null)
 
@@ -105,17 +106,17 @@ export default function BuchhaltungTab({ userDisplayName }) {
   }
   const bezahltOeffnen = (i) => {
     const a = anzeige(i)
-    setBezahlt({ i, am: heuteIso(), betrag: String(i.row?.rechnung_betrag ?? gesamtEur(a) ?? '').replace('.', ','), telegram: !!i.row?.mitgeteilt_am })
+    setBezahlt({ i, am: heuteIso(), betrag: String(i.row?.rechnung_betrag ?? gesamtEur(a) ?? '').replace('.', ',') })
   }
   const bezahltSpeichern = async () => {
-    const { i, am, betrag, telegram } = bezahlt
+    const { i, am, betrag } = bezahlt
     setBusy(i.name)
     const row = await sichern(i)
     if (!row) { setBusy(null); return }
-    const r = await alsBezahlt({ ...anzeige(i), ...row }, { am, betrag, telegram })
+    const r = await alsBezahlt({ ...anzeige(i), ...row }, { am, betrag })
     setBusy(null)
     if (r.error) { alert('Nicht gespeichert: ' + r.error.message); return }
-    setBezahlt(null); melde(`${i.name}: bezahlt am ${datum(am)}${r.info ? ' · ' + r.info : ''}`); lade()
+    setBezahlt(null); melde(`${i.name}: bezahlt am ${datum(am)} (nur intern gespeichert).`); lade()
   }
   const zurueck = async (i) => {
     if (!confirm(`„Bezahlt“ bei ${i.name} wieder entfernen?`)) return
@@ -183,6 +184,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
           <div className="bh-datum"><input type="date" value={von} onChange={e => setVon(e.target.value)} /><span>bis</span><input type="date" value={bis} onChange={e => setBis(e.target.value)} /></div>
         )}
         <div className="bh-kopf-rechts">
+          <button className="bh-k" onClick={() => { const m = p ? p.bezug : letzteMonate(2)[1]; setExp({ ab: m, bis: m, nurBezahlt: false, laeuft: false, text: '' }) }} title="Rechnungen und Übersicht für eure Buchhaltung herunterladen"><FolderDown size={14} strokeWidth={2.4} /> Export</button>
           {fehlen.length > 0 && <button className="bh-k" disabled={busy === 'erinnern'} onClick={() => erinnereAlle(fehlen)}><Bell size={14} strokeWidth={2.4} /> Erinnern ({fehlen.length})</button>}
           {entwuerfe.length > 0 && <button className="bh-k bh-p" disabled={busy === 'bescheid'} onClick={() => bescheid(entwuerfe)}><Send size={14} strokeWidth={2.4} /> {busy === 'bescheid' ? 'Läuft …' : `Allen Bescheid geben (${entwuerfe.length})`}</button>}
         </div>
@@ -279,7 +281,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
             <div className="bh-fenster-text">{bezahlt.i.p?.bezeichnung} · Gesamt {euro(gesamtEur(anzeige(bezahlt.i)))}</div>
             <label className="bh-feld"><span>Überwiesen am</span><input type="date" value={bezahlt.am} onChange={e => setBezahlt({ ...bezahlt, am: e.target.value })} /></label>
             <label className="bh-feld"><span>Betrag (€)</span><input inputMode="decimal" value={bezahlt.betrag} onChange={e => setBezahlt({ ...bezahlt, betrag: e.target.value })} /></label>
-            <label className="bh-haken"><input type="checkbox" checked={bezahlt.telegram} onChange={e => setBezahlt({ ...bezahlt, telegram: e.target.checked })} /> Chatter per Telegram Bescheid geben</label>
+            <div className="bh-fenster-text">Nur für euch intern — der Chatter bekommt keine Nachricht.</div>
             <div className="bh-fenster-fuss"><button className="bh-k" onClick={() => setBezahlt(null)}>Abbrechen</button><button className="bh-k bh-gruen" disabled={busy === bezahlt.i.name || !bezahlt.am} onClick={bezahltSpeichern}><Check size={14} strokeWidth={2.6} /> Speichern</button></div>
           </div>
         </div>, document.body)}
@@ -291,6 +293,32 @@ export default function BuchhaltungTab({ userDisplayName }) {
             <div className="bh-fenster-text">Geht per Telegram raus und steht bei ihm im Portal. Er kann danach eine neue Rechnung hochladen.</div>
             <textarea className="bh-text" rows={3} autoFocus placeholder="z. B. Bitte Steuernummer ergänzen" value={klaer.notiz} onChange={e => setKlaer({ ...klaer, notiz: e.target.value })} />
             <div className="bh-fenster-fuss"><button className="bh-k" onClick={() => setKlaer(null)}>Abbrechen</button><button className="bh-k bh-p" disabled={busy === klaer.i.name || !klaer.notiz.trim()} onClick={klaerSenden}><Send size={14} strokeWidth={2.4} /> Senden</button></div>
+          </div>
+        </div>, document.body)}
+
+      {exp && createPortal(
+        <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && !exp.laeuft) setExp(null) }}>
+          <div className="bh-fenster">
+            <div className="bh-fenster-kopf"><b>Export für die Buchhaltung</b><button className="bh-x" disabled={exp.laeuft} onClick={() => setExp(null)}><X size={18} /></button></div>
+            <div className="bh-fenster-text">ZIP mit allen hochgeladenen Rechnungen (ein Ordner je Monat) und einer Übersicht als Excel-Datei: Chatter, Beträge, Extras, Gesamt, Rechnung, bezahlt am.</div>
+            <div className="bh-export-monate">
+              <label className="bh-feld"><span>Von Monat</span><select className="bh-sel" value={exp.ab} onChange={e => setExp({ ...exp, ab: e.target.value, bis: e.target.value > exp.bis ? e.target.value : exp.bis })}>{letzteMonate(24).map(m => <option key={m} value={m}>{monatName(m)}</option>)}</select></label>
+              <label className="bh-feld"><span>Bis Monat</span><select className="bh-sel" value={exp.bis} onChange={e => setExp({ ...exp, bis: e.target.value, ab: e.target.value < exp.ab ? e.target.value : exp.ab })}>{letzteMonate(24).map(m => <option key={m} value={m}>{monatName(m)}</option>)}</select></label>
+            </div>
+            <label className="bh-haken"><input type="checkbox" checked={exp.nurBezahlt} onChange={e => setExp({ ...exp, nurBezahlt: e.target.checked })} /> Nur bezahlte</label>
+            {exp.text && <div className="bh-fenster-text" style={{ color: '#34d399' }}>{exp.text}</div>}
+            <div className="bh-fenster-fuss">
+              <button className="bh-k" disabled={exp.laeuft} onClick={async () => {
+                setExp(x => ({ ...x, laeuft: true, text: '' }))
+                const r = await exportCsv({ abMonat: exp.ab, bisMonat: exp.bis, nurBezahlt: exp.nurBezahlt })
+                setExp(x => ({ ...x, laeuft: false, text: r.error ? '⚠ ' + r.error.message : `Übersicht mit ${r.anzahl} Zeilen heruntergeladen.` }))
+              }}><FileSpreadsheet size={14} strokeWidth={2.4} /> Nur Übersicht</button>
+              <button className="bh-k bh-p" disabled={exp.laeuft} onClick={async () => {
+                setExp(x => ({ ...x, laeuft: true, text: 'Lädt Rechnungen …' }))
+                const r = await exportZip({ abMonat: exp.ab, bisMonat: exp.bis, nurBezahlt: exp.nurBezahlt }, (n, von) => setExp(x => ({ ...x, text: `Lädt Rechnung ${n} von ${von} …` })))
+                setExp(x => ({ ...x, laeuft: false, text: r.error ? '⚠ ' + r.error.message : `ZIP heruntergeladen: ${r.dateien} Rechnung${r.dateien === 1 ? '' : 'en'}, ${r.anzahl} Zeilen in der Übersicht${r.fehlen?.length ? ` · ${r.fehlen.length} nicht geladen (steht in der ZIP)` : ''}.` }))
+              }}><FolderDown size={14} strokeWidth={2.4} /> {exp.laeuft ? 'Läuft …' : 'ZIP mit Rechnungen'}</button>
+            </div>
           </div>
         </div>, document.body)}
 

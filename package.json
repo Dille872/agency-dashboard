@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
+    "fflate": "^0.8.2",
     "heic2any": "^0.0.4",
     "jspdf": "^2.5.2",
     "lucide-react": "^1.14.0",

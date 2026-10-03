@@ -11,6 +11,7 @@ import { supabase } from './supabase'
 import { sendTelegramMessage, notifyAdmins } from './telegram'
 import { chatterVerteilen, chatterRechnung, istInaktiv } from './billingRechnung'
 import { zeitraumText, abrechnungenPdf } from './billingExport'
+import { signiert } from './medien'
 
 export const STATUS = {
   entwurf:  { label: 'Noch nicht mitgeteilt', farbe: '#a78bfa', bg: 'rgba(167,139,250,0.14)' },
@@ -204,19 +205,11 @@ export async function rechnungHochladen(a, datei, { betrag = null, durchAdmin = 
 }
 
 // ── Admin-Aktionen ─────────────────────────────────────────────────────────
-export async function alsBezahlt(a, { am, betrag, telegram = true }) {
+// v5.37.3: nur intern (damit ihr nachschauen könnt) — KEINE Nachricht an den Chatter
+export async function alsBezahlt(a, { am, betrag }) {
   const b = zahlAus(betrag)
   const { error } = await supabase.from('chatter_abrechnungen').update({ status: 'bezahlt', bezahlt_am: am || heuteIso(), bezahlt_betrag: b }).eq('id', a.id)
-  if (error) return { error }
-  let info = ''
-  if (telegram) {
-    const tg = await telegramVonChatter(a.chatter_name)
-    if (tg) {
-      const r = await sendTelegramMessage(tg, `✅ Deine Abrechnung für ${escHtml(a.bezeichnung || a.monat)} ist bezahlt.\nÜberwiesen am ${datum(am || heuteIso())}${b ? ` · ${euro(b)}` : ''}\n\nThirteen 87`).catch(() => null)
-      info = r?.ok ? 'Chatter per Telegram informiert' : 'Telegram ging nicht raus'
-    } else info = 'Chatter hat keine Telegram-ID'
-  }
-  return { info }
+  return error ? { error } : {}
 }
 
 export async function bezahltZurueck(a) {
@@ -248,4 +241,80 @@ export async function erinnern(liste) {
 // Entwurf verwerfen (nur solange nicht mitgeteilt, ohne Rechnung und nicht bezahlt)
 export async function zurueckziehen(a) {
   return supabase.from('chatter_abrechnungen').delete().eq('id', a.id)
+}
+
+// ── Export für die eigene Buchhaltung (v5.37.3) ─────────────────────────────
+// Eine ZIP-Datei: alle Rechnungen im gewählten Zeitraum (ein Ordner je Monat)
+// + Übersicht.csv (öffnet in Excel/Numbers). Oder nur die Übersicht als CSV.
+const sauberName = (t) => String(t || '').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80)
+const zahlCsv = (v) => v == null || v === '' ? '' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })
+
+export async function exportZeilen({ abMonat, bisMonat, nurBezahlt }) {
+  let q = supabase.from('chatter_abrechnungen').select('*').gte('monat', abMonat).lte('monat', bisMonat).order('monat').order('chatter_name')
+  if (nurBezahlt) q = q.eq('status', 'bezahlt')
+  const { data, error } = await q
+  if (error) return { error }
+  return { zeilen: data || [] }
+}
+
+function dateiName(a) {
+  const endung = (String(a.rechnung_name || a.rechnung_url || '').match(/\.([a-z0-9]{2,5})(?:$|\?)/i)?.[1] || 'pdf').toLowerCase()
+  const zr = a.frei ? `${a.von}_bis_${a.bis}` : a.monat
+  return sauberName(`${zr} ${a.chatter_name} Rechnung`) + '.' + endung
+}
+
+function uebersichtCsv(zeilen) {
+  const kopf = ['Monat', 'Zeitraum von', 'Zeitraum bis', 'Chatter', 'Umsatz $', 'Satz %', 'Anteil $', 'Kurs', 'Anteil €', 'Extras', 'Extras €', 'Gesamt €', 'Rechnung', 'Rechnungsbetrag €', 'Rechnung hochgeladen', 'Status', 'Bezahlt am', 'Bezahlt €', 'Bezahlt von']
+  const zelle = (v) => { const t = String(v ?? ''); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
+  const rows = zeilen.map(a => [
+    a.monat, a.von, a.bis, a.chatter_name,
+    zahlCsv(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd), zahlCsv(a.prozent), zahlCsv(a.auszahlung_usd), a.kurs != null ? String(a.kurs).replace('.', ',') : '',
+    zahlCsv(a.betrag_eur), extrasVon(a).map(e => `${e.text}: ${zahlCsv(e.betrag)}`).join(' | '), zahlCsv(extrasSumme(a)), zahlCsv(gesamtEur(a)),
+    a.rechnung_url ? dateiName(a) : '', zahlCsv(a.rechnung_betrag), a.rechnung_am ? datum(a.rechnung_am) : '',
+    (STATUS[statusVon(a)] || STATUS.offen).label, a.bezahlt_am ? datum(a.bezahlt_am) : '', zahlCsv(a.bezahlt_betrag), a.bezahlt_von || '',
+  ])
+  return '\uFEFF' + [kopf, ...rows].map(r => r.map(zelle).join(';')).join('\r\n')
+}
+
+function herunterladen(blob, name) {
+  const url = URL.createObjectURL(blob)
+  const el = document.createElement('a'); el.href = url; el.download = name
+  document.body.appendChild(el); el.click(); el.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 3000)
+}
+
+const exportTitel = (abMonat, bisMonat) => abMonat === bisMonat ? abMonat : `${abMonat}_bis_${bisMonat}`
+
+export async function exportCsv(opt) {
+  const r = await exportZeilen(opt)
+  if (r.error) return r
+  herunterladen(new Blob([uebersichtCsv(r.zeilen)], { type: 'text/csv;charset=utf-8' }), `Buchhaltung-${exportTitel(opt.abMonat, opt.bisMonat)}.csv`)
+  return { anzahl: r.zeilen.length }
+}
+
+export async function exportZip(opt, fortschritt = () => {}) {
+  const r = await exportZeilen(opt)
+  if (r.error) return r
+  const { zipSync, strToU8 } = await import('fflate')
+  const dateien = { 'Übersicht.csv': strToU8(uebersichtCsv(r.zeilen)) }
+  const mitDatei = r.zeilen.filter(a => a.rechnung_url)
+  const fehlen = []
+  let n = 0
+  for (const a of mitDatei) {
+    fortschritt(++n, mitDatei.length)
+    try {
+      const url = await signiert(a.rechnung_url, 600)
+      const resp = await fetch(url)
+      if (!resp.ok) throw new Error('HTTP ' + resp.status)
+      const ordner = sauberName(monatName(a.monat))
+      let name = `${a.monat} ${ordner}/${dateiName(a)}`
+      let i = 2
+      while (dateien[name]) name = `${a.monat} ${ordner}/${dateiName(a).replace(/(\.[a-z0-9]+)$/i, ` (${i++})$1`)}`
+      dateien[name] = new Uint8Array(await resp.arrayBuffer())
+    } catch { fehlen.push(a.chatter_name + ' ' + a.monat) }
+  }
+  if (fehlen.length) dateien['Nicht geladen.txt'] = strToU8('Diese Rechnungen konnten nicht geladen werden:\n' + fehlen.join('\n'))
+  const zip = zipSync(dateien, { level: 0 })   // PDFs/Bilder sind schon komprimiert
+  herunterladen(new Blob([zip], { type: 'application/zip' }), `Rechnungen-${exportTitel(opt.abMonat, opt.bisMonat)}.zip`)
+  return { anzahl: r.zeilen.length, dateien: mitDatei.length - fehlen.length, fehlen }
 }
