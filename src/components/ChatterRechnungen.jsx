@@ -1,16 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Receipt, Upload, FileText, Download, Clock, CircleCheck, MessageCircleWarning } from 'lucide-react'
-import { STATUS, euro, dollar, datum, datumZeit, abrechnungenLaden, rechnungHochladen, abrechnungPdf, extrasVon, gesamtEur } from '../buchhaltung'
+import { Receipt, Upload, FileText, Clock, CircleCheck, MessageCircleWarning } from 'lucide-react'
+import { STATUS, datum, datumZeit, abrechnungenLaden, rechnungHochladen } from '../buchhaltung'
 import { oeffnen } from '../medien'
 
-// ── Rechnungen im Chatter-Portal (v5.37.0) ─────────────────────────────────
-// modus 'karte' (Startseite): nur was zu tun ist — Rechnung fehlt / Rückfrage.
-// modus 'liste' (Mehr):       alle Abrechnungen mit Status, Datei, bezahlt am.
+// ── Rechnungen im Chatter-Portal (v5.37.0 · v5.37.2) ───────────────────────
+// v5.37.2: Nur noch hochladen — keine Beträge, kein PDF. Die Zahlen bekommt
+// der Chatter per Telegram; hier legt er nur seine Rechnung ab, sie landet
+// bei euch in der Buchhaltung.
+// modus 'karte' (Startseite): Rechnung fehlt / Rückfrage → Upload-Knopf.
+// modus 'liste' (Mehr):       welche Rechnung ist da, welche bezahlt.
 
 export default function ChatterRechnungen({ displayName, isPreview, modus = 'karte' }) {
   const [liste, setListe] = useState(null)
   const [busy, setBusy] = useState(null)
-  const [betrag, setBetrag] = useState({})
   const [meldung, setMeldung] = useState({})
   const datei = useRef(null)
   const ziel = useRef(null)
@@ -18,7 +20,7 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
   const lade = async () => {
     if (!displayName) { setListe([]); return }
     const { data, error } = await abrechnungenLaden(displayName)
-    // v5.37.1: nur mitgeteilte (in der Admin-Vorschau sieht man sonst Entwürfe)
+    // nur mitgeteilte (in der Admin-Vorschau sieht man sonst Entwürfe)
     setListe(error ? [] : (data || []).filter(a => a.mitgeteilt_am))
   }
   useEffect(() => { lade() }, [displayName]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -28,7 +30,7 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
     const f = ev.target.files?.[0]; ev.target.value = ''
     const a = ziel.current; if (!f || !a) return
     setBusy(a.id); setMeldung(m => ({ ...m, [a.id]: '' }))
-    const r = await rechnungHochladen(a, f, { betrag: betrag[a.id] })
+    const r = await rechnungHochladen(a, f)
     setBusy(null)
     if (r.error) { setMeldung(m => ({ ...m, [a.id]: 'Hat nicht geklappt: ' + r.error.message })); return }
     setMeldung(m => ({ ...m, [a.id]: 'Danke! Deine Rechnung ist angekommen.' }))
@@ -50,31 +52,17 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
             <span className="cr-ic"><Receipt size={18} strokeWidth={2.3} /></span>
             <div>
               <b>Rechnung für {a.bezeichnung || a.monat}</b>
-              <span>{a.status === 'klaerung' ? 'Es gibt eine Rückfrage zu deiner Rechnung.' : 'Die Zahlen sind fertig. Bitte schreib deine Rechnung und lad sie hier hoch.'}</span>
+              <span>{a.status === 'klaerung' ? 'Es gibt eine Rückfrage zu deiner Rechnung. Bitte lad eine neue hoch.' : 'Bitte lad hier deine Rechnung hoch.'}</span>
             </div>
           </div>
           {a.status === 'klaerung' && a.klaerung_notiz && (
             <div className="cr-klaerung"><MessageCircleWarning size={15} strokeWidth={2.3} /> {a.klaerung_notiz}</div>
           )}
-          <div className="cr-zahlen">
-            <div><span>Zeitraum</span><span>{datum(a.von)}–{datum(a.bis)}</span></div>
-            <div><span>{a.nur_chat === false ? 'Umsatz gesamt' : 'Chat Revenue'}</span><span>{dollar(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd)}</span></div>
-            {a.prozent != null && <div><span>Dein Anteil ({String(a.prozent).replace('.', ',')} %)</span><span>{dollar(a.auszahlung_usd)}</span></div>}
-            {a.kurs != null && <div><span>Kurs</span><span>1 $ = {String(Number(a.kurs)).replace('.', ',')} €</span></div>}
-            {extrasVon(a).length > 0 && a.betrag_eur != null && <div><span>Anteil in Euro</span><span>{euro(a.betrag_eur)}</span></div>}
-            {extrasVon(a).map((e, n) => <div key={n}><span>{Number(e.betrag) < 0 ? '−' : '+'} {e.text}</span><span>{euro(Math.abs(Number(e.betrag)))}</span></div>)}
-            <div className="cr-summe"><span>Auf die Rechnung</span><span>{gesamtEur(a) != null ? euro(gesamtEur(a)) : dollar(a.auszahlung_usd)}</span></div>
-          </div>
-          <label className="cr-betrag">
-            <span>Betrag auf deiner Rechnung (optional)</span>
-            <input inputMode="decimal" placeholder={gesamtEur(a) != null ? String(gesamtEur(a)).replace('.', ',') : ''} value={betrag[a.id] || ''} onChange={e => setBetrag(b => ({ ...b, [a.id]: e.target.value }))} disabled={isPreview} />
-          </label>
           <button className="cr-hoch" disabled={isPreview || busy === a.id} onClick={() => start(a)}>
             <Upload size={17} strokeWidth={2.4} /> {busy === a.id ? 'Lädt hoch …' : a.status === 'klaerung' ? 'Neue Rechnung hochladen' : 'Rechnung hochladen'}
             <small>PDF oder Foto</small>
           </button>
           {meldung[a.id] && <div className="cr-meldung">{meldung[a.id]}</div>}
-          <button className="cr-pdf" onClick={() => abrechnungPdf(a)}><Download size={15} strokeWidth={2.3} /> Abrechnung als PDF</button>
         </div>
       ))}
 
@@ -86,13 +74,11 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
             const Sym = a.status === 'bezahlt' ? CircleCheck : a.status === 'klaerung' ? MessageCircleWarning : a.status === 'rechnung' ? Clock : Upload
             return (
               <div key={a.id} className="cr-zeile">
-                <span className="cr-st" style={{ color: st.farbe, background: st.bg }}><Sym size={13} strokeWidth={2.4} /> {a.status === 'bezahlt' ? `Bezahlt ${datum(a.bezahlt_am)}` : a.status === 'rechnung' ? 'Wartet auf Zahlung' : st.label}</span>
+                <span className="cr-st" style={{ color: st.farbe, background: st.bg }}><Sym size={13} strokeWidth={2.4} /> {a.status === 'bezahlt' ? `Bezahlt ${datum(a.bezahlt_am)}` : a.status === 'rechnung' ? 'Hochgeladen' : st.label}</span>
                 <span className="cr-zeile-was">{a.bezeichnung || a.monat}<small>{a.rechnung_am ? `hochgeladen ${datumZeit(a.rechnung_am)}` : ''}{a.status === 'klaerung' && a.klaerung_notiz ? ` · „${a.klaerung_notiz}“` : ''}</small></span>
-                <span className="cr-zeile-betrag">{euro(a.bezahlt_betrag ?? gesamtEur(a))}</span>
                 <span className="cr-zeile-knoepfe">
                   {a.rechnung_url && <button title="Meine Rechnung öffnen" onClick={() => oeffnen(a.rechnung_url)}><FileText size={15} strokeWidth={2.2} /></button>}
-                  {a.status === 'rechnung' && !isPreview && <button title="Andere Datei hochladen" disabled={busy === a.id} onClick={() => start(a)}><Upload size={15} strokeWidth={2.2} /></button>}
-                  <button title="Abrechnung als PDF" onClick={() => abrechnungPdf(a)}><Download size={15} strokeWidth={2.2} /></button>
+                  {(a.status === 'offen' || a.status === 'klaerung' || a.status === 'rechnung') && !isPreview && <button title={a.rechnung_url ? 'Andere Datei hochladen' : 'Rechnung hochladen'} disabled={busy === a.id} onClick={() => start(a)}><Upload size={15} strokeWidth={2.2} /></button>}
                 </span>
               </div>
             )
