@@ -15,7 +15,9 @@ import {
 // in langen Seiten untergehen (Passwort-Anfrage, gesperrtes Konto, Skript-
 // Freigabe …). Wie das Schichttausch-Pop-up bei den Chattern:
 //   • springt beim Öffnen auf und sobald etwas Neues dazukommt
-//   • „Später“ = eine Stunde Ruhe (Neues holt es trotzdem wieder hoch)
+//   • v5.40.1: springt NUR noch auf, wenn etwas NEUES dazugekommen ist (pro
+//     Gerät gemerkt). Bekanntes erinnert nicht mehr stündlich — es bleibt
+//     oben im Knopf „Wartet N“ sichtbar, bis es erledigt oder gelesen ist.
 //   • ein Eintrag verschwindet erst, wenn die Sache erledigt ist — bei allen
 //     Admins gleichzeitig, weil alles direkt aus den Daten kommt
 //   • oben in der Kopfzeile „Wartet N“, solange etwas offen ist
@@ -27,13 +29,13 @@ import {
 //   Der Knopf oben bleibt (gedämpft), damit man Gelesenes wiederfindet.
 // Normale Nachrichten, Board, was andere Admins tun → bleibt in den Glocken.
 
-const SPEICHER = 'admin_wartet_v1'
+
+const GESEHEN = 'admin_wartet_gesehen_v1'
+const liesGesehen = () => { try { return new Set(JSON.parse(localStorage.getItem(GESEHEN) || '[]')) } catch { return new Set() } }
+const schreibGesehen = (set) => { try { localStorage.setItem(GESEHEN, JSON.stringify([...set].slice(-500))) } catch { /* egal */ } }
 const AUS = 'admin_wartet_aus_v1'   // Einträge mit „Nicht mehr erinnern“ (pro Gerät)
-const RUHE_MS = 60 * 60 * 1000
 const TAKT_MS = 60 * 1000
 
-const lies = () => { try { return JSON.parse(localStorage.getItem(SPEICHER) || '{}') || {} } catch { return {} } }
-const schreib = (v) => { try { localStorage.setItem(SPEICHER, JSON.stringify(v)) } catch { /* egal */ } }
 
 const plusTage = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 const tagText = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }) } catch { return iso } }
@@ -163,7 +165,7 @@ export default function AdminWartet({ onNavigate, daten }) {
     }
     for (const [k, rows] of einheiten) {
       const ids = new Set(rows.map(r => r.id))
-      const wollen = [...new Set(roh.reaktionen.filter(r => ids.has(r.swap_id) && r.reaction === 'uebernehmen').map(r => r.chatter_name))]
+      const wollen = [...new Set(roh.reaktionen.filter(r => ids.has(r.swap_id) && r.reaction === 'uebernehmen').map(r => r.chatter_name))].sort()   // sortiert: sonst wechselt der Schlüssel und es gilt als „neu“
       const s = rows[0]
       const models = [...new Set(rows.map(r => r.model_name).filter(Boolean))].join(', ')
       const wann = `${s.shift_date === heute ? 'Heute' : tagText(s.shift_date)} · ${s.shift}`
@@ -242,17 +244,18 @@ export default function AdminWartet({ onNavigate, daten }) {
   const wiederAn = (e) => { const n = new Set(aus); n.delete(e.key); setAus(n); schreibAus(n) }
 
   // ── Automatisch öffnen ───────────────────────────────────────────────────
+  // v5.40.1: nur bei NEUEN Einträgen. Beim allerersten Mal (nichts gemerkt)
+  // zählt alles als neu; danach nur, was seitdem dazugekommen ist.
   useEffect(() => {
-    if (!roh || offen || !eintraege.length) return
-    const s = lies()
-    const bekannt = new Set(s.keys || [])
-    const neu = eintraege.some(e => !bekannt.has(e.key))
-    const ruhe = (s.bis || 0) > Date.now()
-    if (neu || !ruhe) setOffen(true)
+    if (!roh || !eintraege.length) return
+    const gesehen = liesGesehen()
+    const neu = eintraege.some(e => !gesehen.has(e.key))
+    if (offen) { eintraege.forEach(e => gesehen.add(e.key)); schreibGesehen(gesehen); return }
+    if (neu) setOffen(true)
   }, [roh, eintraege, offen])
 
   const spaeter = () => {
-    schreib({ bis: Date.now() + RUHE_MS, keys: eintraege.map(e => e.key) })
+    const gesehen = liesGesehen(); eintraege.forEach(e => gesehen.add(e.key)); schreibGesehen(gesehen)
     setOffen(false); setCodes([])
   }
 
@@ -429,9 +432,9 @@ export default function AdminWartet({ onNavigate, daten }) {
               ? <button className="aw-link" onClick={() => setZeigAus(v => !v)}>
                   {ausgeblendet.length} gelesen · {zeigAus ? 'ausblenden' : 'anzeigen'}
                 </button>
-              : <span className="aw-fuss-text">Neue Sachen melden sich wieder.</span>}
+              : <span className="aw-fuss-text">Meldet sich nur wieder, wenn etwas Neues dazukommt.</span>}
             <div className="aw-fuss-knoepfe">
-              <button className="aw-k" onClick={spaeter}>{eintraege.length ? 'Später (1 Std.)' : 'Schließen'}</button>
+              <button className="aw-k" onClick={spaeter}>Schließen</button>
               {eintraege.length > 0 && <button className="aw-k aw-p" onClick={alleGelesen} title="Alles ad acta — nur neue Sachen holen das Pop-up wieder hoch">
                 <CheckCheck size={15} strokeWidth={2.6} /> Alle gelesen
               </button>}
