@@ -6,7 +6,7 @@ import {
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
   abrechnungenLaden, periode, zeitraumLaden, anzeige, statusVon, extrasVon, gesamtEur, gesamt, istManuell,
-  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern, rechnungEntfernen,
+  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern, rechnungEntfernen, erkanntNachtragen,
   zeileSichern, extrasSpeichern, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
 } from '../buchhaltung'
@@ -69,6 +69,29 @@ export default function BuchhaltungTab({ userDisplayName }) {
     setDaten({ ...r, items: r.items.map(i => ({ ...i, p, key: i.manuell ? 'r' + i.row.id : 'c-' + i.name })) })
   }
   useEffect(() => { setDaten(null); lade() }, [modus, p?.ab, p?.ende]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v5.39.2: Rechnungen ohne Betrag (z. B. vor der Erkennung hochgeladen) im
+  // Hintergrund einmal lesen und Summe/IBAN nachtragen — nur leere Felder.
+  const gelesenSchon = useRef(new Set())
+  const [liestNach, setLiestNach] = useState(0)
+  useEffect(() => {
+    const offen = (daten?.items || []).map(i => i.row)
+      .filter(r => r && r.rechnung_url && r.rechnung_betrag == null && !gelesenSchon.current.has(r.id) && /\.pdf(\?|$)/i.test(r.rechnung_name || r.rechnung_url))
+    if (!offen.length) return
+    let weg = false
+    ;(async () => {
+      let neu = 0
+      setLiestNach(offen.length)
+      for (const r of offen.slice(0, 25)) {
+        if (weg) return
+        gelesenSchon.current.add(r.id)
+        const g = await rechnungNeuLesen(r)
+        if (!g.leer && (g.betrag != null || g.iban)) { const x = await erkanntNachtragen(r, g); if (!x.error && !x.leer) neu++ }
+      }
+      if (!weg) { setLiestNach(0); if (neu) lade() }
+    })()
+    return () => { weg = true }
+  }, [daten]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = daten?.items || []
   const statusZahl = (st) => items.filter(i => statusVon(i.row) === st).length
@@ -235,6 +258,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
       )}
       {modus === 'frei' && !p && <div className="bh-leer">Von und bis wählen, z. B. Samstag bis Freitag.</div>}
       {daten?.fehler && <div className="bh-warn">{daten.fehler}</div>}
+      {liestNach > 0 && <div className="bh-info"><span><Sparkles size={14} strokeWidth={2.4} /> Lese {liestNach} Rechnung{liestNach === 1 ? '' : 'en'} ohne Betrag …</span></div>}
       {meldung && <div className="bh-ok"><Check size={15} strokeWidth={2.6} /> {meldung}</div>}
 
       {daten && items.length > 0 && (

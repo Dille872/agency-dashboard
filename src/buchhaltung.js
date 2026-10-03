@@ -313,6 +313,16 @@ export async function rechnungNeuLesen(row) {
   } catch { return { leer: true, grund: 'fehler' } }
 }
 
+// v5.39.2: Erkanntes nachtragen — füllt nur, was noch leer ist (überschreibt nie Eingetragenes)
+export async function erkanntNachtragen(row, g) {
+  const felder = {}
+  if (row.rechnung_betrag == null && g.betrag != null) { felder.rechnung_betrag = g.betrag; felder.betrag_erkannt = true }
+  if (!row.rechnung_iban && g.iban) felder.rechnung_iban = g.iban
+  if (!Object.keys(felder).length) return { leer: true }
+  const { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id).is('rechnung_betrag', null)
+  return error ? { error } : {}
+}
+
 // Betrag/IBAN der Rechnung von Hand setzen (von euch geprüft → nicht mehr „erkannt“)
 export async function rechnungsangabenSpeichern(row, { betrag, iban }) {
   const b = String(betrag ?? '').trim() === '' ? null : zahlAus(betrag)
