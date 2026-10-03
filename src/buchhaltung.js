@@ -18,7 +18,7 @@ import { supabase } from './supabase'
 import { sendTelegramMessage, notifyAdmins } from './telegram'
 import { chatterVerteilen, chatterRechnung, istInaktiv } from './billingRechnung'
 import { zeitraumText, abrechnungenPdf } from './billingExport'
-import { signiert } from './medien'
+import { signiert, zerlege } from './medien'
 import { rechnungLesen } from './rechnungLesen'
 
 export const STATUS = {
@@ -321,6 +321,18 @@ export async function rechnungsangabenSpeichern(row, { betrag, iban }) {
   let { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id)
   if (error && /rechnung_iban|betrag_erkannt/.test(error.message || '')) error = (await supabase.from('chatter_abrechnungen').update({ rechnung_betrag: b }).eq('id', row.id)).error
   return error ? { error } : {}
+}
+
+// v5.39.1: falsch hochgeladene Rechnung wieder entfernen (Datei + Angaben)
+export async function rechnungEntfernen(row) {
+  const z = zerlege(row.rechnung_url)
+  const felder = { rechnung_url: null, rechnung_name: null, rechnung_betrag: null, rechnung_am: null, rechnung_von: null }
+  if (row.status !== 'bezahlt') felder.status = 'offen'
+  let { error } = await supabase.from('chatter_abrechnungen').update({ ...felder, rechnung_iban: null, betrag_erkannt: false }).eq('id', row.id)
+  if (error && /rechnung_iban|betrag_erkannt/.test(error.message || '')) error = (await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id)).error
+  if (error) return { error }
+  if (z) await supabase.storage.from(z.bucket).remove([z.pfad]).catch(() => null)   // Datei weg; klappt das nicht, bleibt sie nur ungenutzt liegen
+  return {}
 }
 
 // ── Admin-Aktionen ─────────────────────────────────────────────────────────

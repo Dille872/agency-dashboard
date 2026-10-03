@@ -6,7 +6,7 @@ import {
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
   abrechnungenLaden, periode, zeitraumLaden, anzeige, statusVon, extrasVon, gesamtEur, gesamt, istManuell,
-  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern,
+  manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern, rechnungEntfernen,
   zeileSichern, extrasSpeichern, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
 } from '../buchhaltung'
@@ -440,13 +440,15 @@ function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
   const [iban, setIban] = useState(a.iban ? ibanSchoen(a.iban) : '')
   const [lesen, setLesen] = useState('')
   const [speichert, setSpeichert] = useState(false)
+  const [gelesen, setGelesen] = useState(null)      // { text: [...], fehler } — was in der PDF steht
   useEffect(() => { let weg = false; signiert(a.url).then(u => { if (!weg) setUrl(u) }); return () => { weg = true } }, [a.url])
   const istBild = /\.(jpe?g|png|webp|gif|heic|heif)(\?|$)/i.test(a.name || a.url)
   const ausPdf = async () => {
     if (!a.row) return
     setLesen('liest')
     const g = await rechnungNeuLesen(a.row)
-    if (g.leer) { setLesen(g.grund === 'foto' ? 'foto' : g.grund === 'scan' ? 'scan' : 'nichts'); return }
+    setGelesen({ text: g.text || [], fehler: g.fehler || '' })
+    if (g.leer) { setLesen(g.grund === 'foto' ? 'foto' : g.grund === 'scan' ? 'scan' : g.grund === 'fehler' ? 'fehler' : 'nichts'); return }
     if (g.betrag != null) setBetrag(String(g.betrag).replace('.', ','))
     if (g.iban) setIban(ibanSchoen(g.iban))
     setLesen(g.betrag != null ? 'ok' : 'ohne-summe')
@@ -455,6 +457,14 @@ function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
   useEffect(() => { if (a.row && a.betrag == null && !istBild) ausPdf() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const b = zahlAus(betrag)
   const diff = b != null && a.gesamt != null ? Math.round((b - a.gesamt) * 100) / 100 : null
+  const entfernen = async () => {
+    if (!confirm(`Rechnung „${a.name || 'Rechnung'}“ von ${a.wer} wirklich entfernen?\n\nDie Datei wird gelöscht. Der Eintrag bleibt und steht wieder auf „Rechnung fehlt“${a.row?.status === 'bezahlt' ? ' (bezahlt bleibt bezahlt)' : ''}.`)) return
+    setSpeichert(true)
+    const r = await rechnungEntfernen(a.row)
+    setSpeichert(false)
+    if (r.error) { alert('Nicht entfernt: ' + r.error.message); return }
+    onGespeichert(`${a.wer}: Rechnung entfernt.`)
+  }
   const speichern = async () => {
     setSpeichert(true)
     const r = await rechnungsangabenSpeichern(a.row, { betrag, iban })
@@ -477,6 +487,12 @@ function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
             : istBild ? <img src={url} alt={a.name || 'Rechnung'} />
               : <iframe src={url} title={a.name || 'Rechnung'} />}
         </div>
+        {a.row && gelesen && gelesen.text.length > 0 && lesen !== 'ok' && (
+          <details className="bh-gelesen">
+            <summary>Was das Dashboard in der PDF lesen kann ({gelesen.text.length} Zeilen)</summary>
+            <pre>{gelesen.text.slice(0, 120).join('\n')}</pre>
+          </details>
+        )}
         {a.row && (
           <div className="bh-pruefen">
             <label className="bh-feld"><span>Betrag auf der Rechnung ({a.waehrung === 'USD' ? '$' : '€'})</span><input inputMode="decimal" value={betrag} placeholder="z. B. 447,48" onChange={e => setBetrag(e.target.value)} /></label>
@@ -493,8 +509,10 @@ function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
               {lesen === 'nichts' && <span>In der PDF nichts gefunden — bitte abtippen</span>}
               {lesen === 'scan' && <span>PDF ohne Text (Scan/Bild) — bitte abtippen</span>}
               {lesen === 'foto' && <span>Foto — bitte abtippen</span>}
+              {lesen === 'fehler' && <span className="warn">PDF konnte nicht gelesen werden{gelesen?.fehler ? `: ${gelesen.fehler}` : ''}</span>}
             </div>
             <div className="bh-pruefen-knoepfe">
+              <button className="bh-k bh-leise" onClick={entfernen} title="Falsche Datei? Rechnung wieder entfernen"><Trash2 size={14} strokeWidth={2.2} /> Rechnung entfernen</button>
               {!istBild && <button className="bh-k" disabled={lesen === 'liest'} onClick={ausPdf}><Sparkles size={14} strokeWidth={2.2} /> Aus PDF lesen</button>}
               <button className="bh-k bh-p" disabled={speichert} onClick={speichern}><Check size={14} strokeWidth={2.6} /> Speichern</button>
             </div>

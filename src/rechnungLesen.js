@@ -26,7 +26,7 @@ const waehrungVon = (a, b) => {
 }
 
 // v5.38.1: auch ganze Beträge MIT Währungszeichen („66 €“, „€ 1.250“, „EUR 66“)
-const GANZ = /(?:(€|eur|usd|\$)\s*(?<![\d.,])(\d{1,3}(?:[.,\s']\d{3})+|\d{1,6})(?![\d]|[.,]\d)|(?<![\d.,])(\d{1,3}(?:[.,\s']\d{3})+|\d{1,6})(?![\d]|[.,]\d)\s*(€|eur|euro|usd|\$|dollar)(?![a-z]))/gi
+const GANZ = /(?:(€|eur|usd|\$)\s*(?<![\d.,])(\d{1,3}(?:[.,\s']\d{3})+|\d{1,6})(?![\d]|[.,]\d)|(?<![\d.,])(?<![\d.,]\s)(\d{1,3}(?:[.,\s']\d{3})+|\d{1,6})(?![\d]|[.,]\d)\s*(€|eur|euro|usd|\$|dollar)(?![a-z]))/gi
 const ganzZahl = (t) => { const n = Number(String(t).replace(/[.,\s']/g, '')); return Number.isFinite(n) ? n : null }
 
 function betraegeIn(zeile) {
@@ -94,9 +94,12 @@ export function ausText(zeilen) {
     const beste = kandidaten.filter(k => k.gewicht === top)
     wahl = beste.reduce((a, b) => (b.wert > a.wert || (b.wert === a.wert && b.pos > a.pos) ? b : a))
   } else {
-    // Rückfall: größter Betrag mit Währungszeichen
-    const alle = z.flatMap(betraegeIn).filter(x => x.waehrung)
-    if (alle.length) wahl = alle.reduce((a, b) => (b.wert > a.wert ? b : a))
+    // Rückfall 1: größter Betrag mit Währungszeichen
+    const alle = z.flatMap(betraegeIn)
+    const mitZeichen = alle.filter(x => x.waehrung)
+    if (mitZeichen.length) wahl = mitZeichen.reduce((a, b) => (b.wert > a.wert ? b : a))
+    // Rückfall 2: Währung steht nur irgendwo im Dokument (z. B. Spaltenkopf „Betrag EUR“)
+    else if (alle.length && dokWaehrung) wahl = alle.reduce((a, b) => (b.wert > a.wert ? b : a))
   }
   return {
     betrag: wahl ? Math.round(wahl.wert * 100) / 100 : null,
@@ -105,16 +108,22 @@ export function ausText(zeilen) {
   }
 }
 
+// Ziffern mit Leerzeichen dazwischen („4 4 7 , 4 8“ aus manchen Design-PDFs) zusammenziehen
+export const zusammen = (zeilen) => zeilen.map(z => (z && z !== SEITE ? z.replace(/(?<=[\d.,])\s(?=[\d.,])/g, '') : z))
+
 // Datei → Vorschlag. Nur PDFs mit Text; sonst { leer: true }
+// v5.39.1: gibt den gelesenen Text mit zurück (zum Nachsehen, was die PDF hergibt)
 export async function rechnungLesen(datei) {
   try {
     const istPdf = /pdf/i.test(datei?.type || '') || /\.pdf$/i.test(datei?.name || '')
     if (!istPdf) return { leer: true, grund: 'foto' }
     const zeilen = await pdfZeilen(datei)
-    if (!zeilen.some(x => x && x !== SEITE)) return { leer: true, grund: 'scan' }
-    const r = ausText(zeilen)
-    return { ...r, leer: r.betrag == null && !r.iban }
-  } catch {
-    return { leer: true, grund: 'fehler' }
+    const text = zeilen.filter(x => x && x !== SEITE)
+    if (!text.length) return { leer: true, grund: 'scan', text }
+    let r = ausText(zeilen)
+    if (r.betrag == null) { const r2 = ausText(zusammen(zeilen)); if (r2.betrag != null) r = { ...r2, iban: r.iban || r2.iban } }
+    return { ...r, leer: r.betrag == null && !r.iban, text }
+  } catch (e) {
+    return { leer: true, grund: 'fehler', fehler: String(e?.message || e) }
   }
 }
