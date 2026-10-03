@@ -29,7 +29,7 @@ function csvLaden(name, kopf, zeilen) {
 const satzModel = (s) => s ? `${s.percentage} % (${[s.include_subs && 'Subs', s.include_chat && 'Chat', s.include_tips && 'Tips'].filter(Boolean).join(' + ') || '—'})` : 'kein Satz'
 const satzChatter = (s) => s ? `${s.percentage} % von ${s.include_chat ? 'Chat Revenue' : 'Gesamt'}` : 'kein Satz'
 
-export function excelModels(zeilen, monat, kurs) {
+export function excelModels(zeilen, monat, kurs, von = null, bis = null) {
   const k = kurs ? Number(kurs) : null
   const kopf = ['Model', 'Satz', 'Subs $', 'Chat $', 'Tips $', 'Gesamt $', 'Basis $', 'Agentur $', 'Model $', ...(k ? ['Agentur €', 'Model €'] : [])]
   const rows = zeilen.map(z => [z.name, satzModel(z.s), z.rev.subs, z.rev.chat, z.rev.tips, z.rev.total, z.x ? z.x.base : '', z.x ? z.x.agentur : '', z.x ? z.x.model : '',
@@ -38,37 +38,46 @@ export function excelModels(zeilen, monat, kurs) {
   rows.push(['Summe', '', s(z => z.rev.subs), s(z => z.rev.chat), s(z => z.rev.tips), s(z => z.rev.total), s(z => z.x?.base), s(z => z.x?.agentur), s(z => z.x?.model),
     ...(k ? [s(z => z.x?.agentur) * k, s(z => z.x?.model) * k] : [])])
   if (k) rows.push([], [`Kurs ${monatText(monat)}: 1 $ = ${String(k).replace('.', ',')} €`])
-  csvLaden(`Billing-Models-${monat}.csv`, kopf, rows)
+  if (von) rows.push([`Zeitraum: ${zeitraumText(monat, bis, von)}`])
+  csvLaden(`Billing-Models-${dateiTeil(monat, von, bis)}.csv`, kopf, rows)
 }
 
-export function excelChatter(zeilen, monat, kurs) {
+export function excelChatter(zeilen, monat, kurs, von = null, bis = null) {
   const k = kurs ? Number(kurs) : null
   const kopf = ['Chatter', 'Satz', 'Chat Revenue $', 'Gesamt $', 'Basis $', 'Auszahlung $', ...(k ? ['Auszahlung €'] : [])]
   const rows = zeilen.map(z => [z.name, satzChatter(z.s), z.rev.chat, z.rev.total, z.x ? z.x.base : '', z.x ? z.x.auszahlung : '', ...(k ? [z.x ? z.x.auszahlung * k : ''] : [])])
   const s = (f) => zeilen.reduce((t, z) => t + (f(z) || 0), 0)
   rows.push(['Summe', '', s(z => z.rev.chat), s(z => z.rev.total), s(z => z.x?.base), s(z => z.x?.auszahlung), ...(k ? [s(z => z.x?.auszahlung) * k] : [])])
   if (k) rows.push([], [`Kurs ${monatText(monat)}: 1 $ = ${String(k).replace('.', ',')} €`])
-  csvLaden(`Billing-Chatter-${monat}.csv`, kopf, rows)
+  if (von) rows.push([`Zeitraum: ${zeitraumText(monat, bis, von)}`])
+  csvLaden(`Billing-Chatter-${dateiTeil(monat, von, bis)}.csv`, kopf, rows)
 }
 
 // ── PDF-Abrechnungen (v5.34.0: echte PDF-Datei zum Herunterladen) ─────────
 // Vorher: Druckfenster. Jetzt erzeugt jsPDF direkt eine Datei, eine Seite je Person.
 const datumKurz = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
-export function zeitraumText(monat, bis) {
+export function zeitraumText(monat, bis, von = null) {
+  // v5.35.0: freier Zeitraum (z. B. Samstag bis Samstag)
+  if (von) {
+    const a = new Date(von + 'T12:00:00'), b = new Date((bis || von) + 'T12:00:00')
+    const kurzA = a.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', ...(a.getFullYear() !== b.getFullYear() ? { year: 'numeric' } : {}) })
+    return `${kurzA}–${datumKurz(bis || von)}`
+  }
   const [y, m] = monat.split('-').map(Number)
   const letzter = new Date(y, m, 0).getDate()
   const ende = bis && bis.startsWith(monat) ? bis : `${monat}-${String(letzter).padStart(2, '0')}`
   return `01.${String(m).padStart(2, '0')}.–${datumKurz(ende)}`
 }
+const dateiTeil = (monat, von, bis) => von ? `${von}_bis_${bis}` : monat
 const usd = (v) => zahl(v) + ' $'
 
-export async function abrechnungenPdf({ art, zeilen, monat, kurs, bis }) {
+export async function abrechnungenPdf({ art, zeilen, monat, kurs, bis, von = null }) {
   const { jsPDF } = await import('jspdf')
   const k = kurs ? Number(kurs) : null
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const B = 210, L = 18, R = B - 18
   const lila = [124, 58, 237], dunkel = [42, 22, 96], grau = [110, 110, 128]
-  const zeitraum = zeitraumText(monat, bis)
+  const zeitraum = zeitraumText(monat, bis, von)
 
   const tabelle = (y, kopf, reihen) => {
     doc.setFillColor(245, 243, 255); doc.rect(L, y - 5, R - L, 8, 'F')
@@ -94,7 +103,7 @@ export async function abrechnungenPdf({ art, zeilen, monat, kurs, bis }) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...dunkel)
     doc.text('Thirteen 87 Collective', L, 22)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...grau)
-    doc.text(`Abrechnung ${monatText(monat)} · Zeitraum ${zeitraum}`, L, 28)
+    doc.text(von ? `Abrechnung · Zeitraum ${zeitraum}` : `Abrechnung ${monatText(monat)} · Zeitraum ${zeitraum}`, L, 28)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...lila)
     doc.text(art === 'model' ? 'MODEL' : 'CHATTER', R, 22, { align: 'right' })
     doc.setDrawColor(...lila); doc.setLineWidth(0.9); doc.line(L, 32, R, 32)
@@ -128,19 +137,19 @@ export async function abrechnungenPdf({ art, zeilen, monat, kurs, bis }) {
     doc.text(`Erstellt am ${new Date().toLocaleDateString('de-DE')} · Thirteen 87 Collective`, L, 285)
   })
   const name = zeilen.length === 1
-    ? `Abrechnung-${String(zeilen[0].name).replace(/[^\wäöüÄÖÜß.-]+/g, '_')}-${monat}.pdf`
-    : `Abrechnungen-${art === 'model' ? 'Models' : 'Chatter'}-${monat}.pdf`
+    ? `Abrechnung-${String(zeilen[0].name).replace(/[^\wäöüÄÖÜß.-]+/g, '_')}-${dateiTeil(monat, von, bis)}.pdf`
+    : `Abrechnungen-${art === 'model' ? 'Models' : 'Chatter'}-${dateiTeil(monat, von, bis)}.pdf`
   doc.save(name)
 }
 
 // ── Nachricht an den Chatter: Umsatz & was auf die Rechnung kommt ──────────
-export function chatterNachricht(z, monat, kurs, bis) {
+export function chatterNachricht(z, monat, kurs, bis, von = null) {
   const k = kurs ? Number(kurs) : null
   const vorname = String(z.name).split(' ')[0]
   const zeilen = [
     `Hi ${vorname} 👋`,
     '',
-    `deine Abrechnung für ${monatText(monat)} (${zeitraumText(monat, bis)}):`,
+    von ? `deine Abrechnung für den Zeitraum ${zeitraumText(monat, bis, von)}:` : `deine Abrechnung für ${monatText(monat)} (${zeitraumText(monat, bis)}):`,
     '',
     `Chat Revenue: ${usd(z.rev.chat)}`,
   ]
