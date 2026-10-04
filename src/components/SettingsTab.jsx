@@ -9,6 +9,7 @@ import { assignmentsOhnePerson, assignmentsOhneModels } from '../dienstplanAufra
 import { ladeInaktiveNamen, ohneInaktive } from '../people'
 import { ROLES, ROLLEN_GRUPPEN, hauptrolle } from '../rollen'
 import TeamRechte from './TeamRechte' // v5.27.0
+import ZweiFaktorTeam from './ZweiFaktorTeam' // v5.42.0
 
 const SECTIONS = [
   { key: 'team', label: 'Team & Rechte' },
@@ -1199,6 +1200,7 @@ export default function SettingsTab() {
         <TeamRechte users={users} onNeu={loadUsers} rollenSetzen={rollenSetzen} profilSpeichern={profilSpeichern}
           onStatus={startOffboarding} onReaktivieren={reactivateUser} onExport={exportUserData} statusBusy={statusBusy}
           onEinladen={() => { try { document.getElementById('team-einladen')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch { /* egal */ } }} />
+        <ZweiFaktorTeam />
         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 6 }}>Einladen & Aufräumen</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 680 }}>
 

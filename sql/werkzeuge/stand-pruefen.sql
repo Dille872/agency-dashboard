@@ -76,6 +76,7 @@ from (values
   ('buchhaltung-upload.sql', (exists(select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relname='chatter_abrechnungen' and t.tgname='a_chatter_abrechnungen_schuetzen' and (t.tgtype & 4) = 4))),
   ('buchhaltung-team.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='betrag_manuell'))),
   ('buchhaltung-entwurf.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='mitgeteilt_am'))),
+  ('zwei-faktor.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='zwei_faktor_ok') and exists(select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='zwei_faktor_pflicht'))),
   ('rls-stufe8-neue-tabellen.sql', (not exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p') and c.relname<>'user_roles' and not exists (select 1 from pg_policies p where p.schemaname='public' and p.tablename=c.relname and p.permissive='RESTRICTIVE' and coalesce(p.qual,'') ilike '%is_active_user%')))),
   ('buchhaltung.sql', (to_regclass('public.chatter_abrechnungen') is not null and exists(select 1 from storage.buckets where id='rechnungen'))),
   ('admin-wartet.sql', (exists(select 1 from pg_proc p join pg_namespace s on s.oid=p.pronamespace where s.nspname='public' and p.proname='admin_konten_pruefen'))),

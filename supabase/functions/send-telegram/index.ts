@@ -7,6 +7,7 @@
 // KEINE Rollen-Beschränkung — Chatter, Models, Admins usw. funktionieren alle
 // unverändert weiter.
 //
+// v5.42.0: Admin/Manager brauchen eine Anmeldung mit Zwei-Faktor (aal2).
 // v5.41.0 (Sicherheit): Rollen-Prüfung serverseitig.
 //   • stillgelegte/offboardete Accounts dürfen gar nichts
 //   • Team (admin, manager, dienstplan, creator_manager): wie bisher an alle
@@ -16,6 +17,7 @@
 //   • getUpdates (eingehende Bot-Nachrichten lesen): nur admin/manager
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { zweiFaktorOk } from '../_shared/zweiFaktor.ts' // v5.42.0
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -98,6 +100,8 @@ serve(async (req) => {
   } else {
     rollen = TEAM_ROLLEN // ohne Service-Key (sollte es nicht geben) wie bisher verhalten
   }
+  // v5.42.0: Admin/Manager nur mit Code aus der Authenticator-App
+  if (SERVICE_KEY && !zweiFaktorOk(rollen, token)) return json({ ok: false, description: 'Zwei-Faktor fehlt – bitte neu anmelden' }, 403)
   const istTeam = rollen.some((r) => TEAM_ROLLEN.includes(r))
   const darfLesen = rollen.some((r) => LESEN_ROLLEN.includes(r))
   let erlaubt: Set<string> | null = null

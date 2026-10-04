@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { zweiFaktorOk } from '../_shared/zweiFaktor.ts' // v5.42.0
 
 // v4.57.0 — Login-Konto sperren/entsperren, passend zum Status in user_roles.
 //
@@ -47,6 +48,7 @@ async function aufrufer(token: string) {
   const rollen: string[] = [...(z?.roles || []), z?.role].filter(Boolean)
   if (!rollen.some((x) => STAFF_ROLLEN.includes(x))) return null
   if (z?.status === 'suspended' || z?.status === 'offboarded') return null
+  if (!zweiFaktorOk(rollen, token)) return null // v5.42.0: Admin/Manager nur mit Code
   return { id: caller.id as string, name: (z?.display_name || caller.email || 'Admin') as string }
 }
 

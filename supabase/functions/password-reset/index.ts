@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { zweiFaktorOk } from '../_shared/zweiFaktor.ts' // v5.42.0
 
 // v4.12.0 — „Passwort vergessen" mit Bestätigung durch einen Admin.
 //
@@ -98,6 +99,7 @@ async function istStaff(token: string) {
   const zeile = Array.isArray(zeilen) ? zeilen[0] : null
   const rollen: string[] = zeile?.roles?.length ? zeile.roles : (zeile?.role ? [zeile.role] : [])
   if (!rollen.some((r) => STAFF_ROLLEN.includes(r))) return null
+  if (!zweiFaktorOk(rollen, token)) return null // v5.42.0: Admin/Manager nur mit Code
   return zeile?.display_name || caller.email?.split('@')[0] || 'Admin'
 }
 

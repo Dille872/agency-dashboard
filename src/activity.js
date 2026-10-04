@@ -55,6 +55,7 @@ export async function logActivity(action, { entity = null, detail = null, meta =
 
 // Klartext-Vorlagen — hier zentral, damit Glocke und Schreibstellen nicht auseinanderlaufen
 export const ACTION_LABELS = {
+  'user.2fa_reset': 'hat einen Zwei-Faktor zurückgesetzt',
   'schedule.edit': 'hat den Dienstplan bearbeitet',
   'schedule.publish': 'hat den Dienstplan veröffentlicht',
   'schedule.unpublish': 'hat den Dienstplan zurückgezogen',

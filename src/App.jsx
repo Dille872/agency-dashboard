@@ -11,6 +11,8 @@ import {
   ScrollText,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
+import ZweiFaktorSeite from './components/ZweiFaktorSeite' // v5.42.0
+import { zweiFaktorPflicht, zweiFaktorStufe } from './zweiFaktor'
 import { SkelSeite, SkelAdmin } from './components/Skeleton' // v4.92.0
 import CalendarTab from './components/CalendarTab' // v4.60.0
 import ModelsView from './components/ModelsView'
@@ -182,6 +184,7 @@ export default function App() {
   const fab = useFabPanels()   // v4.1.0: nur ein schwebendes Fenster gleichzeitig
   const [commFocus, setCommFocus] = useState(null) // v3.65.0: Sprung-Ziel aus dem Aktivitäts-Feed
   const [userRole, setUserRole] = useState(null)
+  const [zweiFaktor, setZweiFaktor] = useState(null) // v5.42.0: 'einrichten' | 'code' für Admin/Manager ohne Code
   const [accountBlocked, setAccountBlocked] = useState(null) // v3.18.0: {status, note} wenn stillgelegt/offboarded
   const [userDisplayName, setUserDisplayName] = useState('')
   const [viewMode, setViewMode] = useState('auto')
@@ -354,6 +357,7 @@ export default function App() {
   // Gibt {role, roles} zurueck, oder null wenn der Account gesperrt/unvollstaendig
   // ist — in dem Fall werden bewusst gar keine Daten nachgeladen.
   const loadUserRole = async () => {
+    setZweiFaktor(null) // v5.42.0: Zustand vom vorherigen Login verwerfen
     try {
       const { data, error: rollenFehler } = await supabase
         .from('user_roles').select('*').eq('user_id', session.user.id).maybeSingle()
@@ -375,6 +379,17 @@ export default function App() {
         }
         setAccountBlocked(null)
         const roles = [...new Set([...(data.roles || []), data.role].filter(Boolean))]
+        // v5.42.0: Admin/Manager brauchen den Code aus der Authenticator-App,
+        // bevor irgendetwas geladen wird (die Datenbank gibt ohne ihn ohnehin nichts heraus).
+        if (zweiFaktorPflicht(roles)) {
+          const stufe = await zweiFaktorStufe()
+          if (stufe !== 'ok') {
+            setZweiFaktor({ modus: stufe, name })
+            setUserRole(rolle) // Lade-Screen beenden
+            return null
+          }
+        }
+        setZweiFaktor(null)
         setUserRole(rolle)
         setUserRoles(roles)
         setUserDisplayName(name)
@@ -683,6 +698,9 @@ export default function App() {
   }
 
   if (needsPassword) return <SetPasswordPage onDone={() => setNeedsPassword(false)} />
+
+  // v5.42.0: Zwei-Faktor (Admin/Manager)
+  if (zweiFaktor) return <ZweiFaktorSeite modus={zweiFaktor.modus} name={zweiFaktor.name} onAbmelden={handleLogout} />
 
   // v4.24.0: Nur diese Tabs zeigen Snapshot-Daten. Das "Noch keine Daten"-Gate
   // im Main-Bereich galt vorher fuer ALLE Tabs — ein dienstplan-User haette nach
