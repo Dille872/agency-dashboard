@@ -690,7 +690,16 @@ export default function BuchhaltungTab({ userDisplayName }) {
                 const prob = wiseProblem(z)
                 return (
                   <div key={z.key} className={'bh-wise-zeile' + (z.an ? ' an' : '')}>
-                    <label className="bh-wise-wer"><input type="checkbox" checked={z.an} onChange={e => wiseZeile(z.key, 'an', e.target.checked)} /> <b>{z.name}</b> <span className="bh-st" style={{ color: STATUS[z.status]?.farbe, background: STATUS[z.status]?.bg }}>{STATUS[z.status]?.label}</span></label>
+                    <div className="bh-wise-wer">
+                      <label><input type="checkbox" checked={z.an} onChange={e => wiseZeile(z.key, 'an', e.target.checked)} /> <b>{z.name}</b></label>
+                      <span className="bh-st" style={{ color: STATUS[z.status]?.farbe, background: STATUS[z.status]?.bg }}>{STATUS[z.status]?.label}</span>
+                      {z.i.row?.rechnung_url && (
+                        <button className="bh-link bh-wise-rechnung" title="Rechnung ansehen (z. B. Namen kopieren)" onClick={() => {
+                          const r = z.i.row.halter || z.i.row
+                          setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: 'EUR', gesamt: gesamtVon(z.i).wert, wer: z.name })
+                        }}><FileText size={13} strokeWidth={2.2} /> <span className="bh-dateiname">{z.i.row.rechnung_name || 'Rechnung'}</span></button>
+                      )}
+                    </div>
                     <input className="bh-wise-name" value={z.kontoinhaber} placeholder="Vor- und Nachname wie auf dem Konto" onChange={e => wiseZeile(z.key, 'kontoinhaber', e.target.value)} />
                     <div className="bh-umschalter bh-wise-typ">
                       <button className={z.typ === 'PRIVATE' ? 'an' : ''} onClick={() => wiseZeile(z.key, 'typ', 'PRIVATE')}>Privat</button>

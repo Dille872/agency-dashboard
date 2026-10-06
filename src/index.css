@@ -791,3 +791,7 @@ th { text-align: left; }
 @media (max-width: 760px) {
   .bh-wise-zeile { grid-template-columns: 1fr auto; grid-template-areas: "wer wer" "name typ" "iban betrag" "info info"; }
 }
+/* v5.45.1: Rechnung direkt aus „Für Wise“ öffnen */
+.bh-wise-wer label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bh-wise-rechnung { font-size: 12px !important; max-width: 100%; }
+.bh-wise-rechnung .bh-dateiname { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
