@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles, HandCoins, Search,
+  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles, HandCoins, Search, Link2, Users,
 } from 'lucide-react'
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
@@ -9,8 +9,10 @@ import {
   manuellSpeichern, letzterEintrag, namenVorschlaege, eintragLoeschen, rechnungNeuLesen, rechnungsangabenSpeichern, rechnungEntfernen, erkanntNachtragen, anzahlungenVon, anzahlungSumme, anzahlungenSpeichern,
   zeileSichern, extrasSpeichern, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
+  gruppenLaden, gruppeAnlegen, gruppeAufloesen, gruppieren,
 } from '../buchhaltung'
 import { oeffnen, signiert } from '../medien'
+import { supabase } from '../supabase'
 import { rechnungLesen, ibanSchoen } from '../rechnungLesen'
 
 // ── Buchhaltung (v5.37.0 · v5.37.1) ────────────────────────────────────────
@@ -21,6 +23,8 @@ import { rechnungLesen, ibanSchoen } from '../rechnungLesen'
 // seine Abrechnung und bekommt Telegram; vorher ist alles euer Entwurf.
 // v5.38.0: „+ Team / ohne Profil“ (z. B. Alina in $, ehemalige Chatter wie Joel),
 // Summe + IBAN aus PDF-Rechnungen vorgeschlagen, Rechnung im Fenster ansehen.
+// v5.43.0: „Zusammenlegen“ — mehrere Chatter mit EINER Rechnung (z. B. Paar mit
+// Firma) als eine Zeile: Summe, eine Rechnung, ein Bezahlt; Anteile darunter.
 
 const letzteMonate = (n = 12) => {
   const out = []; const d = new Date()
@@ -49,6 +53,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const [hand, setHand] = useState(null)           // Team / ohne Profil: { row?, name, art, monat, betrag, waehrung, notiz, iban, datei, erkannt }
   const [ansehen, setAnsehen] = useState(null)     // { url, name, iban, betrag, waehrung }
   const [namen, setNamen] = useState([])
+  const [gruppen, setGruppen] = useState({ liste: [] })   // v5.43.0: aktive Gruppen
+  const [grp, setGrp] = useState(null)                     // Fenster „Zusammenlegen“: { name, mitglieder, alle }
   useEffect(() => { namenVorschlaege().then(setNamen).catch(() => {}) }, [])
   const datei = useRef(null)
   const ziel = useRef(null)
@@ -58,17 +64,19 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const p = useMemo(() => modus === 'offen' ? null : (modus === 'frei' && !(von && bis && von <= bis)) ? null : periode({ monat, von, bis, frei: modus === 'frei' }), [modus, monat, von, bis])
 
   const lade = async () => {
+    const gr = await gruppenLaden()
+    setGruppen(gr)
     if (modus === 'offen') {
       const { data, error } = await abrechnungenLaden()
       if (error) { setDaten({ fehler: fehltTabelle(error) ? 'Die Datenbank für die Buchhaltung fehlt noch: sql/buchhaltung.sql und sql/buchhaltung-entwurf.sql ausführen.' : error.message, items: [] }); return }
       const items = (data || []).filter(r => r.status !== 'bezahlt')
         .map(r => ({ key: 'r' + r.id, name: r.chatter_name, row: r, live: null, telegram: null, manuell: istManuell(r), p: { ab: r.von, ende: r.bis, bezug: r.monat, frei: r.frei, bezeichnung: r.bezeichnung } }))
-      setDaten({ items }); return
+      setDaten({ items: gruppieren(items, gr.liste) }); return
     }
     if (!p) { setDaten({ items: [] }); return }
     const r = await zeitraumLaden(p)
     if (r.fehler) { setDaten({ fehler: r.fehler, items: [] }); return }
-    setDaten({ ...r, items: r.items.map(i => ({ ...i, p, key: i.manuell ? 'r' + i.row.id : 'c-' + i.name })) })
+    setDaten({ ...r, items: gruppieren(r.items.map(i => ({ ...i, p, key: i.manuell ? 'r' + i.row.id : 'c-' + i.name })), gr.liste) })
   }
   useEffect(() => { setDaten(null); lade() }, [modus, p?.ab, p?.ende]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -77,7 +85,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const gelesenSchon = useRef(new Set())
   const [liestNach, setLiestNach] = useState(0)
   useEffect(() => {
-    const offen = (daten?.items || []).map(i => i.row)
+    const offen = (daten?.items || []).flatMap(i => i.gruppe ? i.mitglieder.map(m => m.row) : [i.row])
       .filter(r => r && r.rechnung_url && r.rechnung_betrag == null && !gelesenSchon.current.has(r.id) && /\.pdf(\?|$)/i.test(r.rechnung_name || r.rechnung_url))
     if (!offen.length) return
     let weg = false
@@ -99,8 +107,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const statusZahl = (st) => items.filter(i => statusVon(i.row) === st).length
   const q = suche.trim().toLowerCase()
   const sichtbar = items.filter(i => (filter === 'alle' || statusVon(i.row) === filter)
-    && (!q || i.name.toLowerCase().includes(q) || String(i.row?.notiz || '').toLowerCase().includes(q)))
-  const summe = (l) => l.reduce((t, i) => t + (gesamtEur(anzeige(i)) || 0), 0)
+    && (!q || i.name.toLowerCase().includes(q) || String(i.row?.notiz || '').toLowerCase().includes(q) || (i.mitglieder || []).some(m => m.name.toLowerCase().includes(q))))
+  const summe = (l) => l.reduce((t, i) => { const G = gesamtVon(i); return t + (G.waehrung === 'EUR' ? (G.wert || 0) : 0) }, 0)
   const summeUsd = (l) => l.filter(i => istManuell(i.row) && i.row.waehrung === 'USD').reduce((t, i) => t + (gesamt(i.row).wert || 0), 0)
   const fehlen = items.filter(i => statusVon(i.row) === 'offen' && !i.manuell)
   const bezahltListe = items.filter(i => statusVon(i.row) === 'bezahlt')
@@ -114,7 +122,9 @@ export default function BuchhaltungTab({ userDisplayName }) {
   }
 
   // ── Aktionen ─────────────────────────────────────────────────────────────
-  const hochladenStart = (i) => { ziel.current = i; datei.current?.click() }
+  // Gruppe: die Rechnung hängt an dem Mitglied, das schon eine hat (sonst am ersten)
+  const zielMitglied = (i) => i.gruppe ? (i.mitglieder.find(m => m.row && m.row === i.row.halter) || i.mitglieder[0]) : i
+  const hochladenStart = (i) => { ziel.current = { ...zielMitglied(i), anzeigeName: i.name, key: i.key }; datei.current?.click() }
   const hochladen = async (ev) => {
     const f = ev.target.files?.[0]; ev.target.value = ''
     const i = ziel.current; if (!f || !i) return
@@ -124,18 +134,37 @@ export default function BuchhaltungTab({ userDisplayName }) {
     const r = await rechnungHochladen(row, f, { durchAdmin: true })
     setBusy(null)
     if (r.error) { alert('Rechnung NICHT hochgeladen: ' + r.error.message); return }
-    melde(`Rechnung für ${i.name} hochgeladen. Summe und IBAN (falls in der PDF) sind vorgeschlagen — bitte prüfen.`); lade()
+    melde(`Rechnung für ${i.anzeigeName || i.name} hochgeladen. Summe und IBAN (falls in der PDF) sind vorgeschlagen — bitte prüfen.`); lade()
   }
-  const gesamtVon = (i) => istManuell(i.row) ? gesamt(i.row) : { wert: gesamtEur(anzeige(i)), waehrung: 'EUR' }
+  const gesamtVon = (i) => {
+    if (i.gruppe) {   // v5.43.0: Summe aller Anteile + Extras
+      const w = i.mitglieder.map(m => gesamtEur(anzeige(m))).filter(x => x != null)
+      return { wert: w.length ? Math.round(w.reduce((t, x) => t + x, 0) * 100) / 100 : null, waehrung: 'EUR' }
+    }
+    return istManuell(i.row) ? gesamt(i.row) : { wert: gesamtEur(anzeige(i)), waehrung: 'EUR' }
+  }
   const bezahltOeffnen = (i) => {
     const soll = i.row?.rechnung_betrag ?? gesamtVon(i).wert
     const rest = soll != null ? Math.round((Number(soll) - anzahlungSumme(i.row)) * 100) / 100 : null
     setBezahlt({ i, am: heuteIso(), betrag: rest != null ? String(rest).replace('.', ',') : '' })
   }
   // ── Anzahlung ────────────────────────────────────────────────────────────
-  const anzOeffnen = (i) => setAnz({ i, liste: anzahlungenVon(i.row), betrag: '', am: heuteIso(), notiz: '' })
+  const anzOeffnen = (i) => setAnz({ i, liste: i.gruppe ? i.mitglieder.flatMap(m => anzahlungenVon(m.row).map(e => ({ ...e, _m: m.name }))) : anzahlungenVon(i.row), betrag: '', am: heuteIso(), notiz: '' })
   const anzSpeichern = async (liste) => {
     const { i } = anz
+    if (i.gruppe) {   // v5.43.0: jede Anzahlung bleibt bei ihrem Mitglied, neue beim Rechnungs-Mitglied
+      const haupt = zielMitglied(i)
+      setBusy(i.key)
+      for (const m of i.mitglieder) {
+        const eigene = liste.filter(e => (e._m || haupt.name) === m.name).map(({ _m, ...e }) => e) // eslint-disable-line no-unused-vars
+        if (!eigene.length && !anzahlungenVon(m.row).length) continue
+        const row = await sichern(m)
+        if (!row) { setBusy(null); return }
+        const { error } = await anzahlungenSpeichern(row, eigene, userDisplayName)
+        if (error) { setBusy(null); alert('Nicht gespeichert: ' + error.message); return }
+      }
+      setBusy(null); setAnz(null); melde(`${i.name}: Anzahlung gespeichert (nur intern).`); lade(); return
+    }
     setBusy(i.key)
     const row = await sichern(i)
     if (!row) { setBusy(null); return }
@@ -151,6 +180,27 @@ export default function BuchhaltungTab({ userDisplayName }) {
   }
   const bezahltSpeichern = async () => {
     const { i, am, betrag } = bezahlt
+    if (i.gruppe) {   // v5.43.0: alle Mitglieder bezahlt; Betrag anteilig nach ihrem Gesamt verteilt
+      const b = zahlAus(betrag)
+      const teile = i.mitglieder.map(m => gesamtEur(anzeige(m)) || 0)
+      const summe = teile.reduce((t, x) => t + x, 0)
+      let rest = b
+      setBusy(i.key)
+      for (let n = 0; n < i.mitglieder.length; n++) {
+        const m = i.mitglieder[n]
+        const row = await sichern(m)
+        if (!row) { setBusy(null); return }
+        if (m.live) await zahlenAktualisieren({ ...m, row })
+        let anteil = null
+        if (b != null) {
+          anteil = n === i.mitglieder.length - 1 ? rest : Math.round((summe ? b * teile[n] / summe : b / i.mitglieder.length) * 100) / 100
+          rest = Math.round((rest - anteil) * 100) / 100
+        }
+        const r = await alsBezahlt({ ...anzeige(m), ...row }, { am, betrag: anteil, gruppe: i.name })
+        if (r.error) { setBusy(null); alert(`Nicht gespeichert (${m.name}): ` + (/gruppe/.test(r.error.message || '') ? 'Datenbank fehlt noch (sql/buchhaltung-gruppen.sql ausführen).' : r.error.message)); lade(); return }
+      }
+      setBusy(null); setBezahlt(null); melde(`${i.name}: bezahlt am ${datum(am)} (nur intern gespeichert).`); lade(); return
+    }
     setBusy(i.key)
     const row = await sichern(i)
     if (!row) { setBusy(null); return }
@@ -163,6 +213,13 @@ export default function BuchhaltungTab({ userDisplayName }) {
   }
   const zurueck = async (i) => {
     if (!confirm(`„Bezahlt“ bei ${i.name} wieder entfernen?`)) return
+    if (i.gruppe) {
+      for (const m of i.mitglieder.filter(m => m.row?.status === 'bezahlt')) {
+        const { error } = await bezahltZurueck(m.row)
+        if (error) { alert(error.message); break }
+      }
+      lade(); return
+    }
     const { error } = await bezahltZurueck(i.row)
     if (error) { alert(error.message); return }
     lade()
@@ -170,6 +227,18 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const klaerSenden = async () => {
     const { i, notiz } = klaer
     if (!notiz.trim()) return
+    if (i.gruppe) {   // v5.43.0: Rückfrage an alle Mitglieder
+      setBusy(i.key)
+      const infos = []
+      for (const m of i.mitglieder) {
+        const row = await sichern(m)
+        if (!row) { setBusy(null); return }
+        const r = await klaerung({ ...anzeige(m), ...row }, notiz)
+        if (r.error) { setBusy(null); alert('Nicht gespeichert: ' + r.error.message); return }
+        if (r.info) infos.push(`${m.name}: ${r.info}`)
+      }
+      setBusy(null); setKlaer(null); melde(`${i.name}: Rückfrage gespeichert${infos.length ? ' · ' + infos.join(' · ') : ''}`); lade(); return
+    }
     setBusy(i.key)
     const r = await klaerung({ ...anzeige(i), ...i.row }, notiz)
     setBusy(null)
@@ -180,7 +249,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
     if (!liste.length) return
     if (!confirm(liste.length === 1 ? `${liste[0].name} per Telegram an die Rechnung erinnern?` : `${liste.length} Chatter per Telegram an die Rechnung erinnern?`)) return
     setBusy('erinnern')
-    const r = await erinnern(liste.map(i => anzeige(i)))
+    const r = await erinnern(liste.flatMap(i => i.gruppe ? i.mitglieder.map(m => ({ ...anzeige(m), gruppe_name: i.name, gruppe_gesamt: gesamtVon(i).wert })) : [anzeige(i)]))
     setBusy(null)
     melde(`${r.gesendet} erinnert${r.ohne ? ` · ${r.ohne} ohne Telegram-ID` : ''}`); lade()
   }
@@ -243,6 +312,106 @@ export default function BuchhaltungTab({ userDisplayName }) {
     try { await navigator.clipboard.writeText(String(t).replace(/\s/g, '')); melde('IBAN kopiert.') } catch { prompt('IBAN:', t) }
   }
 
+  // ── v5.43.0: Gruppen-Zeile (z. B. Alessia & Pascal) ─────────────────────
+  const GruppenZeile = ({ i }) => {
+    const r = i.row
+    const stKey = r.status
+    const st = STATUS[stKey]
+    const G = gesamtVon(i); const g = G.wert
+    const az = i.mitglieder.map(m => anzeige(m))
+    const sum = (f) => az.some(a => f(a) != null) ? az.reduce((t, a) => t + Number(f(a) || 0), 0) : null
+    const umsatz = sum(a => (a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd))
+    const anteilEur = sum(a => a.betrag_eur)
+    const anteilUsd = sum(a => a.auszahlung_usd)
+    const exSumme = i.mitglieder.reduce((t, m) => t + extrasVon(m.row).reduce((x, e) => x + Number(e.betrag || 0), 0), 0)
+    const abw = r.rechnung_betrag != null && g != null && Math.abs(Number(r.rechnung_betrag) - g) >= 0.01
+    const b = busy === i.key
+    const halter = r.halter
+    const ansehenAuf = () => setAnsehen({ row: halter, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: 'EUR', gesamt: g, wer: i.name })
+    return (
+      <div className="bh-zeile bh-gruppe" style={{ borderLeftColor: st.farbe }}>
+        <div className="bh-wer">
+          <b>{i.name}</b>
+          <span className="bh-gruppe-badge" title={`${i.mitglieder.map(m => m.name).join(' und ')} schreiben eine gemeinsame Rechnung`}><Users size={11} strokeWidth={2.6} /> Gemeinsame Rechnung</span>
+          {modus === 'offen' && <span>{i.p?.bezeichnung}</span>}
+        </div>
+        <div className="bh-zahl"><span className="bh-mobil">Umsatz</span>{umsatz != null ? dollar(umsatz) : '—'}</div>
+        <div className="bh-zahl"><span className="bh-mobil">Anteil</span>{anteilEur != null ? euro(anteilEur) : anteilUsd != null ? dollar(anteilUsd) : '—'}<small>{anteilEur != null && anteilUsd != null ? dollar(anteilUsd) : ''}</small></div>
+        <div className="bh-extras">{exSumme !== 0 && <span className={'bh-extra' + (exSumme < 0 ? ' minus' : '')}>{exSumme < 0 ? '−' : '+'}{euro(Math.abs(exSumme))} <em>Extras</em></span>}</div>
+        <div className="bh-gesamt"><span className="bh-mobil">Gesamt</span>{g != null ? euro(g) : '—'}
+          {anzahlungSumme(r) !== 0 && (
+            <button className="bh-anz" onClick={() => anzOeffnen(i)} title={anzahlungenVon(r).map(e => `${euro(e.betrag)}${e.am ? ' am ' + datum(e.am) : ''}${e.notiz ? ' · ' + e.notiz : ''}`).join('\n')}>
+              − {euro(anzahlungSumme(r))} angezahlt
+              {stKey !== 'bezahlt' && g != null && <b>Rest {euro(g - anzahlungSumme(r))}</b>}
+            </button>
+          )}
+        </div>
+        <div className="bh-rechnung">
+          {r.rechnung_url ? (
+            <>
+              <button className="bh-link" onClick={ansehenAuf} title={`Rechnung ansehen: ${r.rechnung_name || 'Rechnung'}`}><FileText size={14} strokeWidth={2.2} /> <span className="bh-dateiname">{r.rechnung_name || 'Rechnung'}</span></button>
+              <small>{r.rechnung_von ? `von ${r.rechnung_von} · ` : ''}{datumZeit(r.rechnung_am)}{r.rechnung_betrag != null && <span style={{ color: abw ? '#f59e0b' : undefined }} title={r.betrag_erkannt ? 'Aus der PDF erkannt — bitte prüfen' : undefined}> · {euro(r.rechnung_betrag)}{r.betrag_erkannt ? ' (erkannt)' : ''}{abw ? ' ≠ Gesamt' : ''}</span>}</small>
+              {r.rechnung_betrag == null && <button className="bh-link warn" onClick={ansehenAuf}><Pencil size={12} strokeWidth={2.4} /> Betrag fehlt — prüfen</button>}
+              {r.rechnung_iban && <button className="bh-iban" onClick={() => kopieren(r.rechnung_iban)} title="IBAN kopieren"><Copy size={12} strokeWidth={2.4} /> {ibanSchoen(r.rechnung_iban)}</button>}
+            </>
+          ) : <small>{`fehlt${r.erinnert_am ? ` · erinnert ${datum(r.erinnert_am)}` : ''}`}</small>}
+        </div>
+        <div className="bh-status">
+          <span className="bh-st" style={{ color: st.farbe, background: st.bg }}>{stKey === 'bezahlt' ? `Bezahlt ${datum(r.bezahlt_am)}` : st.label}</span>
+          {stKey === 'bezahlt' && <small>{r.bezahlt_betrag != null ? euro(r.bezahlt_betrag) + ' · ' : ''}{r.bezahlt_von || ''}</small>}
+          {stKey === 'klaerung' && r.klaerung_notiz && <small className="bh-notiz">„{r.klaerung_notiz}“</small>}
+        </div>
+        <div className="bh-aktion">
+          {stKey !== 'bezahlt' && <button className="bh-k bh-gruen" disabled={b} onClick={() => bezahltOeffnen(i)}><Check size={14} strokeWidth={2.6} /> Bezahlt</button>}
+          {stKey !== 'bezahlt' && <button className="bh-k" disabled={b} onClick={() => anzOeffnen(i)} title="Anzahlung eintragen (schon überwiesen, bevor die Rechnung da ist)"><HandCoins size={14} strokeWidth={2.2} /></button>}
+          {stKey === 'rechnung' && <button className="bh-k" disabled={b} onClick={() => setKlaer({ i, notiz: r.klaerung_notiz || '' })} title="Rückfrage an beide"><MessageCircleWarning size={14} strokeWidth={2.2} /></button>}
+          {stKey === 'offen' && <button className="bh-k" disabled={busy === 'erinnern'} onClick={() => erinnereAlle([i])} title="Per Telegram erinnern (alle aus der Gruppe)"><Bell size={14} strokeWidth={2.2} /></button>}
+          {stKey !== 'bezahlt' && <button className="bh-k" disabled={b} onClick={() => hochladenStart(i)} title={r.rechnung_url ? 'Andere Rechnung hochladen' : 'Gemeinsame Rechnung selbst hochladen'}><Upload size={14} strokeWidth={2.2} />{b ? '…' : ''}</button>}
+          {stKey === 'bezahlt' && <button className="bh-k" onClick={() => zurueck(i)} title="Bezahlt rückgängig"><Undo2 size={14} strokeWidth={2.2} /></button>}
+        </div>
+        <div className="bh-gruppe-teile">
+          {i.mitglieder.map(m => {
+            const a = anzeige(m)
+            const mBez = m.row?.status === 'bezahlt'
+            return (
+              <div key={m.key} className="bh-gruppe-teil">
+                <span className="bh-gt-name">↳ {m.name}</span>
+                <span className="bh-gt-zahl">{a.auszahlung_usd == null ? '—' : dollar(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd)}</span>
+                <span className="bh-gt-zahl">{a.auszahlung_usd == null ? <em title="Keine Zahlen in Billing für diesen Namen">keine Zahlen</em> : a.betrag_eur != null ? euro(a.betrag_eur) : dollar(a.auszahlung_usd)}</span>
+                <span className="bh-extras">
+                  {extrasVon(m.row).map((e, n) => <span key={n} className={'bh-extra' + (Number(e.betrag) < 0 ? ' minus' : '')} title={e.text}>{Number(e.betrag) < 0 ? '−' : '+'}{euro(Math.abs(e.betrag))} <em>{e.text}</em></span>)}
+                  {!mBez && <button className="bh-plus" onClick={() => setExtras({ i: m, liste: extrasVon(m.row).length ? extrasVon(m.row).map(e => ({ text: e.text, betrag: String(e.betrag).replace('.', ',') })) : [{ text: '', betrag: '' }] })}><Plus size={13} strokeWidth={2.6} /> {extrasVon(m.row).length ? 'ändern' : 'Extra'}</button>}
+                </span>
+                <span className="bh-gt-zahl">{gesamtEur(a) != null ? euro(gesamtEur(a)) : ''}{mBez && m.row.bezahlt_betrag != null ? <small> · bezahlt {euro(m.row.bezahlt_betrag)}</small> : null}</span>
+                <span className="bh-gt-knopf"><button className="bh-k" onClick={() => abrechnungPdf(a)} title={`Abrechnung ${m.name} als PDF`}><Download size={13} strokeWidth={2.2} /></button></span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // ── v5.43.0: Fenster „Zusammenlegen“ ─────────────────────────────────────
+  const grpOeffnen = async () => {
+    const { data } = await supabase.from('chatters_contact').select('name, active').order('name')
+    const alle = [...new Set([...(data || []).filter(c => c.active !== false).map(c => c.name), ...items.filter(i => !i.manuell && !i.gruppe).map(i => i.name)])].sort((a, b) => a.localeCompare(b, 'de'))
+    setGrp({ name: '', mitglieder: [], alle, filter: '' })
+  }
+  const grpSpeichern = async () => {
+    setBusy('grp')
+    const r = await gruppeAnlegen({ name: grp.name || grp.mitglieder.join(' & '), mitglieder: grp.mitglieder, wer: userDisplayName })
+    setBusy(null)
+    if (r.error) { alert('Nicht gespeichert: ' + (fehltTabelle(r.error) || /abrechnung_gruppen/.test(r.error.message || '') ? 'Datenbank fehlt noch (sql/buchhaltung-gruppen.sql ausführen).' : r.error.message)); return }
+    melde(`${grp.name || grp.mitglieder.join(' & ')}: zusammengelegt.`); setGrp(null); lade()
+  }
+  const grpAufloesen = async (g) => {
+    if (!confirm(`„${g.name}“ auflösen?\n\nAb dann stehen ${g.mitglieder.join(' und ')} wieder einzeln in der Buchhaltung. Schon bezahlte Monate bleiben zusammen.`)) return
+    const { error } = await gruppeAufloesen(g, userDisplayName)
+    if (error) { alert(error.message); return }
+    melde(`${g.name}: aufgelöst.`); lade()
+  }
+
   // ── Ansicht ──────────────────────────────────────────────────────────────
   const voll = daten && daten.tageSoll && daten.tage >= daten.tageSoll
   const zeitraumZukunft = p && p.ende >= heuteIso()
@@ -268,6 +437,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         )}
         <label className="bh-suche"><Search size={14} strokeWidth={2.4} /><input value={suche} placeholder="Name suchen" onChange={e => setSuche(e.target.value)} />{suche && <button onClick={() => setSuche('')} title="Leeren"><X size={13} /></button>}</label>
         <div className="bh-kopf-rechts">
+          <button className="bh-k" onClick={grpOeffnen} title="Mehrere Chatter mit EINER gemeinsamen Rechnung (z. B. Paar mit Firma)"><Link2 size={14} strokeWidth={2.4} /> Zusammenlegen{gruppen.liste.length ? ` (${gruppen.liste.length})` : ''}</button>
           <button className="bh-k" onClick={() => handOeffnen(null)} title="Team (z. B. Alina) oder Rechnung ohne Profil (z. B. ehemalige Chatter)"><UserPlus size={14} strokeWidth={2.4} /> Team / ohne Profil</button>
           <button className="bh-k" onClick={() => { const m = p ? p.bezug : letzteMonate(2)[1]; setExp({ ab: m, bis: m, nurBezahlt: false, laeuft: false, text: '' }) }} title="Rechnungen und Übersicht für eure Buchhaltung herunterladen"><FolderDown size={14} strokeWidth={2.4} /> Export</button>
           {fehlen.length > 0 && <button className="bh-k" disabled={busy === 'erinnern'} onClick={() => erinnereAlle(fehlen)}><Bell size={14} strokeWidth={2.4} /> Erinnern ({fehlen.length})</button>}
@@ -311,6 +481,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         <div className="bh-tabelle">
           <div className="bh-tkopf"><span>Name</span><span>Umsatz</span><span>Anteil / Betrag</span><span>Extras</span><span>Gesamt</span><span>Rechnung</span><span>Status</span><span /></div>
           {sichtbar.map(i => {
+            if (i.gruppe) return <React.Fragment key={i.key}>{GruppenZeile({ i })}</React.Fragment>
             const a = anzeige(i)
             const stKey = statusVon(i.row)
             const st = STATUS[stKey]
@@ -429,6 +600,39 @@ export default function BuchhaltungTab({ userDisplayName }) {
               <button className="bh-k" onClick={() => setHand(null)}>Abbrechen</button>
               <button className="bh-k bh-p" disabled={busy === 'hand' || hand.erkannt === 'liest'} onClick={handSpeichern}><Check size={14} strokeWidth={2.6} /> {busy === 'hand' ? 'Speichert …' : 'Speichern'}</button>
             </div>
+          </div>
+        </div>, document.body)}
+
+      {grp && createPortal(
+        <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && busy !== 'grp') setGrp(null) }}>
+          <div className="bh-fenster">
+            <div className="bh-fenster-kopf"><b>Rechnungen zusammenlegen</b><button className="bh-x" onClick={() => setGrp(null)}><X size={18} /></button></div>
+            <div className="bh-fenster-text">Für Leute, die gemeinsam eine Rechnung schreiben (z. B. Paar mit Firma). Jeder wird weiter einzeln berechnet — in der Buchhaltung steht dann eine Zeile mit der Summe, einer Rechnung und einem „Bezahlt“. Gilt jeden Monat, bis ihr es auflöst.</div>
+            {gruppen.fehlt && <div className="bh-warn">Datenbank fehlt noch: sql/buchhaltung-gruppen.sql in Supabase ausführen.</div>}
+            <label className="bh-feld"><span>Name der Gruppe (steht in der Liste und im Export)</span><input value={grp.name} placeholder={grp.mitglieder.length ? grp.mitglieder.join(' & ') : 'z. B. Alessia & Pascal'} onChange={e => setGrp({ ...grp, name: e.target.value })} /></label>
+            <div className="bh-feld"><span>Wer gehört dazu? (mindestens 2)</span></div>
+            <input className="bh-grp-suche" value={grp.filter} placeholder="Name suchen" onChange={e => setGrp({ ...grp, filter: e.target.value })} />
+            <div className="bh-grp-chips">
+              {grp.alle.filter(n => grp.mitglieder.includes(n) || !grp.filter.trim() || n.toLowerCase().includes(grp.filter.trim().toLowerCase())).map(n => {
+                const an = grp.mitglieder.includes(n)
+                const schon = gruppen.liste.find(g => g.mitglieder.some(m => m.toLowerCase() === n.toLowerCase()))
+                return <button key={n} className={'bh-chip' + (an ? ' an' : '')} disabled={!!schon && !an} title={schon ? `schon in „${schon.name}“` : undefined}
+                  onClick={() => setGrp({ ...grp, mitglieder: an ? grp.mitglieder.filter(x => x !== n) : [...grp.mitglieder, n] })}>{an ? '✓ ' : ''}{n}</button>
+              })}
+            </div>
+            <div className="bh-fenster-fuss"><button className="bh-k" onClick={() => setGrp(null)}>Abbrechen</button><button className="bh-k bh-p" disabled={busy === 'grp' || grp.mitglieder.length < 2} onClick={grpSpeichern}><Link2 size={14} strokeWidth={2.4} /> Zusammenlegen</button></div>
+            {gruppen.liste.length > 0 && (
+              <div className="bh-grp-liste">
+                <div className="bh-feld"><span>Bestehende Gruppen</span></div>
+                {gruppen.liste.map(g => (
+                  <div key={g.id} className="bh-anz-zeile">
+                    <b>{g.name}</b>
+                    <span>{g.mitglieder.join(', ')} · seit {datum(g.erstellt_am)}</span>
+                    <button className="bh-k" onClick={() => grpAufloesen(g)}>Auflösen</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>, document.body)}
 

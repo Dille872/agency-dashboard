@@ -356,9 +356,13 @@ export async function rechnungEntfernen(row) {
 
 // ── Admin-Aktionen ─────────────────────────────────────────────────────────
 // v5.37.3: nur intern (damit ihr nachschauen könnt) — KEINE Nachricht an den Chatter
-export async function alsBezahlt(a, { am, betrag }) {
-  const b = zahlAus(betrag)
-  const { error } = await supabase.from('chatter_abrechnungen').update({ status: 'bezahlt', bezahlt_am: am || heuteIso(), bezahlt_betrag: b }).eq('id', a.id)
+export async function alsBezahlt(a, { am, betrag, gruppe }) {
+  const b = typeof betrag === 'number' ? round(betrag) : zahlAus(betrag)
+  const felder = { status: 'bezahlt', bezahlt_am: am || heuteIso(), bezahlt_betrag: b }
+  // v5.43.0: Gruppe festhalten (bezahlte Monate bleiben auch nach dem Auflösen zusammen)
+  if (gruppe !== undefined) felder.gruppe = gruppe || null
+  let { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', a.id)
+  if (error && /gruppe/.test(error.message || '') && !gruppe) { delete felder.gruppe; error = (await supabase.from('chatter_abrechnungen').update(felder).eq('id', a.id)).error }
   return error ? { error } : {}
 }
 
@@ -381,8 +385,9 @@ export async function erinnern(liste) {
   for (const a of liste) {
     const tg = await telegramVonChatter(a.chatter_name)
     if (!tg) { ohne++; continue }
-    const g = gesamtEur(a)
-    const r = await sendTelegramMessage(tg, `🧾 Kleine Erinnerung: Deine Rechnung für ${escHtml(a.bezeichnung || a.monat)} fehlt noch.\nAuf die Rechnung: ${g != null ? euro(g) : dollar(a.auszahlung_usd)}\n\nBitte im Dashboard hochladen (Startseite → „Rechnung“).\n<a href="${link()}">Dashboard öffnen</a>\n\nThirteen 87`).catch(() => null)
+    const g = a.gruppe_name ? a.gruppe_gesamt : gesamtEur(a)
+    const wessen = a.gruppe_name ? `Eure gemeinsame Rechnung (${escHtml(a.gruppe_name)})` : 'Deine Rechnung'
+    const r = await sendTelegramMessage(tg, `🧾 Kleine Erinnerung: ${wessen} für ${escHtml(a.bezeichnung || a.monat)} fehlt noch.\nAuf die Rechnung: ${g != null ? euro(g) : dollar(a.auszahlung_usd)}\n\nBitte im Dashboard hochladen (Startseite → „Rechnung“)${a.gruppe_name ? ' — einer von euch reicht' : ''}.\n<a href="${link()}">Dashboard öffnen</a>\n\nThirteen 87`).catch(() => null)
     if (r?.ok) { gesendet++; await supabase.from('chatter_abrechnungen').update({ erinnert_am: new Date().toISOString() }).eq('id', a.id) }
   }
   return { gesendet, ohne }
@@ -402,9 +407,9 @@ const zahlCsv = (v) => v == null || v === '' ? '' : Number(v).toLocaleString('de
 export async function exportZeilen({ abMonat, bisMonat, nurBezahlt }) {
   let q = supabase.from('chatter_abrechnungen').select('*').gte('monat', abMonat).lte('monat', bisMonat).order('monat').order('chatter_name')
   if (nurBezahlt) q = q.eq('status', 'bezahlt')
-  const { data, error } = await q
+  const [{ data, error }, gruppen] = await Promise.all([q, gruppenLaden()])
   if (error) return { error }
-  return { zeilen: data || [] }
+  return { zeilen: zusammenfassen(data || [], gruppen.liste) }
 }
 
 function dateiName(a) {
@@ -467,4 +472,102 @@ export async function exportZip(opt, fortschritt = () => {}) {
   const zip = zipSync(dateien, { level: 0 })   // PDFs/Bilder sind schon komprimiert
   herunterladen(new Blob([zip], { type: 'application/zip' }), `Rechnungen-${exportTitel(opt.abMonat, opt.bisMonat)}.zip`)
   return { anzahl: r.zeilen.length, dateien: mitDatei.length - fehlen.length, fehlen }
+}
+
+// ── Rechnungen zusammenlegen (v5.43.0) ──────────────────────────────────────
+// Z. B. Alessia & Pascal: beide werden einzeln berechnet, schreiben aber EINE
+// Rechnung. In der Buchhaltung eine Zeile (Summe, eine Rechnung, ein Bezahlt).
+// Welche Gruppe gilt: bezahlte Zeilen → die beim Bezahlen gespeicherte
+// (row.gruppe); alles andere → die aktuell eingestellte Gruppe.
+const klein = (t) => String(t || '').trim().toLowerCase()
+
+export async function gruppenLaden() {
+  const { data, error } = await supabase.from('abrechnung_gruppen').select('*').is('aufgeloest_am', null).order('name')
+  if (error) return { liste: [], fehlt: /abrechnung_gruppen|does not exist|schema cache/i.test(error.message || '') }
+  return { liste: data || [] }
+}
+export async function gruppeAnlegen({ name, mitglieder, wer }) {
+  const n = String(name || '').trim()
+  const m = [...new Set((mitglieder || []).map(x => String(x).trim()).filter(Boolean))]
+  if (!n) return { error: { message: 'Bitte einen Namen eintragen.' } }
+  if (m.length < 2) return { error: { message: 'Bitte mindestens zwei Personen auswählen.' } }
+  const { error } = await supabase.from('abrechnung_gruppen').insert({ name: n.slice(0, 80), mitglieder: m, erstellt_von: wer || null })
+  if (error && /duplicate|unique/i.test(error.message || '')) return { error: { message: `Es gibt schon eine Gruppe „${n}“.` } }
+  return error ? { error } : {}
+}
+export async function gruppeAufloesen(g, wer) {
+  return supabase.from('abrechnung_gruppen').update({ aufgeloest_am: new Date().toISOString(), aufgeloest_von: wer || null }).eq('id', g.id)
+}
+// Name der Gruppe für eine Person (aktuell eingestellt) oder null
+export const gruppeVon = (name, gruppen) => (gruppen || []).find(g => (g.mitglieder || []).some(m => klein(m) === klein(name)))?.name || null
+const gruppenSchluessel = (row, name, gruppen) => {
+  if (row && istManuell(row)) return null
+  if (row?.status === 'bezahlt') return row.gruppe || null
+  return gruppeVon(name, gruppen)
+}
+
+// Gemeinsamer Stand mehrerer Zeilen: Status, Rechnung (die neueste), Zahlungen
+export function gruppenStand(rows) {
+  const da = rows.filter(Boolean)
+  const halter = da.filter(r => r.rechnung_url).sort((a, b) => String(b.rechnung_am || '').localeCompare(String(a.rechnung_am || '')))[0] || null
+  const klaer = da.filter(r => r.status === 'klaerung')
+  const klaerAm = klaer.map(r => r.klaerung_am || '').sort().pop() || ''
+  let status = 'offen'
+  if (da.length && da.length === rows.length && da.every(r => r.status === 'bezahlt')) status = 'bezahlt'
+  else if (klaer.length && !(halter && String(halter.rechnung_am || '') > klaerAm)) status = 'klaerung'
+  else if (halter) status = 'rechnung'
+  const max = (k) => da.map(r => r[k]).filter(Boolean).sort().pop() || null
+  const bez = da.filter(r => r.status === 'bezahlt')
+  return {
+    status, halter,
+    rechnung_url: halter?.rechnung_url || null, rechnung_name: halter?.rechnung_name || null, rechnung_am: halter?.rechnung_am || null,
+    rechnung_von: halter?.rechnung_von || null, rechnung_betrag: halter?.rechnung_betrag ?? null, rechnung_iban: halter?.rechnung_iban || null, betrag_erkannt: !!halter?.betrag_erkannt,
+    anzahlungen: da.flatMap(r => anzahlungenVon(r)),
+    klaerung_notiz: klaer[0]?.klaerung_notiz || null, erinnert_am: max('erinnert_am'),
+    bezahlt_am: max('bezahlt_am'), bezahlt_betrag: bez.length ? round(bez.reduce((t, r) => t + Number(r.bezahlt_betrag || 0), 0)) : null, bezahlt_von: bez[0]?.bezahlt_von || null,
+  }
+}
+
+// Buchhaltungs-Liste: Mitglieder einer Gruppe (gleicher Zeitraum) zu einem Eintrag
+export function gruppieren(items, gruppen) {
+  const out = []; const sammel = new Map()
+  for (const i of items) {
+    const g = i.manuell ? null : gruppenSchluessel(i.row, i.name, gruppen)
+    if (!g) { out.push(i); continue }
+    const k = `${klein(g)}|${i.p?.ab}|${i.p?.ende}`
+    if (!sammel.has(k)) { const e = { gruppe: true, name: g, p: i.p, key: 'g-' + k, mitglieder: [], telegram: null, live: null }; sammel.set(k, e); out.push(e) }
+    sammel.get(k).mitglieder.push(i)
+  }
+  for (const e of sammel.values()) {
+    e.mitglieder.sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    e.row = gruppenStand(e.mitglieder.map(m => m.row))
+    e.row.mitglied_rows = e.mitglieder.map(m => m.row)
+  }
+  return out
+}
+
+// Export: Zeilen einer Gruppe (gleicher Zeitraum) zu einer Zeile zusammenfassen
+function zusammenfassen(zeilen, gruppen) {
+  const out = []; const sammel = new Map()
+  for (const a of zeilen) {
+    const g = gruppenSchluessel(a, a.chatter_name, gruppen)
+    if (!g) { out.push(a); continue }
+    const k = `${klein(g)}|${a.von}|${a.bis}`
+    if (!sammel.has(k)) { const e = { name: g, rows: [] }; sammel.set(k, e); out.push(e) }
+    sammel.get(k).rows.push(a)
+  }
+  return out.map(e => {
+    if (!e.rows) return e
+    if (e.rows.length === 1 && !e.rows[0].rechnung_url && e.rows[0].status !== 'bezahlt') return e.rows[0]
+    const r = e.rows.sort((x, y) => x.chatter_name.localeCompare(y.chatter_name, 'de'))
+    const st = gruppenStand(r)
+    const summe = (k) => r.some(x => x[k] != null) ? round(r.reduce((t, x) => t + Number(x[k] || 0), 0)) : null
+    return {
+      ...r[0], ...st, chatter_name: e.name, art: 'chatter', gruppe: e.name,
+      notiz: 'Gemeinsame Rechnung: ' + r.map(x => `${x.chatter_name} ${euro(gesamtEur(x))}`).join(' · '),
+      umsatz_chat_usd: round(r.reduce((t, x) => t + Number((x.nur_chat === false ? x.umsatz_gesamt_usd : x.umsatz_chat_usd) || 0), 0)), nur_chat: true,
+      prozent: null, auszahlung_usd: summe('auszahlung_usd'), betrag_eur: summe('betrag_eur'),
+      extras: r.flatMap(x => extrasVon(x).map(ex => ({ ...ex, text: `${x.chatter_name}: ${ex.text}` }))),
+    }
+  })
 }
