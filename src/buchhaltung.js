@@ -663,3 +663,40 @@ export async function wochenUebersicht(monat, rh) {
     }
   })
 }
+
+// ── Export für Wise-Sammelüberweisungen (v5.45.0) ───────────────────────────
+// Genau die Spalten der Wise-Vorlage „Überweisung an Bankkonten“ (EUR → EUR,
+// innerhalb Europas). Wise bucht nichts automatisch: ihr ladet die Datei unter
+// Zahlungen → Sammelüberweisungen hoch, prüft und bezahlt dort.
+export const WISE_SPALTEN = ['name', 'recipientEmail', 'paymentReference', 'referenceNumber', 'receiverType', 'amountCurrency', 'amount', 'sourceCurrency', 'targetCurrency', 'IBAN']
+
+export async function empfaengerLaden() {
+  const { data, error } = await supabase.from('zahlungsempfaenger').select('*')
+  if (error) return { map: {}, fehlt: /zahlungsempfaenger|does not exist|schema cache/i.test(error.message || '') }
+  return { map: Object.fromEntries((data || []).map(e => [e.name.toLowerCase(), e])) }
+}
+export async function empfaengerSpeichern(liste, wer) {
+  const zeilen = liste.map(e => ({
+    name: e.name, kontoinhaber: String(e.kontoinhaber || '').trim() || null, typ: e.typ === 'INSTITUTION' ? 'INSTITUTION' : 'PRIVATE',
+    iban: String(e.iban || '').replace(/\s/g, '').toUpperCase() || null, geaendert_von: wer || null, geaendert_am: new Date().toISOString(),
+  }))
+  if (!zeilen.length) return {}
+  return supabase.from('zahlungsempfaenger').upsert(zeilen, { onConflict: 'name' })
+}
+
+// Verwendungszweck: nur Zeichen, die SEPA sicher durchlässt, max. 35 Zeichen
+export const sepaText = (t) => String(t || '')
+  .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ß/g, 'ss')
+  .replace(/[–—]/g, '-').replace(/[^A-Za-z0-9 /\-?:().,'+]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 35)
+
+export function wiseCsv(zahlungen) {
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const zeilen = zahlungen.map(z => [
+    q(z.kontoinhaber), q(''), q(sepaText(z.zweck)), q(''), q(z.typ === 'INSTITUTION' ? 'INSTITUTION' : 'PRIVATE'),
+    q('source'), q(Number(z.betrag).toFixed(2)), q('EUR'), q('EUR'), String(z.iban || '').replace(/\s/g, '').toUpperCase(),
+  ].join(','))
+  return [WISE_SPALTEN.join(','), ...zeilen].join('\r\n') + '\r\n'
+}
+export function wiseHerunterladen(zahlungen, titel) {
+  herunterladen(new Blob([wiseCsv(zahlungen)], { type: 'text/csv;charset=utf-8' }), `Wise-Sammelueberweisung-${titel}.csv`)
+}

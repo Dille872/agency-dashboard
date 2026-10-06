@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles, HandCoins, Search, Link2, Users, Repeat, ChevronLeft, ChevronRight,
+  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles, HandCoins, Search, Link2, Users, Repeat, ChevronLeft, ChevronRight, Landmark,
 } from 'lucide-react'
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
@@ -10,11 +10,12 @@ import {
   zeileSichern, extrasSpeichern, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
   gruppenLaden, gruppeAnlegen, gruppeAufloesen, gruppieren,
+  empfaengerLaden, empfaengerSpeichern, wiseHerunterladen,
   rhythmusLaden, rhythmusSpeichern, istWoechentlich, wochenUebersicht, letzteWoche, plusTage, wocheStartVon, wocheText, WOCHENTAG,
 } from '../buchhaltung'
 import { oeffnen, signiert } from '../medien'
 import { supabase } from '../supabase'
-import { rechnungLesen, ibanSchoen } from '../rechnungLesen'
+import { rechnungLesen, ibanSchoen, ibanGueltig } from '../rechnungLesen'
 
 // ── Buchhaltung (v5.37.0 · v5.37.1) ────────────────────────────────────────
 // Verwaltung → Buchhaltung. Die Zahlen stehen automatisch drin (wie Billing).
@@ -28,6 +29,8 @@ import { rechnungLesen, ibanSchoen } from '../rechnungLesen'
 // Firma) als eine Zeile: Summe, eine Rechnung, ein Bezahlt; Anteile darunter.
 // v5.44.0: Reiter „Woche“ + „Rhythmus“: Chatter, die wöchentlich bezahlt werden
 // (z. B. Etienne, So–Sa), mit den Zahlen der Woche; im Monat als Wochen-Übersicht.
+// v5.45.0: „Für Wise“: Datei für Wise-Sammelüberweisungen (Name wie auf dem Konto,
+// Privat/Firma, IBAN, Rest-Betrag) — danach auf Wunsch alle als bezahlt eintragen.
 
 const letzteMonate = (n = 12) => {
   const out = []; const d = new Date()
@@ -43,7 +46,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const [woche, setWoche] = useState(start?.woche || null)                // Beginn der Woche (YYYY-MM-DD)
   const [rh, setRh] = useState({ liste: [], woechentlich: [], start: 0 })  // v5.44.0: Rhythmus je Chatter
   const [rhFenster, setRhFenster] = useState(null)                        // { alle, woche: Set, start }
-  const [wochenBox, setWochenBox] = useState([])                           // Monat: Wochen der wöchentlichen Chatter
+  const [wochenBox, setWochenBox] = useState([])
+  const [wise, setWise] = useState(null)                                   // v5.45.0: { zeilen: [...], fehlt, geladen, am }                           // Monat: Wochen der wöchentlichen Chatter
   const [monat, setMonat] = useState(start?.monat || letzteMonate(2)[1])  // Standard: letzter abgeschlossener Monat
   const [von, setVon] = useState(start?.von || '')
   const [bis, setBis] = useState(start?.bis || '')
@@ -197,18 +201,18 @@ export default function BuchhaltungTab({ userDisplayName }) {
     if (b == null || b === 0) { alert('Bitte einen Betrag eintragen, z. B. 300.'); return }
     anzSpeichern([...anz.liste, { betrag: b, am: anz.am, notiz: anz.notiz, von: userDisplayName }])
   }
-  const bezahltSpeichern = async () => {
-    const { i, am, betrag } = bezahlt
+  // v5.45.0: als eigene Funktion (auch für „Nach Wise-Zahlung als bezahlt eintragen“).
+  // Gibt null zurück oder einen Fehlertext.
+  const bezahltEintragen = async (i, am, betrag) => {
     if (i.gruppe) {   // v5.43.0: alle Mitglieder bezahlt; Betrag anteilig nach ihrem Gesamt verteilt
-      const b = zahlAus(betrag)
+      const b = typeof betrag === 'number' ? betrag : zahlAus(betrag)
       const teile = i.mitglieder.map(m => gesamtEur(anzeige(m)) || 0)
       const summe = teile.reduce((t, x) => t + x, 0)
       let rest = b
-      setBusy(i.key)
       for (let n = 0; n < i.mitglieder.length; n++) {
         const m = i.mitglieder[n]
         const row = await sichern(m)
-        if (!row) { setBusy(null); return }
+        if (!row) return `${m.name}: Zeile nicht angelegt`
         if (m.live) await zahlenAktualisieren({ ...m, row })
         let anteil = null
         if (b != null) {
@@ -216,18 +220,23 @@ export default function BuchhaltungTab({ userDisplayName }) {
           rest = Math.round((rest - anteil) * 100) / 100
         }
         const r = await alsBezahlt({ ...anzeige(m), ...row }, { am, betrag: anteil, gruppe: i.name })
-        if (r.error) { setBusy(null); alert(`Nicht gespeichert (${m.name}): ` + (/gruppe/.test(r.error.message || '') ? 'Datenbank fehlt noch (sql/buchhaltung-gruppen.sql ausführen).' : r.error.message)); lade(); return }
+        if (r.error) return `${m.name}: ` + (/gruppe/.test(r.error.message || '') ? 'Datenbank fehlt noch (sql/buchhaltung-gruppen.sql ausführen).' : r.error.message)
       }
-      setBusy(null); setBezahlt(null); melde(`${i.name}: bezahlt am ${datum(am)} (nur intern gespeichert).`); lade(); return
+      return null
     }
-    setBusy(i.key)
     const row = await sichern(i)
-    if (!row) { setBusy(null); return }
+    if (!row) return `${i.name}: Zeile nicht angelegt`
     // Zahlen in dem Moment festhalten (für Export & spätere Nachfragen)
     if (i.live && !istManuell(row)) await zahlenAktualisieren({ ...i, row })
     const r = await alsBezahlt({ ...anzeige(i), ...row }, { am, betrag })
+    return r.error ? `${i.name}: ${r.error.message}` : null
+  }
+  const bezahltSpeichern = async () => {
+    const { i, am, betrag } = bezahlt
+    setBusy(i.key)
+    const f = await bezahltEintragen(i, am, betrag)
     setBusy(null)
-    if (r.error) { alert('Nicht gespeichert: ' + r.error.message); return }
+    if (f) { alert('Nicht gespeichert: ' + f); lade(); return }
     setBezahlt(null); melde(`${i.name}: bezahlt am ${datum(am)} (nur intern gespeichert).`); lade()
   }
   const zurueck = async (i) => {
@@ -411,6 +420,60 @@ export default function BuchhaltungTab({ userDisplayName }) {
     )
   }
 
+  // ── v5.45.0: Für Wise exportieren ────────────────────────────────────────
+  const restVon = (i) => {
+    const soll = i.row?.rechnung_betrag ?? gesamtVon(i).wert
+    return soll != null ? Math.round((Number(soll) - anzahlungSumme(i.row)) * 100) / 100 : null
+  }
+  const wiseOeffnen = async () => {
+    const em = await empfaengerLaden()
+    const zeilen = items
+      .filter(i => statusVon(i.row) !== 'bezahlt' && gesamtVon(i).waehrung === 'EUR')
+      .map(i => {
+        const e = em.map[i.name.toLowerCase()] || {}
+        const iban = String(i.row?.rechnung_iban || e.iban || '').replace(/\s/g, '').toUpperCase()
+        const betrag = restVon(i)
+        const ok = ibanGueltig(iban) && betrag > 0
+        return {
+          i, key: i.key, name: i.name, status: statusVon(i.row), betrag: betrag != null ? String(betrag).replace('.', ',') : '',
+          kontoinhaber: e.kontoinhaber || '', typ: e.typ || (i.gruppe ? 'INSTITUTION' : 'PRIVATE'), iban: iban ? ibanSchoen(iban) : '',
+          ibanAusRechnung: !!i.row?.rechnung_iban, zweck: `Rechnung ${i.p?.bezeichnung || ''}`.trim(),
+          an: ok && statusVon(i.row) === 'rechnung',
+        }
+      })
+    setWise({ zeilen, fehlt: em.fehlt, geladen: false, am: heuteIso() })
+  }
+  const wiseZeile = (key, feld, wert) => setWise(w => ({ ...w, zeilen: w.zeilen.map(z => z.key === key ? { ...z, [feld]: wert } : z) }))
+  const wiseProblem = (z) => {
+    const iban = z.iban.replace(/\s/g, '').toUpperCase()
+    if (!z.kontoinhaber.trim()) return 'Name wie auf dem Konto fehlt'
+    if (!ibanGueltig(iban)) return iban ? 'IBAN ungültig' : 'IBAN fehlt'
+    const b = zahlAus(z.betrag)
+    if (!(b > 0)) return 'Betrag fehlt'
+    return null
+  }
+  const wiseLaden = async () => {
+    const gewaehlt = wise.zeilen.filter(z => z.an)
+    const fehler = gewaehlt.map(z => [z, wiseProblem(z)]).filter(x => x[1])
+    if (fehler.length) { alert('Bitte erst ergänzen:\n\n' + fehler.map(([z, f]) => `${z.name}: ${f}`).join('\n')); return }
+    setBusy('wise')
+    const { error } = await empfaengerSpeichern(gewaehlt.map(z => ({ name: z.name, kontoinhaber: z.kontoinhaber, typ: z.typ, iban: z.iban })), userDisplayName)
+    setBusy(null)
+    if (error && !/zahlungsempfaenger/.test(error.message || '')) { alert('Empfänger nicht gespeichert: ' + error.message); return }
+    wiseHerunterladen(gewaehlt.map(z => ({ kontoinhaber: z.kontoinhaber.trim(), typ: z.typ, iban: z.iban, betrag: zahlAus(z.betrag), zweck: z.zweck })), heuteIso())
+    setWise(w => ({ ...w, geladen: true, fehlt: w.fehlt || !!error }))
+  }
+  const wiseBezahlt = async () => {
+    const gewaehlt = wise.zeilen.filter(z => z.an)
+    if (!confirm(`Erst in Wise bezahlt?\n\nDann jetzt ${gewaehlt.length} ${gewaehlt.length === 1 ? 'Eintrag' : 'Einträge'} als bezahlt am ${datum(wise.am)} eintragen (nur intern, keine Nachricht).`)) return
+    setBusy('wise')
+    const fehler = []
+    for (const z of gewaehlt) { const f = await bezahltEintragen(z.i, wise.am, zahlAus(z.betrag)); if (f) fehler.push(f) }
+    setBusy(null)
+    if (fehler.length) alert('Nicht alles gespeichert:\n' + fehler.join('\n'))
+    setWise(null); melde(`${gewaehlt.length - fehler.length} als bezahlt eingetragen (${datum(wise.am)}).`); lade()
+  }
+
   // ── v5.44.0: Fenster „Rhythmus“ ──────────────────────────────────────────
   const rhOeffnen = async () => {
     const { data } = await supabase.from('chatters_contact').select('name, active').order('name')
@@ -484,6 +547,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         )}
         <label className="bh-suche"><Search size={14} strokeWidth={2.4} /><input value={suche} placeholder="Name suchen" onChange={e => setSuche(e.target.value)} />{suche && <button onClick={() => setSuche('')} title="Leeren"><X size={13} /></button>}</label>
         <div className="bh-kopf-rechts">
+          {items.length > 0 && modus !== 'frei' && <button className="bh-k" onClick={wiseOeffnen} title="Datei für Wise-Sammelüberweisungen (Zahlungen → Sammelüberweisungen)"><Landmark size={14} strokeWidth={2.4} /> Für Wise</button>}
           <button className="bh-k" onClick={rhOeffnen} title="Wer wird wöchentlich statt monatlich bezahlt?"><Repeat size={14} strokeWidth={2.4} /> Rhythmus{rh.woechentlich.length ? ` (${rh.woechentlich.length} wöchentlich)` : ''}</button>
           <button className="bh-k" onClick={grpOeffnen} title="Mehrere Chatter mit EINER gemeinsamen Rechnung (z. B. Paar mit Firma)"><Link2 size={14} strokeWidth={2.4} /> Zusammenlegen{gruppen.liste.length ? ` (${gruppen.liste.length})` : ''}</button>
           <button className="bh-k" onClick={() => handOeffnen(null)} title="Team (z. B. Alina) oder Rechnung ohne Profil (z. B. ehemalige Chatter)"><UserPlus size={14} strokeWidth={2.4} /> Team / ohne Profil</button>
@@ -613,6 +677,47 @@ export default function BuchhaltungTab({ userDisplayName }) {
           ))}
         </div>
       )}
+
+      {wise && createPortal(
+        <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && busy !== 'wise') setWise(null) }}>
+          <div className="bh-fenster bh-wise">
+            <div className="bh-fenster-kopf"><b><Landmark size={16} strokeWidth={2.4} /> Für Wise exportieren</b><button className="bh-x" onClick={() => setWise(null)}><X size={18} /></button></div>
+            <div className="bh-fenster-text">Datei für Wise → Zahlungen → <b>Sammelüberweisungen</b> (EUR an Bankkonten). Wise bezahlt nichts von selbst: hochladen, prüfen, dort bezahlen. Betrag = Rechnung bzw. Gesamt minus Anzahlungen.</div>
+            {wise.fehlt && <div className="bh-warn">Namen/IBANs werden noch nicht gemerkt: sql/zahlungsempfaenger.sql in Supabase ausführen. Die Datei funktioniert trotzdem.</div>}
+            {!wise.zeilen.length && <div className="bh-leer">Hier ist nichts offen in Euro.</div>}
+            <div className="bh-wise-liste">
+              {wise.zeilen.map(z => {
+                const prob = wiseProblem(z)
+                return (
+                  <div key={z.key} className={'bh-wise-zeile' + (z.an ? ' an' : '')}>
+                    <label className="bh-wise-wer"><input type="checkbox" checked={z.an} onChange={e => wiseZeile(z.key, 'an', e.target.checked)} /> <b>{z.name}</b> <span className="bh-st" style={{ color: STATUS[z.status]?.farbe, background: STATUS[z.status]?.bg }}>{STATUS[z.status]?.label}</span></label>
+                    <input className="bh-wise-name" value={z.kontoinhaber} placeholder="Vor- und Nachname wie auf dem Konto" onChange={e => wiseZeile(z.key, 'kontoinhaber', e.target.value)} />
+                    <div className="bh-umschalter bh-wise-typ">
+                      <button className={z.typ === 'PRIVATE' ? 'an' : ''} onClick={() => wiseZeile(z.key, 'typ', 'PRIVATE')}>Privat</button>
+                      <button className={z.typ === 'INSTITUTION' ? 'an' : ''} onClick={() => wiseZeile(z.key, 'typ', 'INSTITUTION')}>Firma</button>
+                    </div>
+                    <input className="bh-wise-iban" value={z.iban} placeholder="IBAN" title={z.ibanAusRechnung ? 'aus der Rechnung' : 'zuletzt benutzt'} onChange={e => wiseZeile(z.key, 'iban', e.target.value)} />
+                    <input className="bh-wise-betrag" inputMode="decimal" value={z.betrag} onChange={e => wiseZeile(z.key, 'betrag', e.target.value)} />
+                    <small className={prob && z.an ? 'warn' : ''}>{prob ? prob : `Zweck: ${z.zweck}`}</small>
+                  </div>
+                )
+              })}
+            </div>
+            {(() => {
+              const g = wise.zeilen.filter(z => z.an)
+              return <div className="bh-fenster-text"><b style={{ color: 'var(--text-primary)' }}>{g.length} Überweisung{g.length === 1 ? '' : 'en'} · {euro(g.reduce((t, z) => t + (zahlAus(z.betrag) || 0), 0))}</b>{g.some(z => !z.ibanAusRechnung) ? ' · IBANs ohne Rechnung stammen von der letzten Zahlung — bitte prüfen' : ''}</div>
+            })()}
+            {wise.geladen && (
+              <div className="bh-ok"><Check size={15} strokeWidth={2.6} /> Datei heruntergeladen. In Wise: Zahlungen → Sammelüberweisungen → Datei hochladen → prüfen → bezahlen. Danach hier eintragen:</div>
+            )}
+            <div className="bh-fenster-fuss">
+              <button className="bh-k" onClick={() => setWise(null)}>Schließen</button>
+              {wise.geladen && <label className="bh-feld bh-wise-am"><span>bezahlt am</span><input type="date" value={wise.am} onChange={e => setWise({ ...wise, am: e.target.value })} /></label>}
+              {wise.geladen && <button className="bh-k bh-gruen" disabled={busy === 'wise'} onClick={wiseBezahlt}><Check size={14} strokeWidth={2.6} /> Als bezahlt eintragen</button>}
+              <button className="bh-k bh-p" disabled={busy === 'wise' || !wise.zeilen.some(z => z.an)} onClick={wiseLaden}><Download size={14} strokeWidth={2.4} /> {wise.geladen ? 'Nochmal herunterladen' : 'Datei für Wise'}</button>
+            </div>
+          </div>
+        </div>, document.body)}
 
       {rhFenster && createPortal(
         <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && busy !== 'rh') setRhFenster(null) }}>

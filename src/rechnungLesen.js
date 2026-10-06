@@ -46,7 +46,7 @@ function betraegeIn(zeile) {
 }
 
 // IBAN prüfen (Modulo 97)
-function ibanGueltig(iban) {
+export function ibanGueltig(iban) {
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false
   const umgestellt = iban.slice(4) + iban.slice(0, 4)
   let rest = 0
