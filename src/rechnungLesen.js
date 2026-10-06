@@ -46,8 +46,11 @@ function betraegeIn(zeile) {
 }
 
 // IBAN prüfen (Modulo 97)
+// v5.46.0: feste Länge je Land (sonst rutschte z. B. „…3000 Kontoinhaber“ als „…3000KONT“ durch)
+const IBAN_LAENGE = { DE: 22, AT: 20, CH: 21, LI: 21, FR: 27, IT: 27, ES: 24, PT: 25, NL: 18, BE: 16, LU: 20, GB: 22, IE: 22, PL: 28, CZ: 24, SK: 24, HU: 28, HR: 21, SI: 19, BG: 22, RO: 24, GR: 27, CY: 28, MT: 31, DK: 18, SE: 24, NO: 15, FI: 18, EE: 20, LV: 21, LT: 20, TR: 26 }
 export function ibanGueltig(iban) {
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false
+  if (IBAN_LAENGE[iban.slice(0, 2)] && iban.length !== IBAN_LAENGE[iban.slice(0, 2)]) return false
   const umgestellt = iban.slice(4) + iban.slice(0, 4)
   let rest = 0
   for (const ch of umgestellt) {
@@ -67,6 +70,39 @@ function ibanFinden(text) {
       if (ibanGueltig(k)) return k
     }
   }
+  return null
+}
+
+// v5.46.0: Rechnungsnummer („Rechnungsnummer: RE-2026-17“, „Invoice No. 0042“ …)
+const NR_WORT = /(rechnungs?\s*-?\s*(?:nr|nummer|no)\.?|rechnung\s*#|re\.?\s*-?\s*nr\.?|beleg\s*-?\s*nr\.?|invoice\s*(?:no\.?|number|nr\.?|#)|invoice\s*id)/i
+const NR_WERT = /^[\s:#.\-]*([A-Za-z0-9][A-Za-z0-9\-\/._]{0,29})/
+const nrOk = (t) => !!t && /\d/.test(t) && !/^\d{1,2}[./]\d{1,2}[./]\d{2,4}$/.test(t) && t.length <= 30
+export function nummerFinden(zeilen) {
+  for (let i = 0; i < zeilen.length; i++) {
+    const m = zeilen[i].match(NR_WORT)
+    if (!m) continue
+    const rest = zeilen[i].slice(m.index + m[0].length)
+    let w = rest.match(NR_WERT)?.[1]
+    if (nrOk(w)) return w
+    // Wert steht in der nächsten Zeile (Tabellen-Layout)
+    w = (zeilen[i + 1] || '').trim().match(NR_WERT)?.[1]
+    if (nrOk(w)) return w
+  }
+  return null
+}
+
+// v5.46.0: Kontoinhaber / Absender (nur Vorschlag — ihr bestätigt im Adressbuch)
+const INHABER = /(kontoinhaber(?:in)?|inhaber(?:in)?|account\s*holder|account\s*name|beneficiary|empfänger(?:in)?|zahlungsempfänger)\s*[:]?\s*(.*)$/i
+const siehtNachName = (t) => /^[A-Za-zÄÖÜäöüßÀ-ÿ][A-Za-zÄÖÜäöüßÀ-ÿ'.&\- ]{2,60}$/.test(t) && !/rechnung|invoice|iban|bic|bank|datum|date|seite|page|summe|total|betrag/i.test(t) && /\s/.test(t)
+export function inhaberFinden(zeilen) {
+  for (let i = 0; i < zeilen.length; i++) {
+    const m = zeilen[i].match(INHABER)
+    if (!m) continue
+    const w = (m[2] || '').trim() || (zeilen[i + 1] || '').trim()
+    if (siehtNachName(w)) return w.slice(0, 80)
+  }
+  // Rückfall: Absender ganz oben (erste Zeile, die wie ein Name aussieht)
+  for (const z of zeilen.slice(0, 6)) { const t = z.trim(); if (siehtNachName(t) && t.split(/\s+/).length <= 5) return t.slice(0, 80) }
   return null
 }
 
@@ -105,6 +141,8 @@ export function ausText(zeilen) {
     betrag: wahl ? Math.round(wahl.wert * 100) / 100 : null,
     waehrung: wahl?.waehrung || dokWaehrung,
     iban: ibanFinden(ganz.replace(/\n/g, ' ')),
+    nummer: nummerFinden(z),
+    inhaber: inhaberFinden(z),
   }
 }
 
@@ -121,8 +159,8 @@ export async function rechnungLesen(datei) {
     const text = zeilen.filter(x => x && x !== SEITE)
     if (!text.length) return { leer: true, grund: 'scan', text }
     let r = ausText(zeilen)
-    if (r.betrag == null) { const r2 = ausText(zusammen(zeilen)); if (r2.betrag != null) r = { ...r2, iban: r.iban || r2.iban } }
-    return { ...r, leer: r.betrag == null && !r.iban, text }
+    if (r.betrag == null) { const r2 = ausText(zusammen(zeilen)); if (r2.betrag != null) r = { ...r2, iban: r.iban || r2.iban, nummer: r.nummer || r2.nummer, inhaber: r.inhaber || r2.inhaber } }
+    return { ...r, leer: r.betrag == null && !r.iban && !r.nummer, text }
   } catch (e) {
     return { leer: true, grund: 'fehler', fehler: String(e?.message || e) }
   }

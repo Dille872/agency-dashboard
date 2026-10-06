@@ -240,6 +240,17 @@ async function telegramVonChatter(name) {
   return data?.telegram_id || null
 }
 
+// v5.46.0: speichern; fehlen neuere Spalten noch in der Datenbank, ohne sie nochmal
+const NEUE_SPALTEN = ['rechnung_iban', 'betrag_erkannt', 'rechnung_nr', 'rechnung_inhaber']
+async function zeileAendern(id, felder, filter = (q) => q) {
+  let { error } = await filter(supabase.from('chatter_abrechnungen').update(felder).eq('id', id))
+  if (error && /rechnung_iban|betrag_erkannt|rechnung_nr|rechnung_inhaber/.test(error.message || '')) {
+    const rest = Object.fromEntries(Object.entries(felder).filter(([k]) => !NEUE_SPALTEN.includes(k)))
+    error = Object.keys(rest).length ? (await filter(supabase.from('chatter_abrechnungen').update(rest).eq('id', id))).error : null
+  }
+  return { error }
+}
+
 // ── Rechnung hochladen (Chatter selbst oder Admin für ihn) ───────────────────
 export async function rechnungHochladen(a, datei, { betrag = null, iban = null, durchAdmin = false } = {}) {
   if (!datei) return { error: { message: 'Keine Datei gewählt.' } }
@@ -254,17 +265,13 @@ export async function rechnungHochladen(a, datei, { betrag = null, iban = null, 
   if (betrag != null && String(betrag).trim() !== '' && b != null) { felder.rechnung_betrag = b; felder.betrag_erkannt = false }
   if (iban) felder.rechnung_iban = String(iban).replace(/\s/g, '').toUpperCase()
   // v5.38.0: Summe und IBAN aus der PDF vorschlagen, wenn nichts angegeben ist
-  if (felder.rechnung_betrag == null || !felder.rechnung_iban) {
-    const g = await rechnungLesen(datei)
-    if (felder.rechnung_betrag == null) { felder.rechnung_betrag = g.betrag ?? null; felder.betrag_erkannt = g.betrag != null }
-    if (!felder.rechnung_iban && g.iban) felder.rechnung_iban = g.iban
-  }
-  let { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', a.id)
-  if (error && /rechnung_iban|betrag_erkannt/.test(error.message || '')) {
-    // Datenbank noch ohne die neuen Spalten (sql/buchhaltung-team.sql) → ohne sie speichern
-    const { rechnung_iban, betrag_erkannt, ...rest } = felder; void rechnung_iban; void betrag_erkannt
-    error = (await supabase.from('chatter_abrechnungen').update(rest).eq('id', a.id)).error
-  }
+  // v5.46.0: dazu immer Rechnungsnummer und Name/Firma (für Betreff + Adressbuch)
+  const g = await rechnungLesen(datei)
+  if (felder.rechnung_betrag == null) { felder.rechnung_betrag = g.betrag ?? null; felder.betrag_erkannt = g.betrag != null }
+  if (!felder.rechnung_iban) felder.rechnung_iban = g.iban || null
+  felder.rechnung_nr = g.nummer || null
+  felder.rechnung_inhaber = g.inhaber || null
+  const { error } = await zeileAendern(a.id, felder)
   if (error) return { error }
   if (!durchAdmin) {
     try { await notifyAdmins(`🧾 <b>${escHtml(a.chatter_name)}</b> hat die Rechnung für ${escHtml(a.bezeichnung || a.monat)} hochgeladen${felder.rechnung_betrag != null ? ` (${euro(felder.rechnung_betrag)})` : ''}.\n<a href="${link('?tab=buchhaltung')}">Zur Buchhaltung</a>`) } catch { /* nur Hinweis */ }
@@ -332,21 +339,29 @@ export async function rechnungNeuLesen(row) {
 // v5.39.2: Erkanntes nachtragen — füllt nur, was noch leer ist (überschreibt nie Eingetragenes)
 export async function erkanntNachtragen(row, g) {
   const felder = {}
-  if (row.rechnung_betrag == null && g.betrag != null) { felder.rechnung_betrag = g.betrag; felder.betrag_erkannt = true }
   if (!row.rechnung_iban && g.iban) felder.rechnung_iban = g.iban
-  if (!Object.keys(felder).length) return { leer: true }
-  const { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id).is('rechnung_betrag', null)
-  return error ? { error } : {}
+  if (!row.rechnung_nr && g.nummer) felder.rechnung_nr = g.nummer
+  if (!row.rechnung_inhaber && g.inhaber) felder.rechnung_inhaber = g.inhaber
+  const betrag = row.rechnung_betrag == null && g.betrag != null
+  if (!Object.keys(felder).length && !betrag) return { leer: true }
+  if (Object.keys(felder).length) { const { error } = await zeileAendern(row.id, felder); if (error) return { error } }
+  if (betrag) { const { error } = await zeileAendern(row.id, { rechnung_betrag: g.betrag, betrag_erkannt: true }, (q) => q.is('rechnung_betrag', null)); if (error) return { error } }
+  return {}
 }
 
 // Betrag/IBAN der Rechnung von Hand setzen (von euch geprüft → nicht mehr „erkannt“)
-export async function rechnungsangabenSpeichern(row, { betrag, iban }) {
+export async function rechnungsangabenSpeichern(row, { betrag, iban, nummer, inhaber }) {
   const b = String(betrag ?? '').trim() === '' ? null : zahlAus(betrag)
   if (String(betrag ?? '').trim() !== '' && b == null) return { error: { message: 'Betrag bitte als Zahl, z. B. 447,48.' } }
   const felder = { rechnung_betrag: b, betrag_erkannt: false, rechnung_iban: String(iban || '').replace(/\s/g, '').toUpperCase() || null }
-  let { error } = await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id)
-  if (error && /rechnung_iban|betrag_erkannt/.test(error.message || '')) error = (await supabase.from('chatter_abrechnungen').update({ rechnung_betrag: b }).eq('id', row.id)).error
-  return error ? { error } : {}
+  if (nummer !== undefined) felder.rechnung_nr = String(nummer || '').trim().slice(0, 40) || null
+  if (inhaber !== undefined) felder.rechnung_inhaber = String(inhaber || '').trim().slice(0, 80) || null
+  return zeileAendern(row.id, felder)
+}
+
+// v5.46.0: nur die Rechnungsnummer setzen (z. B. im Fenster „Für Wise“ eingetippt)
+export async function rechnungNrSpeichern(row, nr) {
+  return zeileAendern(row.id, { rechnung_nr: String(nr || '').trim().slice(0, 40) || null })
 }
 
 // v5.39.1: falsch hochgeladene Rechnung wieder entfernen (Datei + Angaben)
@@ -354,8 +369,7 @@ export async function rechnungEntfernen(row) {
   const z = zerlege(row.rechnung_url)
   const felder = { rechnung_url: null, rechnung_name: null, rechnung_betrag: null, rechnung_am: null, rechnung_von: null }
   if (row.status !== 'bezahlt') felder.status = 'offen'
-  let { error } = await supabase.from('chatter_abrechnungen').update({ ...felder, rechnung_iban: null, betrag_erkannt: false }).eq('id', row.id)
-  if (error && /rechnung_iban|betrag_erkannt/.test(error.message || '')) error = (await supabase.from('chatter_abrechnungen').update(felder).eq('id', row.id)).error
+  const { error } = await zeileAendern(row.id, { ...felder, rechnung_iban: null, betrag_erkannt: false, rechnung_nr: null, rechnung_inhaber: null })
   if (error) return { error }
   if (z) await supabase.storage.from(z.bucket).remove([z.pfad]).catch(() => null)   // Datei weg; klappt das nicht, bleibt sie nur ungenutzt liegen
   return {}
@@ -426,13 +440,13 @@ function dateiName(a) {
 }
 
 function uebersichtCsv(zeilen) {
-  const kopf = ['Monat', 'Zeitraum von', 'Zeitraum bis', 'Name', 'Art', 'Notiz', 'Umsatz $', 'Satz %', 'Anteil $', 'Kurs', 'Anteil €', 'Betrag (Team/ohne Profil)', 'Extras', 'Extras Summe', 'Gesamt', 'Angezahlt', 'Rest', 'Währung', 'Rechnung', 'Rechnungsbetrag', 'IBAN', 'Rechnung hochgeladen', 'Status', 'Bezahlt am', 'Bezahlt', 'Bezahlt von']
+  const kopf = ['Monat', 'Zeitraum von', 'Zeitraum bis', 'Name', 'Art', 'Notiz', 'Umsatz $', 'Satz %', 'Anteil $', 'Kurs', 'Anteil €', 'Betrag (Team/ohne Profil)', 'Extras', 'Extras Summe', 'Gesamt', 'Angezahlt', 'Rest', 'Währung', 'Rechnung', 'Rechnungsnummer', 'Rechnungsbetrag', 'IBAN', 'Rechnung hochgeladen', 'Status', 'Bezahlt am', 'Bezahlt', 'Bezahlt von']
   const zelle = (v) => { const t = String(v ?? ''); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
   const rows = zeilen.map(a => [
     a.monat, a.von, a.bis, a.chatter_name, (ART[a.art] || ART.chatter).label, a.notiz || '',
     istManuell(a) ? '' : zahlCsv(a.nur_chat === false ? a.umsatz_gesamt_usd : a.umsatz_chat_usd), istManuell(a) ? '' : zahlCsv(a.prozent), istManuell(a) ? '' : zahlCsv(a.auszahlung_usd), !istManuell(a) && a.kurs != null ? String(a.kurs).replace('.', ',') : '',
     istManuell(a) ? '' : zahlCsv(a.betrag_eur), istManuell(a) ? zahlCsv(a.betrag_manuell) : '', extrasVon(a).map(e => `${e.text}: ${zahlCsv(e.betrag)}`).join(' | '), zahlCsv(extrasSumme(a)), zahlCsv(gesamt(a).wert), anzahlungSumme(a) ? zahlCsv(anzahlungSumme(a)) : '', gesamt(a).wert != null ? zahlCsv(gesamt(a).wert - anzahlungSumme(a)) : '', gesamt(a).waehrung,
-    a.rechnung_url ? dateiName(a) : '', zahlCsv(a.rechnung_betrag), a.rechnung_iban || '', a.rechnung_am ? datum(a.rechnung_am) : '',
+    a.rechnung_url ? dateiName(a) : '', a.rechnung_nr || '', zahlCsv(a.rechnung_betrag), a.rechnung_iban || '', a.rechnung_am ? datum(a.rechnung_am) : '',
     (STATUS[statusVon(a)] || STATUS.offen).label, a.bezahlt_am ? datum(a.bezahlt_am) : '', zahlCsv(a.bezahlt_betrag), a.bezahlt_von || '',
   ])
   return '\uFEFF' + [kopf, ...rows].map(r => r.map(zelle).join(';')).join('\r\n')
@@ -529,6 +543,7 @@ export function gruppenStand(rows) {
     status, halter,
     rechnung_url: halter?.rechnung_url || null, rechnung_name: halter?.rechnung_name || null, rechnung_am: halter?.rechnung_am || null,
     rechnung_von: halter?.rechnung_von || null, rechnung_betrag: halter?.rechnung_betrag ?? null, rechnung_iban: halter?.rechnung_iban || null, betrag_erkannt: !!halter?.betrag_erkannt,
+    rechnung_nr: halter?.rechnung_nr || null, rechnung_inhaber: halter?.rechnung_inhaber || null,
     anzahlungen: da.flatMap(r => anzahlungenVon(r)),
     klaerung_notiz: klaer[0]?.klaerung_notiz || null, erinnert_am: max('erinnert_am'),
     bezahlt_am: max('bezahlt_am'), bezahlt_betrag: bez.length ? round(bez.reduce((t, r) => t + Number(r.bezahlt_betrag || 0), 0)) : null, bezahlt_von: bez[0]?.bezahlt_von || null,
@@ -679,9 +694,30 @@ export async function empfaengerSpeichern(liste, wer) {
   const zeilen = liste.map(e => ({
     name: e.name, kontoinhaber: String(e.kontoinhaber || '').trim() || null, typ: e.typ === 'INSTITUTION' ? 'INSTITUTION' : 'PRIVATE',
     iban: String(e.iban || '').replace(/\s/g, '').toUpperCase() || null, geaendert_von: wer || null, geaendert_am: new Date().toISOString(),
+    bestaetigt_von: wer || null, bestaetigt_am: new Date().toISOString(),
   }))
   if (!zeilen.length) return {}
-  return supabase.from('zahlungsempfaenger').upsert(zeilen, { onConflict: 'name' })
+  let r = await supabase.from('zahlungsempfaenger').upsert(zeilen, { onConflict: 'name' })
+  // Datenbank noch ohne die Bestätigungs-Spalten (sql/adressbuch.sql) → ohne sie
+  if (r.error && /bestaetigt/.test(r.error.message || '')) r = await supabase.from('zahlungsempfaenger').upsert(zeilen.map(({ bestaetigt_von, bestaetigt_am, ...z }) => z), { onConflict: 'name' }) // eslint-disable-line no-unused-vars
+  return r
+}
+export async function empfaengerLoeschen(name) {
+  return supabase.from('zahlungsempfaenger').delete().eq('name', name)
+}
+// Abgleich Rechnung ↔ Adressbuch: 'gleich' | 'neu' (noch kein Eintrag) | 'anders' | null (keine IBAN auf der Rechnung)
+export const ibanVergleich = (rechnungIban, eintrag) => {
+  const r = String(rechnungIban || '').replace(/\s/g, '').toUpperCase()
+  if (!r) return null
+  const e = String(eintrag?.iban || '').replace(/\s/g, '').toUpperCase()
+  if (!e) return 'neu'
+  return r === e ? 'gleich' : 'anders'
+}
+const nameNorm = (t) => String(t || '').toLowerCase().replace(/[^a-zäöüß0-9]/g, '')
+export const nameVergleich = (rechnungName, eintrag) => {
+  if (!rechnungName || !eintrag?.kontoinhaber) return null
+  const a = nameNorm(rechnungName), b = nameNorm(eintrag.kontoinhaber)
+  return a === b || a.includes(b) || b.includes(a) ? 'gleich' : 'anders'
 }
 
 // Verwendungszweck: nur Zeichen, die SEPA sicher durchlässt, max. 35 Zeichen

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles, HandCoins, Search, Link2, Users, Repeat, ChevronLeft, ChevronRight, Landmark,
+  Receipt, Send, Check, Upload, FileText, MessageCircleWarning, Undo2, Bell, X, Download, Plus, Trash2, RefreshCw, TriangleAlert, CircleCheck, FolderDown, FileSpreadsheet, UserPlus, Pencil, Copy, Eye, ExternalLink, Sparkles, HandCoins, Search, Link2, Users, Repeat, ChevronLeft, ChevronRight, Landmark, BookUser, ShieldAlert,
 } from 'lucide-react'
 import {
   STATUS, ART, euro, dollar, geld, datum, datumZeit, heuteIso, monatName, fehltTabelle, zahlAus,
@@ -10,7 +10,7 @@ import {
   zeileSichern, extrasSpeichern, zahlenAktualisieren,
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
   gruppenLaden, gruppeAnlegen, gruppeAufloesen, gruppieren,
-  empfaengerLaden, empfaengerSpeichern, wiseHerunterladen,
+  empfaengerLaden, empfaengerSpeichern, empfaengerLoeschen, rechnungNrSpeichern, wiseHerunterladen, ibanVergleich, nameVergleich,
   rhythmusLaden, rhythmusSpeichern, istWoechentlich, wochenUebersicht, letzteWoche, plusTage, wocheStartVon, wocheText, WOCHENTAG,
 } from '../buchhaltung'
 import { oeffnen, signiert } from '../medien'
@@ -31,6 +31,9 @@ import { rechnungLesen, ibanSchoen, ibanGueltig } from '../rechnungLesen'
 // (z. B. Etienne, So–Sa), mit den Zahlen der Woche; im Monat als Wochen-Übersicht.
 // v5.45.0: „Für Wise“: Datei für Wise-Sammelüberweisungen (Name wie auf dem Konto,
 // Privat/Firma, IBAN, Rest-Betrag) — danach auf Wunsch alle als bezahlt eintragen.
+// v5.46.0: Adressbuch (Name/Firma, Privat/Firma, IBAN je Person). Jede Rechnung
+// wird abgeglichen; überwiesen wird an die IBAN aus dem Adressbuch. Betreff bei
+// Wise = Rechnungsnummer (aus der PDF gelesen oder eingetippt).
 
 const letzteMonate = (n = 12) => {
   const out = []; const d = new Date()
@@ -47,6 +50,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const [rh, setRh] = useState({ liste: [], woechentlich: [], start: 0 })  // v5.44.0: Rhythmus je Chatter
   const [rhFenster, setRhFenster] = useState(null)                        // { alle, woche: Set, start }
   const [wochenBox, setWochenBox] = useState([])
+  const [buch, setBuch] = useState({ map: {} })                            // v5.46.0: Adressbuch { map, fehlt }
+  const [buchFenster, setBuchFenster] = useState(null)                     // { zeilen: [...] }
   const [wise, setWise] = useState(null)                                   // v5.45.0: { zeilen: [...], fehlt, geladen, am }                           // Monat: Wochen der wöchentlichen Chatter
   const [monat, setMonat] = useState(start?.monat || letzteMonate(2)[1])  // Standard: letzter abgeschlossener Monat
   const [von, setVon] = useState(start?.von || '')
@@ -81,8 +86,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
   }, [modus, monat, von, bis, woche])
 
   const lade = async () => {
-    const gr = await gruppenLaden()
-    setGruppen(gr)
+    const [gr, ab] = await Promise.all([gruppenLaden(), empfaengerLaden()])
+    setGruppen(gr); setBuch(ab)
     if (modus === 'offen') {
       const { data, error } = await abrechnungenLaden()
       if (error) { setDaten({ fehler: fehltTabelle(error) ? 'Die Datenbank für die Buchhaltung fehlt noch: sql/buchhaltung.sql und sql/buchhaltung-entwurf.sql ausführen.' : error.message, items: [] }); return }
@@ -109,7 +114,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const [liestNach, setLiestNach] = useState(0)
   useEffect(() => {
     const offen = (daten?.items || []).flatMap(i => i.gruppe ? i.mitglieder.map(m => m.row) : [i.row])
-      .filter(r => r && r.rechnung_url && r.rechnung_betrag == null && !gelesenSchon.current.has(r.id) && /\.pdf(\?|$)/i.test(r.rechnung_name || r.rechnung_url))
+      .filter(r => r && r.rechnung_url && (r.rechnung_betrag == null || ('rechnung_nr' in r && !r.rechnung_nr)) && !gelesenSchon.current.has(r.id) && /\.pdf(\?|$)/i.test(r.rechnung_name || r.rechnung_url))
     if (!offen.length) return
     let weg = false
     ;(async () => {
@@ -119,7 +124,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         if (weg) return
         gelesenSchon.current.add(r.id)
         const g = await rechnungNeuLesen(r)
-        if (!g.leer && (g.betrag != null || g.iban)) { const x = await erkanntNachtragen(r, g); if (!x.error && !x.leer) neu++ }
+        if (!g.leer && (g.betrag != null || g.iban || g.nummer)) { const x = await erkanntNachtragen(r, g); if (!x.error && !x.leer) neu++ }
       }
       if (!weg) { setLiestNach(0); if (neu) lade() }
     })()
@@ -380,7 +385,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
               <button className="bh-link" onClick={ansehenAuf} title={`Rechnung ansehen: ${r.rechnung_name || 'Rechnung'}`}><FileText size={14} strokeWidth={2.2} /> <span className="bh-dateiname">{r.rechnung_name || 'Rechnung'}</span></button>
               <small>{r.rechnung_von ? `von ${r.rechnung_von} · ` : ''}{datumZeit(r.rechnung_am)}{r.rechnung_betrag != null && <span style={{ color: abw ? '#f59e0b' : undefined }} title={r.betrag_erkannt ? 'Aus der PDF erkannt — bitte prüfen' : undefined}> · {euro(r.rechnung_betrag)}{r.betrag_erkannt ? ' (erkannt)' : ''}{abw ? ' ≠ Gesamt' : ''}</span>}</small>
               {r.rechnung_betrag == null && <button className="bh-link warn" onClick={ansehenAuf}><Pencil size={12} strokeWidth={2.4} /> Betrag fehlt — prüfen</button>}
-              {r.rechnung_iban && <button className="bh-iban" onClick={() => kopieren(r.rechnung_iban)} title="IBAN kopieren"><Copy size={12} strokeWidth={2.4} /> {ibanSchoen(r.rechnung_iban)}</button>}
+              {r.rechnung_nr && <small className="bh-renr">Nr. {r.rechnung_nr}</small>}
+              {r.rechnung_iban && (() => { const v = ibanVergleich(r.rechnung_iban, buch.map[i.name.toLowerCase()]); return <button className={'bh-iban' + (v === 'anders' ? ' rot' : v === 'gleich' ? ' gut' : '')} onClick={() => kopieren(r.rechnung_iban)} title={v === 'anders' ? 'ACHTUNG: IBAN anders als im Adressbuch — Rechnung ansehen' : v === 'gleich' ? 'IBAN wie im Adressbuch · kopieren' : 'IBAN kopieren (noch nicht im Adressbuch)'}>{v === 'anders' ? <ShieldAlert size={12} strokeWidth={2.4} /> : <Copy size={12} strokeWidth={2.4} />} {ibanSchoen(r.rechnung_iban)}</button> })()}
             </>
           ) : <small>{`fehlt${r.erinnert_am ? ` · erinnert ${datum(r.erinnert_am)}` : ''}`}</small>}
         </div>
@@ -427,25 +433,34 @@ export default function BuchhaltungTab({ userDisplayName }) {
   }
   const wiseOeffnen = async () => {
     const em = await empfaengerLaden()
+    setBuch(em)
     const zeilen = items
       .filter(i => statusVon(i.row) !== 'bezahlt' && gesamtVon(i).waehrung === 'EUR')
       .map(i => {
-        const e = em.map[i.name.toLowerCase()] || {}
-        const iban = String(i.row?.rechnung_iban || e.iban || '').replace(/\s/g, '').toUpperCase()
+        const e = em.map[i.name.toLowerCase()] || null
+        const rIban = String(i.row?.rechnung_iban || '').replace(/\s/g, '').toUpperCase()
+        const vgl = ibanVergleich(rIban, e)          // gleich | neu | anders | null
+        // Überwiesen wird an die IBAN aus dem Adressbuch; nur ohne Eintrag die von der Rechnung
+        const iban = e?.iban || rIban
         const betrag = restVon(i)
-        const ok = ibanGueltig(iban) && betrag > 0
+        const soll = gesamtVon(i).wert
+        const betragAbw = i.row?.rechnung_betrag != null && soll != null && Math.abs(Number(i.row.rechnung_betrag) - soll) >= 0.01
+        const ok = ibanGueltig(iban) && betrag > 0 && vgl !== 'anders'
         return {
           i, key: i.key, name: i.name, status: statusVon(i.row), betrag: betrag != null ? String(betrag).replace('.', ',') : '',
-          kontoinhaber: e.kontoinhaber || '', typ: e.typ || (i.gruppe ? 'INSTITUTION' : 'PRIVATE'), iban: iban ? ibanSchoen(iban) : '',
-          ibanAusRechnung: !!i.row?.rechnung_iban, zweck: `Rechnung ${i.p?.bezeichnung || ''}`.trim(),
+          kontoinhaber: e?.kontoinhaber || i.row?.rechnung_inhaber || '', typ: e?.typ || (i.gruppe ? 'INSTITUTION' : 'PRIVATE'), iban: iban ? ibanSchoen(iban) : '',
+          neu: !e, vgl, rIban, betragAbw, angezahlt: anzahlungSumme(i.row),
+          nr: i.row?.rechnung_nr || '', nrVorher: i.row?.rechnung_nr || '', zweck: `Rechnung ${i.p?.bezeichnung || ''}`.trim(),
           an: ok && statusVon(i.row) === 'rechnung',
         }
       })
     setWise({ zeilen, fehlt: em.fehlt, geladen: false, am: heuteIso() })
   }
+  const neueIbanUebernehmen = (key) => setWise(w => ({ ...w, zeilen: w.zeilen.map(z => z.key === key ? { ...z, iban: ibanSchoen(z.rIban), vgl: 'uebernommen', an: true } : z) }))
   const wiseZeile = (key, feld, wert) => setWise(w => ({ ...w, zeilen: w.zeilen.map(z => z.key === key ? { ...z, [feld]: wert } : z) }))
   const wiseProblem = (z) => {
     const iban = z.iban.replace(/\s/g, '').toUpperCase()
+    if (z.vgl === 'anders') return 'IBAN auf der Rechnung ist anders als im Adressbuch'
     if (!z.kontoinhaber.trim()) return 'Name wie auf dem Konto fehlt'
     if (!ibanGueltig(iban)) return iban ? 'IBAN ungültig' : 'IBAN fehlt'
     const b = zahlAus(z.betrag)
@@ -460,7 +475,9 @@ export default function BuchhaltungTab({ userDisplayName }) {
     const { error } = await empfaengerSpeichern(gewaehlt.map(z => ({ name: z.name, kontoinhaber: z.kontoinhaber, typ: z.typ, iban: z.iban })), userDisplayName)
     setBusy(null)
     if (error && !/zahlungsempfaenger/.test(error.message || '')) { alert('Empfänger nicht gespeichert: ' + error.message); return }
-    wiseHerunterladen(gewaehlt.map(z => ({ kontoinhaber: z.kontoinhaber.trim(), typ: z.typ, iban: z.iban, betrag: zahlAus(z.betrag), zweck: z.zweck })), heuteIso())
+    // eingetippte Rechnungsnummern an der Rechnung speichern
+    for (const z of gewaehlt.filter(z => z.nr.trim() !== z.nrVorher && (z.i.row?.halter || z.i.row)?.id)) await rechnungNrSpeichern(z.i.row.halter || z.i.row, z.nr)
+    wiseHerunterladen(gewaehlt.map(z => ({ kontoinhaber: z.kontoinhaber.trim(), typ: z.typ, iban: z.iban, betrag: zahlAus(z.betrag), zweck: z.nr.trim() || z.zweck })), heuteIso())
     setWise(w => ({ ...w, geladen: true, fehlt: w.fehlt || !!error }))
   }
   const wiseBezahlt = async () => {
@@ -472,6 +489,47 @@ export default function BuchhaltungTab({ userDisplayName }) {
     setBusy(null)
     if (fehler.length) alert('Nicht alles gespeichert:\n' + fehler.join('\n'))
     setWise(null); melde(`${gewaehlt.length - fehler.length} als bezahlt eingetragen (${datum(wise.am)}).`); lade()
+  }
+
+  // ── v5.46.0: Adressbuch ──────────────────────────────────────────────────
+  const buchOeffnen = async () => {
+    const em = await empfaengerLaden()
+    setBuch(em)
+    const ausListe = new Map()
+    for (const i of items) {
+      if (istManuell(i.row) && i.row.waehrung === 'USD') continue
+      const r = i.row?.halter || i.row
+      ausListe.set(i.name.toLowerCase(), { name: i.name, vorschlagName: r?.rechnung_inhaber || '', vorschlagIban: r?.rechnung_iban || '' })
+    }
+    const namen = [...new Set([...Object.values(em.map).map(e => e.name), ...[...ausListe.values()].map(x => x.name)])].sort((a, b) => a.localeCompare(b, 'de'))
+    const zeilen = namen.map(n => {
+      const e = em.map[n.toLowerCase()] || null
+      const v = ausListe.get(n.toLowerCase()) || {}
+      const kontoinhaber = e?.kontoinhaber || v.vorschlagName || ''
+      const iban = e?.iban || v.vorschlagIban || ''
+      return { name: n, e, kontoinhaber, typ: e?.typ || 'PRIVATE', iban: iban ? ibanSchoen(iban) : '', vorschlag: !e && !!(v.vorschlagName || v.vorschlagIban), geaendert: false }
+    })
+    setBuchFenster({ zeilen, filter: '', fehlt: em.fehlt })
+  }
+  const buchZeile = (name, feld, wert) => setBuchFenster(b => ({ ...b, zeilen: b.zeilen.map(z => z.name === name ? { ...z, [feld]: wert, geaendert: true } : z) }))
+  const buchSpeichern = async () => {
+    const zu = buchFenster.zeilen.filter(z => (z.geaendert || (z.vorschlag && z.uebernehmen)) && (z.kontoinhaber.trim() || z.iban.trim()))
+    const falsch = zu.filter(z => z.iban.trim() && !ibanGueltig(z.iban.replace(/\s/g, '').toUpperCase()))
+    if (falsch.length) { alert('IBAN ungültig bei: ' + falsch.map(z => z.name).join(', ')); return }
+    const ibanNeu = zu.filter(z => z.e?.iban && z.e.iban !== z.iban.replace(/\s/g, '').toUpperCase())
+    if (ibanNeu.length && !confirm(`IBAN geändert bei: ${ibanNeu.map(z => z.name).join(', ')}.\n\nWirklich speichern? Geänderte Bankdaten am besten kurz nachfragen.`)) return
+    setBusy('buch')
+    const { error } = await empfaengerSpeichern(zu, userDisplayName)
+    setBusy(null)
+    if (error) { alert('Nicht gespeichert: ' + (/zahlungsempfaenger/.test(error.message || '') ? 'Datenbank fehlt noch (sql/zahlungsempfaenger.sql + sql/adressbuch.sql).' : error.message)); return }
+    setBuchFenster(null); setBuch(await empfaengerLaden()); melde(`Adressbuch: ${zu.length} ${zu.length === 1 ? 'Eintrag' : 'Einträge'} gespeichert.`)
+  }
+  const buchLoeschen = async (z) => {
+    if (!z.e || !confirm(`${z.name} aus dem Adressbuch löschen?`)) return
+    const { error } = await empfaengerLoeschen(z.e.name)
+    if (error) { alert(error.message); return }
+    setBuchFenster(b => ({ ...b, zeilen: b.zeilen.map(x => x.name === z.name ? { ...x, e: null, kontoinhaber: '', iban: '', geaendert: false } : x) }))
+    setBuch(await empfaengerLaden())
   }
 
   // ── v5.44.0: Fenster „Rhythmus“ ──────────────────────────────────────────
@@ -547,6 +605,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         )}
         <label className="bh-suche"><Search size={14} strokeWidth={2.4} /><input value={suche} placeholder="Name suchen" onChange={e => setSuche(e.target.value)} />{suche && <button onClick={() => setSuche('')} title="Leeren"><X size={13} /></button>}</label>
         <div className="bh-kopf-rechts">
+          <button className="bh-k" onClick={buchOeffnen} title="Bankdaten je Person: Name/Firma, Privat/Firma, IBAN — dahin wird überwiesen"><BookUser size={14} strokeWidth={2.4} /> Adressbuch</button>
           {items.length > 0 && modus !== 'frei' && <button className="bh-k" onClick={wiseOeffnen} title="Datei für Wise-Sammelüberweisungen (Zahlungen → Sammelüberweisungen)"><Landmark size={14} strokeWidth={2.4} /> Für Wise</button>}
           <button className="bh-k" onClick={rhOeffnen} title="Wer wird wöchentlich statt monatlich bezahlt?"><Repeat size={14} strokeWidth={2.4} /> Rhythmus{rh.woechentlich.length ? ` (${rh.woechentlich.length} wöchentlich)` : ''}</button>
           <button className="bh-k" onClick={grpOeffnen} title="Mehrere Chatter mit EINER gemeinsamen Rechnung (z. B. Paar mit Firma)"><Link2 size={14} strokeWidth={2.4} /> Zusammenlegen{gruppen.liste.length ? ` (${gruppen.liste.length})` : ''}</button>
@@ -632,7 +691,8 @@ export default function BuchhaltungTab({ userDisplayName }) {
                       <button className="bh-link" onClick={() => setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: G.waehrung, gesamt: g, wer: i.name })} title={`Rechnung ansehen: ${r.rechnung_name || 'Rechnung'}`}><FileText size={14} strokeWidth={2.2} /> <span className="bh-dateiname">{r.rechnung_name || 'Rechnung'}</span></button>
                       <small>{r.rechnung_von && r.rechnung_von !== i.name ? `von ${r.rechnung_von} · ` : ''}{datumZeit(r.rechnung_am)}{r.rechnung_betrag != null && <span style={{ color: abw ? '#f59e0b' : undefined }} title={r.betrag_erkannt ? 'Aus der PDF erkannt — bitte prüfen' : undefined}> · {geld(r.rechnung_betrag, G.waehrung)}{r.betrag_erkannt ? ' (erkannt)' : ''}{abw ? ' ≠ Gesamt' : ''}</span>}</small>
                       {r.rechnung_betrag == null && <button className="bh-link warn" onClick={() => setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: null, waehrung: G.waehrung, gesamt: g, wer: i.name })}><Pencil size={12} strokeWidth={2.4} /> Betrag fehlt — prüfen</button>}
-                      {r.rechnung_iban && <button className="bh-iban" onClick={() => kopieren(r.rechnung_iban)} title="IBAN kopieren"><Copy size={12} strokeWidth={2.4} /> {ibanSchoen(r.rechnung_iban)}</button>}
+                      {r.rechnung_nr && <small className="bh-renr">Nr. {r.rechnung_nr}</small>}
+              {r.rechnung_iban && (() => { const v = ibanVergleich(r.rechnung_iban, buch.map[i.name.toLowerCase()]); return <button className={'bh-iban' + (v === 'anders' ? ' rot' : v === 'gleich' ? ' gut' : '')} onClick={() => kopieren(r.rechnung_iban)} title={v === 'anders' ? 'ACHTUNG: IBAN anders als im Adressbuch — Rechnung ansehen' : v === 'gleich' ? 'IBAN wie im Adressbuch · kopieren' : 'IBAN kopieren (noch nicht im Adressbuch)'}>{v === 'anders' ? <ShieldAlert size={12} strokeWidth={2.4} /> : <Copy size={12} strokeWidth={2.4} />} {ibanSchoen(r.rechnung_iban)}</button> })()}
                     </>
                   ) : <small>{`fehlt${r?.erinnert_am ? ` · erinnert ${datum(r.erinnert_am)}` : ''}`}</small>}
                 </div>
@@ -678,6 +738,35 @@ export default function BuchhaltungTab({ userDisplayName }) {
         </div>
       )}
 
+      {buchFenster && createPortal(
+        <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && busy !== 'buch') setBuchFenster(null) }}>
+          <div className="bh-fenster bh-wise">
+            <div className="bh-fenster-kopf"><b><BookUser size={16} strokeWidth={2.4} /> Adressbuch</b><button className="bh-x" onClick={() => setBuchFenster(null)}><X size={18} /></button></div>
+            <div className="bh-fenster-text">Hierhin wird überwiesen (auch bei „Für Wise“). Steht auf einer neuen Rechnung eine andere IBAN, wird das rot markiert und nicht automatisch übernommen. Lila = Vorschlag aus der Rechnung, noch nicht gespeichert.</div>
+            {buchFenster.fehlt && <div className="bh-warn">Datenbank fehlt noch: sql/zahlungsempfaenger.sql und sql/adressbuch.sql in Supabase ausführen.</div>}
+            <input className="bh-grp-suche" value={buchFenster.filter} placeholder="Name suchen" onChange={e => setBuchFenster({ ...buchFenster, filter: e.target.value })} />
+            <div className="bh-wise-liste">
+              {buchFenster.zeilen.filter(z => !buchFenster.filter.trim() || (z.name + ' ' + z.kontoinhaber).toLowerCase().includes(buchFenster.filter.trim().toLowerCase())).map(z => (
+                <div key={z.name} className={'bh-wise-zeile bh-buch-zeile an' + (z.vorschlag && !z.geaendert ? ' vorschlag' : '')}>
+                  <div className="bh-wise-wer"><b>{z.name}</b>{z.e ? <small className="leise">{z.e.bestaetigt_am ? `bestätigt ${datum(z.e.bestaetigt_am)}` : z.e.geaendert_am ? `gespeichert ${datum(z.e.geaendert_am)}` : ''}</small> : <small className="lila">{z.vorschlag ? 'Vorschlag aus Rechnung' : 'noch leer'}</small>}</div>
+                  <input className="bh-wise-name" value={z.kontoinhaber} placeholder="Name / Firma wie auf dem Konto" onChange={e => buchZeile(z.name, 'kontoinhaber', e.target.value)} />
+                  <div className="bh-umschalter bh-wise-typ">
+                    <button className={z.typ === 'PRIVATE' ? 'an' : ''} onClick={() => buchZeile(z.name, 'typ', 'PRIVATE')}>Privat</button>
+                    <button className={z.typ === 'INSTITUTION' ? 'an' : ''} onClick={() => buchZeile(z.name, 'typ', 'INSTITUTION')}>Firma</button>
+                  </div>
+                  <input className="bh-wise-iban" value={z.iban} placeholder="IBAN" onChange={e => buchZeile(z.name, 'iban', e.target.value)} />
+                  <div className="bh-wise-betrag bh-buch-aktion">
+                    {z.vorschlag && !z.geaendert && <button className="bh-k" title="Vorschlag übernehmen" onClick={() => buchZeile(z.name, 'kontoinhaber', z.kontoinhaber)}><Check size={13} strokeWidth={2.6} /></button>}
+                    {z.e && <button className="bh-x" title="Aus dem Adressbuch löschen" onClick={() => buchLoeschen(z)}><Trash2 size={14} /></button>}
+                  </div>
+                  {z.iban.trim() && !ibanGueltig(z.iban.replace(/\s/g, '').toUpperCase()) && <small className="warn">IBAN ungültig</small>}
+                </div>
+              ))}
+            </div>
+            <div className="bh-fenster-fuss"><button className="bh-k" onClick={() => setBuchFenster(null)}>Abbrechen</button><button className="bh-k bh-p" disabled={busy === 'buch' || !buchFenster.zeilen.some(z => z.geaendert)} onClick={buchSpeichern}><Check size={14} strokeWidth={2.6} /> Speichern</button></div>
+          </div>
+        </div>, document.body)}
+
       {wise && createPortal(
         <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget && busy !== 'wise') setWise(null) }}>
           <div className="bh-fenster bh-wise">
@@ -696,7 +785,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
                       {z.i.row?.rechnung_url && (
                         <button className="bh-link bh-wise-rechnung" title="Rechnung ansehen (z. B. Namen kopieren)" onClick={() => {
                           const r = z.i.row.halter || z.i.row
-                          setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: 'EUR', gesamt: gesamtVon(z.i).wert, wer: z.name })
+                          setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: 'EUR', gesamt: gesamtVon(z.i).wert, wer: z.name, buchName: z.name })
                         }}><FileText size={13} strokeWidth={2.2} /> <span className="bh-dateiname">{z.i.row.rechnung_name || 'Rechnung'}</span></button>
                       )}
                     </div>
@@ -705,16 +794,33 @@ export default function BuchhaltungTab({ userDisplayName }) {
                       <button className={z.typ === 'PRIVATE' ? 'an' : ''} onClick={() => wiseZeile(z.key, 'typ', 'PRIVATE')}>Privat</button>
                       <button className={z.typ === 'INSTITUTION' ? 'an' : ''} onClick={() => wiseZeile(z.key, 'typ', 'INSTITUTION')}>Firma</button>
                     </div>
-                    <input className="bh-wise-iban" value={z.iban} placeholder="IBAN" title={z.ibanAusRechnung ? 'aus der Rechnung' : 'zuletzt benutzt'} onChange={e => wiseZeile(z.key, 'iban', e.target.value)} />
+                    <input className="bh-wise-iban" value={z.iban} placeholder="IBAN" title={z.neu ? 'aus der Rechnung — wird ins Adressbuch übernommen' : 'aus dem Adressbuch'} onChange={e => wiseZeile(z.key, 'iban', e.target.value)} />
                     <input className="bh-wise-betrag" inputMode="decimal" value={z.betrag} onChange={e => wiseZeile(z.key, 'betrag', e.target.value)} />
-                    <small className={prob && z.an ? 'warn' : ''}>{prob ? prob : `Zweck: ${z.zweck}`}</small>
+                    <label className="bh-wise-nr"><span>Betreff</span><input value={z.nr} placeholder={`fehlt → „${z.zweck}“`} onChange={e => wiseZeile(z.key, 'nr', e.target.value)} /></label>
+                    <div className="bh-wise-checks">
+                      {z.i.row?.rechnung_url ? (z.nr.trim() ? <span className="gut">✓ Rechnungsnr.</span> : <span className="warn">Rechnungsnr. fehlt</span>) : <span className="leise">keine Rechnung</span>}
+                      {z.i.row?.rechnung_betrag != null && (z.betragAbw ? <span className="warn">⚠ Betrag weicht ab</span> : <span className="gut">✓ Betrag passt</span>)}
+                      {z.angezahlt ? <span className="warn">{euro(z.angezahlt)} angezahlt → Rest</span> : null}
+                      {z.vgl === 'gleich' && <span className="gut">✓ IBAN wie Adressbuch</span>}
+                      {z.vgl === 'neu' && <span className="lila">neu – kommt ins Adressbuch</span>}
+                      {z.vgl === 'uebernommen' && <span className="lila">neue IBAN übernommen</span>}
+                      {z.vgl === null && z.neu && <span className="warn">IBAN fehlt auf der Rechnung</span>}
+                      {z.vgl === null && !z.neu && <span className="leise">IBAN aus dem Adressbuch</span>}
+                      {prob && z.an && z.vgl !== 'anders' && <span className="warn">⚠ {prob}</span>}
+                    </div>
+                    {z.vgl === 'anders' && (
+                      <div className="bh-wise-alarm">
+                        <span><ShieldAlert size={14} strokeWidth={2.4} /> IBAN auf der Rechnung (<b>{ibanSchoen(z.rIban)}</b>) ist <b>anders</b> als im Adressbuch. Erst klären — geänderte Bankdaten kurz beim Chatter nachfragen.</span>
+                        <button className="bh-k" onClick={() => { if (confirm(`${z.name}: neue IBAN ${ibanSchoen(z.rIban)} übernehmen?\n\nBeim Herunterladen wird sie auch ins Adressbuch geschrieben.`)) neueIbanUebernehmen(z.key) }}>Neue IBAN übernehmen</button>
+                      </div>
+                    )}
                   </div>
                 )
               })}
             </div>
             {(() => {
               const g = wise.zeilen.filter(z => z.an)
-              return <div className="bh-fenster-text"><b style={{ color: 'var(--text-primary)' }}>{g.length} Überweisung{g.length === 1 ? '' : 'en'} · {euro(g.reduce((t, z) => t + (zahlAus(z.betrag) || 0), 0))}</b>{g.some(z => !z.ibanAusRechnung) ? ' · IBANs ohne Rechnung stammen von der letzten Zahlung — bitte prüfen' : ''}</div>
+              return <div className="bh-fenster-text"><b style={{ color: 'var(--text-primary)' }}>{g.length} Überweisung{g.length === 1 ? '' : 'en'} · {euro(g.reduce((t, z) => t + (zahlAus(z.betrag) || 0), 0))}</b>{g.some(z => z.neu) ? ' · Neue Einträge (lila) werden beim Herunterladen ins Adressbuch übernommen' : ''}</div>
             })()}
             {wise.geladen && (
               <div className="bh-ok"><Check size={15} strokeWidth={2.6} /> Datei heruntergeladen. In Wise: Zahlungen → Sammelüberweisungen → Datei hochladen → prüfen → bezahlen. Danach hier eintragen:</div>
@@ -850,7 +956,9 @@ export default function BuchhaltungTab({ userDisplayName }) {
           </div>
         </div>, document.body)}
 
-      {ansehen && <Ansehen a={ansehen} onZu={() => setAnsehen(null)} onKopieren={kopieren} onGespeichert={(t) => { setAnsehen(null); melde(t); lade() }} />}
+      {ansehen && <Ansehen a={ansehen} eintrag={buch.map[String(ansehen.buchName || ansehen.wer || '').toLowerCase()] || null} buchFehlt={buch.fehlt} wer={userDisplayName}
+        onZu={() => setAnsehen(null)} onKopieren={kopieren} onGespeichert={(t) => { setAnsehen(null); melde(t); lade() }}
+        onBuch={async () => setBuch(await empfaengerLaden())} />}
 
       {anz && createPortal(
         <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget) setAnz(null) }}>
@@ -935,10 +1043,14 @@ export default function BuchhaltungTab({ userDisplayName }) {
 
 // Rechnung direkt in der Buchhaltung ansehen (PDF im Fenster, Foto als Bild)
 // v5.38.1: unten Betrag + IBAN prüfen/eintragen, „Aus PDF lesen“, Vergleich mit Gesamt
-function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
+function Ansehen({ a, eintrag, buchFehlt, wer, onZu, onKopieren, onGespeichert, onBuch }) {
   const [url, setUrl] = useState(null)
   const [betrag, setBetrag] = useState(a.betrag != null ? String(a.betrag).replace('.', ',') : '')
   const [iban, setIban] = useState(a.iban ? ibanSchoen(a.iban) : '')
+  const [nummer, setNummer] = useState(a.row?.rechnung_nr || '')          // v5.46.0
+  const [inhaber, setInhaber] = useState(a.row?.rechnung_inhaber || '')
+  const [typ, setTyp] = useState(eintrag?.typ || 'PRIVATE')
+  const [buchOk, setBuchOk] = useState('')
   const [lesen, setLesen] = useState('')
   const [speichert, setSpeichert] = useState(false)
   const [gelesen, setGelesen] = useState(null)      // { text: [...], fehler } — was in der PDF steht
@@ -952,6 +1064,8 @@ function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
     if (g.leer) { setLesen(g.grund === 'foto' ? 'foto' : g.grund === 'scan' ? 'scan' : g.grund === 'fehler' ? 'fehler' : 'nichts'); return }
     if (g.betrag != null) setBetrag(String(g.betrag).replace('.', ','))
     if (g.iban) setIban(ibanSchoen(g.iban))
+    if (g.nummer && !nummer) setNummer(g.nummer)
+    if (g.inhaber && !inhaber) setInhaber(g.inhaber)
     setLesen(g.betrag != null ? 'ok' : 'ohne-summe')
   }
   // Fehlt der Betrag noch: beim Öffnen einmal automatisch aus der PDF lesen
@@ -968,7 +1082,7 @@ function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
   }
   const speichern = async () => {
     setSpeichert(true)
-    const r = await rechnungsangabenSpeichern(a.row, { betrag, iban })
+    const r = await rechnungsangabenSpeichern(a.row, { betrag, iban, nummer, inhaber })
     setSpeichert(false)
     if (r.error) { alert('Nicht gespeichert: ' + r.error.message); return }
     onGespeichert(`${a.wer}: Rechnungsbetrag ${b != null ? geld(b, a.waehrung) : 'entfernt'} gespeichert.`)
@@ -999,6 +1113,37 @@ function Ansehen({ a, onZu, onKopieren, onGespeichert }) {
             <label className="bh-feld"><span>Betrag auf der Rechnung ({a.waehrung === 'USD' ? '$' : '€'})</span><input inputMode="decimal" value={betrag} placeholder="z. B. 447,48" onChange={e => setBetrag(e.target.value)} /></label>
             <label className="bh-feld bh-pruefen-iban"><span>IBAN</span><input value={iban} placeholder="DE…" onChange={e => setIban(e.target.value)} /></label>
             {iban.trim() && <button className="bh-k" onClick={() => onKopieren(iban)} title="IBAN kopieren"><Copy size={14} strokeWidth={2.2} /></button>}
+            <label className="bh-feld"><span title="wird bei Wise als Betreff benutzt">Rechnungsnummer</span><input value={nummer} placeholder="z. B. RE-2026-017" onChange={e => setNummer(e.target.value)} /></label>
+            <label className="bh-feld bh-pruefen-iban"><span>Name / Firma auf der Rechnung</span><input value={inhaber} placeholder="wie auf dem Bankkonto" onChange={e => setInhaber(e.target.value)} /></label>
+            {(() => {
+              const vI = ibanVergleich(iban, eintrag), vN = nameVergleich(inhaber, eintrag)
+              const uebernehmen = async () => {
+                const i = iban.replace(/\s/g, '').toUpperCase()
+                if (!inhaber.trim() || !ibanGueltig(i)) { alert('Für das Adressbuch bitte Name/Firma und eine gültige IBAN eintragen.'); return }
+                if (eintrag?.iban && eintrag.iban !== i && !confirm(`Im Adressbuch steht für ${a.wer} eine andere IBAN (${ibanSchoen(eintrag.iban)}).\n\nWirklich durch ${ibanSchoen(i)} ersetzen? Geänderte Bankdaten am besten kurz beim Chatter nachfragen.`)) return
+                const { error } = await empfaengerSpeichern([{ name: a.wer, kontoinhaber: inhaber, typ, iban: i }], wer)
+                if (error) { alert('Nicht gespeichert: ' + (/zahlungsempfaenger/.test(error.message || '') ? 'Datenbank fehlt noch (sql/zahlungsempfaenger.sql + sql/adressbuch.sql).' : error.message)); return }
+                setBuchOk('Ins Adressbuch übernommen.'); onBuch?.()
+              }
+              return (
+                <div className="bh-buch-abgleich">
+                  <b><BookUser size={14} strokeWidth={2.4} /> Adressbuch</b>
+                  {buchFehlt ? <span className="warn">Datenbank fehlt noch (sql/zahlungsempfaenger.sql)</span> : !eintrag ? <span className="lila">noch kein Eintrag für {a.wer}</span> : <>
+                    {vN === 'gleich' && <span className="gut">✓ Name wie Adressbuch</span>}
+                    {vN === 'anders' && <span className="warn">⚠ Name anders als Adressbuch ({eintrag.kontoinhaber})</span>}
+                    {vI === 'gleich' && <span className="gut">✓ IBAN wie Adressbuch</span>}
+                    {vI === 'anders' && <span className="rot"><ShieldAlert size={13} strokeWidth={2.4} /> IBAN anders als Adressbuch ({ibanSchoen(eintrag.iban)})</span>}
+                  </>}
+                  {!buchFehlt && (!eintrag || vI === 'anders' || vN === 'anders' || (eintrag && !eintrag.kontoinhaber)) && (
+                    <span className="bh-buch-knopf">
+                      <span className="bh-umschalter"><button className={typ === 'PRIVATE' ? 'an' : ''} onClick={() => setTyp('PRIVATE')}>Privat</button><button className={typ === 'INSTITUTION' ? 'an' : ''} onClick={() => setTyp('INSTITUTION')}>Firma</button></span>
+                      <button className="bh-k" onClick={uebernehmen}><BookUser size={14} strokeWidth={2.2} /> {eintrag ? 'Adressbuch aktualisieren' : 'Ins Adressbuch'}</button>
+                    </span>
+                  )}
+                  {buchOk && <span className="gut">{buchOk}</span>}
+                </div>
+              )
+            })()}
             <div className="bh-pruefen-info">
               {a.gesamt != null && <span>Gesamt laut Dashboard: <b>{geld(a.gesamt, a.waehrung)}</b></span>}
               {diff != null && (diff === 0

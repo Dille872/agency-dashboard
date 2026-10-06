@@ -76,6 +76,7 @@ from (values
   ('buchhaltung-upload.sql', (exists(select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relname='chatter_abrechnungen' and t.tgname='a_chatter_abrechnungen_schuetzen' and (t.tgtype & 4) = 4))),
   ('buchhaltung-team.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='betrag_manuell'))),
   ('buchhaltung-entwurf.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='mitgeteilt_am'))),
+  ('adressbuch.sql', (exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='rechnung_nr') and exists(select 1 from information_schema.columns where table_schema='public' and table_name='zahlungsempfaenger' and column_name='bestaetigt_am'))),
   ('zahlungsempfaenger.sql', (to_regclass('public.zahlungsempfaenger') is not null)),
   ('buchhaltung-rhythmus.sql', (to_regclass('public.abrechnung_rhythmus') is not null)),
   ('buchhaltung-gruppen.sql', (to_regclass('public.abrechnung_gruppen') is not null and exists(select 1 from information_schema.columns where table_schema='public' and table_name='chatter_abrechnungen' and column_name='gruppe'))),
