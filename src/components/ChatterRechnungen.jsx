@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Receipt, Upload, FileText, Clock, CircleCheck, MessageCircleWarning } from 'lucide-react'
-import { STATUS, datum, datumZeit, monatName, abrechnungenLaden, rechnungHochladen, meineZeile } from '../buchhaltung'
+import { STATUS, datum, datumZeit, monatName, abrechnungenLaden, rechnungHochladen, meineZeile, letzteWoche, plusTage, wocheText, heuteIso } from '../buchhaltung'
 import { oeffnen } from '../medien'
 import { supabase } from '../supabase'
 
@@ -12,6 +12,8 @@ import { supabase } from '../supabase'
 // modus 'liste' (Mehr):       immer: Upload-Knopf + welche Rechnung ist da/bezahlt.
 // v5.43.0: Gemeinsame Rechnung (z. B. Alessia & Pascal): Hinweis „einer von euch
 // reicht“; hat der Partner schon hochgeladen, steht das da statt der Erinnerung.
+// v5.44.0: Wöchentlich abgerechnete Chatter (z. B. Etienne) wählen Wochen statt
+// Monate; die Karte erscheint, sobald eine Woche vorbei ist (bis 10 Tage danach).
 
 const monate = (n) => {
   const d = new Date(); const out = []
@@ -26,6 +28,7 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
   const [meldung, setMeldung] = useState({})
   const [monat, setMonat] = useState(monate(1)[0])   // Vormonat
   const [gruppe, setGruppe] = useState(null)         // v5.43.0: { name, mitglieder, rechnungen: [{ wer, monat, status, rechnung_am }] }
+  const [rh, setRh] = useState(null)                 // v5.44.0: { rhythmus: 'monat' | 'woche', wochenstart }
   const datei = useRef(null)
   const ziel = useRef(null)                          // { row } oder { monat }
 
@@ -35,6 +38,9 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
     setListe(error ? [] : (data || []).filter(a => !a.art || a.art === 'chatter'))
     const g = await supabase.rpc('meine_rechnungsgruppe').then(r => r.error ? null : r.data).catch(() => null)
     setGruppe(g && g.name ? g : null)
+    const r = await supabase.rpc('mein_abrechnungs_rhythmus').then(x => x.error ? null : x.data).catch(() => null)
+    setRh(r)
+    if (r?.rhythmus === 'woche') setMonat(m => (/^\d{4}-\d{2}-\d{2}$/.test(m) ? m : letzteWoche(r.wochenstart || 0)))
   }
   useEffect(() => { lade() }, [displayName]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -46,7 +52,7 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
     setBusy(k); setMeldung(m => ({ ...m, [k]: '' }))
     let row = z.row
     if (!row) {
-      const r = await meineZeile(displayName, z.monat)
+      const r = await meineZeile(displayName, z.monat, z.woche ? { ab: z.monat, ende: plusTage(z.monat, 6) } : null)
       if (r.error) { setBusy(null); setMeldung(m => ({ ...m, [k]: 'Hat nicht geklappt: ' + r.error.message })); return }
       row = r.row
     }
@@ -58,7 +64,12 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
   }
 
   if (!liste) return null
-  const zeileVon = (m) => liste.find(a => a.monat === m && !a.frei)
+  const woechentlich = rh?.rhythmus === 'woche'
+  const istWoche = (m) => /^\d{4}-\d{2}-\d{2}$/.test(m)
+  // m = Monat (YYYY-MM) oder Wochenbeginn (YYYY-MM-DD)
+  const zeileVon = (m) => istWoche(m) ? liste.find(a => a.von === m && a.bis === plusTage(m, 6)) : liste.find(a => a.monat === m && !a.frei)
+  const titelVon = (m) => istWoche(m) ? `die Woche ${wocheText(m)}` : monatName(m)
+  const auswahl = woechentlich ? Array.from({ length: 6 }, (_, n) => plusTage(letzteWoche(rh.wochenstart || 0), -7 * n)) : monate(3)
   // Partner aus der Gruppe hat für diesen Monat schon hochgeladen (neueste zuerst)
   const partnerVon = (m) => (gruppe?.rechnungen || []).filter(r => r.monat === m && r.rechnung_am).sort((a, b) => String(b.rechnung_am).localeCompare(String(a.rechnung_am)))[0] || null
   const gruppenText = gruppe ? `Ihr schreibt eine gemeinsame Rechnung (${gruppe.name}). Einer von euch lädt sie hoch – das reicht.` : ''
@@ -66,14 +77,17 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
 
   // ── Startseite: nur wenn es etwas zu tun gibt ──────────────────────────────
   if (modus === 'karte') {
-    const vormonat = monate(1)[0]
+    const vormonat = woechentlich ? letzteWoche(rh.wochenstart || 0) : monate(1)[0]
     const vm = zeileVon(vormonat)
     // Rückfrage erledigt, wenn der Partner danach eine neue gemeinsame Rechnung hochgeladen hat
     const karten = liste.filter(a => a.status === 'klaerung' && !(partnerVon(a.monat) && String(partnerVon(a.monat).rechnung_am) > String(a.klaerung_am || '')))
       .map(a => ({ row: a, monat: a.monat, titel: a.bezeichnung || monatName(a.monat), klaerung: true }))
-    if (tagHeute() <= 15 && !(vm && (vm.rechnung_url || vm.status === 'bezahlt')) && !karten.some(k => k.monat === vormonat)) {
-      const p = partnerVon(vormonat)
-      karten.unshift({ row: vm || null, monat: vormonat, titel: monatName(vormonat), klaerung: false, partner: p })
+    const faellig = woechentlich
+      ? (new Date(heuteIso() + 'T12:00:00') - new Date(plusTage(vormonat, 6) + 'T12:00:00')) / 864e5 <= 10
+      : tagHeute() <= 15
+    if (faellig && !(vm && (vm.rechnung_url || vm.status === 'bezahlt')) && !karten.some(k => (k.row?.von || k.monat) === (vm?.von || vormonat))) {
+      const p = woechentlich ? null : partnerVon(vormonat)
+      karten.unshift({ row: vm || null, monat: vormonat, titel: titelVon(vormonat), klaerung: false, partner: p, woche: woechentlich })
     }
     if (!karten.length) return null
     return (
@@ -91,7 +105,7 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
                 </div>
               </div>
               {k.klaerung && k.row.klaerung_notiz && <div className="cr-klaerung"><MessageCircleWarning size={15} strokeWidth={2.3} /> {k.row.klaerung_notiz}</div>}
-              {k.partner ? <div className="cr-partner"><CircleCheck size={15} strokeWidth={2.4} /> {k.partner.wer} hat eure gemeinsame Rechnung hochgeladen ({datumZeit(k.partner.rechnung_am)}).</div> : <button className="cr-hoch" disabled={isPreview || busy === key} onClick={() => start(k.row ? { row: k.row } : { monat: k.monat })}>
+              {k.partner ? <div className="cr-partner"><CircleCheck size={15} strokeWidth={2.4} /> {k.partner.wer} hat eure gemeinsame Rechnung hochgeladen ({datumZeit(k.partner.rechnung_am)}).</div> : <button className="cr-hoch" disabled={isPreview || busy === key} onClick={() => start(k.row ? { row: k.row } : { monat: k.monat, woche: k.woche })}>
                 <Upload size={17} strokeWidth={2.4} /> {busy === key ? 'Lädt hoch …' : k.klaerung ? 'Neue Rechnung hochladen' : 'Rechnung hochladen'}
                 <small>PDF oder Foto</small>
               </button>}
@@ -115,13 +129,13 @@ export default function ChatterRechnungen({ displayName, isPreview, modus = 'kar
         {gruppe && <div className="cr-hinweis">{gruppenText}</div>}
         <div className="cr-neu">
           <select value={monat} onChange={e => setMonat(e.target.value)}>
-            {monate(3).map(m => <option key={m} value={m}>{monatName(m)}</option>)}
+            {auswahl.map(m => <option key={m} value={m}>{istWoche(m) ? `Woche ${wocheText(m)}` : monatName(m)}</option>)}
           </select>
-          <button className="cr-neu-knopf" disabled={isPreview || gesperrt || busy === keyNeu} onClick={() => start(gewaehlt ? { row: gewaehlt } : { monat })}>
+          <button className="cr-neu-knopf" disabled={isPreview || gesperrt || busy === keyNeu} onClick={() => start(gewaehlt ? { row: gewaehlt } : { monat, woche: istWoche(monat) })}>
             <Upload size={15} strokeWidth={2.4} /> {busy === keyNeu ? 'Lädt hoch …' : gewaehlt?.rechnung_url ? 'Andere Datei hochladen' : 'Rechnung hochladen'}
           </button>
         </div>
-        {gesperrt && <div className="cr-hinweis">Für {monatName(monat)} ist schon alles bezahlt.</div>}
+        {gesperrt && <div className="cr-hinweis">Für {titelVon(monat)} ist schon alles bezahlt.</div>}
         {!gesperrt && !gewaehlt?.rechnung_url && partnerVon(monat) && <div className="cr-partner"><CircleCheck size={14} strokeWidth={2.4} /> {partnerVon(monat).wer} hat eure gemeinsame Rechnung für {monatName(monat)} hochgeladen.</div>}
         {meldung[keyNeu] && <div className="cr-meldung">{meldung[keyNeu]}</div>}
         {liste.filter(a => a.rechnung_url || a.status !== 'offen').map(a => {

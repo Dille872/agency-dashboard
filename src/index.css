@@ -741,3 +741,35 @@ th { text-align: left; }
   .bh-gt-knopf { margin-left: auto; }
 }
 .cr-partner { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: #34d399; background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.25); border-radius: 10px; padding: 9px 11px; margin-top: 8px; line-height: 1.4; }
+
+/* ── v5.44.0: Buchhaltung · wöchentlich abrechnen ────────────────────── */
+.bh-woche { display: flex; align-items: center; gap: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+.bh-woche button { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 7px; border: none; background: var(--bg-card2); color: var(--text-secondary); cursor: pointer; }
+.bh-woche button:hover { color: var(--text-primary); }
+.bh-woche span { font-size: 13px; font-weight: 600; padding: 0 8px; white-space: nowrap; color: var(--text-primary); }
+.bh-art.bh-art-woche { color: #22d3ee; border-color: rgba(34,211,238,.6); }
+.bh-wochenbox { margin-top: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.bh-wochenbox-kopf { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-primary); margin-bottom: 2px; }
+.bh-wochenbox-kopf svg { color: #22d3ee; }
+.bh-wochenbox-zeile { display: grid; grid-template-columns: 140px 1fr 140px; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+.bh-wochenbox-zeile > div:first-child { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.bh-wochenbox-zeile small { font-size: 11.5px; color: var(--text-muted); }
+.bh-wochen { display: flex; gap: 6px; flex-wrap: wrap; }
+.bh-wchip { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 1px solid var(--border); background: var(--bg-card2); border-radius: 9px; padding: 6px 9px; font: 11.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; text-align: left; }
+.bh-wchip b { font-size: 12px; color: var(--text-secondary); }
+.bh-wchip:hover { border-color: var(--border-bright); }
+.bh-wchip.bezahlt { border-color: rgba(16,185,129,.35); } .bh-wchip.bezahlt b { color: #34d399; }
+.bh-wchip.rechnung { border-color: rgba(96,165,250,.35); } .bh-wchip.rechnung b { color: #60a5fa; }
+.bh-wchip.klaerung { border-color: rgba(245,158,11,.35); } .bh-wchip.klaerung b { color: #f59e0b; }
+.bh-wchip.laeuft { border-style: dashed; } .bh-wchip.laeuft b { color: #c4b5fd; }
+.bh-wochenbox-summe { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+.bh-wochenbox-summe b { font-family: ui-monospace, monospace; color: #34d399; font-size: 14px; }
+.bh-rh-liste { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; margin-bottom: 6px; }
+.bh-rh-zeile { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--text-secondary); }
+.bh-rh-zeile span.an { color: var(--text-primary); font-weight: 700; }
+.bh-rh-zeile .bh-umschalter button { padding: 4px 10px; font-size: 12px; }
+@media (max-width: 700px) {
+  .bh-wochenbox-zeile { grid-template-columns: 1fr auto; }
+  .bh-wochen { grid-column: 1 / -1; grid-row: 2; }
+  .bh-woche { width: 100%; justify-content: space-between; }
+}

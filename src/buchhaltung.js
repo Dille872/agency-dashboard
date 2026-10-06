@@ -100,7 +100,9 @@ export function periode({ monat, von, bis, frei }) {
 }
 
 // Live gerechnet (wie Billing) + was schon gespeichert ist, für einen Zeitraum
-export async function zeitraumLaden(p) {
+// v5.44.0: opt.nur = nur diese Namen (Woche) · opt.ohneLive = für diese Namen keine
+// Live-Monatszahlen (wöchentliche Chatter im Monat); gespeicherte Zeilen bleiben sichtbar.
+export async function zeitraumLaden(p, opt = {}) {
   const [c, s, al, snaps, kurse, gesp] = await Promise.all([
     supabase.from('chatters_contact').select('name, active, telegram_id').order('name'),
     supabase.from('billing_settings').select('*').eq('person_type', 'chatter'),
@@ -118,15 +120,19 @@ export async function zeitraumLaden(p) {
   const tageSoll = Math.round((new Date(p.ende + 'T12:00:00') - new Date(p.ab + 'T12:00:00')) / 864e5) + 1
   const gespeichert = gesp.data || []
   const live = new Map()
+  const nur = opt.nur ? new Set(opt.nur.map(n => String(n).toLowerCase())) : null
+  const ohne = new Set((opt.ohneLive || []).map(n => String(n).toLowerCase()))
   for (const ch of chatters) {
+    if (nur && !nur.has(ch.name.toLowerCase())) continue
+    if (ohne.has(ch.name.toLowerCase())) continue
     const st = settings.find(x => x.person_name === ch.name)
     const rev = proPerson[ch.name] || { chat: 0, total: 0 }
     const x = chatterRechnung(st, rev, p.bezug)
     if (!x || !(x.auszahlung > 0) || istInaktiv(st, p.bezug)) continue
     live.set(ch.name, liveZeile(ch.name, st, rev, x, kurs))
   }
-  const chatterZeilen = gespeichert.filter(r => !istManuell(r))
-  const manuell = gespeichert.filter(istManuell)
+  const chatterZeilen = gespeichert.filter(r => !istManuell(r) && (!nur || nur.has(String(r.chatter_name).toLowerCase())))
+  const manuell = nur ? [] : gespeichert.filter(istManuell)
   const namen = [...new Set([...live.keys(), ...chatterZeilen.map(r => r.chatter_name)])].sort((a, b) => a.localeCompare(b, 'de'))
   const telegram = Object.fromEntries(chatters.map(ch => [ch.name, ch.telegram_id || null]))
   const items = [
@@ -171,10 +177,11 @@ export async function zeileSichern(item, p, wer) {
 }
 
 // Chatter: eigene Zeile für einen Monat holen oder anlegen (nur Name + Monat)
-export async function meineZeile(name, monat) {
-  const p = periode({ monat, frei: false })
+// v5.44.0: woche = { ab, ende } für wöchentliche Chatter
+export async function meineZeile(name, monat, woche = null) {
+  const p = woche ? periode({ frei: true, von: woche.ab, bis: woche.ende }) : periode({ monat, frei: false })
   const ins = await supabase.from('chatter_abrechnungen').upsert(
-    { chatter_name: name, monat: p.bezug, von: p.ab, bis: p.ende, frei: false, bezeichnung: p.bezeichnung, art: 'chatter' },
+    { chatter_name: name, monat: p.bezug, von: p.ab, bis: p.ende, frei: p.frei, bezeichnung: p.bezeichnung, art: 'chatter' },
     { onConflict: 'chatter_name,von,bis,art', ignoreDuplicates: true })
   if (ins.error) return { error: ins.error }
   const { data, error } = await supabase.from('chatter_abrechnungen').select('*').eq('chatter_name', name).eq('von', p.ab).eq('bis', p.ende).eq('art', 'chatter').maybeSingle()
@@ -568,6 +575,91 @@ function zusammenfassen(zeilen, gruppen) {
       umsatz_chat_usd: round(r.reduce((t, x) => t + Number((x.nur_chat === false ? x.umsatz_gesamt_usd : x.umsatz_chat_usd) || 0), 0)), nur_chat: true,
       prozent: null, auszahlung_usd: summe('auszahlung_usd'), betrag_eur: summe('betrag_eur'),
       extras: r.flatMap(x => extrasVon(x).map(ex => ({ ...ex, text: `${x.chatter_name}: ${ex.text}` }))),
+    }
+  })
+}
+
+// ── Wöchentlich abrechnen (v5.44.0) ─────────────────────────────────────────
+// Pro Chatter monatlich (Standard) oder wöchentlich ab einem Wochentag
+// (0 = Sonntag … 6 = Samstag). Woche = 7 Tage. Der €-Kurs ist der des Monats,
+// in dem die Woche endet (wie beim freien Zeitraum).
+const tagUtc = (d) => new Date(d + 'T12:00:00Z')
+const isoUtc = (d) => d.toISOString().slice(0, 10)
+export const plusTage = (d, n) => { const x = tagUtc(d); x.setUTCDate(x.getUTCDate() + n); return isoUtc(x) }
+export const wocheStartVon = (d, start = 0) => plusTage(d, -((tagUtc(d).getUTCDay() - start + 7) % 7))
+// letzte abgeschlossene Woche (Beginn)
+export const letzteWoche = (start = 0) => plusTage(wocheStartVon(heuteIso(), start), -7)
+export const WOCHENTAG = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
+const kurzTag = (d) => tagUtc(d).toLocaleDateString('de-DE', { weekday: 'short', timeZone: 'UTC' }).replace('.', '')
+const tm = (d) => tagUtc(d).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
+export const wocheText = (ab, mitJahr = true) => `${kurzTag(ab)} ${tm(ab)} – ${kurzTag(plusTage(ab, 6))} ${tm(plusTage(ab, 6))}${mitJahr ? plusTage(ab, 6).slice(0, 4) : ''}`
+// Wochen, die in diesem Monat enden
+export function wochenImMonat(monat, start = 0) {
+  const out = []
+  for (let d = `${monat}-01`; d.slice(0, 7) === monat; d = plusTage(d, 1)) {
+    if (tagUtc(d).getUTCDay() === (start + 6) % 7) out.push({ ab: plusTage(d, -6), ende: d })
+  }
+  return out
+}
+
+export async function rhythmusLaden() {
+  const { data, error } = await supabase.from('abrechnung_rhythmus').select('*')
+  if (error) return { liste: [], woechentlich: [], fehlt: /abrechnung_rhythmus|does not exist|schema cache/i.test(error.message || '') }
+  const liste = data || []
+  const woechentlich = liste.filter(r => r.rhythmus === 'woche')
+  return { liste, woechentlich, start: woechentlich[0]?.wochenstart ?? 0 }
+}
+export const istWoechentlich = (name, rh) => (rh?.woechentlich || []).some(r => r.chatter_name.toLowerCase() === String(name || '').toLowerCase())
+
+// Speichern: namen = wer wöchentlich ist; alle anderen (die eine Zeile haben) wieder monatlich
+export async function rhythmusSpeichern(namen, start, wer, vorher = []) {
+  const set = new Set(namen.map(n => n.toLowerCase()))
+  const zeilen = [
+    ...namen.map(n => ({ chatter_name: n, rhythmus: 'woche', wochenstart: start, geaendert_von: wer || null, geaendert_am: new Date().toISOString() })),
+    ...vorher.filter(r => r.rhythmus === 'woche' && !set.has(r.chatter_name.toLowerCase()))
+      .map(r => ({ chatter_name: r.chatter_name, rhythmus: 'monat', wochenstart: r.wochenstart, geaendert_von: wer || null, geaendert_am: new Date().toISOString() })),
+  ]
+  if (!zeilen.length) return {}
+  return supabase.from('abrechnung_rhythmus').upsert(zeilen, { onConflict: 'chatter_name' })
+}
+
+// Monat: Übersicht der Wochen wöchentlicher Chatter (Wochen, die im Monat enden)
+export async function wochenUebersicht(monat, rh) {
+  const namen = (rh?.woechentlich || []).map(r => r.chatter_name)
+  if (!namen.length) return []
+  const wochenVon = Object.fromEntries((rh.woechentlich).map(r => [r.chatter_name, wochenImMonat(monat, r.wochenstart)]))
+  const alle = Object.values(wochenVon).flat()
+  if (!alle.length) return []
+  const ab = alle.reduce((m, w) => (w.ab < m ? w.ab : m), alle[0].ab)
+  const ende = letzterTagVon(monat)
+  const [c, s, al, snaps, kurse, gesp] = await Promise.all([
+    supabase.from('chatters_contact').select('name, active').order('name'),
+    supabase.from('billing_settings').select('*').eq('person_type', 'chatter'),
+    supabase.from('chatter_aliases').select('*'),
+    supabase.from('chatter_snapshots').select('rows,business_date').gte('business_date', ab).lte('business_date', ende),
+    supabase.from('billing_kurse').select('*').eq('monat', monat),
+    supabase.from('chatter_abrechnungen').select('*').in('chatter_name', namen).gte('von', ab).lte('bis', ende),
+  ])
+  const kurs = kurse.data?.[0] ? Number(kurse.data[0].usd_eur) : null
+  const heute = heuteIso()
+  const cache = {}
+  return namen.map(name => {
+    const st = (s.data || []).find(x => x.person_name === name)
+    const wochen = wochenVon[name].map(w => {
+      const k = w.ab + w.ende
+      cache[k] ||= chatterVerteilen(c.data || [], al.data || [], (snaps.data || []).filter(x => x.business_date >= w.ab && x.business_date <= w.ende)).proPerson
+      const rev = cache[k][name] || { chat: 0, total: 0 }
+      const x = chatterRechnung(st, rev, monat)
+      const row = (gesp.data || []).find(r => r.von === w.ab && r.bis === w.ende && !istManuell(r)) || null
+      const live = x ? liveZeile(name, st, rev, x, kurs) : null
+      const g = gesamtEur(anzeige({ name, row, live }))
+      const laeuft = w.ende >= heute
+      return { ...w, row, gesamt: g, status: row?.status === 'bezahlt' ? 'bezahlt' : laeuft ? 'laeuft' : statusVon(row) }
+    })
+    return {
+      name, wochen,
+      summe: round(wochen.reduce((t, w) => t + (w.gesamt || 0), 0)),
+      bezahlt: round(wochen.filter(w => w.status === 'bezahlt').reduce((t, w) => t + Number(w.row?.bezahlt_betrag ?? w.gesamt ?? 0) + anzahlungSumme(w.row), 0)),
     }
   })
 }
