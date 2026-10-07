@@ -495,19 +495,27 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const buchOeffnen = async () => {
     const em = await empfaengerLaden()
     setBuch(em)
+    // v5.46.1: letzte Rechnung je Person (bei Gruppen: die neueste eines Mitglieds) — zum Öffnen und als Vorschlag
+    const { data: alleRe } = await supabase.from('chatter_abrechnungen').select('*').not('rechnung_url', 'is', null).order('rechnung_am', { ascending: false }).limit(1000)
+    const letzte = new Map()
+    for (const r of alleRe || []) { const k = r.chatter_name.toLowerCase(); if (!letzte.has(k)) letzte.set(k, r) }
+    for (const g of gruppen.liste) {
+      const r = (g.mitglieder || []).map(m => letzte.get(m.toLowerCase())).filter(Boolean).sort((a, b) => String(b.rechnung_am || '').localeCompare(String(a.rechnung_am || '')))[0]
+      if (r) letzte.set(g.name.toLowerCase(), r)
+    }
     const ausListe = new Map()
     for (const i of items) {
       if (istManuell(i.row) && i.row.waehrung === 'USD') continue
-      const r = i.row?.halter || i.row
-      ausListe.set(i.name.toLowerCase(), { name: i.name, vorschlagName: r?.rechnung_inhaber || '', vorschlagIban: r?.rechnung_iban || '' })
+      ausListe.set(i.name.toLowerCase(), { name: i.name })
     }
     const namen = [...new Set([...Object.values(em.map).map(e => e.name), ...[...ausListe.values()].map(x => x.name)])].sort((a, b) => a.localeCompare(b, 'de'))
     const zeilen = namen.map(n => {
       const e = em.map[n.toLowerCase()] || null
-      const v = ausListe.get(n.toLowerCase()) || {}
+      const r = letzte.get(n.toLowerCase()) || null
+      const v = { vorschlagName: r?.rechnung_inhaber || '', vorschlagIban: r?.rechnung_iban || '' }
       const kontoinhaber = e?.kontoinhaber || v.vorschlagName || ''
       const iban = e?.iban || v.vorschlagIban || ''
-      return { name: n, e, kontoinhaber, typ: e?.typ || 'PRIVATE', iban: iban ? ibanSchoen(iban) : '', vorschlag: !e && !!(v.vorschlagName || v.vorschlagIban), geaendert: false }
+      return { name: n, e, letzte: r, kontoinhaber, typ: e?.typ || 'PRIVATE', iban: iban ? ibanSchoen(iban) : '', vorschlag: !e && !!(v.vorschlagName || v.vorschlagIban), geaendert: false }
     })
     setBuchFenster({ zeilen, filter: '', fehlt: em.fehlt })
   }
@@ -748,7 +756,16 @@ export default function BuchhaltungTab({ userDisplayName }) {
             <div className="bh-wise-liste">
               {buchFenster.zeilen.filter(z => !buchFenster.filter.trim() || (z.name + ' ' + z.kontoinhaber).toLowerCase().includes(buchFenster.filter.trim().toLowerCase())).map(z => (
                 <div key={z.name} className={'bh-wise-zeile bh-buch-zeile an' + (z.vorschlag && !z.geaendert ? ' vorschlag' : '')}>
-                  <div className="bh-wise-wer"><b>{z.name}</b>{z.e ? <small className="leise">{z.e.bestaetigt_am ? `bestätigt ${datum(z.e.bestaetigt_am)}` : z.e.geaendert_am ? `gespeichert ${datum(z.e.geaendert_am)}` : ''}</small> : <small className="lila">{z.vorschlag ? 'Vorschlag aus Rechnung' : 'noch leer'}</small>}</div>
+                  <div className="bh-wise-wer"><b>{z.name}</b>{z.e ? <small className="leise">{z.e.bestaetigt_am ? `bestätigt ${datum(z.e.bestaetigt_am)}` : z.e.geaendert_am ? `gespeichert ${datum(z.e.geaendert_am)}` : ''}</small> : <small className="lila">{z.vorschlag ? 'Vorschlag aus Rechnung' : 'noch leer'}</small>}
+                    {z.letzte && (() => {
+                      const r = z.letzte
+                      const v = ibanVergleich(z.iban, { iban: r.rechnung_iban })
+                      return <button className="bh-link bh-wise-rechnung" title={`Letzte Rechnung öffnen (${r.bezeichnung || r.monat})${r.rechnung_iban && v === 'anders' ? ' — IBAN darauf ist anders als hier eingetragen!' : ''}`}
+                        onClick={() => setAnsehen({ row: r, url: r.rechnung_url, name: r.rechnung_name, iban: r.rechnung_iban, betrag: r.rechnung_betrag, waehrung: 'EUR', gesamt: null, wer: z.name, buchName: z.name })}>
+                        {r.rechnung_iban && v === 'anders' ? <ShieldAlert size={13} strokeWidth={2.4} color="#f87171" /> : <FileText size={13} strokeWidth={2.2} />} <span className="bh-dateiname">{r.bezeichnung || r.monat}</span>
+                      </button>
+                    })()}
+                  </div>
                   <input className="bh-wise-name" value={z.kontoinhaber} placeholder="Name / Firma wie auf dem Konto" onChange={e => buchZeile(z.name, 'kontoinhaber', e.target.value)} />
                   <div className="bh-umschalter bh-wise-typ">
                     <button className={z.typ === 'PRIVATE' ? 'an' : ''} onClick={() => buchZeile(z.name, 'typ', 'PRIVATE')}>Privat</button>
@@ -958,7 +975,11 @@ export default function BuchhaltungTab({ userDisplayName }) {
 
       {ansehen && <Ansehen a={ansehen} eintrag={buch.map[String(ansehen.buchName || ansehen.wer || '').toLowerCase()] || null} buchFehlt={buch.fehlt} wer={userDisplayName}
         onZu={() => setAnsehen(null)} onKopieren={kopieren} onGespeichert={(t) => { setAnsehen(null); melde(t); lade() }}
-        onBuch={async () => setBuch(await empfaengerLaden())} />}
+        onBuch={async () => {
+          const em = await empfaengerLaden(); setBuch(em)
+          // v5.46.1: ist das Adressbuch offen, die Zeile dort gleich mitaktualisieren
+          setBuchFenster(b => b && { ...b, zeilen: b.zeilen.map(z => { const e = em.map[z.name.toLowerCase()]; return e && !z.geaendert ? { ...z, e, kontoinhaber: e.kontoinhaber || '', typ: e.typ, iban: e.iban ? ibanSchoen(e.iban) : '', vorschlag: false } : z }) })
+        }} />}
 
       {anz && createPortal(
         <div className="bh-ov" onClick={e => { if (e.target === e.currentTarget) setAnz(null) }}>
