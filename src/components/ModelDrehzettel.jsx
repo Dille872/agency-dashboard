@@ -157,7 +157,7 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = tru
 // onZahl(n) meldet, wie viele Skripte zu drehen sind (für die Zahl am Reiter)
 // v5.47.0: stand (Zähler) → neu laden, wenn der Sammel-Upload etwas geändert hat;
 // onGeaendert → meldet eigene Änderungen nach oben, damit Überblick und Sammel-Upload mitziehen
-export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '', imReiter = false, onZahl = null, stand = 0, onGeaendert = null }) {
+export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '', imReiter = false, onZahl = null, stand = 0, onGeaendert = null, konto = null, onKonten = null }) {
   const [liste, setListe] = useState(null)
   const [alleGepostet, setAlleGepostet] = useState(false)
   // v5.14.0: aufklappbar. null = Standard (erstes „zu drehen“ offen), sonst die offene Skript-ID ('' = alle zu)
@@ -172,6 +172,18 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
   }
   useEffect(() => {
     if (liste && onZahl) onZahl(liste.filter(s => statusVon(s) === 'freigegeben').length)
+    // v5.49.0: welche Accounts haben Drehzettel? (für die Account-Reiter oben)
+    if (liste && onKonten) {
+      const m = new Map()
+      for (const s of liste) {
+        const k = s.ziel_account || ''
+        const e = m.get(k) || { handle: k, name: k ? accountName(service, k) : 'Ohne Account', offen: 0, zuDrehen: 0 }
+        if (statusVon(s) !== 'gepostet') e.offen++
+        if (statusVon(s) === 'freigegeben') e.zuDrehen++
+        m.set(k, e)
+      }
+      onKonten([...m.values()].sort((a, b) => (a.handle === '') - (b.handle === '') || b.offen - a.offen || a.name.localeCompare(b.name)))
+    }
   }, [liste]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [displayName, JSON.stringify(service?.account_modus || {}), stand])
   const neu = () => { if (onGeaendert) onGeaendert(); else laden() }
@@ -187,9 +199,11 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
     )
   }
 
-  const offen = liste.filter(s => statusVon(s) !== 'gepostet')
-  const gepostet = liste.filter(s => statusVon(s) === 'gepostet')
-  const zuDrehen = liste.filter(s => statusVon(s) === 'freigegeben').length
+  // v5.49.0: Account-Reiter (konto = null → alle, '' → ohne Account)
+  const gefiltert = konto === null ? liste : liste.filter(s => (s.ziel_account || '') === konto)
+  const offen = gefiltert.filter(s => statusVon(s) !== 'gepostet')
+  const gepostet = gefiltert.filter(s => statusVon(s) === 'gepostet')
+  const zuDrehen = gefiltert.filter(s => statusVon(s) === 'freigegeben').length
   const standardOffen = (offen.find(s => statusVon(s) === 'freigegeben') || offen[0])?.id
   const aktiv = offenId === null ? standardOffen : offenId
   const gruppen = [
@@ -215,7 +229,7 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
             auf={aktiv === s.id} onKlapp={() => setOffenId(aktiv === s.id ? '' : s.id)} />)}
         </React.Fragment>
       ))}
-      {!offen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Alles gedreht und gepostet. Danke! 💛</div>}
+      {!offen.length && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{konto === null ? 'Alles gedreht und gepostet. Danke! 💛' : 'Für diesen Account ist alles gedreht und gepostet.'}</div>}
       {gepostet.length > 0 && (
         <>
           <button type="button" onClick={() => setAlleGepostet(v => !v)} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>

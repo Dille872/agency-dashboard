@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Upload, ImagePlus, Check, Circle, X, Play, Clapperboard, ListChecks, Unlink } from 'lucide-react'
 import { supabase } from '../supabase'
-import { skripteLaden, skriptAendern, statusVon, videoGilt, modusSetzen, postetModel, tagKurz } from '../reelSkripte'
+import { skripteLaden, skriptAendern, statusVon, videoGilt, modusSetzen, postetModel, tagKurz, accountName } from '../reelSkripte'
 import { videoHochladen, planDateiHochladen, inSkriptKopieren, istVideoDatei, istFotoDatei, istBild } from '../videoSpeicher'
 import { VideoBild } from './VideoLink'
 
@@ -40,6 +40,22 @@ const offenFuerVideo = (s) => statusVon(s) === 'freigegeben' && !postetModel(s)
 const gedreht = (s) => postetModel(s) ? !!s.reel_url : (statusVon(s) !== 'freigegeben' || videoGilt(s))
 const skriptText = (s) => `${s.nr} · ${s.titel}`
 
+// v5.49.0: Auswahl nach Account gruppiert (Sandra hat mehrere Accounts)
+function SkriptOptionen({ liste, service }) {
+  const gruppen = new Map()
+  for (const s of liste) {
+    const k = s.ziel_account || ''
+    if (!gruppen.has(k)) gruppen.set(k, [])
+    gruppen.get(k).push(s)
+  }
+  if (gruppen.size <= 1) return liste.map(s => <option key={s.id} value={String(s.id)}>{skriptText(s)}</option>)
+  return [...gruppen.entries()].sort((a, b) => (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0])).map(([k, l]) => (
+    <optgroup key={k || '-'} label={k ? accountName(service, k) : 'Ohne Account'}>
+      {l.map(s => <option key={s.id} value={String(s.id)}>{skriptText(s)}</option>)}
+    </optgroup>
+  ))
+}
+
 // ── Vorschaubild einer gewählten Datei (vor dem Hochladen) ─────────────────
 function DateiVorschau({ eintrag }) {
   const ref = useRef(null)
@@ -60,7 +76,7 @@ function DateiVorschau({ eintrag }) {
 }
 
 // ── Fenster: gewählte Dateien zuordnen und hochladen ───────────────────────
-function SammelFenster({ start, modus, skripte, name, logActivity, onZu }) {
+function SammelFenster({ start, modus, skripte, name, logActivity, onZu, service = null }) {
   const [liste, setListe] = useState(() => start)
   const [laeuft, setLaeuft] = useState(false)
   const [fertigText, setFertigText] = useState('')
@@ -150,9 +166,7 @@ function SammelFenster({ start, modus, skripte, name, logActivity, onZu }) {
                 ) : (
                   <select value={e.ziel} disabled={laeuft} onChange={ev => setze(e.id, { ziel: ev.target.value })} style={auswahlS}>
                     {e.video && <option value="">Noch kein Skript (später zuordnen)</option>}
-                    {e.video && skripte.filter(offenFuerVideo).filter(s => !vergeben.has(String(s.id)) || e.ziel === String(s.id)).map(s => (
-                      <option key={s.id} value={String(s.id)}>{skriptText(s)}</option>
-                    ))}
+                    {e.video && <SkriptOptionen service={service} liste={skripte.filter(offenFuerVideo).filter(s => !vergeben.has(String(s.id)) || e.ziel === String(s.id))} />}
                     {!e.video && <option value="">Beitrag (Foto)</option>}
                     <option value="story">Story (kein Skript)</option>
                   </select>
@@ -193,7 +207,7 @@ function SammelFenster({ start, modus, skripte, name, logActivity, onZu }) {
 }
 
 // ── Ein ohne Skript hochgeladenes Video später zuordnen ────────────────────
-function OhneSkriptZeile({ m, skripte, name, logActivity, isPreview, onNeu }) {
+function OhneSkriptZeile({ m, skripte, name, logActivity, isPreview, onNeu, service = null }) {
   const [ziel, setZiel] = useState('')
   const [arbeitet, setArbeitet] = useState(false)
   const [fehler, setFehler] = useState('')
@@ -224,7 +238,7 @@ function OhneSkriptZeile({ m, skripte, name, logActivity, isPreview, onNeu }) {
         <div style={{ display: 'flex', gap: 6 }}>
           <select value={ziel} disabled={arbeitet || isPreview} onChange={e => setZiel(e.target.value)} style={auswahlS}>
             <option value="">Skript wählen …</option>
-            {skripte.filter(offenFuerVideo).map(s => <option key={s.id} value={String(s.id)}>{skriptText(s)}</option>)}
+            <SkriptOptionen service={service} liste={skripte.filter(offenFuerVideo)} />
             <option value="story">Ist eine Story</option>
           </select>
           <button type="button" disabled={!ziel || arbeitet || isPreview} onClick={zuordnen}
@@ -239,7 +253,7 @@ function OhneSkriptZeile({ m, skripte, name, logActivity, isPreview, onNeu }) {
 // ── Karte im Drehzettel-Reiter ─────────────────────────────────────────────
 // stand: Zähler aus ModelSocial; ändert er sich, wird neu geladen.
 // onGeaendert: meldet nach oben, dass sich Skripte geändert haben (Drehzettel neu laden).
-export default function ModelSammelUpload({ displayName, logActivity, isPreview, cardS = {}, service = null, stand = 0, onGeaendert }) {
+export default function ModelSammelUpload({ displayName, logActivity, isPreview, cardS = {}, service = null, stand = 0, onGeaendert, konto = null }) {
   const [skripte, setSkripte] = useState(null)
   const [ohne, setOhne] = useState([])
   const [auswahl, setAuswahl] = useState(null)   // { modus, liste }
@@ -279,8 +293,10 @@ export default function ModelSammelUpload({ displayName, logActivity, isPreview,
   }
 
   if (skripte === null) return null
-  const aktiv = skripte.filter(s => statusVon(s) !== 'gepostet')
-  const gepostetN = skripte.length - aktiv.length
+  // v5.49.0: Überblick nur für den gewählten Account-Reiter
+  const imKonto = konto === null ? skripte : skripte.filter(s => (s.ziel_account || '') === konto)
+  const aktiv = imKonto.filter(s => statusVon(s) !== 'gepostet')
+  const gepostetN = imKonto.length - aktiv.length
   const gedrehtN = aktiv.filter(gedreht).length
   const offenN = skripte.filter(offenFuerVideo).length
 
@@ -314,7 +330,7 @@ export default function ModelSammelUpload({ displayName, logActivity, isPreview,
       {ohne.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           <div style={{ ...klein, display: 'flex', alignItems: 'center', gap: 6 }}><Unlink size={13} /> Noch keinem Skript zugeordnet ({ohne.length})</div>
-          {ohne.map(m => <OhneSkriptZeile key={m.id} m={m} skripte={skripte} name={displayName} logActivity={logActivity} isPreview={isPreview} onNeu={geaendert} />)}
+          {ohne.map(m => <OhneSkriptZeile key={m.id} m={m} skripte={skripte} name={displayName} logActivity={logActivity} isPreview={isPreview} onNeu={geaendert} service={service} />)}
           {!offenN && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Gerade ist kein Drehzettel offen. Die Videos bleiben gespeichert.</div>}
         </div>
       )}
@@ -341,7 +357,7 @@ export default function ModelSammelUpload({ displayName, logActivity, isPreview,
         </div>
       )}
 
-      {auswahl && <SammelFenster start={auswahl.liste} modus={auswahl.modus} skripte={skripte} name={displayName} logActivity={logActivity}
+      {auswahl && <SammelFenster start={auswahl.liste} modus={auswahl.modus} skripte={skripte} name={displayName} logActivity={logActivity} service={service}
         onZu={(neu) => { setAuswahl(null); if (neu) geaendert() }} />}
     </div>
   )

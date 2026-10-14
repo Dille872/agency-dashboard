@@ -194,6 +194,7 @@ export const HELP_TOPICS = [
       'Steht beim Drehzettel ein US- oder englischer Account, bitte auf Englisch sprechen.',
       'Weißt du beim Hochladen nicht, welcher Drehzettel es ist, lass die Auswahl leer. Das Video wird trotzdem gespeichert und steht unter „Noch keinem Skript zugeordnet“. Dort ordnest du es später zu.',
       'Im „Überblick“ siehst du mit Haken, welche Drehzettel schon gedreht sind und welche noch offen.',
+      'Hast du mehrere Instagram-Accounts, stehen oben Reiter mit den Account-Namen. Antippen zeigt nur die Drehzettel für diesen Account, „Alle“ zeigt wieder alles.',
     ],
   },
   {

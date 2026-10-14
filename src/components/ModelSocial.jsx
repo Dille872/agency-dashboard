@@ -17,6 +17,7 @@ const SPEICHER = 'model_social_reiter_v1'
 const lies = () => { try { return localStorage.getItem(SPEICHER) } catch { return null } }
 const merke = (r) => { try { localStorage.setItem(SPEICHER, r) } catch { /* egal */ } }
 const GUELTIG = ['dz', 'plan', 'wk', 'pf']
+const KONTO_SPEICHER = 'model_dz_konto_v1:'
 
 export default function ModelSocial({ displayName, logActivity, isPreview, cardS = {}, HelpDot, service = null, fragebogen = null, fragebogenOffen = false, onKanaele }) {
   const [zuDrehen, setZuDrehen] = useState(null)   // null = lädt noch
@@ -24,6 +25,12 @@ export default function ModelSocial({ displayName, logActivity, isPreview, cardS
   const gewaehlt = useRef(false)
   const [stand, setStand] = useState(0)   // v5.47.0: zählt hoch, wenn sich Skripte/Uploads ändern → beide Karten laden neu
   const geaendert = () => setStand(x => x + 1)
+  // v5.49.0: Account-Reiter im Drehzettel-Bereich (Wunsch Sandra: mehrere Accounts auseinanderhalten)
+  const [konten, setKonten] = useState([])
+  const [konto, setKontoRoh] = useState(() => { try { const v = localStorage.getItem(KONTO_SPEICHER + displayName); return v === null ? null : v } catch { return null } })
+  const setKonto = (k) => { setKontoRoh(k); try { if (k === null) localStorage.removeItem(KONTO_SPEICHER + displayName); else localStorage.setItem(KONTO_SPEICHER + displayName, k) } catch { /* egal */ } }
+  // gemerkter Account gibt es nicht mehr → wieder „Alle“
+  const kontoGilt = konto !== null && konten.length > 1 && konten.some(k => k.handle === konto) ? konto : null
 
   // Start-Reiter festlegen, sobald die Drehzettel geladen sind
   useEffect(() => {
@@ -73,11 +80,23 @@ export default function ModelSocial({ displayName, logActivity, isPreview, cardS
             🎬 <b style={{ color: 'var(--text-primary)' }}>{zuDrehen === 1 ? '1 Skript wartet' : `${zuDrehen} Skripte warten`} auf dich.</b> Drehen, hochladen, fertig. Mehrere Videos gehen auch auf einmal. Das Video landet automatisch im Plan.
           </div>
         )}
+        {/* v5.49.0: Reiter je Instagram-Account, nur wenn es mehr als einen gibt */}
+        {konten.length > 1 && (
+          <div className="dz-konten" role="tablist" aria-label="Account">
+            {[{ handle: null, name: 'Alle', zuDrehen: konten.reduce((a, k) => a + k.zuDrehen, 0) }, ...konten].map(k => (
+              <button key={k.handle ?? '*'} type="button" role="tab" aria-selected={kontoGilt === k.handle}
+                className={'dz-konto' + (kontoGilt === k.handle ? ' an' : '')} onClick={() => setKonto(k.handle)}>
+                <span className="dz-name">{k.name}</span>
+                {k.zuDrehen > 0 && <span className="dz-zahl">{k.zuDrehen}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         {/* v5.47.0: mehrere Videos/Stories auf einmal, Zuordnung zum Skript, Überblick mit Haken */}
         <ModelSammelUpload displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} service={service}
-          stand={stand} onGeaendert={geaendert} />
+          stand={stand} onGeaendert={geaendert} konto={kontoGilt} />
         <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
-          notizen={service?.account_notizen || {}} service={service} imReiter onZahl={setZuDrehen} stand={stand} onGeaendert={geaendert}
+          notizen={service?.account_notizen || {}} service={service} imReiter onZahl={setZuDrehen} stand={stand} onGeaendert={geaendert} konto={kontoGilt} onKonten={setKonten}
           leerText="Noch keine Drehzettel. Sobald wir ein Reel für dich geschrieben haben, erscheint es hier." />
       </div>
 

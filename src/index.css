@@ -826,3 +826,13 @@ th { text-align: left; }
   .bh-wise-zeile { grid-template-areas: "wer wer" "name typ" "iban betrag" "nr nr" "chk chk" "alarm alarm"; }
   .bh-buch-zeile { grid-template-areas: "wer wer" "name typ" "iban betrag"; }
 }
+
+/* v5.49.0: Account-Reiter im Drehzettel-Bereich (Model-Portal) */
+.dz-konten { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.dz-konten::-webkit-scrollbar { display: none; }
+.dz-konto { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-size: 13px; font-weight: 700;
+  cursor: pointer; font-family: inherit; white-space: nowrap; }
+.dz-konto.an { border-color: #ec4899; background: rgba(236,72,153,0.14); color: var(--text-primary); }
+.dz-konto .dz-zahl { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #f59e0b; color: #1a1200;
+  font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
