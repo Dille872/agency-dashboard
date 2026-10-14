@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { formatMoney, formatShortDate } from '../utils'
 import { TOL_EXAKT, kandidatenAusSnapshot, bestesZiel } from '../modelChatterMatch'
 import Card from './Card'
+import OpenChatsNachtragen from './OpenChatsNachtragen' // v5.48.0
 
 // ─── DATENSTAND ──────────────────────────────────────────────────────────────
 //
@@ -179,6 +180,7 @@ export default function DataStatusTab({ modelSnapshots = [], chatterSnapshots = 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <OpenChatsNachtragen />
       <Card title="Datenstand">
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 14 }}>
           {letzte7.length === 0 ? (

@@ -135,6 +135,16 @@ export function getWeekdayIdx(dateStr) {
 
 // ─── ROW PARSERS ─────────────────────────────────────────────────────────────
 
+// v5.48.0: Spalte „Open Chats“ — nur exakter Spaltenname (ohne Satzzeichen/Groß-
+// schreibung), damit die unscharfe Suche nicht versehentlich „Selling Chats“ trifft.
+export function openChatsAus(vals, headers) {
+  const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const idx = headers.findIndex(h => ['openchats', 'openchat'].includes(norm(h)))
+  if (idx === -1) return null
+  const roh = String(vals[idx] ?? '').trim()
+  return roh === '' ? null : parseNumber(roh)
+}
+
 export function parseModelRow(rawRow, headers) {
   const vals = Object.values(rawRow)
   const g = (names) => {
@@ -166,11 +176,14 @@ export function parseModelRow(rawRow, headers) {
   const sellingChats = g(['selling chats', 'selling chat', 'chats sold'])
   const avgSpend = g(['average fan spend', 'avg fan spend', 'avg spend', 'average spend'])
   const avgChatValue = safeDivide(messageRevenue, sellingChats)
+  // v5.48.0: „Open Chats“ aus der Detailed Comparison. Fehlt die Spalte (ältere
+  // Exporte), bleibt der Wert null statt 0, damit niemand „0 offene Chats“ liest.
+  const openChats = openChatsAus(vals, headers)
 
   return {
     creator, ofName, revenue, subs, subsRevenue, newSubsRevenue,
     recurringSubsRevenue, tipsRevenue, messageRevenue,
-    sellingChats, avgSpend, avgChatValue,
+    sellingChats, avgSpend, avgChatValue, openChats,
   }
 }
 
