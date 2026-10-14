@@ -3,8 +3,16 @@ import { createPortal } from 'react-dom'
 import { useSprache } from '../i18n/sprache'
 // v5.18.0: Texte zweisprachig (Poster mit Englisch)
 const VT = {
-  de: { ansehen: '▶ ansehen', laden: '⬇ Laden', zu: '✕ Schließen', laedt: 'Lädt …', weg: 'Nicht abrufbar. Entweder fehlt die Berechtigung, oder die Datei wurde gelöscht.', codec: 'Dieses Video kann der Browser nicht abspielen (z. B. iPhone-Format HEVC in Chrome). Mit „⬇ Laden“ herunterladen und am Gerät ansehen.', titel: 'Im Dashboard abspielen' },
-  en: { ansehen: '▶ view', laden: '⬇ Download', zu: '✕ Close', laedt: 'Loading …', weg: 'Not available. Either you lack permission or the file was deleted.', codec: 'Your browser can’t play this video (e.g. iPhone HEVC format in Chrome). Use “⬇ Download” and watch it on your device.', titel: 'Play in the dashboard' },
+  de: { ansehen: '▶ ansehen', laden: '⬇ Laden', zu: '✕ Schließen', laedt: 'Lädt …', weg: 'Nicht abrufbar. Entweder fehlt die Berechtigung, oder die Datei wurde gelöscht.', codec: 'Dieses Video kann der Browser nicht abspielen (z. B. iPhone-Format HEVC in Chrome). Mit „⬇ Laden“ herunterladen und am Gerät ansehen.', titel: 'Im Dashboard abspielen',
+    sp_laedt: 'Video wird geladen …', sp_offen: 'Bitte offen lassen, bis 100 % erreicht sind.', sp_bereit: 'Fertig geladen.',
+    sp_fotos: 'In Fotos sichern', sp_fotos_hilfe: 'Im nächsten Fenster „Video sichern“ wählen. Dann ist es in deiner Galerie und du kannst es in Instagram posten.',
+    sp_datei: 'Stattdessen als Datei laden', sp_fehler: 'Laden hat nicht geklappt.', sp_nochmal: 'Nochmal versuchen', sp_mac: 'Download gestartet. Die Datei liegt gleich in deinem Download-Ordner.',
+    sp_gross: 'Das Video ist sehr groß. Es wird als Datei geladen (Dateien-App → Downloads), dort antippen und „Video sichern“ wählen.' },
+  en: { ansehen: '▶ view', laden: '⬇ Download', zu: '✕ Close', laedt: 'Loading …', weg: 'Not available. Either you lack permission or the file was deleted.', codec: 'Your browser can’t play this video (e.g. iPhone HEVC format in Chrome). Use “⬇ Download” and watch it on your device.', titel: 'Play in the dashboard',
+    sp_laedt: 'Loading video …', sp_offen: 'Keep this open until it reaches 100 %.', sp_bereit: 'Ready.',
+    sp_fotos: 'Save to Photos', sp_fotos_hilfe: 'In the next window choose “Save Video”. It will then be in your gallery and you can post it on Instagram.',
+    sp_datei: 'Download as a file instead', sp_fehler: 'Download failed.', sp_nochmal: 'Try again', sp_mac: 'Download started. The file will be in your Downloads folder.',
+    sp_gross: 'This video is very large. It is downloaded as a file (Files app → Downloads); tap it there and choose “Save Video”.' },
 }
 import { istSpeicher, istBild, speicherUrl, videoHochladen, planDateiHochladen } from '../videoSpeicher'
 
@@ -17,6 +25,120 @@ import { istSpeicher, istBild, speicherUrl, videoHochladen, planDateiHochladen }
 // „ansehen“ öffnet einen Player über der Seite (Video läuft sofort, Fotos
 // groß). „⬇ Laden“ im Player lädt die Datei herunter. Mit liste (Story-Frames,
 // Karussell) kann man mit ‹ › blättern.
+// ── Speichern aufs Gerät (v5.50.0) ────────────────────────────────────────
+// Vorher: „⬇ Laden“ öffnete einen leeren neuen Tab und leitete den Download
+// dorthin. Ergebnis: weißer Bildschirm (Mac: Datei lag trotzdem im Download-
+// Ordner; iPhone: bestenfalls in der Dateien-App, nie in den Fotos).
+// Jetzt:
+//  • Computer (Maus): Download direkt im selben Tab über einen <a download>,
+//    die Seite bleibt stehen, kein leerer Tab.
+//  • Handy/Tablet (Touch, Teilen mit Dateien möglich): Video mit Fortschritt
+//    laden, dann „In Fotos sichern“ → Teilen-Fenster → „Video sichern“.
+//    Zwei Schritte, weil iOS das Teilen nur direkt nach einem Antippen erlaubt.
+//  • Sehr große Dateien (> 1,5 GB) am Handy: als Datei laden (Speicher).
+const GROSS = 1.5 * 1024 * 1024 * 1024
+const mimeVon = (name) => /\.mov$/i.test(name) ? 'video/quicktime' : /\.(jpe?g)$/i.test(name) ? 'image/jpeg' : /\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : /\.(m4v|mp4)$/i.test(name) ? 'video/mp4' : 'application/octet-stream'
+function kannInFotos() {
+  try {
+    const touch = window.matchMedia?.('(pointer: coarse)')?.matches
+    return !!(touch && navigator.canShare && navigator.canShare({ files: [new File([''], 'x.mp4', { type: 'video/mp4' })] }))
+  } catch { return false }
+}
+async function alsDateiLaden(link) {
+  const u = await speicherUrl(link, { laden: true })
+  if (!u) return false
+  const a = document.createElement('a')
+  a.href = u; a.rel = 'noopener'; a.setAttribute('download', '')
+  document.body.appendChild(a); a.click(); a.remove()
+  return true
+}
+export function aufsGeraet(link, oeffneFenster) {
+  if (kannInFotos()) { oeffneFenster(); return }
+  alsDateiLaden(link).then(ok => {
+    const V = VT[document.documentElement.lang === 'en' ? 'en' : 'de']
+    if (!ok) window.alert(V.weg)
+  })
+}
+
+function SpeichernFenster({ link, onZu }) {
+  const V = VT[useSprache()] || VT.de
+  const [stand, setStand] = useState(0)
+  const [datei, setDatei] = useState(null)
+  const [fehler, setFehler] = useState('')
+  const [hinweis, setHinweis] = useState('')
+  const [versuch, setVersuch] = useState(0)
+  useEffect(() => {
+    let aus = false
+    const ctrl = new AbortController()
+    ;(async () => {
+      setStand(0); setFehler(''); setDatei(null)
+      const u = await speicherUrl(link)
+      if (!u) { if (!aus) setFehler(V.weg); return }
+      try {
+        const r = await fetch(u, { signal: ctrl.signal })
+        if (!r.ok) throw new Error('HTTP ' + r.status)
+        const gesamt = Number(r.headers.get('content-length')) || 0
+        if (gesamt > GROSS) { setHinweis(V.sp_gross); await alsDateiLaden(link); return }
+        const name = (link.split('/').pop() || 'video.mp4').replace(/[^A-Za-z0-9._-]/g, '')
+        let blob
+        if (r.body && gesamt) {
+          const leser = r.body.getReader(); const teile = []; let da = 0
+          for (;;) {
+            const { done, value } = await leser.read()
+            if (done) break
+            teile.push(value); da += value.length
+            if (!aus) setStand(da / gesamt)
+          }
+          blob = new Blob(teile, { type: mimeVon(name) })
+        } else {
+          blob = await r.blob()
+        }
+        if (!aus) { setStand(1); setDatei(new File([blob], name, { type: mimeVon(name) })) }
+      } catch (e) {
+        if (!aus && e?.name !== 'AbortError') setFehler(V.sp_fehler + ' ' + (e?.message || ''))
+      }
+    })()
+    return () => { aus = true; ctrl.abort() }
+  }, [link, versuch])
+  const teilen = async () => {
+    try { await navigator.share({ files: [datei] }); onZu() }
+    catch (e) { if (e?.name !== 'AbortError') setFehler(V.sp_fehler + ' ' + (e?.message || '')) }
+  }
+  const k = { padding: '12px 14px', borderRadius: 12, border: 'none', fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', width: '100%' }
+  return createPortal(
+    <div onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onZu() }} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}
+      style={{ position: 'fixed', inset: 0, zIndex: 2147483001, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: 'var(--bg-card)', borderRadius: '18px 18px 0 0', padding: '18px 16px calc(18px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <VideoBild href={link} hoehe={64} onClick={() => {}} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{fehler ? V.sp_fehler : datei ? V.sp_bereit : V.sp_laedt}</div>
+            {!datei && !fehler && !hinweis && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{V.sp_offen}</div>}
+          </div>
+          <button type="button" onClick={onZu} aria-label={V.zu} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
+        </div>
+        {!datei && !fehler && !hinweis && (
+          <div style={{ height: 8, borderRadius: 5, background: 'var(--bg-card2)', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round(stand * 100)}%`, height: '100%', background: '#06b6d4', transition: 'width .3s' }} />
+          </div>
+        )}
+        {!datei && !fehler && !hinweis && <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', textAlign: 'right' }}>{Math.round(stand * 100)} %</div>}
+        {hinweis && <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{hinweis}</div>}
+        {datei && <>
+          <button type="button" onClick={teilen} style={{ ...k, background: '#06b6d4', color: '#04212a' }}>{V.sp_fotos}</button>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{V.sp_fotos_hilfe}</div>
+        </>}
+        {fehler && <>
+          <div role="alert" style={{ fontSize: 12.5, color: '#ef4444' }}>{fehler}</div>
+          <button type="button" onClick={() => setVersuch(v => v + 1)} style={{ ...k, background: '#06b6d4', color: '#04212a' }}>{V.sp_nochmal}</button>
+        </>}
+        {!hinweis && <button type="button" onClick={() => { alsDateiLaden(link); onZu() }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', padding: 2 }}>{V.sp_datei}</button>}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 export function Abspieler({ link, liste = null, onZu }) {
   const V = VT[useSprache()] || VT.de
   const alle = liste && liste.length ? liste : [link]
@@ -42,10 +164,8 @@ export function Abspieler({ link, liste = null, onZu }) {
     const alt = document.body.style.overflow; document.body.style.overflow = 'hidden'
     return () => { window.removeEventListener('keydown', taste, true); document.body.style.overflow = alt }
   }, [nr, alle.length, onZu])
-  const herunter = async () => {
-    const u = await speicherUrl(jetzt, { laden: true })
-    if (u) window.location.href = u
-  }
+  const [speichern, setSpeichern] = useState(false)   // v5.50.0
+  const herunter = () => aufsGeraet(jetzt, () => setSpeichern(true))
   const k = { padding: '9px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }
   return createPortal(
     // v5.15.1: Klicks im Player gehen nicht mehr an die Fenster dahinter weiter
@@ -71,6 +191,7 @@ export function Abspieler({ link, liste = null, onZu }) {
         <button type="button" onClick={herunter} style={k}>{V.laden}</button>
         <button type="button" onClick={onZu} style={{ ...k, background: '#fff', color: '#000' }}>{V.zu}</button>
       </div>
+      {speichern && <SpeichernFenster link={jetzt} onZu={() => setSpeichern(false)} />}
     </div>,
     document.body
   )
@@ -78,6 +199,7 @@ export function Abspieler({ link, liste = null, onZu }) {
 
 export function VideoLink({ href, children, style, laden = false, bild = false, title }) {
   const [spielt, setSpielt] = useState(false)
+  const [speichern, setSpeichern] = useState(false)   // v5.50.0 (vor den frühen returns)
   const V = VT[useSprache()] || VT.de
   if (!href) return null
   if (!istSpeicher(href)) {
@@ -85,12 +207,11 @@ export function VideoLink({ href, children, style, laden = false, bild = false, 
   }
   // v5.15.0: ohne laden → im Player abspielen statt neuen Tab öffnen
   const abspielen = (e) => { e.preventDefault(); e.stopPropagation(); setSpielt(true) }
-  const oeffnen = async (e) => {
+  // v5.50.0: kein leerer neuer Tab mehr (weißer Bildschirm). Computer: Download im selben Tab,
+  // Handy: laden mit Fortschritt und „In Fotos sichern“.
+  const oeffnen = (e) => {
     e.preventDefault(); e.stopPropagation()
-    const fenster = window.open('', '_blank')   // sofort öffnen, sonst blockt der Browser das Fenster
-    const url = await speicherUrl(href, { laden })
-    if (!url) { if (fenster) fenster.close(); window.alert('Das Video ist nicht abrufbar. Entweder fehlt die Berechtigung, oder es wurde gelöscht (Rohvideos 30 Tage nach dem Posten, wenn es eine geschnittene Fassung gibt).'); return }
-    if (fenster) fenster.location.href = url; else window.location.href = url
+    aufsGeraet(href, () => setSpeichern(true))
   }
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -98,6 +219,7 @@ export function VideoLink({ href, children, style, laden = false, bild = false, 
       <a href="#" onClick={laden ? oeffnen : abspielen} style={style} title={title}>{children}</a>
       {laden && <a href="#" onClick={abspielen} style={{ ...style, fontWeight: 700 }} title={V.titel}>{V.ansehen}</a>}
       {spielt && <Abspieler link={href} onZu={() => setSpielt(false)} />}
+      {speichern && <SpeichernFenster link={href} onZu={() => setSpeichern(false)} />}
     </span>
   )
 }
