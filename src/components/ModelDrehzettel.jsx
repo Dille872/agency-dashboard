@@ -155,7 +155,9 @@ function Zeile({ s, name, logActivity, onNeu, isPreview, notizen = {}, auf = tru
 
 // v5.26.0: imReiter → im Social-Reiter ohne Einklappen, gruppiert nach „Zu drehen“ / „In Arbeit“;
 // onZahl(n) meldet, wie viele Skripte zu drehen sind (für die Zahl am Reiter)
-export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '', imReiter = false, onZahl = null }) {
+// v5.47.0: stand (Zähler) → neu laden, wenn der Sammel-Upload etwas geändert hat;
+// onGeaendert → meldet eigene Änderungen nach oben, damit Überblick und Sammel-Upload mitziehen
+export default function ModelDrehzettel({ displayName, logActivity, isPreview, cardS = {}, HelpDot, notizen = {}, service = null, leerText = '', imReiter = false, onZahl = null, stand = 0, onGeaendert = null }) {
   const [liste, setListe] = useState(null)
   const [alleGepostet, setAlleGepostet] = useState(false)
   // v5.14.0: aufklappbar. null = Standard (erstes „zu drehen“ offen), sonst die offene Skript-ID ('' = alle zu)
@@ -171,7 +173,8 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
   useEffect(() => {
     if (liste && onZahl) onZahl(liste.filter(s => statusVon(s) === 'freigegeben').length)
   }, [liste]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [displayName, JSON.stringify(service?.account_modus || {})])
+  useEffect(() => { laden() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [displayName, JSON.stringify(service?.account_modus || {}), stand])
+  const neu = () => { if (onGeaendert) onGeaendert(); else laden() }
   if (!liste) return null
   if (!liste.length) {
     if (!leerText) return null
@@ -208,7 +211,7 @@ export default function ModelDrehzettel({ displayName, logActivity, isPreview, c
       {(imReiter ? gruppen : [{ t: null, l: offen }]).map(g => (
         <React.Fragment key={g.t || 'alle'}>
           {g.t && <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 2 }}>{g.t} ({g.l.length})</div>}
-          {g.l.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={laden} isPreview={isPreview} notizen={notizen} service={service}
+          {g.l.map(s => <Zeile key={s.id + ':' + s.aktualisiert_am} s={s} name={displayName} logActivity={logActivity} onNeu={neu} isPreview={isPreview} notizen={notizen} service={service}
             auf={aktiv === s.id} onKlapp={() => setOffenId(aktiv === s.id ? '' : s.id)} />)}
         </React.Fragment>
       ))}

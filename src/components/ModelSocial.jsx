@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ModelDrehzettel from './ModelDrehzettel'
+import ModelSammelUpload from './ModelSammelUpload' // v5.47.0
 import { PlanModel } from './SocialPlan'
 import { WirkungModel } from './WirkungKurven'
 
@@ -21,6 +22,8 @@ export default function ModelSocial({ displayName, logActivity, isPreview, cardS
   const [zuDrehen, setZuDrehen] = useState(null)   // null = lädt noch
   const [reiter, setReiter] = useState(null)
   const gewaehlt = useRef(false)
+  const [stand, setStand] = useState(0)   // v5.47.0: zählt hoch, wenn sich Skripte/Uploads ändern → beide Karten laden neu
+  const geaendert = () => setStand(x => x + 1)
 
   // Start-Reiter festlegen, sobald die Drehzettel geladen sind
   useEffect(() => {
@@ -67,11 +70,14 @@ export default function ModelSocial({ displayName, logActivity, isPreview, cardS
       <div style={{ display: akt === 'dz' ? 'flex' : 'none', flexDirection: 'column', gap: 10 }}>
         {zuDrehen > 0 && (
           <div style={{ ...cardS, padding: '10px 14px', fontSize: 13, color: 'var(--text-secondary)', background: 'linear-gradient(135deg, rgba(245,158,11,0.12), var(--bg-card) 70%)', borderColor: 'rgba(245,158,11,0.4)' }}>
-            🎬 <b style={{ color: 'var(--text-primary)' }}>{zuDrehen === 1 ? '1 Skript wartet' : `${zuDrehen} Skripte warten`} auf dich.</b> Drehen, hochladen, fertig. Das Video landet automatisch im Plan.
+            🎬 <b style={{ color: 'var(--text-primary)' }}>{zuDrehen === 1 ? '1 Skript wartet' : `${zuDrehen} Skripte warten`} auf dich.</b> Drehen, hochladen, fertig. Mehrere Videos gehen auch auf einmal. Das Video landet automatisch im Plan.
           </div>
         )}
+        {/* v5.47.0: mehrere Videos/Stories auf einmal, Zuordnung zum Skript, Überblick mit Haken */}
+        <ModelSammelUpload displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} service={service}
+          stand={stand} onGeaendert={geaendert} />
         <ModelDrehzettel displayName={displayName} logActivity={logActivity} isPreview={isPreview} cardS={cardS} HelpDot={HelpDot}
-          notizen={service?.account_notizen || {}} service={service} imReiter onZahl={setZuDrehen}
+          notizen={service?.account_notizen || {}} service={service} imReiter onZahl={setZuDrehen} stand={stand} onGeaendert={geaendert}
           leerText="Noch keine Drehzettel. Sobald wir ein Reel für dich geschrieben haben, erscheint es hier." />
       </div>
 

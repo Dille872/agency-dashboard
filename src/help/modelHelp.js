@@ -185,11 +185,15 @@ export const HELP_TOPICS = [
       'Unten auf „Social“ tippen, beim Drehzettel auf „Drehzettel öffnen“ und das Reel drehen. Oben steht, für welchen Account es ist.',
       'Beim Drehzettel auf „Video fertig? Hochladen“ tippen und das Video aus deiner Galerie wählen.',
       'Warten, bis der Balken bei 100 % ist, und die Seite so lange offen lassen. Bricht das Netz ab, einfach nochmal wählen, es geht an derselben Stelle weiter.',
+      'Mehrere Reels gedreht? Oben auf „Videos hochladen“ tippen, alle Videos auf einmal wählen und bei jedem Video den passenden Drehzettel (z. B. S-0003) auswählen. Antippen des kleinen Bildes spielt das Video ab.',
+      'Stories gehen genauso über „Stories hochladen“, ohne Drehzettel.',
     ],
     watch: [
       'Bitte nicht über WhatsApp schicken, da wird das Video stark verkleinert.',
       'Ein neues Video kannst du hochladen, solange das Reel noch nicht gepostet ist („ändern“). Nur wenn wir für dich schneiden und du viele Rohclips hast, geht auch ein geteilter Ordner-Link („viele Clips? Link einfügen“).',
       'Steht beim Drehzettel ein US- oder englischer Account, bitte auf Englisch sprechen.',
+      'Weißt du beim Hochladen nicht, welcher Drehzettel es ist, lass die Auswahl leer. Das Video wird trotzdem gespeichert und steht unter „Noch keinem Skript zugeordnet“. Dort ordnest du es später zu.',
+      'Im „Überblick“ siehst du mit Haken, welche Drehzettel schon gedreht sind und welche noch offen.',
     ],
   },
   {

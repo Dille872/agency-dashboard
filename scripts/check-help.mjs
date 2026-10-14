@@ -19,7 +19,7 @@ const PORTALE = [
     name: 'Model-Portal',
     portal: 'src/components/ModelPortal.jsx',
     help: 'src/help/modelHelp.js',
-    extra: ['src/components/ModelDrehzettel.jsx'], // v4.101.0: Anker drehzettel sitzt dort
+    extra: ['src/components/ModelDrehzettel.jsx', 'src/components/ModelSammelUpload.jsx'], // v4.101.0: Anker drehzettel sitzt dort · v5.47.0: Sammel-Upload
     collapsible: false,
     ankerlos: ['ueberblick', 'bell', 'chat', 'app'], // app: AppInstallieren.jsx
   },

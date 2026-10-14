@@ -82,6 +82,27 @@ export async function planDateiHochladen({ datei, model, account = null, onForts
   return speicherHochladen({ datei: d, pfad, onFortschritt, bildTyp: istVideo(d) ? null : (d.type || 'image/jpeg') })
 }
 
+// v5.47.0: Datei-Prüfung für die Auswahl vor dem Hochladen (Sammel-Upload)
+export const istVideoDatei = istVideo
+export const istFotoDatei = istFoto
+
+// v5.47.0: Ein ohne Skript hochgeladenes Video (material/…) später einem Skript
+// zuordnen. Die Datei wird im Speicher nach skript/<id>/roh-<zeit>.<ext> kopiert
+// (mit Vorschaubild), damit Cutter, Freigabe und Poster dieselben Rechte haben
+// wie bei einem direkt hochgeladenen Video. Die alte Material-Datei räumt die
+// bestehende Regel nach 30 Tagen weg, sobald sie an nichts mehr hängt.
+// Liefert { link } oder { fehler }.
+export async function inSkriptKopieren({ link, skriptId }) {
+  const von = pfadVon(link)
+  if (!von) return { fehler: 'Das Video liegt nicht im Dashboard-Speicher.' }
+  const ext = (von.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'mp4'
+  const nach = `skript/${skriptId}/roh-${Date.now()}.${ext}`
+  const { error } = await supabase.storage.from(BUCKET).copy(von, nach)
+  if (error) return { fehler: /row-level|403|Unauthorized/i.test(error.message || '') ? 'Keine Berechtigung für dieses Skript.' : 'Zuordnen hat nicht geklappt: ' + (error.message || error) }
+  try { await supabase.storage.from(BUCKET).copy(von + '.jpg', nach + '.jpg') } catch { /* ohne Vorschaubild weiter */ }
+  return { link: PRAEFIX + nach }
+}
+
 async function speicherHochladen({ datei, pfad, onFortschritt, bildTyp = null }) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { fehler: 'Nicht angemeldet.' }
