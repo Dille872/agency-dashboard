@@ -10,6 +10,8 @@ export function darfAufTab(userRole, userRoles, tab) {
   const rollen = Array.isArray(userRoles) ? userRoles : []
   if (userRole === 'admin') return true
   if (userRole === 'manager') return !['settings', 'billing', 'buchhaltung'].includes(tab)
+  // v5.51.0: Massennachrichten — nur die Schichtzeiten
+  if (tab === 'massen' && rollen.includes('massen')) return true
   // v5.27.0: Storyteller / Script Builder — Bereich Skripte (zusätzlich zu Social, falls vorhanden)
   if (tab === 'skripte' && ['storyteller', 'script_builder'].some(r => rollen.includes(r))) return true
   if (userRole === 'dienstplan') return ['schedule', 'chatters-comm', 'kalender'].includes(tab)
@@ -28,5 +30,6 @@ export function startTab(userRole, userRoles) {
   if (userRole === 'creator_manager') return 'models-comm'
   if (userRole !== 'admin' && userRole !== 'manager' && ['social_media', 'cutter', 'social_leitung', 'social_freigabe'].some(r => rollen.includes(r))) return 'social'
   if (userRole !== 'admin' && userRole !== 'manager' && ['storyteller', 'script_builder'].some(r => rollen.includes(r))) return 'skripte'
+  if (userRole !== 'admin' && userRole !== 'manager' && rollen.includes('massen')) return 'massen' // v5.51.0
   return 'models'
 }

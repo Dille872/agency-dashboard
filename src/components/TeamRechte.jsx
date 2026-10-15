@@ -110,7 +110,7 @@ function Fenster({ u, zuteilung, onZu, rollenSetzen, profilSpeichern, onStatus, 
                   return (
                     <Schalter key={r.key} an={entwurf.includes(r.key)} onClick={() => umschalten(r.key)} titel={r.label} text={r.desc}
                       rechts={r.zuteilung && entwurf.includes(r.key) ? (
-                        <a href="?tab=social-rechte" onClick={e => e.stopPropagation()} style={{ fontSize: 11.5, color: '#06b6d4', whiteSpace: 'nowrap', alignSelf: 'center', textDecoration: 'none' }}>{z ? `${z} Account${z === 1 ? '' : 's'}` : 'zuteilen'} →</a>
+                        <a href={`?tab=${r.zuteilungTab || 'social-rechte'}`} onClick={e => e.stopPropagation()} style={{ fontSize: 11.5, color: '#06b6d4', whiteSpace: 'nowrap', alignSelf: 'center', textDecoration: 'none' }}>{z ? `${z} Account${z === 1 ? '' : 's'}` : 'zuteilen'} →</a>
                       ) : null} />
                   )
                 })}
@@ -176,16 +176,19 @@ export default function TeamRechte({ users = [], onNeu, rollenSetzen, profilSpei
   useEffect(() => {
     let weg = false
     ;(async () => {
-      const [p, c] = await Promise.all([
+      const [p, c, ma] = await Promise.all([
         supabase.from('social_account_poster').select('poster_name'),
         supabase.from('social_account_cutter').select('cutter_name'),
+        supabase.from('massen_accounts').select('user_id'),   // v5.51.0 (fehlt die Tabelle noch: einfach leer)
       ])
       if (weg) return
       const zaehl = (liste, feld) => { const m = {}; for (const x of liste || []) m[x[feld]] = (m[x[feld]] || 0) + 1; return m }
-      setZuteilung({ social_media: zaehl(p.data, 'poster_name'), cutter: zaehl(c.data, 'cutter_name') })
+      const nameVon = Object.fromEntries((users || []).map(u => [u.user_id, u.display_name]))
+      setZuteilung({ social_media: zaehl(p.data, 'poster_name'), cutter: zaehl(c.data, 'cutter_name'),
+        massen: zaehl((ma.data || []).map(x => ({ n: nameVon[x.user_id] })), 'n') })
     })()
     return () => { weg = true }
-  }, [])
+  }, [users.length]) // v5.51.0: Namen der Massennachrichten-Zuteilung kommen über users
 
   const sortiert = useMemo(() => [...users].sort((a, b) => String(a.display_name || '').localeCompare(String(b.display_name || ''), 'de')), [users])
   const aktive = sortiert.filter(aktivP)
@@ -205,6 +208,7 @@ export default function TeamRechte({ users = [], onNeu, rollenSetzen, profilSpei
     if (r.includes('model')) teile.push('Model-Portal')
     if (r.some(x => ['social_media', 'cutter', 'social_leitung', 'social_freigabe'].includes(x))) teile.push('Social')
     if (r.some(x => ['storyteller', 'script_builder'].includes(x))) teile.push('Skripte')
+    if (r.includes('massen')) teile.push('Schichtzeiten') // v5.51.0
     return teile.join(' + ') || '—'
   }
 

@@ -16,6 +16,8 @@ export const ROLES = [
   // v5.27.0: Content
   { key: 'storyteller', label: '✍️ Storyteller', color: '#c084fc', desc: 'Schreibt Skripte Schritt für Schritt für Models — gehen erst nach eurer Freischaltung ans Model', punkte: ['Skripte mit Schritten für Models schreiben', 'gehen erst nach eurer Freischaltung ans Model'] },
   { key: 'script_builder', label: '🧩 Script Builder', color: '#22d3ee', desc: 'Baut die Skripte in CreatorHero — bekommt Bescheid, wenn ein Model etwas hochgeladen oder ein Video eingetragen hat', punkte: ['Bekommt Telegram, wenn ein Model hochgeladen / ein Video eingetragen hat', 'baut die Skripte in CreatorHero und hakt ab'] },
+  // v5.51.0: plant Massennachrichten, sieht nur Schichtzeiten (ohne Namen) der freigegebenen Accounts
+  { key: 'massen', label: 'Massennachrichten', color: '#0ea5e9', desc: 'Sieht nur die Schichtzeiten (Beginn/Ende) der Accounts, die ihr freigebt, keine Namen', punkte: ['Schichtzeiten je Model, deutsche Zeit', 'nur freigegebene Accounts, keine Chatter-Namen'], zuteilung: true, zuteilungTab: 'massen' },
   // Altname bis v5.0.0, wird mit sql/social-leitung.sql zu social_leitung. Nicht mehr auswählbar.
   { key: 'social_freigabe', label: 'Social-Freigabe (alt)', color: '#f97316', desc: 'veraltet, wird zur Social-Leitung', alt: true },
 ]
@@ -26,6 +28,7 @@ export const ROLLEN_GRUPPEN = [
   { key: 'portale', titel: 'Portale', hinweis: 'Eigenes Portal', keys: ['chatter', 'model'] },
   { key: 'social', titel: '📱 Social Media', hinweis: 'Zusatzrollen, auch zu Chatter kombinierbar. Welche Accounts: Social Media → Steuerung / Rechte', keys: ['social_media', 'cutter', 'social_leitung'] },
   { key: 'content', titel: '✍️ Content', hinweis: 'Zusatzrollen, auch zu Chatter kombinierbar', keys: ['storyteller', 'script_builder'] },
+  { key: 'planung', titel: 'Massennachrichten', hinweis: 'Eigene Rolle, nicht kombinieren. Welche Accounts: Zeit → Schichtzeiten', keys: ['massen'] },
 ]
 
 // Hauptrolle (Spalte role) = höchste Rolle nach Rang

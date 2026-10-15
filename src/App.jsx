@@ -4,11 +4,12 @@ import { setTheme, initTheme } from './theme'
 import { APP_VERSION } from './version'
 import SuggestionsAdmin from './components/SuggestionsAdmin'
 import SkripteBereich from './components/SkripteBereich' // v5.27.0
+import MassenSchichten from './components/MassenSchichten' // v5.51.0
 import {
   Film, Users, BarChart3, FileText, CheckSquare, Palette, RefreshCw, MessageCircle,
   TrendingUp, Calendar, Globe, Settings as SettingsIcon, MoreHorizontal, Sun, Moon,
   Eye, ArrowLeftRight, DollarSign, Receipt, Database, UserRound, CalendarDays, Zap, LayoutGrid, LayoutDashboard, KeyRound,
-  ScrollText,
+  ScrollText, CalendarClock,
 } from 'lucide-react'
 import LoginPage from './components/LoginPage'
 import ZweiFaktorSeite from './components/ZweiFaktorSeite' // v5.42.0
@@ -99,6 +100,7 @@ const BEREICHE = [
   { key: 'zeit', label: 'Zeit', Icon: Calendar, tabs: [
     { key: 'schedule', label: 'Dienstplan', Icon: Calendar },
     { key: 'kalender', label: 'Kalender', Icon: CalendarDays },
+    { key: 'massen', label: 'Schichtzeiten', Icon: CalendarClock }, // v5.51.0: für Massennachrichten
     { key: 'todos', label: 'ToDos', Icon: CheckSquare, badge: 'openTodos' },
   ] },
   { key: 'verwaltung', label: 'Verwaltung', Icon: Database, tabs: [
@@ -266,7 +268,8 @@ export default function App() {
       // v3.89.0: Chatter NICHT hier upserten – deren shift_online verwaltet der
       // ChatterPortal-Check-in. Sonst überschreibt dieser Heartbeat den Check-in
       // alle 30s auf false → shift-alert hält jeden für "nicht eingecheckt".
-      if (session?.user && userDisplayNameRef.current && userRoleRef.current !== 'chatter' && viewModeRef.current !== 'mein-chatter') {
+      // v5.51.0: Rolle massen hat keinen Zugriff auf online_status (sql/massen-schichtzeiten.sql)
+      if (session?.user && userDisplayNameRef.current && userRoleRef.current !== 'chatter' && userRoleRef.current !== 'massen' && viewModeRef.current !== 'mein-chatter') {
         supabase.from('online_status').upsert({
           display_name: userDisplayNameRef.current,
           last_seen: new Date().toISOString(),
@@ -395,7 +398,7 @@ export default function App() {
         setUserDisplayName(name)
         // v3.89.0: Chatter hier NICHT upserten (siehe Heartbeat oben) – sonst
         // wird ihr Check-in-Flag beim Laden/Reload auf false gesetzt.
-        if (!roles.includes('chatter')) {
+        if (!roles.includes('chatter') && rolle !== 'massen') { // v5.51.0
           await supabase.from('online_status').upsert({
             display_name: name,
             last_seen: new Date().toISOString(),
@@ -1120,6 +1123,8 @@ export default function App() {
           <BuchhaltungTab userDisplayName={userDisplayName} />
         ) : activeTab === 'vorschlaege' ? (
           <SuggestionsAdmin />
+        ) : activeTab === 'massen' ? (
+          <MassenSchichten istAdmin={isManager} userDisplayName={userDisplayName} />
         ) : activeTab === 'skripte' ? (
           <SkripteBereich userDisplayName={userDisplayName} istAdmin={isManager}
             storyteller={userRoles.includes('storyteller')} builder={userRoles.includes('script_builder')} />
