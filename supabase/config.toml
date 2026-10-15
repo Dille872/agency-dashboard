@@ -24,8 +24,9 @@ project_id = "xdchyruasjxvrjduchoc"
 # ── Ohne Token erreichbar, weil der Aufrufer keinen hat ────────────────────
 
 # Telegram-Webhook. Telegram kennt keine Supabase-Anmeldung.
-# Abgesichert wird stattdessen über TELEGRAM_WEBHOOK_SECRET: ist das Secret
-# gesetzt, prüft der Bot den Header X-Telegram-Bot-Api-Secret-Token selbst.
+# Abgesichert wird stattdessen über TELEGRAM_WEBHOOK_SECRET: der Bot prüft den
+# Header X-Telegram-Bot-Api-Secret-Token selbst. Seit v5.53.0 Pflicht — fehlt
+# das Secret, lehnt der Bot jeden Aufruf ab (403).
 [functions.telegram-bot]
 verify_jwt = false
 

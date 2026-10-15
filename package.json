@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-help.mjs; vite build",
+    "build": "node scripts/check-help.mjs && vite build",
     "preview": "vite preview",
     "check:help": "node scripts/check-help.mjs"
   },

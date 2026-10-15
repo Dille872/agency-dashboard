@@ -120,7 +120,13 @@ async function speicherHochladen({ datei, pfad, onFortschritt, bildTyp = null })
       onProgress: (gesendet, gesamt) => onFortschritt && onFortschritt(gesamt ? gesendet / gesamt : 0),
       onSuccess: () => fertig({ ok: true }),
     })
-    up.findPreviousUploads().then(alt => { if (alt.length) up.resumeFromPreviousUpload(alt[0]); up.start() })
+    // v5.53.0: Schlägt die Suche nach alten Uploads fehl (z. B. Speicher im
+    // privaten Safari-Modus gesperrt), trotzdem frisch starten — vorher hing der
+    // Upload dann für immer.
+    up.findPreviousUploads()
+      .then(alt => { if (alt.length) up.resumeFromPreviousUpload(alt[0]) })
+      .catch(() => { /* ohne Wiederaufnahme weiter */ })
+      .then(() => { try { up.start() } catch (e) { fertig({ fehler: meldung(e) }) } })
   })
   if (ergebnis.fehler) return ergebnis
 

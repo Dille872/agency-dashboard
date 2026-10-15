@@ -598,9 +598,16 @@ async function getParallelChatters(currentChatterName: string) {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok')
-  // v3.79.0: Nur echte Telegram-Webhooks zulassen. Rückwärtskompatibel — solange
-  // TELEGRAM_WEBHOOK_SECRET nicht gesetzt ist, wird (noch) nicht erzwungen.
-  if (WEBHOOK_SECRET && req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== WEBHOOK_SECRET) {
+  // v3.79.0: Nur echte Telegram-Webhooks zulassen.
+  // v5.53.0: Ohne gesetztes TELEGRAM_WEBHOOK_SECRET wird jetzt grundsätzlich
+  // abgelehnt — vorher lief der Bot dann offen, und jeder konnte Nachrichten mit
+  // beliebigem Absender (msg.from.id) einschleusen. Reihenfolge beim Einführen:
+  // Secret setzen → setWebhook mit secret_token → erst dann diese Fassung deployen.
+  if (!WEBHOOK_SECRET) {
+    console.error('telegram-bot: TELEGRAM_WEBHOOK_SECRET fehlt — Aufruf abgelehnt')
+    return new Response('forbidden', { status: 403 })
+  }
+  if (req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== WEBHOOK_SECRET) {
     return new Response('forbidden', { status: 403 })
   }
   try {

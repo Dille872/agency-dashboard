@@ -75,6 +75,7 @@
 // Vorhanden von Supabase: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { zweiFaktorOk } from '../_shared/zweiFaktor.ts' // v5.53.0
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -92,6 +93,11 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } })
 
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+// v5.53.0: Wer für alle Models generieren darf (ohne Dienstplan-Zuordnung).
+const VOLLZUGRIFF_ROLLEN = ['admin', 'manager', 'creator_manager']
+// v5.53.0: Obergrenze gespeicherter Vorschläge je Person und Stunde (~25 Klicks).
+const MAX_VORSCHLAEGE_PRO_STUNDE = 200
 
 // --- Helfer: Schicht-Label + Berliner Zeitstempel (Wochentag + HH:MM) ---
 function shiftLabel(s: string | null | undefined): string {
@@ -397,13 +403,56 @@ serve(async (req) => {
     const { data: u, error: authErr } = await auth.auth.getUser(token)
     if (authErr || !u?.user) return json({ ok: false, error: 'Nicht autorisiert' }, 401)
 
+    // v5.53.0: Rolle, Status, Freigabe und Zwei-Faktor serverseitig prüfen.
+    // Vorher reichte irgendein Login — auch gesperrte Konten und Models konnten
+    // für beliebige Models kostenpflichtige Generierungen auslösen.
+    const { data: ich } = await db.from('user_roles')
+      .select('role, roles, status, display_name, can_suggest')
+      .eq('user_id', u.user.id).maybeSingle()
+    if (!ich) return json({ ok: false, error: 'Kein Dashboard-Zugang' }, 403)
+    if (['suspended', 'offboarded'].includes(ich.status)) return json({ ok: false, error: 'Zugang gesperrt' }, 403)
+    const rollen: string[] = [ich.role, ...(Array.isArray(ich.roles) ? ich.roles : [])].filter(Boolean)
+    if (!zweiFaktorOk(rollen, token)) return json({ ok: false, error: 'Zwei-Faktor fehlt – bitte neu anmelden' }, 403)
+    const istTeam = rollen.some((r) => VOLLZUGRIFF_ROLLEN.includes(r))
+    if (!istTeam && !ich.can_suggest) { // can_suggest schaltet der Admin je Person frei
+      return json({ ok: false, error: 'Keine Freigabe für Nachrichten-Vorschläge' }, 403)
+    }
+
     const body = await req.json().catch(() => ({}))
     const model = String(body.model || '').trim()
     const occasion = String(body.occasion || '').trim()
     const shift = String(body.shift || '').trim()   // frueh | spaet | nacht
-    const chatter = String(body.chatter || '').trim()
+    // v5.53.0: Chatter kommt aus dem Login, nicht mehr vom Aufrufer.
+    const chatter = String(ich.display_name || '').trim()
     const language = String(body.language || 'Deutsch').trim()
     if (!model || !occasion) return json({ ok: false, error: 'model/occasion fehlt' }, 400)
+
+    // v5.53.0: Chatter nur für Models, bei denen sie im Dienstplan stehen —
+    // gleiche Quelle wie die RLS-Regeln (meine_model_namen(), läuft als Nutzer).
+    if (!istTeam) {
+      const alsNutzer = createClient(SUPABASE_URL, ANON_KEY, {
+        auth: { persistSession: false },
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      })
+      const { data: meine, error: zErr } = await alsNutzer.rpc('meine_model_namen')
+      if (zErr) return json({ ok: false, error: 'Zuordnung konnte nicht geprüft werden' }, 500)
+      const norm = (s: unknown) => String(s || '').toLowerCase().trim()
+      if (!(Array.isArray(meine) && meine.some((n: unknown) => norm(n) === norm(model)))) {
+        return json({ ok: false, error: `Du bist ${model} aktuell nicht zugeteilt.` }, 403)
+      }
+    }
+
+    // v5.53.0: Aufruflimit je Person (Schutz gegen Endlosschleifen/Missbrauch).
+    // Gezählt werden die gespeicherten Vorschläge der letzten Stunde.
+    if (chatter) {
+      const seit = new Date(Date.now() - 3600 * 1000).toISOString()
+      const { count: zuletzt } = await db.from('message_suggestions')
+        .select('id', { count: 'exact', head: true })
+        .eq('chatter', chatter).gte('created_at', seit)
+      if ((zuletzt || 0) >= MAX_VORSCHLAEGE_PRO_STUNDE) {
+        return json({ ok: false, error: 'Stundenlimit für Vorschläge erreicht – bitte später nochmal.' }, 429)
+      }
+    }
 
     // --- Steckbrief laden (Pflicht) ---
     const { data: persona } = await db.from('model_personas').select('*').eq('model_name', model).maybeSingle()
