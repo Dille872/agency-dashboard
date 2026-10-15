@@ -7,6 +7,7 @@ import { BookOpen, Library, Eye, UserRound } from 'lucide-react'
 import { supabase } from '../supabase'
 import { formatMoney, pctChange, getLast7Snapshots } from '../utils'
 import SocialManager from './SocialManager' // v4.102.0: ersetzt den alten SocialTab
+import MassenSchichten from './MassenSchichten' // v5.52.0: Chatter mit Rolle massen
 import SurveyModal from './SurveyModal'
 import SwapModal from './SwapModal'
 import ChatterBell from './ChatterBell'
@@ -411,9 +412,14 @@ const leisteMerkenChatter = (el) => {
   try { document.documentElement.classList.toggle('mit-leiste', !!el) } catch { /* egal */ }
 }
 
-export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, isPreview, onSwitchToOwn, onSwitchToPreview, contentRollen = [] }) {
+export default function ChatterPortal({ session, displayName: initialDisplayName, onSwitchToAdmin, isSocialMedia, istMassen = false, isPreview, onSwitchToOwn, onSwitchToPreview, contentRollen = [] }) {
   const [theme, setThemeState] = useState(() => getTheme())
-  const [showSocialPortal, setShowSocialPortal] = useState(false)
+  const [showSocialPortal, setShowSocialPortalRoh] = useState(false)
+  // v5.52.0: Umschalter Chatter ⇄ Schichtzeiten (Rolle massen), wie bei Social. Immer nur eine Sonderansicht.
+  const [showMassen, setShowMassenRoh] = useState(false)
+  const setShowSocialPortal = (an) => { setShowSocialPortalRoh(an); if (an) setShowMassenRoh(false) }
+  const setShowMassen = (an) => { setShowMassenRoh(an); if (an) setShowSocialPortalRoh(false) }
+  const sonderAnsicht = showSocialPortal || showMassen
   const [previewChatter, setPreviewChatter] = useState('')
   const [allChatters, setAllChatters] = useState([])
   const displayName = isPreview ? (previewChatter || '') : initialDisplayName
@@ -2249,6 +2255,12 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
               {showSocialPortal ? '💬 Chatter' : '📱 Social'}
             </button>
           )}
+          {istMassen && !isPreview && (
+            <button onClick={() => setShowMassen(!showMassen)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: showMassen ? '#0ea5e9' : 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.35)', color: showMassen ? '#fff' : '#0ea5e9', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}
+              title={showMassen ? 'Zurück zur Chatter-Ansicht' : 'Schichtzeiten für Massennachrichten'}>
+              {showMassen ? 'Chatter' : 'Schichtzeiten'}
+            </button>
+          )}
           {onSwitchToAdmin && (
             <button onClick={onSwitchToAdmin} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 8, background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
               ⚙ Admin
@@ -2270,7 +2282,9 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
             Vorschau: Du siehst das Portal von <b>{displayName}</b>. {displayName} wird dadurch nicht als online gemeldet und nichts gilt als gelesen. Was du bewusst änderst (Board, Abwesenheit …), wird gespeichert.
           </div>
         )}
-        {showSocialPortal ? (
+        {showMassen ? (
+          <MassenSchichten userDisplayName={displayName} />
+        ) : showSocialPortal ? (
           <SocialManager userDisplayName={displayName} />
         ) : (
         <div>
@@ -3395,7 +3409,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
       {/* ── v4.80.0: Untere Leiste am Handy — wie im Model-Portal und im Admin.
           Ab 769 px per CSS aus, dann gelten die Reiter oben. Hebt Glocke, Chat
           und Hilfe über die Leiste (html.mit-leiste → --fab-lift). */}
-      {!showSocialPortal && (
+      {!sonderAnsicht && (
         <nav className="leiste-mobil chatter-leiste" ref={leisteMerkenChatter} aria-label="Bereiche">
           {CHATTER_TABS.map(t => {
             const aktiv = tab === t.key
@@ -3577,7 +3591,7 @@ export default function ChatterPortal({ session, displayName: initialDisplayName
           Archiv — weggeklickte Angebote sind dort weiter erreichbar. */}
       {!isPreview && displayName && <SwapModal displayName={displayName} />}
       {/* v3.96.0: Glocke + Chat-Bubble für Chatter */}
-      {!isPreview && displayName && !showSocialPortal && (
+      {!isPreview && displayName && !sonderAnsicht && (
         <>
           <ChatterBell
             isOpen={fab.active === 'bell'} onToggle={(v) => fab.set('bell', v)}

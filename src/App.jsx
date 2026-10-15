@@ -755,6 +755,7 @@ export default function App() {
       displayName={userDisplayName}
       onSwitchToAdmin={(isAdmin || isManager) ? () => setViewMode('admin') : null}
       isSocialMedia={isSocialMedia}
+      istMassen={userRoles.includes('massen')} // v5.52.0: Umschalter Chatter ⇄ Schichtzeiten
       contentRollen={userRoles.filter(r => r === 'storyteller' || r === 'script_builder')}
       isPreview={(isAdmin || isManager) && !eigenesPortal}
       onSwitchToOwn={isManager ? () => setViewMode('mein-chatter') : null}

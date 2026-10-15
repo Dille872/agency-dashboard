@@ -28,7 +28,7 @@ export const ROLLEN_GRUPPEN = [
   { key: 'portale', titel: 'Portale', hinweis: 'Eigenes Portal', keys: ['chatter', 'model'] },
   { key: 'social', titel: '📱 Social Media', hinweis: 'Zusatzrollen, auch zu Chatter kombinierbar. Welche Accounts: Social Media → Steuerung / Rechte', keys: ['social_media', 'cutter', 'social_leitung'] },
   { key: 'content', titel: '✍️ Content', hinweis: 'Zusatzrollen, auch zu Chatter kombinierbar', keys: ['storyteller', 'script_builder'] },
-  { key: 'planung', titel: 'Massennachrichten', hinweis: 'Eigene Rolle, nicht kombinieren. Welche Accounts: Zeit → Schichtzeiten', keys: ['massen'] },
+  { key: 'planung', titel: 'Massennachrichten', hinweis: 'Eigene Rolle oder zu Chatter dazu (dann Umschalter oben im Portal). Welche Accounts: Zeit → Schichtzeiten', keys: ['massen'] },
 ]
 
 // Hauptrolle (Spalte role) = höchste Rolle nach Rang
