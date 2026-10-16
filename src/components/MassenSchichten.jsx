@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, Copy, Check, Eye, Users } from 'lucide-react'
 import { supabase } from '../supabase'
+import { ladeInaktiveNamen, ohneInaktive } from '../people'
 import {
   SCHICHT_FARBE, plusTage, montagVon, heuteBerlin, jetztMinBerlin, kwVon, tagKurz, tagDatum,
   uhrText, nachTagen, wechselVon, achseVon, wocheAlsText,
@@ -14,6 +15,10 @@ import {
 //   • Unbesetzte Schichten zählen als normale Schicht, Freischicht fällt weg.
 //   • Admin/Manager sehen oben „Wer sieht was“: Person wählen, Accounts
 //     anhaken, Vorschau „so sieht es …“.
+//   • v5.53.1: „Wer sieht was“ zeigt keine offboardeten Models mehr (gleiche
+//     Regel wie der Dienstplan: models_contact.active = false oder stillgelegter
+//     Login gleichen Namens). Alte Freigaben bleiben gespeichert, werden aber
+//     nicht mitgezählt.
 // Daten nur über massen_schichtzeiten() — die gibt keine Chatter-Namen heraus.
 
 const card = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16 }
@@ -36,6 +41,7 @@ function useBreit(px = 900) {
 function Zugaenge({ personId, setPersonId, vorschau, setVorschau, userDisplayName }) {
   const [personen, setPersonen] = useState(null)
   const [konten, setKonten] = useState([])
+  const [versteckt, setVersteckt] = useState(new Set()) // Accounts offboardeter Models
   const [frei, setFrei] = useState(new Set())
   const [fehler, setFehler] = useState('')
   const [auf, setAuf] = useState(true)
@@ -43,17 +49,26 @@ function Zugaenge({ personId, setPersonId, vorschau, setVorschau, userDisplayNam
   useEffect(() => {
     let weg = false
     ;(async () => {
-      const [u, a] = await Promise.all([
+      const [u, a, mc, inaktiv] = await Promise.all([
         supabase.from('user_roles').select('user_id, display_name, role, roles, status'),
         supabase.from('model_aliases').select('csv_name, model_name, alias_label').order('model_name'),
+        supabase.from('models_contact').select('name, active'),
+        ladeInaktiveNamen(),
       ])
       if (weg) return
       const p = (u.data || []).filter(x => [...(x.roles || []), x.role].includes('massen') && (x.status || 'active') === 'active')
         .sort((x, y) => String(x.display_name).localeCompare(String(y.display_name), 'de'))
       setPersonen(p)
       if (p.length && !personId) setPersonId(p[0].user_id)
+      // v5.53.1: nur Models, die noch dabei sind. Ohne Antwort von models_contact
+      // lieber alles zeigen als Accounts stillschweigend verschwinden lassen.
+      const norm = (x) => String(x || '').trim().toLowerCase()
+      const aktiv = mc.error ? null : new Set(ohneInaktive(mc.data || [], inaktiv).map(x => norm(x.name)))
       const gesehen = new Set()
-      setKonten((a.data || []).filter(x => x.csv_name && x.model_name && !gesehen.has(x.csv_name) && gesehen.add(x.csv_name)))
+      const alle = (a.data || []).filter(x => x.csv_name && x.model_name && !gesehen.has(x.csv_name) && gesehen.add(x.csv_name))
+      const dabei = (x) => !aktiv || aktiv.has(norm(x.model_name))
+      setKonten(alle.filter(dabei))
+      setVersteckt(new Set(alle.filter(x => !dabei(x)).map(x => x.csv_name)))
     })()
     return () => { weg = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -90,6 +105,8 @@ function Zugaenge({ personId, setPersonId, vorschau, setVorschau, userDisplayNam
 
   if (personen === null) return null
   const person = personen.find(p => p.user_id === personId)
+  const sichtbarFrei = [...frei].filter(k => !versteckt.has(k)).length
+  const altFrei = [...frei].filter(k => versteckt.has(k)).length
 
   return (
     <div style={{ ...card, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -117,7 +134,10 @@ function Zugaenge({ personId, setPersonId, vorschau, setVorschau, userDisplayNam
             </button>
           ))}
         </div>
-        <div style={klein}>{frei.size ? `${frei.size} ${frei.size === 1 ? 'Account' : 'Accounts'} freigegeben.` : 'Noch kein Account freigegeben, die Person sieht also nichts.'} Antippen schaltet sofort um.</div>
+        <div style={klein}>
+          {sichtbarFrei ? `${sichtbarFrei} ${sichtbarFrei === 1 ? 'Account' : 'Accounts'} freigegeben.` : 'Noch kein Account freigegeben, die Person sieht also nichts.'} Antippen schaltet sofort um.
+          {altFrei > 0 && ` Dazu ${altFrei} alte ${altFrei === 1 ? 'Freigabe' : 'Freigaben'} bei offboardeten Models, die nicht mehr angezeigt ${altFrei === 1 ? 'wird' : 'werden'}.`}
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
           {gruppen.map(([model, liste]) => {
             const alle = liste.every(k => frei.has(k.csv_name))
