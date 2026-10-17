@@ -608,6 +608,28 @@ export const WOCHENTAG = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerst
 const kurzTag = (d) => tagUtc(d).toLocaleDateString('de-DE', { weekday: 'short', timeZone: 'UTC' }).replace('.', '')
 const tm = (d) => tagUtc(d).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
 export const wocheText = (ab, mitJahr = true) => `${kurzTag(ab)} ${tm(ab)} – ${kurzTag(plusTage(ab, 6))} ${tm(plusTage(ab, 6))}${mitJahr ? plusTage(ab, 6).slice(0, 4) : ''}`
+// v5.53.2: Wochen, in denen bei wöchentlichen Chattern etwas zu tun ist
+// (Rechnung da oder Klärung). Damit springt der Reiter „Woche“ direkt dorthin
+// statt auf die zuletzt angesehene, längst bezahlte Woche.
+export async function offeneWochen(rh, start = 0, wochen = 10) {
+  const namen = (rh?.woechentlich || []).map(r => r.chatter_name)
+  if (!namen.length) return []
+  const ab = plusTage(wocheStartVon(heuteIso(), start), -7 * wochen)
+  const { data, error } = await supabase.from('chatter_abrechnungen').select('chatter_name, von, bis, status, art')
+    .in('chatter_name', namen).in('status', ['rechnung', 'klaerung']).gte('von', ab)
+  if (error) return []
+  const m = new Map()
+  for (const r of data || []) {
+    if (istManuell(r) || !r.von || !r.bis || plusTage(r.von, 6) !== r.bis) continue
+    const w = wocheStartVon(r.von, start)
+    if (!m.has(w)) m.set(w, { ab: w, namen: [], klaerung: false })
+    const x = m.get(w)
+    if (!x.namen.includes(r.chatter_name)) x.namen.push(r.chatter_name)
+    if (r.status === 'klaerung') x.klaerung = true
+  }
+  return [...m.values()].sort((a, b) => a.ab.localeCompare(b.ab))
+}
+
 // Wochen, die in diesem Monat enden
 export function wochenImMonat(monat, start = 0) {
   const out = []

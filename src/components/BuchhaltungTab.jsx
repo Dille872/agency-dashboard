@@ -11,7 +11,7 @@ import {
   rechnungHochladen, alsBezahlt, bezahltZurueck, klaerung, erinnern, abrechnungPdf, exportZip, exportCsv,
   gruppenLaden, gruppeAnlegen, gruppeAufloesen, gruppieren,
   empfaengerLaden, empfaengerSpeichern, empfaengerLoeschen, rechnungNrSpeichern, wiseHerunterladen, ibanVergleich, nameVergleich,
-  rhythmusLaden, rhythmusSpeichern, istWoechentlich, wochenUebersicht, letzteWoche, plusTage, wocheStartVon, wocheText, WOCHENTAG,
+  rhythmusLaden, rhythmusSpeichern, istWoechentlich, wochenUebersicht, letzteWoche, plusTage, wocheStartVon, wocheText, WOCHENTAG, offeneWochen,
 } from '../buchhaltung'
 import { oeffnen, signiert } from '../medien'
 import { supabase } from '../supabase'
@@ -46,7 +46,11 @@ const lies = () => { try { return JSON.parse(localStorage.getItem(SPEICHER) || '
 export default function BuchhaltungTab({ userDisplayName }) {
   const start = lies()
   const [modus, setModus] = useState(start?.modus || 'monat')            // 'monat' | 'woche' | 'frei' | 'offen'
-  const [woche, setWoche] = useState(start?.woche || null)                // Beginn der Woche (YYYY-MM-DD)
+  // v5.53.2: Woche NICHT mehr aus dem Speicher holen — sonst öffnete sich immer
+  // die zuletzt angesehene (meist schon bezahlte) Woche. Start = älteste Woche
+  // mit „Rechnung da“/„Klärung“, sonst die letzte abgeschlossene Woche.
+  const [woche, setWoche] = useState(null)                                // Beginn der Woche (YYYY-MM-DD)
+  const [offeneW, setOffeneW] = useState([])                              // [{ ab, namen, klaerung }]
   const [rh, setRh] = useState({ liste: [], woechentlich: [], start: 0 })  // v5.44.0: Rhythmus je Chatter
   const [rhFenster, setRhFenster] = useState(null)                        // { alle, woche: Set, start }
   const [wochenBox, setWochenBox] = useState([])
@@ -76,7 +80,14 @@ export default function BuchhaltungTab({ userDisplayName }) {
   const ziel = useRef(null)
 
   useEffect(() => { try { localStorage.setItem(SPEICHER, JSON.stringify({ modus, monat, von, bis, woche })) } catch { /* egal */ } }, [modus, monat, von, bis, woche])
-  useEffect(() => { rhythmusLaden().then(r => { setRh(r); setWoche(w => w ? wocheStartVon(w, r.start) : letzteWoche(r.start)) }) }, [])
+  useEffect(() => {
+    rhythmusLaden().then(async r => {
+      setRh(r)
+      const o = await offeneWochen(r, r.start)
+      setOffeneW(o)
+      setWoche(w => w ? wocheStartVon(w, r.start) : (o[0]?.ab || letzteWoche(r.start)))
+    })
+  }, [])
 
   const p = useMemo(() => {
     if (modus === 'offen') return null
@@ -98,6 +109,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
     if (!p) { setDaten({ items: [] }); return }
     const rhy = await rhythmusLaden()
     setRh(rhy)
+    offeneWochen(rhy, rhy.start).then(setOffeneW).catch(() => {}) // v5.53.2: nach Bezahlt usw. aktuell halten
     const namenW = rhy.woechentlich.map(x => x.chatter_name)
     if (modus === 'woche' && !namenW.length) { setDaten({ items: [], ohneWoechentliche: true }); return }
     if (modus === 'monat') wochenUebersicht(p.bezug, rhy).then(setWochenBox).catch(() => setWochenBox([]))
@@ -592,7 +604,7 @@ export default function BuchhaltungTab({ userDisplayName }) {
         <div className="bh-titel"><span className="bh-titel-ic"><Receipt size={18} strokeWidth={2.4} /></span><b>Buchhaltung</b></div>
         <div className="bh-umschalter">
           <button className={modus === 'monat' ? 'an' : ''} onClick={() => setModus('monat')}>Monat</button>
-          <button className={modus === 'woche' ? 'an' : ''} onClick={() => setModus('woche')} title="Chatter, die wöchentlich bezahlt werden">Woche</button>
+          <button className={modus === 'woche' ? 'an' : ''} onClick={() => { if (modus !== 'woche' && offeneW.length) setWoche(offeneW[0].ab); setModus('woche') }} title="Chatter, die wöchentlich bezahlt werden">Woche{offeneW.length ? ` (${offeneW.reduce((n, w) => n + w.namen.length, 0)} neu)` : ''}</button>
           <button className={modus === 'frei' ? 'an' : ''} onClick={() => setModus('frei')}>Zeitraum</button>
           <button className={modus === 'offen' ? 'an' : ''} onClick={() => setModus('offen')}>Alles Offene</button>
         </div>
@@ -628,6 +640,17 @@ export default function BuchhaltungTab({ userDisplayName }) {
           <span className={voll ? 'gut' : 'warn'}>{voll ? <CircleCheck size={14} strokeWidth={2.4} /> : <TriangleAlert size={14} strokeWidth={2.4} />} Daten {daten.tage} von {daten.tageSoll} Tagen{!voll && daten.letzterTag ? ` · bis ${datum(daten.letzterTag)}` : ''}{zeitraumZukunft ? ' · Zeitraum läuft noch' : ''}</span>
           <span className={daten.kurs ? '' : 'warn'}>{daten.kurs ? `Kurs 1 $ = ${String(daten.kurs).replace('.', ',')} €` : `Kein Euro-Kurs für ${monatName(p.bezug)} — in Billing eintragen`}</span>
           {modus === 'woche' ? <span>Wöchentlich: {rh.woechentlich.map(x => x.chatter_name).join(', ')}</span> : <span>{p.bezeichnung} · {datum(p.ab)}–{datum(p.ende)}</span>}
+        </div>
+      )}
+      {modus === 'woche' && offeneW.some(w => w.ab !== woche) && (
+        <div className="bh-info bh-offenewochen">
+          <span>Noch zu erledigen:</span>
+          {offeneW.map(w => (
+            <button key={w.ab} className={'bh-wchip ' + (w.klaerung ? 'klaerung' : 'rechnung') + (w.ab === woche ? ' an' : '')} onClick={() => setWoche(w.ab)}>
+              <b>{w.klaerung ? 'Klärung' : 'Rechnung da'}</b>
+              <span>{wocheText(w.ab, false)} · {w.namen.join(', ')}</span>
+            </button>
+          ))}
         </div>
       )}
       {modus === 'frei' && !p && <div className="bh-leer">Von und bis wählen, z. B. Samstag bis Freitag.</div>}
